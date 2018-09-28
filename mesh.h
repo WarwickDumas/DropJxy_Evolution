@@ -1205,7 +1205,6 @@ public:
 	char TriMinorPBCLists[NUMTRIANGLES][6];
 	char MajorTriPBC[NUMVERTICES][MAXNEIGH];  
 
-
 	long numVertices, numTriangles, numTrianglesAllocated,
 		numRows, numInnerVertices, numDomainVertices;
 	long numInnermostRow, numOutermostRow, numLastRowAux[NUM_COARSE_LEVELS];
@@ -1286,6 +1285,7 @@ public:
 
 	// New additions:
 
+	int InitialiseOriginal(int token);
 	void SetTriangleVertex(int iWhichCorner, Triangle * pTri, Vertex * pVertex);
 	void Recalculate_TriCentroids_VertexCellAreas_And_Centroids();
 	int SeekVertexInsideTriangle(Vertex * v1,
@@ -1449,15 +1449,25 @@ public:
 
 	void CalculateIonisationRates(NTrates NTadditionrates[NUMVERTICES]);
 
-	void AccumulateDiffusiveHeatRate(NTrates NTadditionrates[NUMVERTICES]);
+	void AccumulateDiffusiveHeatRateAndCalcIonisation(f64 h_use, NTrates NTadditionrates[NUMVERTICES]);
 
 	void CreateShardModelOfDensities_And_SetMajorArea();
 
 	void AccumulateAdvectiveMassHeatRate(f64_vec2 p_overall_v[NMINOR], NTrates AdditionalNT[NUMVERTICES]);
 
+	void Create_A_from_advance(f64 hstep, f64 ROCAzduetoAdvection[], f64 Az_array[]);
+	void FinalStepAz(f64 hstep, f64 ROCAzduetoAdvection[], TriMesh * pDestMesh, f64 Az_array[]);
+	void AdvanceAz(f64 hstep, f64 ROCAzduetoAdvection[], f64 Az_array[]);
+	void GetLap(real Az_array[], real LapAz_array[]);
+	void InterpolateVarsAndPositions(TriMesh * pTargetMesh, TriMesh * pEndMesh, f64 ppn);
+
 	//void AccumulateAdvectiveMomRate(f64_vec2 p_overall_v[NMINOR], ShardModel n_shards_n[NUMVERTICES], ShardModel n_shards[NUMVERTICES], three_vec3 AdditionRateNv[NMINOR]);
 
 	void Add_ViscousMomentumFluxRates(three_vec3 * AdditionalMomRates); // 0 for now
+
+	void GetLapCoeffs();
+
+	void JLS_for_Az_bwdstep(int iterations, f64 h_use);
 
 	void InferMinorDensitiesFromShardModel();
 
@@ -1469,7 +1479,7 @@ public:
 		//ShardModel n_shards[NUMVERTICES],
 		three_vec3 AdditionRateNv[NMINOR]);
 	
-	void Accelerate2018(f64 h_use, TriMesh * pUseMesh, TriMesh * pDestMesh, f64 evaltime_use);
+	void Accelerate2018(f64 h_use, TriMesh * pUseMesh, TriMesh * pDestMesh, f64 evaltime_use, bool bFeint);
 		//three_vec3 AdditionRateNv[NMINOR], 
 		//f64_vec2 IntegratedGradAz[NMINOR], f64 IntegratedLapAz[NMINOR]);
 

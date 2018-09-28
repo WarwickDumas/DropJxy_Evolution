@@ -566,7 +566,7 @@ HRESULT surfacegraph::InitialiseBuffers(const TriMesh & X)
 			SAFE_RELEASE2(IndexBuffer[2]);
 			failindex = DXChk( 
 						Direct3D.pd3dDevice->CreateIndexBuffer(
-							numTrianglesTotal*3*sizeof(DWORD),
+							numTrianglesTotal*sizeof(DWORD),
 							D3DUSAGE_WRITEONLY,
 							D3DFMT_INDEX32,
 							D3DPOOL_MANAGED,
@@ -590,7 +590,7 @@ HRESULT surfacegraph::InitialiseBuffers(const TriMesh & X)
 				return E_FAIL;
 			};
 
-			numTriangles[2] = numTrianglesTotal; // successfully dimmed this amt.
+			numTriangles[2] = numTrianglesTotal/3; // successfully dimmed this amt.
 			
 
 		// er, what is the following used for?
@@ -993,8 +993,8 @@ HRESULT surfacegraph::SetDataWithColour(const TriMesh & X,
 				X.ReturnL5Data(offset_data, &maximum, &minimum,
 					this->boolDisplayInnerMesh);
 
-	//			printf("*****+++++++\ncode %d minimum %1.3E maximum %1.3E store_max %1.3E store_min %1.4E \n",
-	//				code, minimum, maximum, store_max, store_min);
+				printf("*****+++++++\ncode %d minimum %1.3E maximum %1.3E store_max %1.3E store_min %1.4E \n",
+					code, minimum, maximum, store_max, store_min);
 			};
 		} 
 	} else {
@@ -1091,8 +1091,8 @@ HRESULT surfacegraph::SetDataWithColour(const TriMesh & X,
 		zeroplane = 0.0f;
 		this->yscale = 1.0f;
 	};
-	//printf("*****+++++++\ncode %d zeroplane %f yscale %f ymax %f ymin %f minimum %1.3E maximum %1.3E \n",
-	//	code, zeroplane, this->yscale, ymax, ymin, minimum, maximum);
+	printf("*****+++++++\ncode %d zeroplane %f yscale %f ymax %f ymin %f minimum %1.3E maximum %1.3E \n",
+		code, zeroplane, this->yscale, ymax, ymin, minimum, maximum);
 
 	// We set colourmax as the value we pass to shader -- 
 	// and notice that sometimes we have DATA_HEIGHT but _VELOCITY_COLOUR.
@@ -1934,9 +1934,9 @@ VOID surfacegraph::Render(const char * szTitle, bool RenderTriLabels,
 					sprintf(buffer,"%1.2E",value[i]*this->TickRescaling);
 					RenderLabel(buffer, x, zeroplane + yscale*value[i], z); // 3D position for top-right of text
 					
-			//	printf("szTitle = %s ",szTitle);
-			//	printf("buffer %s x %f y %f z %f\n",
-			//		buffer,x,zeroplane+yscale*value[i],z);
+				printf("szTitle = %s ",szTitle);
+				printf("buffer %s x %f y %f z %f\n",
+					buffer,x,zeroplane+yscale*value[i],z);
 				};
 				
 			};
@@ -2104,7 +2104,7 @@ VOID surfacegraph::Render(const char * szTitle, bool RenderTriLabels,
 									pPNT = &(vertices_buffer[VertexIndexArray8000[asdf]-diff]);
 									
 									newpos.z = pPNT->pos.z;
-									newpos.x = pPNT->pos.z*(float)(CUTAWAYANGLE);
+									newpos.x = pPNT->pos.z*(float)(-GRADIENT_X_PER_Y)*0.5f;
 									
 									pPNT0 = &(vertices_buffer[(pTri->cornerptr[0]-pX->X)-diff]);
 									pPNT1 = &(vertices_buffer[(pTri->cornerptr[1]-pX->X)-diff]);
@@ -2201,17 +2201,17 @@ VOID surfacegraph::Render(const char * szTitle, bool RenderTriLabels,
 						tempval = (pPNT->pos.y - zeroplane)/yscale;
 						sprintf(buffer,"%1.2E",tempval);
 						strip_0(buffer);
-						RenderLabel(buffer, CUTAWAYANGLE*pPNT->pos.z,zeroplane,pPNT->pos.z);
+						RenderLabel(buffer, -0.5*GRADIENT_X_PER_Y*pPNT->pos.z,zeroplane,pPNT->pos.z);
 						if (i == 0) r = 3.45;
 						r += 0.15;
 					};
 					// line underneath:
-					linedata[0].x = sin(CUTAWAYANGLE)*DEVICE_RADIUS_INSULATOR_OUTER*xzscale;
+					linedata[0].x = -sin(HALFANGLE*0.5)*DEVICE_RADIUS_INSULATOR_OUTER*xzscale;
 					linedata[0].y = zeroplane;
-					linedata[0].z = cos(CUTAWAYANGLE)*DEVICE_RADIUS_INSULATOR_OUTER*xzscale;
-					linedata[1].x = sin(CUTAWAYANGLE)*DOMAIN_OUTER_RADIUS*xzscale;
+					linedata[0].z = cos(HALFANGLE*0.5)*DEVICE_RADIUS_INSULATOR_OUTER*xzscale;
+					linedata[1].x = -sin(HALFANGLE*0.5)*DOMAIN_OUTER_RADIUS*xzscale;
 					linedata[1].y = zeroplane;
-					linedata[1].z = cos(CUTAWAYANGLE)*DOMAIN_OUTER_RADIUS*xzscale;
+					linedata[1].z = cos(HALFANGLE*0.5)*DOMAIN_OUTER_RADIUS*xzscale;
 					Direct3D.pd3dDevice->DrawPrimitiveUP(D3DPT_LINESTRIP,1,linedata,sizeof(vertex1));
 
 					// Not sure we had to lock to read anyway?

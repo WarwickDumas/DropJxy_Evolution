@@ -590,7 +590,7 @@ void TriMesh::Advance(TriMesh * pDestMesh, TriMesh * pHalfMesh)
 	// Now ready to do acceleration substeps:
 	f64 starttime = evaltime;
 
-	if (runs % 10 == 0)
+	if (1)
 	{
 		// BACKWARD STEPS:
 
@@ -639,10 +639,9 @@ void TriMesh::Advance(TriMesh * pDestMesh, TriMesh * pHalfMesh)
 				pDestMesh->Accelerate2018(SUBSTEP, pHalfMesh, pDestMesh, evaltime + 0.5*SUBSTEP, false); // Lap Az now given.
 
 			};
-			for (iMinor = 0; iMinor < NMINOR; iMinor++)
-				pDestMesh->pData[iMinor].Az = Az_array[iMinor];
 			
 			evaltime += 0.5*SUBSTEP;
+
 			// more advanced implicit could be possible and effective.
 		}
 	} else {
@@ -829,12 +828,10 @@ void TriMesh::JLS_for_Az_bwdstep(int iterations, f64 h_use)
 				((pTri->u8domain_flag == OUTER_FRILL) || (pTri->u8domain_flag == INNER_FRILL)))
 			{
 				epsilon[iMinor] = Lap_Aznext[iMinor];
-				Jacobi_x[iMinor] = -epsilon[iMinor] / LapCoeffself[iMinor];
 			} else {
 				epsilon[iMinor] = Az_array_next[iMinor] - h_use * gamma[iMinor] * Lap_Aznext[iMinor] - Az_array[iMinor] - h_use * Azdot0[iMinor];
-				Jacobi_x[iMinor] = -epsilon[iMinor] / (1.0 - h_use * gamma[iMinor] * LapCoeffself[iMinor]);
 			};
-			
+			Jacobi_x[iMinor] = epsilon[iMinor] / LapCoeffself[iMinor];
 			++pTri;
 		};
 		GetLap(Jacobi_x, Lap_Jacobi);
@@ -860,28 +857,6 @@ void TriMesh::JLS_for_Az_bwdstep(int iterations, f64 h_use)
 		beta = -sum_eps_deps_by_dbeta / sum_depsbydbeta_sq;
 		L2eps = sqrt(sum_eps_eps / (real)NMINOR);
 		printf(" [ %1.4f %1.2E ] ", beta, L2eps);
-
-		/*
-		FILE * fp = fopen("regress.txt", "a");
-		fprintf(fp, "\n\n");
-		fprintf(fp, "index epsilon depsbydbeta regressor Azdot0 gamma LapJacobi Aznext Lap_Aznext Azk\n");
-		for (iMinor = 0; iMinor < NMINOR; iMinor++)
-		{
-			fprintf(fp, "%d %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E \n",
-					iMinor, epsilon[iMinor],
-					(Jacobi_x[iMinor] - h_use * gamma[iMinor] * Lap_Jacobi[iMinor]),
-					Jacobi_x[iMinor],
-					Azdot0[iMinor],
-					gamma[iMinor],
-					Lap_Jacobi[iMinor],
-					Az_array_next[iMinor],
-					Lap_Aznext[iMinor],
-					Az_array[iMinor]
-				);
-		};
-		fclose(fp);
-		*/
-
 		for (iMinor = 0; iMinor < NMINOR; iMinor++)
 		{
 			Az_array_next[iMinor] += beta * Jacobi_x[iMinor];
@@ -889,7 +864,7 @@ void TriMesh::JLS_for_Az_bwdstep(int iterations, f64 h_use)
 
 		// Try resetting frills here and ignoring in calculation:
 		pTri = T;
-		for (iMinor = 0; iMinor < NUMTRIANGLES; iMinor++)
+		for (iMinor = 0; iMinor < NMINOR; iMinor++)
 		{
 			if ((pTri->u8domain_flag == INNER_FRILL) ||
 				(pTri->u8domain_flag == OUTER_FRILL))
@@ -900,7 +875,7 @@ void TriMesh::JLS_for_Az_bwdstep(int iterations, f64 h_use)
 
 	printf("\n\n");
 	pTri = T;
-	for (iMinor = 0; iMinor < NUMTRIANGLES; iMinor++)
+	for (iMinor = 0; iMinor < NMINOR; iMinor++)
 	{
 		if ((pTri->u8domain_flag == INNER_FRILL) ||
 			(pTri->u8domain_flag == OUTER_FRILL))

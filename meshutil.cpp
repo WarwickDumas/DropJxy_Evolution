@@ -658,6 +658,731 @@ void Triangle::GetOuterMedian(Vector2 * pResult, Vertex * pContig)
 
 int TriMesh::Initialise(int token)
 {
+	real x, y, rr, r;
+	long i, iRow, iTri;
+	real spacing, theta_spacing, theta, r_spacing;
+	long numRowprev;
+	bool stop;
+	long iVertex, iVertexLow, iVertexFirst, iVertexNextFirst, iVertexLowFirst;
+	bool inner_stop;
+	real xdist, ydist;
+	real vertex_density_per_cm_sq;
+	Vertex * vert, *pVertex;
+	Triangle * tri, *pTri;
+
+	real R_aim, r_use1, r_use2;
+	long numRow1, numRow2, numRowPrev;
+
+	real r_row[1024];
+
+	static real const TWOOVERSQRT3 = 2.0 / sqrt(3.0);
+	static real const OVERSQRT3 = 1.0 / sqrt(3.0);
+	static real const SQRT3OVER2 = sqrt(3.0) / 2.0;
+
+	//	real XCENTRE2 = DEVICE_RADIUS_INITIAL_FILAMENT_CENTRE*sin(PI/32.0);
+	//	real XCENTRE1 = -XCENTRE2;
+	//	real YCENTRE = DEVICE_RADIUS_INITIAL_FILAMENT_CENTRE*cos(PI/32.0);
+
+	real XCENTRE = 0.0;
+	real YCENTRE = DEVICE_RADIUS_INITIAL_FILAMENT_CENTRE;
+
+	// New approach:
+
+	// We will achieve the exact number of vertices so that it's easier in CUDA.
+	// We then need to go and create frills when we do tri mesh.
+
+	// Nvertices = Nrows(Nrows-1)(pi/(8 sqrt 3))((R2+R1)/(R2-R1))
+
+	//real const R2 = DOMAIN_OUTER_RADIUS;
+	//real const R1 = INNER_A_BOUNDARY;
+	//Numrows = (int)(0.5 + sqrt(0.25 + ((real)NUMBER_OF_VERTICES_AIMED)*(R2-R1)*8.0*SQRT3/(PI*(R2+R1)));
+	//// Chose too few, so the triangles will be longer and thinner than otherwise.
+	//// Maybe Nrow = 200.99 so we ought to go to the nearer # rows.
+
+	//// azimuthal:
+	//spacing = ((real)Numrows)*PI_OVER_16*(R2+R1)/(real)NUMBER_OF_VERTICES_AIMED;
+
+	// Oh dear --- we missed a trick: a row has to be put on REVERSE_ZCURRENT_RADIUS and rows have to be
+	// halfway before and after insulator.
+
+	// Try again. Stick with the present approach, bump up the numbers in each row.
+
+	// Now:
+	// * create numRow array
+	// * find if we are over or under number of vertices, and add more into appropriate rows, or delete.
+
+
+	// 1. Do a dry run to determine how many vertices we WILL ACTUALLY use.
+	// ____________________________________________________________________________
+
+	real TotalArea = PI * (DOMAIN_OUTER_RADIUS*DOMAIN_OUTER_RADIUS - INNER_A_BOUNDARY * INNER_A_BOUNDARY) / 16.0;
+	real NUM_VERTICES_PER_CM_SQ = ((real)NUMBER_OF_VERTICES_AIMED) / TotalArea;
+
+	iRow = 0;
+	// PREVIOUS VERSION:
+	//	spacing = sqrt((1.0/(real)NUM_VERTICES_PER_CM_SQ)*TWOOVERSQRT3); 
+	//	r_spacing = spacing*SQRT3OVER2; // equilateral triangles
+
+	// ---------------------------------------------------------------
+
+	// Expect [0.5*(R1+R2)*(pi/8)/r_spacing]*[(R2-R1)/spacing + 1] = num of vertices obtained
+	// Note (R1+R2)(R2-R1) = (R2*R2-R1*R1)
+
+	// OLD, wrong:
+	//	r_spacing = sqrt(3.0/16.0 + TotalArea*SQRT3OVER2/(real)NUMBER_OF_VERTICES_AIMED) - SQRT3OVER2*0.5;
+
+	const int ROW_INC_FREQ = 6;
+
+	f64 temp = 0.5*(PI / 16.0)*(DOMAIN_OUTER_RADIUS + INNER_A_BOUNDARY) / (real)NUMBER_OF_VERTICES_AIMED;
+	r_spacing = sqrt(temp*temp + SQRT3OVER2 * TotalArea / (real)NUMBER_OF_VERTICES_AIMED) + temp;
+
+	spacing = r_spacing / SQRT3OVER2;
+
+	// Expecting then? Number of rows ~ sqrt((num_verts_aimed)/TotalArea
+
+	// First fill in rows from INNER_A_BOUNDARY TO REVERSE_ZCURRENT_RADIUS;
+	// then add more rows to get us near to the insulator; stop at 1/2 distance from it;
+	// then add the domain vertices, again starting from 1/2 a row above the insulator.
+
+	// 06/07/2017:
+	// For offset velocities, we really want z current to be halfway between two rows of vertices.
+	// 
+
+	f64 rAim = REVERSE_ZCURRENT_RADIUS - r_spacing * 0.5; // so it goes through middle of triangles - tick
+
+	numRow1 = (int)((rAim - INNER_A_BOUNDARY) / r_spacing); // too few - squeeze out
+	if ((rAim - INNER_A_BOUNDARY) / r_spacing - (real)numRow1 > 0.5) numRow1++; // squeeze in instead
+	r_use1 = (rAim - INNER_A_BOUNDARY) / (real)numRow1;
+
+	numVertices = 0;
+
+	r = INNER_A_BOUNDARY;
+	InnermostFrillCentroidRadius = r - r_use1 * 0.5;
+
+	// WE ALTER THE FOLLOWING SO THAT WE ADD 2 POINTS EVERY 2 ROWS
+	// KEEPING HORIZONTAL SYMMETRY SO THAT WE CAN DEBUG HORIZONTAL SYMMETRY.
+
+	numRowprev = (int)(FULLANGLE*r / spacing) + 1;
+	if (numRowprev % 2 == 1) numRowprev--;
+	// always even number in row
+
+	for (iRow = 0; iRow <= numRow1; iRow++)
+	{
+		numRow[iRow] = numRowprev;
+		if ((iRow > 0) && (iRow % ROW_INC_FREQ == 0))
+		{
+			numRow[iRow]+=2;
+			numRowprev+=2;
+		};
+
+		numVertices += numRow[iRow];
+		r_row[iRow] = r; // for temporary use
+		r += r_use1;
+	}; // numRow1 is the row at rAim = REVERSE_ZCURRENT_RADIUS - r_spacing*0.5
+
+	numEndZCurrentRow = numVertices - 1; // the previous one.
+	numStartZCurrentRow = numVertices - numRow[numRow1];
+	// THIS WILL HAVE TO BE CHANGED IF WE CHANGE THE NUMBER IN EACH ROW.
+	// MAYBE ONLY ADJUST DOMAIN.
+
+	// numRow1 is the row below ReverseZCurrent Radius.
+
+	// Following: alternative way July2017: ensure we go to + r_spacing to take us across Reverse Jz radius.
+
+	r -= r_use1;
+	r += r_spacing;
+
+	R_aim = DEVICE_RADIUS_INSULATOR_OUTER - 0.5*r_spacing;
+	numRow2 = (int)((R_aim - r) / r_spacing); // number of FURTHER rows to reach R_aim
+	if (((R_aim - r) / r_spacing) - (real)numRow2 > 0.5) numRow2++;
+	// Now stretch them:
+	r_use2 = (DEVICE_RADIUS_INSULATOR_OUTER - r) / (((real)numRow2) + 0.5); // numRow2+0.5 actual amount of rows to reach DRIO from r
+	numRow2++; //include the row we already stepped forward.
+
+	for (iRow = numRow1 + 1; iRow <= numRow1 + numRow2; iRow++) // 0,1,2,3,4=numRow1 , 5, 6,7,8,9 [numRow2++ == 5]
+	{
+		numRow[iRow] = numRowprev; 
+		if (iRow % ROW_INC_FREQ == 0)
+		{
+			numRow[iRow]+=2;
+			numRowprev+=2;
+		};
+		numVertices += numRow[iRow];
+		r_row[iRow] = r;
+		r += r_use2;
+	}; // numRow1+numRow2 is the last row inside the ins.
+
+	   // Domain rows:
+	   //	spacing = sqrt((1.0/(real)NUM_VERTICES_PER_CM_SQ)*TWOOVERSQRT3); 
+	   //	r_spacing = spacing*SQRT3OVER2; // equilateral triangles
+	   // Why did we ever do that????
+
+	   // A sensible idea: refresh r_spacing from here on out to try to fit the remaining number of vertices.
+	   // (We could do it every row.)
+
+	r = DEVICE_RADIUS_INSULATOR_OUTER + r_spacing * 0.5;
+
+	int numUse = (int)((DOMAIN_OUTER_RADIUS - r) / r_spacing); // excludes 0th row
+	real r_use3 = (DOMAIN_OUTER_RADIUS - r) / numUse;
+
+	for (i = 0; //r < DOMAIN_OUTER_RADIUS; r += r_use3)
+		i <= numUse; i++)
+	{
+		numRow[iRow] = numRowprev;
+		if (iRow % ROW_INC_FREQ == 0) numRow[iRow]+=2;
+		numRowprev = numRow[iRow];
+		numVertices += numRow[iRow];
+
+		r_row[iRow] = r;
+		r += r_use3;
+		iRow++;
+	};
+
+	numRows = iRow;
+	Outermost_r_achieved = r - r_use3; // should now be DOMAIN_OUTER_RADIUS. 	
+	OutermostFrillCentroidRadius = r - r_use3 * 0.5;
+	// Used for Lap A calculating from A_frill but not for major area calc.
+
+	// old:
+	// This is giving disagreement of areas: major areas think they
+	// include out to this centroid whereas minor areas take frill area = 0.
+
+	// ##################################
+
+	// Now go over and increment / decrement each row to try to get the exact number of vertices.
+	// printf("Outermost_r_achieved %1.10E r_row[0] %1.10E\n",r-r_use3,r_row[0]);
+
+	printf("numVertices %d NUM_AIMED %d ... \n", numVertices, NUMBER_OF_VERTICES_AIMED);
+
+	// AAGH! We have to hit the NUMBER OF VERTICES AIMED.
+
+	// Clever recoding would avoid going through and doing all these divides:
+	while (numVertices > NUMBER_OF_VERTICES_AIMED) {
+		printf("numVertices %d", numVertices);
+		// change numRow from numRow1+1 onward.
+		f64 density, highdens = 0.0;
+		long iHigh = 0;
+		for (i = numRow1 + 1; i < numRows; i++) // if we adjust more-inner rows, then we'd have to change StartZCurrentRow
+		{
+			density = ((real)numRow[i]) / r_row[i];
+			if (density > highdens) {
+				highdens = density;
+				iHigh = i;
+			}
+		}
+		numRow[iHigh]-=2;
+		numVertices-=2;
+		printf("iHigh %d numRow[iHigh] %d \n", iHigh, numRow[iHigh]);
+		
+	};
+
+	while (numVertices < NUMBER_OF_VERTICES_AIMED) {
+		f64 density, lowdens = 1.0e100;
+		long iLow = 0;
+		for (i = numRow1 + 1; i < numRows; i++)
+		{
+			density = ((real)numRow[i]) / r_row[i];
+			if (density < lowdens) {
+				lowdens = density;
+				iLow = i;
+			}
+		}
+		numRow[iLow]+=2;
+		numVertices+=2;
+		printf("iLow %d numRow[iLow] %d \n", iLow, numRow[iLow]);
+	};
+
+	// ##################################################
+
+	numInnermostRow = numRow[0]; // store
+	numOutermostRow = numRow[numRows - 1]; // store
+
+										   // PREVIOUS VERS:
+										   //numTrianglesAllocated = (long)(2.02*(real)(numVertices+numRows
+										   //	+ numRow[0] + numRow[numRows-1])); 	
+	if (numVertices != NUMBER_OF_VERTICES_AIMED) {
+		printf("error: numVertices %d NUM_AIMED %d \n",
+			numVertices, NUMBER_OF_VERTICES_AIMED);
+		getch();
+	}
+
+	numTrianglesAllocated = 2 * numVertices;
+
+	// Try to ALLOCATE:	
+
+#ifdef DYNAMIC_MEMORY
+
+	X = new Vertex[numVertices];
+	if (X == 0) {
+		printf("allocation error: X in object %d \n", token); getch();
+		return 1;
+	}
+	else {
+		INT64 address1 = (INT64)(&(X[0]));
+		INT64 address2 = (INT64)(&(X[numVertices]));
+		INT64 difference = address2 - address1;
+		INT64 est = numVertices * sizeof(Vertex);
+		printf("Allocated %d vertices. sizeof(Vertex) = %d .\n"
+			"NUM*sizeof = %I64d. Allocated %I64d bytes.\n",
+			numVertices, sizeof(Vertex), est, difference);
+	};
+	int ttt = sizeof(Triangle);
+	INT64 howmuch = ((INT64)ttt)*numTrianglesAllocated;
+
+	T = new Triangle[numTrianglesAllocated];
+	if (T == 0) {
+		printf("allocation error: T in object %d \n", token); getch();
+		return 2;
+	}
+	else {
+		INT64 address1 = (INT64)(&(T[0]));
+		INT64 address2 = (INT64)(&(T[numTrianglesAllocated]));
+		INT64 difference = address2 - address1;
+		INT64 est = numTrianglesAllocated * sizeof(Triangle);
+		printf("Allocated %d triangles. sizeof(Triangle) = %d .\n"
+			"NUM*sizeof = %I64d. Allocated %I64d bytes.\n",
+			numTrianglesAllocated, sizeof(Triangle), est, difference);
+	};
+	pData = new plasma_data[NMINOR];
+	if (pData == 0) {
+		printf("allocation error: pData in object %d \n", token); getch();
+		return 2;
+	}
+	else {
+		printf("Allocated pData.\n");
+	};
+#endif
+
+	// _____________________________________________________________________________
+	// Now place the vertices: 
+	// _____________________________________________________________________________
+
+	iVertex = 0;
+	vert = &(X[0]);
+	r = INNER_A_BOUNDARY;
+	Innermost_r_achieved = r;
+	numInnerVertices = 0;
+	numDomainVertices = 0;
+	Xdomain = X;
+
+	for (iRow = 0; iRow < numRows; iRow++)
+	{
+		printf("iRow %d numRow %d numRow1+numRow2 %d numRows %d \n", iRow, numRow[iRow], numRow1 + numRow2, numRows);
+
+		r = r_row[iRow];
+
+		if (iRow == numRows - 1) StartAvgRow = iVertex;
+
+		theta_spacing = FULLANGLE / (real)numRow[iRow]; // roughly
+		real theta_aim;
+
+			// Ways to get symmetric:
+			// if there is a gap at the edge, then we need a gap in the middle
+			// if there is a point in the middle, we need an extra point at the edge.
+		// The edge point belongs to the 'left half', the middle point to the 'right half'.
+		if (iRow % 2 == 0) {
+			theta = -HALFANGLE + 0.5*theta_spacing;
+			theta_aim = -0.5*theta_spacing;
+		}
+		else {
+			theta = -HALFANGLE + 0.01*theta_spacing;
+			theta_aim = -theta_spacing; // in this case we fitted half the points into left half;
+		};
+		theta_spacing = (theta_aim - theta) / (real)(numRow[iRow] / 2 - 1);
+		
+		for (i = 0; i < numRow[iRow]/2; i++) // say numRow == 100, go 0 through 49
+		{
+			x = -r * cos(theta + PI * 0.5);
+			y = r * sin(theta + PI * 0.5);
+
+			vert->pos.x = x;
+			vert->pos.y = y;
+
+			if (iRow == 0) {
+				vert->flags = CONCAVE_EDGE_VERTEX; // == INNERMOST
+			}
+			else {
+				if (iRow == numRows - 1)
+				{
+					vert->flags = CONVEX_EDGE_VERTEX; // == OUTERMOST
+				}
+				else {
+					if (iRow <= numRow1 + numRow2) {
+						vert->flags = INNER_VERTEX;
+					}
+					else {
+						vert->flags = DOMAIN_VERTEX;
+					};
+				};
+			};
+			// Rather than creating a flag for reverse z current, just
+			// remember which row and where it starts and ends.
+			++vert;
+			++iVertex;
+			if (iRow <= numRow1 + numRow2) {
+				numInnerVertices++;
+				Xdomain++;
+			}
+			else {
+				numDomainVertices++;
+			};
+			theta += theta_spacing;
+		};
+		Vertex * pOppvert = vert - 1; // the most recent one placed
+
+		for (; i < numRow[iRow]; i++) // say numRow == 100, go 50 through 99
+		{
+			if (iRow % 2 == 0) {
+				vert->pos.x = -pOppvert->pos.x;
+				vert->pos.y = pOppvert->pos.y;
+				--pOppvert;
+			} else {
+				if (i == numRow[iRow] / 2) {
+					vert->pos.x = 0.0;
+					vert->pos.y = r;
+				} else {
+					vert->pos.x = -pOppvert->pos.x;
+					vert->pos.y = pOppvert->pos.y;
+					--pOppvert;
+				};
+			};
+
+			if (iRow == 0) {
+				vert->flags = CONCAVE_EDGE_VERTEX; // == INNERMOST
+			}
+			else {
+				if (iRow == numRows - 1)
+				{
+					vert->flags = CONVEX_EDGE_VERTEX; // == OUTERMOST
+				}
+				else {
+					if (iRow <= numRow1 + numRow2) {
+						vert->flags = INNER_VERTEX;
+					}
+					else {
+						vert->flags = DOMAIN_VERTEX;
+					};
+				};
+			};
+			// Rather than creating a flag for reverse z current, just
+			// remember which row and where it starts and ends.
+			++vert;
+			++iVertex;
+			if (iRow <= numRow1 + numRow2) {
+				numInnerVertices++;
+				Xdomain++;
+			}
+			else {
+				numDomainVertices++;
+			};
+			theta += theta_spacing;
+		};
+	};
+
+	if (iVertex != numVertices) {
+		printf("summat wrong. iVertex %d numVertices %d \n", iVertex, numVertices);
+		getch();
+	};
+
+	// ************************************************************************************
+	// Now proceed to create triangles between all the rows of vertices.
+	// Need to have algorithm to walk along the row above until time to walk below.
+	// ************************************************************************************
+
+	iRow = 0;
+	iVertexLowFirst = 0;
+	int top_circled, bot_circled, top_advance;
+	real gradient1, gradient2, anglenext, anglenextlow,
+		anglelow, angle;
+	Vertex * pNext, *pNextLow;
+	iTri = 0;
+	pTri = T;
+
+	// First let's put lowest frills, which we could not avoid.
+	int iNext;
+	iVertex = 0;
+	for (iTri = 0; iTri < numRow[0]; iTri++)
+	{
+		// corners 0,1 of a frill must be actual vertices.
+		SetTriangleVertex(0, pTri, X + iVertex);
+		iVertex++;
+		if (iVertex == numRow[0]) iVertex = 0;
+		SetTriangleVertex(1, pTri, X + iVertex);
+		//	SetTriangleVertex(2,pTri,X + iVertex); // not used, hopefully
+		pTri->cornerptr[2] = pTri->cornerptr[1];
+		pTri->u8domain_flag = INNER_FRILL;
+		++pTri;
+	}
+
+	numReverseJzTris = 0;
+	for (iRow = 0; iRow < numRows - 1; iRow++)
+		// why -1 ? Because this is the bottom of the row. 
+	{
+		iVertexFirst = iVertexLowFirst + numRow[iRow];
+		iVertexNextFirst = iVertexFirst + numRow[iRow + 1];
+
+		iVertex = iVertexFirst;
+		iVertexLow = iVertexLowFirst;
+
+		if (iRow == numRow1)     numStartZCurrentTriangles = iTri;
+		if (iRow == numRow1 + 1) numEndZCurrentTriangles = iTri;
+
+		top_circled = 0;
+		bot_circled = 0;
+		while ((bot_circled == 0) || (top_circled == 0))
+		{
+
+			if (iTri >= numTrianglesAllocated)
+			{
+				printf("Ran out of triangles!\n""iVertex = %d, iTri = %d, iRow = %d. NumRows = %d\n"
+					"numTrianglesAllocated = %d""\nAny key\n",
+					iVertex, iTri, iRow, numRows, numTrianglesAllocated);
+				getch(); return 1;
+			};
+
+			gradient1 = (X + iVertexLow)->pos.x / (X + iVertexLow)->pos.y;
+			gradient2 = (X + iVertex)->pos.x / (X + iVertex)->pos.y;
+
+			top_advance = (gradient1 > gradient2) ? 1 : 0;
+			// Advance top iff lower one is to right of it.
+			// That might not be what we want.
+
+			// We might prefer to choose which one based on whether the new point will be 
+			// closer azimuthally to the other (existing) point.
+
+			// Still we can easily screw ourselves up here.
+			// Try putting the following checks __first__ :
+
+			if (bot_circled) {
+				top_advance = 1; // keep going and join up circle
+			}
+			else {
+				if (top_circled) {
+					top_advance = 0;
+				}
+				else {
+					// Neither circle is completed so I guess it is all right to look forward
+					// If this is the last point in the row then we should look forward to the first 
+					// of this row.
+
+					// Then we can compare azimuths and see which advance is more desirable to form
+					// this triangle.
+					if (iVertex < iVertexNextFirst - 1) {
+						pNext = X + iVertex + 1;
+						anglenext = atan2(pNext->pos.y, pNext->pos.x);
+					}
+					else {
+						pNext = X + iVertexFirst;
+						anglenext = atan2(pNext->pos.y, pNext->pos.x) - FULLANGLE; // make contiguous
+					};
+					if (iVertexLow < iVertexFirst - 1) {
+						pNextLow = X + iVertexLow + 1;
+						anglenextlow = atan2(pNextLow->pos.y, pNextLow->pos.x);
+					}
+					else {
+						pNextLow = X + iVertexLowFirst;
+						anglenextlow = atan2(pNextLow->pos.y, pNextLow->pos.x) - FULLANGLE;
+					};
+					angle = atan2((X + iVertex)->pos.y, (X + iVertex)->pos.x);
+					anglelow = atan2((X + iVertexLow)->pos.y, (X + iVertexLow)->pos.x);
+
+					if (angle < anglelow) {
+						if (anglenext < anglenextlow) {
+							top_advance = 0;
+							// I think all inequalities were wrong way round here.
+						}
+						else {
+							// not a no-brainer:
+							// short distance is at top. See whether next top point belongs to the existing
+							// base point or the one following.
+							if (anglelow - anglenext < angle - anglenextlow)
+							{
+								// those should be the positive way round.
+								top_advance = 1; // less distance from here to next top
+							}
+							else {
+								top_advance = 0;
+							};
+						};
+					}
+					else {
+						if (anglenextlow < anglenext) {
+							top_advance = 1;
+						}
+						else {
+							// not a no-brainer:
+							if (anglelow - anglenext < angle - anglenextlow)
+							{
+								top_advance = 1;
+							}
+							else {
+								top_advance = 0;
+							};
+						};
+					};
+				};
+			};
+
+			if (top_advance) {
+				// check what this routine says:
+				SetTriangleVertex(2, pTri, X + iVertexLow);
+				SetTriangleVertex(0, pTri, X + iVertex);
+
+				++iVertex;
+
+				if (iVertex == iVertexNextFirst)
+				{
+					iVertex = iVertexFirst; // scroll back to start of upper row
+					top_circled = 1;
+				};
+				SetTriangleVertex(1, pTri, X + iVertex);
+
+			}
+			else {
+				// make a triangle with base on the floor:									
+				SetTriangleVertex(2, pTri, X + iVertex);
+				SetTriangleVertex(0, pTri, X + iVertexLow);
+				++iVertexLow;
+				if (iVertexLow == iVertexFirst)
+				{
+					iVertexLow = iVertexLowFirst; // scroll back to start of upper row
+					bot_circled = 1;
+				};
+				SetTriangleVertex(1, pTri, X + iVertexLow);
+			};
+
+			// Triangle flags:
+
+			if (iRow < numRow1 + numRow2)
+			{
+				pTri->u8domain_flag = OUT_OF_DOMAIN;
+				if (iRow == numRow1)
+				{
+					pTri->u8domain_flag = REVERSE_JZ_TRI;
+					numReverseJzTris++;
+				}
+			}
+			else {
+				if (iRow == numRow1 + numRow2)
+				{
+					pTri->u8domain_flag = CROSSING_INS;
+				}
+				else {
+					pTri->u8domain_flag = DOMAIN_TRIANGLE;
+				};
+			};
+
+			++pTri;
+			++iTri;
+		}; // end while
+
+		iVertexLowFirst = iVertexFirst; // move to next row and everything else hangs on just this.
+	}; // next iRow
+
+	   // Now go around again for outer frills:
+	iVertex = iVertexLowFirst;
+	for (int iExtra = 0; iExtra < numRow[numRows - 1]; iExtra++)
+	{
+		SetTriangleVertex(0, pTri, X + iVertex);
+		iVertex++;
+		if (iVertex == numVertices) iVertex = iVertexLowFirst;
+		SetTriangleVertex(1, pTri, X + iVertex);
+		//	SetTriangleVertex(2,pTri,X + iVertex);
+		pTri->cornerptr[2] = pTri->cornerptr[1];
+
+		pTri->u8domain_flag = OUTER_FRILL;
+		++pTri;
+		++iTri;
+	}
+
+
+
+
+	numTriangles = iTri;
+
+	printf("Triangles used %d, Triangles allocated %d \n", numTriangles, numTrianglesAllocated);
+	if (numTriangles != numTrianglesAllocated) { getch(); getch(); };
+
+	// 5. Populate triangle neighbour list
+	// ____________________________________
+
+	// Can now use vertex triangle membership arrays to do this.
+
+	pTri = T;
+	for (iTri = 0; iTri < numTriangles; iTri++)
+	{
+		if ((pTri->u8domain_flag == INNER_FRILL) || (pTri->u8domain_flag == OUTER_FRILL))
+		{
+			pTri->neighbours[2] = ReturnPointerToOtherSharedTriangle(pTri->cornerptr[0], pTri->cornerptr[1], pTri);
+			pTri->neighbours[0] = pTri->neighbours[2];
+			pTri->neighbours[1] = pTri->neighbours[2];
+		}
+		else {
+			iTri = iTri;
+			pTri->neighbours[0] = ReturnPointerToOtherSharedTriangle(pTri->cornerptr[1], pTri->cornerptr[2], pTri);
+			pTri->neighbours[1] = ReturnPointerToOtherSharedTriangle(pTri->cornerptr[0], pTri->cornerptr[2], pTri);
+			pTri->neighbours[2] = ReturnPointerToOtherSharedTriangle(pTri->cornerptr[0], pTri->cornerptr[1], pTri);
+		};
+		// This function now modified to return itself if there is no other shared tri.
+		pTri++;
+	};
+
+	InitialisePeriodic(); // for initial mesh, position-based way is fine
+
+	pTri = T;
+	for (iTri = 0; iTri < numTriangles; iTri++)
+	{
+		pTri->area = pTri->GetArea();
+		// pTri->RecalculateEdgeNormalVectors(true); 
+		// True needed for the following routine:		
+		// pTri->CalculateCircumcenterAndForceToInterior(pTri->cc);
+
+		// WE DO NOT USE CIRCUMCENTERS ... REPEAT ...
+		// This is because we think the motion of a cell corner should
+		// be based on linear v, not move as the focus of a lens.
+
+		pTri->RecalculateCentroid(this->InnermostFrillCentroidRadius,
+			this->OutermostFrillCentroidRadius); // for ins-crossing tri, cent lies in centre of insulator intersection.
+
+												 // Usually want false:
+		pTri->RecalculateEdgeNormalVectors(false);
+		++pTri;
+	};
+
+	// assumes u8EdgeFlag populated: 
+	RefreshVertexNeighboursOfVerticesOrdered();  // -- ?
+	this->Recalculate_TriCentroids_VertexCellAreas_And_Centroids();
+
+	// 
+
+	EnsureAnticlockwiseTriangleCornerSequences_SetupTriMinorNeighboursLists();
+	SetupMajorPBCTriArrays();
+
+	InitialPopulate();
+
+	//==========================================================================================
+
+	// Now do same for each coarse 'equilateral' mesh:
+	//for (i = 0; i < NUM_COARSE_LEVELS; i++)
+	//{
+	//	CreateEquilateralAuxMesh(i);		
+	//};
+
+#ifdef DIRICHLET_LU
+	// Don't do Dirichlet LU as it gives completely different answers.
+	// Instead have to accept that a constant may be added to solution.?
+	this->Coarsest.Invoke(numNonBackAuxVertices[NUM_COARSE_LEVELS - 1] + 1);
+	this->Coarsestphi.Invoke(numAuxVertices[NUM_COARSE_LEVELS - 1] + 1);
+#else
+
+	this->Coarsest.Invoke(numAuxVertices[NUM_COARSE_LEVELS - 1] + 1);
+	this->LUphi.Invoke(numAuxVertices[NUM_COARSE_LEVELS - 1]);
+
+#endif
+	return 0;
+}
+int TriMesh::InitialiseOriginal(int token)
+{
 	real x,y,rr,r;
 	long i,iRow,iTri;
 	real spacing, theta_spacing, theta, r_spacing;
@@ -5728,9 +6453,9 @@ void TriMesh::SetVerticesAndIndices(VertexPNT3 * vertices[],			// better to do i
 			pTri->PopulatePositions(u[0],u[1],u[2]);
 
 			if (	(GlobalCutaway == false) || 
-					(	(u[0].x/u[0].y > -GRADIENT_X_PER_Y*0.5)
-					&&	(u[1].x/u[1].y > -GRADIENT_X_PER_Y*0.5)
-					&&	(u[2].x/u[2].y > -GRADIENT_X_PER_Y*0.5)
+					(	(u[0].x/u[0].y > CUTAWAYANGLE)
+					&&	(u[1].x/u[1].y > CUTAWAYANGLE)
+					&&	(u[2].x/u[2].y > CUTAWAYANGLE)
 					)
 					)
 			{
@@ -5961,14 +6686,14 @@ long TriMesh::GetVertsRightOfCutawayLine_Sorted(long * VertexIndexArray,
 		// We want this one if and only if, it is to the right of the 
 		// cutaway line but has neighbours to the left of it.
 		
-		if ((pVertex->pos.x/pVertex->pos.y > -0.5*GRADIENT_X_PER_Y)
+		if ((pVertex->pos.x/pVertex->pos.y > CUTAWAYANGLE)
 			&& (pVertex->pos.x < 0.0)) {
 
 			neigh_len = pVertex->GetNeighIndexArray(izNeighs);
 			for (int i = 0; i < neigh_len; i++)
 			{
 				pNeigh = X + izNeighs[i];
-				if (pNeigh->pos.x/pNeigh->pos.y < -0.5*GRADIENT_X_PER_Y) {
+				if (pNeigh->pos.x/pNeigh->pos.y < CUTAWAYANGLE) {
 					// count this vertex
 					VertexIndexArray[iCaret] = iVertex;
 					radiusArray[iCaret] = pVertex->pos.modulus();
@@ -6088,7 +6813,7 @@ void TriMesh::ReturnL5Data(int offset, real * pmax, real * pmin, bool bDisplayIn
 		++pdata;
 	};
 
-	printf("numplus %d ",numplus);
+	//printf("numplus %d ",numplus);
 
 	if (numplus > 10)
 	{
@@ -6166,7 +6891,7 @@ void TriMesh::ReturnL5Data(int offset, real * pmax, real * pmin, bool bDisplayIn
 		};
 	};
 		
-	printf("L5+ %1.8E L5- %1.8E\n",*pmax,*pmin);
+	//printf("L5+ %1.8E L5- %1.8E\n",*pmax,*pmin);
 
 	// Aesthetics:
 	*pmax *= 1.11;
@@ -6546,6 +7271,11 @@ int Vertex::Save(FILE * fp)
 	long iTri;
 
 	if (fwrite(this, sizeof(Vertex), 1, fp) != 1) return 100000;
+	// shallow copy:
+	// this assumes we have static arrays only
+	// why did that not hold for Triangle?
+	// maybe because pointers would be no longer valid -- a good reason we should never have used them.
+
 	/*
 	if (fwrite(&pos,sizeof(Vector2),1,fp) != 1) return 1;	
 	if (fwrite(&centroid,sizeof(Vector2),1,fp) != 1) return 1;	
@@ -6847,16 +7577,24 @@ int TriMesh::SaveText(const char * filename)
 
 	FILE * fp = fopen(szString,"w");
 	if (fp == 0) { printf(" FILE OPEN FAILED %s", filename); return 1; };
-	plasma_data * pdata = pData;
+	plasma_data * pdata = pData+1715;
 	plasma_data data;
-	for (iMinor = 0; iMinor < NUMTRIANGLES; iMinor++)
+	Triangle * pTri;
+	for (iMinor = 1715; iMinor <= 2889; iMinor++)
 	{
 		memcpy(&data, pdata, sizeof(plasma_data));
-		if ((data.pos.modulus() > 3.5) && (data.pos.modulus() < 3.65))
-			fprintf(fp, "%d x %1.12E y %1.12E Az %1.14E Azdot %1.14E vez %1.14E n %1.14E "
-				" Te %1.14E temp.x %1.14E \n",
-				iMinor,	data.pos.x,data.pos.y,data.Az,data.Azdot,data.vez,data.n,
-				data.Te,data.temp.x);
+
+		//if (data.pos.x*data.pos.x+data.pos.y*data.pos.y < 3.44*3.44)
+		{
+			memcpy(&data, pdata, sizeof(plasma_data));
+			fprintf(fp, "%d x %1.14E y %1.14E r %1.14E Az %1.14E Azdot %1.14E "
+				"  temp.x %1.14E temp.y %1.14E ",
+				iMinor, data.pos.x, data.pos.y, data.pos.modulus(), data.Az, data.Azdot, 
+				data.temp.x,data.temp.y);
+			pTri = T + iMinor;
+			fprintf(fp, "%d %d %d | %d %d %d \n", pTri->cornerptr[0] - X, pTri->cornerptr[1] - X, pTri->cornerptr[2] - X,
+				pTri->neighbours[0] - T, pTri->neighbours[1] - T, pTri->neighbours[2] - T);
+		};
 		++pdata;
 	};
 	fclose(fp);
@@ -6864,24 +7602,26 @@ int TriMesh::SaveText(const char * filename)
 	sprintf(szString, "%sVERTS.txt",filename);
 	fp = fopen(szString, "w");
 	if (fp == 0) { printf(" FILE OPEN FAILED %s", filename); return 1; };
-	Vertex * pVertex = X;
+	Vertex * pVertex = X + 799;
+	pdata = pData + BEGINNING_OF_CENTRAL + 799;
 	long tri_len, izTri[128];
-	for (; iMinor < NMINOR; iMinor++)
+	for (iMinor = BEGINNING_OF_CENTRAL+799; iMinor < BEGINNING_OF_CENTRAL+2000; iMinor++)
 	{
 		memcpy(&data, pdata, sizeof(plasma_data));
-		if ((data.pos.modulus() > 3.5) && (data.pos.modulus() < 3.65))
+
+		//if (data.pos.x*data.pos.x+data.pos.y*data.pos.y < 3.44*3.44)
 		{
-			fprintf(fp, "%d x %1.12E y %1.12E Az %1.14E Azdot %1.14E vez %1.14E n %1.14E"
-				" Te %1.14E temp.x %1.14E ",
-				iMinor, data.pos.x, data.pos.y, data.Az, data.Azdot, data.vez, data.n,
-				data.Te, data.temp.x);
+			memcpy(&data, pdata, sizeof(plasma_data));
+			 
+			fprintf(fp, "%d x %1.14E y %1.14E r %1.14E Az %1.14E Azdot %1.14E "
+				" temp.x %1.14E temp.y %1.14E | ",
+				iMinor, data.pos.x, data.pos.y, data.pos.modulus(), data.Az, data.Azdot, 
+				 data.temp.x,data.temp.y);
 			tri_len = pVertex->GetTriIndexArray(izTri);
-			for (long i = 0; i < tri_len; i++)
-			{
+			for (int i = 0; i < tri_len; i++)
 				fprintf(fp, " %d ", izTri[i]);
-			}
 			fprintf(fp, "\n");
-		}
+		}; 
 		++pdata;
 		++pVertex;
 	};

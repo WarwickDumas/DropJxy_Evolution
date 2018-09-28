@@ -151,8 +151,11 @@ real const PPN_CIRCLE = 1.0/16.0;  // the proportion of a circle for this simula
 #define GRADIENT_X_PER_Y    0.198912367
 
 real const GRADIENT_Y_PER_X = 1.0/GRADIENT_X_PER_Y;
-
+real const CUTAWAYANGLE = -0.005;//-GRADIENT_X_PER_Y * 0.5;
 // reality: cathode rod is 0.47625 cm radius, at 5cm device radius
+// IT DOES NOT LIKE 0!!
+// **Clearly need dimensioned index array to achieve some overlap.**
+// **Fix problem by going to look for numTrianglesTotal[ **
 
 real const n_INITIAL_SD = 0.04; // 400 micron
 real const INITIALnSD = n_INITIAL_SD; // 400 micron
@@ -192,8 +195,10 @@ long const INNERMOST_STEPS = 200;
 // Let's assume we do recalculation of parameters as often as we do recalculation of pressure.
 
 
-real const TIMESTEP = 5.0e-14; 
-// not used
+real const TIMESTEP = 2.0e-12; //
+real const SUBSTEP = 1.0e-13;
+int const SUBCYCLES = 20; // Try instead of 1e-13 and see if different.
+
 
 //long const NUM_VERTICES_PER_CM_SQ = 10000; // 60000; //12000; // use 262144 = 2^18. 2^9 = 512
 //long const NUM_VERTICES_PER_CM_SQ_INSIDE_INS = 9000; // 24000; // 8000;
