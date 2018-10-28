@@ -1678,6 +1678,15 @@ void TriMesh::AccumulateDiffusiveHeatRateAndCalcIonisation(f64 h_use, NTrates NT
 
 			nu_iHeart1 = 0.75*nu_in_visc + 0.8*nu_ii - 0.25*(nu_in_visc*nu_ni_visc) / (3.0*nu_ni_visc + nu_nn_visc1);
 
+			// Why did I go and do it this way? 
+			// nu depends log-linearly on n so why are we averaging n, we could
+			// just average nu???
+
+			// OK this was a stupid way round??
+			// We actually use: nu_eHeart, nu_iHeart, nu_nn_visc. Is that correct?
+			// B is mostly smooth and flattish.
+
+
 			for (i = 0; i < neigh_len; i++)
 			{
 				inext = i + 1; if (inext == neigh_len) inext = 0;
@@ -2473,7 +2482,7 @@ void TriMesh::Create_momflux_integral_grad_nT_and_gradA_LapA_CurlA_on_minors(
 	three_vec3 AdditionRateNv[NMINOR])
 {
 	// Inputs:
-	// data inc Az, pos
+	// data inc Az, pos 
 	// MajorTriPBC
 	// n_shards
 	// p_overall_v
@@ -3148,7 +3157,7 @@ void TriMesh::Create_momflux_integral_grad_nT_and_gradA_LapA_CurlA_on_minors(
 			Our_integral_grad_Te.x = 0.0;
 			Our_integral_grad_Te.y = 0.0;
 			Our_integral_Lap_Az = 0.0;
-			AreaMinor = 1.0-12;
+			AreaMinor = 1.0e-12;
 
 			GradAz[iMinor] = Our_integral_grad_Az / AreaMinor;
 			ROCAzduetoAdvection[iMinor] = 0.0;
@@ -4492,7 +4501,7 @@ void TriMesh::Accelerate2018(f64 h_use, TriMesh * pUseMesh, TriMesh * pDestMesh,
 					- (h_use / (2.0*(m_i + m_e)))*(m_n*M_in*nu_in_MT + m_n * M_en*nu_en_MT)*
 					(data_k.vxy - data_k.v_n.xypart() - vn0.xypart());
 
-				denom = 1.0 + (h_use / (2.0*(m_i + m_e)))*(m_n*M_in*nu_in_MT + m_n * M_en*nu_en_MT)*(1 - beta_ne - beta_ni);
+				denom = 1.0 + (h_use / (2.0*(m_i + m_e)))*(m_n*M_in*nu_in_MT + m_n * M_en*nu_en_MT)*(1.0 - beta_ne - beta_ni);
 				vxy0 /= denom;
 				beta_xy_z = (h_use * q / (2.0*c*(m_i + m_e)*denom)) * grad_Az;
 				
@@ -4505,7 +4514,7 @@ void TriMesh::Accelerate2018(f64 h_use, TriMesh * pUseMesh, TriMesh * pDestMesh,
 				{
 					viz0 = data_k.viz
 
-						- h_use * MomAddRate.ion.z / (data_use.n*AreaMinor)
+						+ h_use * MomAddRate.ion.z / (data_use.n*AreaMinor)
 
 						- 0.5*h_use*qoverMc*(2.0*data_k.Azdot
 							+ h_use * ROCAzdot_antiadvect + h_use * c*c*(Lap_Az + TWOPIoverc * q*data_use.n*(data_k.viz - data_k.vez)))
@@ -4513,7 +4522,7 @@ void TriMesh::Accelerate2018(f64 h_use, TriMesh * pUseMesh, TriMesh * pDestMesh,
 				} else {
 					viz0 = data_k.viz
 
-						- h_use * MomAddRate.ion.z / (data_use.n*AreaMinor)
+						+ h_use * MomAddRate.ion.z / (data_use.n*AreaMinor)
 
 						- 0.5*h_use*qoverMc*(2.0*data_k.Azdot
 							+ h_use * ROCAzdot_antiadvect + h_use * c*c*( TWOPIoverc * q*data_use.n*(data_k.viz - data_k.vez)))
@@ -4545,7 +4554,7 @@ void TriMesh::Accelerate2018(f64 h_use, TriMesh * pUseMesh, TriMesh * pDestMesh,
 				{
 					vez0 = data_k.vez
 
-						- h_use * MomAddRate.elec.z / (data_use.n*AreaMinor)
+						+ h_use * MomAddRate.elec.z / (data_use.n*AreaMinor)
 
 						+ h_use * 0.5*qovermc*(2.0*data_k.Azdot
 							+ h_use * ROCAzdot_antiadvect
@@ -4557,7 +4566,7 @@ void TriMesh::Accelerate2018(f64 h_use, TriMesh * pUseMesh, TriMesh * pDestMesh,
 				else {
 					vez0 = data_k.vez
 
-						- h_use * MomAddRate.elec.z / (data_use.n*AreaMinor)
+						+ h_use * MomAddRate.elec.z / (data_use.n*AreaMinor)
 
 						+ h_use * 0.5*qovermc*(2.0*data_k.Azdot
 							+ h_use * ROCAzdot_antiadvect

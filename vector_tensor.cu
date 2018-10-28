@@ -7,8 +7,9 @@
 // for #define real, qd_or_d
 
 #define real double
+#define __CUDACC__
 
-int const MAX_TRIS_PER_VERTEX = 20;  
+int const MAX_TRIS_PER_VERTEX = 12;  
 #ifdef __CUDACC__
 
 #define QUALIFIERS __host__ __device__ __forceinline__ 

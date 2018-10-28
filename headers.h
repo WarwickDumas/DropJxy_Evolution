@@ -3,12 +3,12 @@
 
 
 // use qd as include, not as part of an library, so we need to define QD_API empty
-#include "qd/qd_config.h"
-#undef QD_API
-#define QD_API
-#include "qd/dd_real.h"
-//#include "qd/qd_real.h"
-#include "qd/fpu.h"
+//#include "qd/qd_config.h"
+//#undef QD_API
+//#define QD_API
+//#include "qd/dd_real.h"
+////#include "qd/qd_real.h"
+//#include "qd/fpu.h"
 
 //#include "qd/src/qd_const.cpp"
 //#include "qd/src/qd_real.cpp"

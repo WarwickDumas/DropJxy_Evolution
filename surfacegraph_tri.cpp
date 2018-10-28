@@ -2,13 +2,17 @@
 #ifndef surfacegraph2_cpp
 #define surfacegraph2_cpp
 
-// DrawableTex2D copy paste:
+#include <time.h>
+
+#include "headers.h"
 #include "d3d.h"
 #include "surfacegraph_tri.h"
 #include "FFxtubes.h"
 #include "globals.h"
 
 #include "mesh.h"
+#include "mesh.cpp"
+#include "meshutil.cpp"
 
 //extern FixedMesh Fixed;
 extern int GlobalWhichLabels;

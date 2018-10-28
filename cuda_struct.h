@@ -7,30 +7,8 @@
 
 // vector_tensor.cu probably going to be needed
 #include "vector_tensor.cu"
-#include <conio.h>
-
-#define MAXNEIGH    16  // large number needed to cater for links on aux mesh if we do not minimize connections.
-#define MAXNEIGH_d  16
-
-// 12*32768*5 = 2MB .. just to keep things in perspective.
-// We should keep the number down just to reduce fetch size.
-// Let's keep it real. nvT is best for our fetches and therefore is best.
-
-long const numTriTiles = 288; // note that there are also centrals
-long const numTilesMajor = 288;
-long const numTilesMinor = 432; // 432 = 288+144
-					// 456*256 = 304*256 + 304*128
-			
-// numTriTiles == numTilesMajor because the two sets are bijective.
-// Then we also have to assign central minors to tiles, twice the size of the major tiles...
-
-long const threadsPerTileMinor = 256;
-long const threadsPerTileMajor = 128; // see about it - usually we take info from minor.
-long const SIZE_OF_MAJOR_PER_TRI_TILE = 128;
-long const SIZE_OF_TRI_TILE_FOR_MAJOR = 256;
-long const BEGINNING_OF_CENTRAL = threadsPerTileMinor*numTriTiles;
-
-
+#include "FFxtubes.h"
+#include "mesh.h"
 
 	// we do not just do the mesh advection every time because
 	// this 
@@ -80,6 +58,34 @@ struct structural {
 
 struct nT {
 	f64 n; f64 T;
+};
+
+struct v4 {
+	f64_vec2 vxy;
+	double viz, vez;
+};
+
+struct nvals {
+	f64 n, n_n;
+};
+struct T2 {
+	f64 Ti, Te;
+};
+struct T3 {
+	f64 Tn, Ti, Te;
+};
+struct AAdot {
+	f64 Az, Azdot;
+};
+
+struct OhmsCoeffs {
+	f64 sigma_e_zz, sigma_i_zz;
+	f64_vec2 beta_xy_z;
+	f64 beta_ne, beta_ni;
+};
+
+struct species3 {
+	f64 n, i, e;
 };
 
 struct Systdata {
@@ -159,6 +165,58 @@ struct Systdata {
 // We need to move these funcs out into a .cu file.
 
 
+
+class cuSyst {
+private:
+	bool bInvoked, bInvokedHost;
+public:
+	long Nverts, Ntris, Nminor;
+	
+	structural * p_info;
+	 
+	 long * p_izTri_vert;
+	 long * p_izNeigh_vert;
+	 char * p_szPBC_vert;   // MAXNEIGH*numVertices
+
+	 long * p_Indexneigh_triminor;
+	 char * p_szPBC_triminor; // 6*numTriangles
+	 LONG3 * p_tri_corner_index;
+	 LONG3 * p_who_am_I_to_corner;
+ 
+	 nvals * p_n_minor;
+	 nvals * p_n_major;
+	 T3 * p_T_minor; 
+	 f64_vec3 * p_v_n;
+	 v4 * p_vie;
+	 AAdot * p_AAdot;
+	 f64_vec3 * p_B;
+
+	 f64 * p_Lap_Az;
+
+	 f64_vec2 * p_overall_v;
+
+	 f64_vec3 * p_MomAdditionRate_ion;
+	 f64_vec3 * p_MomAdditionRate_elec;
+	 f64_vec3 * p_MomAdditionRate_neut;
+
+	 //f64_vec2 * p_pos; // vertex positions are a subset?
+	 // We made structural * p_info assuming if we want pos we also want flags...
+	 
+	 f64 * p_AreaMinor;
+	 f64 * p_AreaMajor;
+	 
+	 
+	cuSyst();
+	int Invoke();
+	int InvokeHost();
+	void SendToHost(const TriMesh * pX);
+	void GetFromHost(const TriMesh * pX);
+	void PerformCUDA_Advance(const cuSyst * pX_target);
+	void ZeroData();
+	~cuSyst();
+};
+
+
 void PerformCUDA_Advance_2 (
 		const Systdata * pX_host, // populate in CPU MSVC routine...
 		long numVerts,
@@ -185,5 +243,15 @@ void PerformCUDA_Advance_and_send_system (
 		const Systdata * pX_host_target
 		);
 void FreeVideoResources ();
+
+__host__ bool Call(cudaError_t cudaStatus, char str[]);
+#define CallMAC(cudaStatus) Call(cudaStatus, #cudaStatus )   
+
+#define Set_f64_constant(dest, src) { \
+		Call(cudaGetSymbolAddress((void **)(&f64address), dest ), \
+			"cudaGetSymbolAddress((void **)(&f64address), dest )");\
+		Call(cudaMemcpy( f64address, &src, sizeof(f64),cudaMemcpyHostToDevice),\
+			"cudaMemcpy( f64address, &src, sizeof(f64),cudaMemcpyHostToDevice) src dest");\
+						}
 
 #endif

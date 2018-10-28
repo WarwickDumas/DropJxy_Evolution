@@ -35,6 +35,36 @@ bool const bScrewPinch = false;
 
 #define DATA_SAVE_FREQUENCY					   100
 
+// Program Mechanics:
+// ==================
+
+#define MAXNEIGH 12 // please keep < 12? It will help.
+
+// 12*32768*5 = 2MB .. just to keep things in perspective.
+// We should keep the number down just to reduce fetch size.
+// Let's keep it real. nvT is best for our fetches and therefore is best.
+
+long const numTriTiles = 288; // note that there are also centrals
+long const numTilesMajor = 288;
+long const numTilesMinor = 432; // 432 = 288+144
+								// 456*256 = 304*256 + 304*128
+
+								// numTriTiles == numTilesMajor because the two sets are bijective.
+								// Then we also have to assign central minors to tiles, twice the size of the major tiles...
+
+long const threadsPerTileMinor = 256;
+long const threadsPerTileMajor = 128; // see about it - usually we take info from minor.
+long const SIZE_OF_MAJOR_PER_TRI_TILE = 128;
+long const SIZE_OF_TRI_TILE_FOR_MAJOR = 256;
+long const BEGINNING_OF_CENTRAL = threadsPerTileMinor*numTriTiles;
+
+long const NUMVERTICES = numTilesMajor*threadsPerTileMajor;//36864; //36000; // particularly applies for polar?
+											 // = 288*128
+
+long const NMINOR = threadsPerTileMinor * numTilesMinor;
+long const NUMVERTICES = threadsPerTileMajor* numTilesMajor;
+long const NUMTRIANGLES = NMINOR - NUMVERTICES;
+
 
 // Model parameters:
 //===============================
@@ -118,8 +148,6 @@ long const POINTS_PER_PLANE = 36864; // To have just under is OK
 // Initially do we want to plan for unused points? Not sure.
 // We can build that it - but we want the total dimensioned to be divisible by 128 etc.
 
-long const NUMBER_OF_VERTICES_AIMED = 36864; //36000; // particularly applies for polar?
-				// = 288*128
 
 
 // For info: horizontal planar area at 2.8cm inner, 5cm outer radius = 3.37cm^2 with 1.18cm^2 inside objects.

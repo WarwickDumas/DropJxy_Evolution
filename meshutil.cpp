@@ -7,8 +7,6 @@
 
 // include here only:
 
-#include "mesh.cpp" // will include "basics.cpp"
-#include "surfacegraph_tri.cpp"
 #include "cppconst.h"
 
 //		This file to contain 4 types of functions:
@@ -218,7 +216,7 @@ void Triangle::GetOuterMedian(Vector2 * pResult, Vertex * pContig)
 		// hang on: this isn't with x^2/2 sigma^2 in exponent -- careful what it integrates to:
 		// 2 sigma^2 = a^2 ; integral of exp(-) is 2 pi sigma^2 = pi a^2
 		
-		long TotalTrisAim = NUMBER_OF_VERTICES_AIMED*2;
+		long TotalTrisAim = NUMVERTICES*2;
 		real AverageMass = TotalMass/((real)TotalTrisAim);
 
 		// Now decide the radius for these innermost tris;
@@ -570,7 +568,7 @@ void Triangle::GetOuterMedian(Vector2 * pResult, Vertex * pContig)
 
 		// Coordinates from - to + horizontally, 0 to max vertically.
 
-		static real const NUMBER_OF_VERTICES = NUMBER_OF_VERTICES_AIMED;
+		static real const NUMBER_OF_VERTICES = NUMVERTICES;
 		
 		// number in square that is x by x, given delta: x^2/(0.866 delta^2)
 		// 36000/x^2 = 1/ 0.866 delta^2
@@ -695,12 +693,12 @@ int TriMesh::Initialise(int token)
 
 	//real const R2 = DOMAIN_OUTER_RADIUS;
 	//real const R1 = INNER_A_BOUNDARY;
-	//Numrows = (int)(0.5 + sqrt(0.25 + ((real)NUMBER_OF_VERTICES_AIMED)*(R2-R1)*8.0*SQRT3/(PI*(R2+R1)));
+	//Numrows = (int)(0.5 + sqrt(0.25 + ((real)NUMVERTICES)*(R2-R1)*8.0*SQRT3/(PI*(R2+R1)));
 	//// Chose too few, so the triangles will be longer and thinner than otherwise.
 	//// Maybe Nrow = 200.99 so we ought to go to the nearer # rows.
 
 	//// azimuthal:
-	//spacing = ((real)Numrows)*PI_OVER_16*(R2+R1)/(real)NUMBER_OF_VERTICES_AIMED;
+	//spacing = ((real)Numrows)*PI_OVER_16*(R2+R1)/(real)NUMVERTICES;
 
 	// Oh dear --- we missed a trick: a row has to be put on REVERSE_ZCURRENT_RADIUS and rows have to be
 	// halfway before and after insulator.
@@ -716,7 +714,7 @@ int TriMesh::Initialise(int token)
 	// ____________________________________________________________________________
 
 	real TotalArea = PI * (DOMAIN_OUTER_RADIUS*DOMAIN_OUTER_RADIUS - INNER_A_BOUNDARY * INNER_A_BOUNDARY) / 16.0;
-	real NUM_VERTICES_PER_CM_SQ = ((real)NUMBER_OF_VERTICES_AIMED) / TotalArea;
+	real NUM_VERTICES_PER_CM_SQ = ((real)NUMVERTICES) / TotalArea;
 
 	iRow = 0;
 	// PREVIOUS VERSION:
@@ -729,12 +727,12 @@ int TriMesh::Initialise(int token)
 	// Note (R1+R2)(R2-R1) = (R2*R2-R1*R1)
 
 	// OLD, wrong:
-	//	r_spacing = sqrt(3.0/16.0 + TotalArea*SQRT3OVER2/(real)NUMBER_OF_VERTICES_AIMED) - SQRT3OVER2*0.5;
+	//	r_spacing = sqrt(3.0/16.0 + TotalArea*SQRT3OVER2/(real)NUMVERTICES) - SQRT3OVER2*0.5;
 
 	const int ROW_INC_FREQ = 6;
 
-	f64 temp = 0.5*(PI / 16.0)*(DOMAIN_OUTER_RADIUS + INNER_A_BOUNDARY) / (real)NUMBER_OF_VERTICES_AIMED;
-	r_spacing = sqrt(temp*temp + SQRT3OVER2 * TotalArea / (real)NUMBER_OF_VERTICES_AIMED) + temp;
+	f64 temp = 0.5*(PI / 16.0)*(DOMAIN_OUTER_RADIUS + INNER_A_BOUNDARY) / (real)NUMVERTICES;
+	r_spacing = sqrt(temp*temp + SQRT3OVER2 * TotalArea / (real)NUMVERTICES) + temp;
 
 	spacing = r_spacing / SQRT3OVER2;
 
@@ -852,12 +850,12 @@ int TriMesh::Initialise(int token)
 	// Now go over and increment / decrement each row to try to get the exact number of vertices.
 	// printf("Outermost_r_achieved %1.10E r_row[0] %1.10E\n",r-r_use3,r_row[0]);
 
-	printf("numVertices %d NUM_AIMED %d ... \n", numVertices, NUMBER_OF_VERTICES_AIMED);
+	printf("numVertices %d NUM_AIMED %d ... \n", numVertices, NUMVERTICES);
 
 	// AAGH! We have to hit the NUMBER OF VERTICES AIMED.
 
 	// Clever recoding would avoid going through and doing all these divides:
-	while (numVertices > NUMBER_OF_VERTICES_AIMED) {
+	while (numVertices > NUMVERTICES) {
 		printf("numVertices %d", numVertices);
 		// change numRow from numRow1+1 onward.
 		f64 density, highdens = 0.0;
@@ -876,7 +874,7 @@ int TriMesh::Initialise(int token)
 		
 	};
 
-	while (numVertices < NUMBER_OF_VERTICES_AIMED) {
+	while (numVertices < NUMVERTICES) {
 		f64 density, lowdens = 1.0e100;
 		long iLow = 0;
 		for (i = numRow1 + 1; i < numRows; i++)
@@ -900,9 +898,9 @@ int TriMesh::Initialise(int token)
 										   // PREVIOUS VERS:
 										   //numTrianglesAllocated = (long)(2.02*(real)(numVertices+numRows
 										   //	+ numRow[0] + numRow[numRows-1])); 	
-	if (numVertices != NUMBER_OF_VERTICES_AIMED) {
+	if (numVertices != NUMVERTICES) {
 		printf("error: numVertices %d NUM_AIMED %d \n",
-			numVertices, NUMBER_OF_VERTICES_AIMED);
+			numVertices, NUMVERTICES);
 		getch();
 	}
 
@@ -1375,8 +1373,10 @@ int TriMesh::Initialise(int token)
 	this->Coarsestphi.Invoke(numAuxVertices[NUM_COARSE_LEVELS - 1] + 1);
 #else
 
-	this->Coarsest.Invoke(numAuxVertices[NUM_COARSE_LEVELS - 1] + 1);
-	this->LUphi.Invoke(numAuxVertices[NUM_COARSE_LEVELS - 1]);
+	// commented just to drop qd
+
+//	this->Coarsest.Invoke(numAuxVertices[NUM_COARSE_LEVELS - 1] + 1);
+//	this->LUphi.Invoke(numAuxVertices[NUM_COARSE_LEVELS - 1]);
 
 #endif
 	return 0;
@@ -1420,12 +1420,12 @@ int TriMesh::InitialiseOriginal(int token)
 
 	//real const R2 = DOMAIN_OUTER_RADIUS;
 	//real const R1 = INNER_A_BOUNDARY;
-	//Numrows = (int)(0.5 + sqrt(0.25 + ((real)NUMBER_OF_VERTICES_AIMED)*(R2-R1)*8.0*SQRT3/(PI*(R2+R1)));
+	//Numrows = (int)(0.5 + sqrt(0.25 + ((real)NUMVERTICES)*(R2-R1)*8.0*SQRT3/(PI*(R2+R1)));
 	//// Chose too few, so the triangles will be longer and thinner than otherwise.
 	//// Maybe Nrow = 200.99 so we ought to go to the nearer # rows.
 
 	//// azimuthal:
-	//spacing = ((real)Numrows)*PI_OVER_16*(R2+R1)/(real)NUMBER_OF_VERTICES_AIMED;
+	//spacing = ((real)Numrows)*PI_OVER_16*(R2+R1)/(real)NUMVERTICES;
 
 	// Oh dear --- we missed a trick: a row has to be put on REVERSE_ZCURRENT_RADIUS and rows have to be
 	// halfway before and after insulator.
@@ -1441,7 +1441,7 @@ int TriMesh::InitialiseOriginal(int token)
 	// ____________________________________________________________________________
 	
 	real TotalArea = PI*(DOMAIN_OUTER_RADIUS*DOMAIN_OUTER_RADIUS-INNER_A_BOUNDARY*INNER_A_BOUNDARY)/16.0;
-	real NUM_VERTICES_PER_CM_SQ = ((real)NUMBER_OF_VERTICES_AIMED)/TotalArea;
+	real NUM_VERTICES_PER_CM_SQ = ((real)NUMVERTICES)/TotalArea;
 
 	iRow = 0;
 	// PREVIOUS VERSION:
@@ -1454,10 +1454,10 @@ int TriMesh::InitialiseOriginal(int token)
 	// Note (R1+R2)(R2-R1) = (R2*R2-R1*R1)
 
 	// OLD, wrong:
-//	r_spacing = sqrt(3.0/16.0 + TotalArea*SQRT3OVER2/(real)NUMBER_OF_VERTICES_AIMED) - SQRT3OVER2*0.5;
+//	r_spacing = sqrt(3.0/16.0 + TotalArea*SQRT3OVER2/(real)NUMVERTICES) - SQRT3OVER2*0.5;
 
-	f64 temp = 0.5*(PI/16.0)*(DOMAIN_OUTER_RADIUS+INNER_A_BOUNDARY)/(real)NUMBER_OF_VERTICES_AIMED;
-	r_spacing = sqrt(temp*temp + SQRT3OVER2*TotalArea/(real)NUMBER_OF_VERTICES_AIMED) + temp;
+	f64 temp = 0.5*(PI/16.0)*(DOMAIN_OUTER_RADIUS+INNER_A_BOUNDARY)/(real)NUMVERTICES;
+	r_spacing = sqrt(temp*temp + SQRT3OVER2*TotalArea/(real)NUMVERTICES) + temp;
 
 	spacing = r_spacing/SQRT3OVER2;
 		
@@ -1577,10 +1577,10 @@ int TriMesh::InitialiseOriginal(int token)
 	// Now go over and increment / decrement each row to try to get the exact number of vertices.
 	// printf("Outermost_r_achieved %1.10E r_row[0] %1.10E\n",r-r_use3,r_row[0]);
 	
-	printf("numVertices %d NUM_AIMED %d ... \n",numVertices, NUMBER_OF_VERTICES_AIMED);
+	printf("numVertices %d NUM_AIMED %d ... \n",numVertices, NUMVERTICES);
 	
 	// Clever recoding would avoid going through and doing all these divides:
-	while (numVertices > NUMBER_OF_VERTICES_AIMED) {
+	while (numVertices > NUMVERTICES) {
 		// change numRow from numRow1+1 onward.
 		f64 density, highdens = 0.0;
 		long iHigh = 0;
@@ -1597,7 +1597,7 @@ int TriMesh::InitialiseOriginal(int token)
 		printf("iHigh %d numRow[iHigh] %d \n",iHigh,numRow[iHigh]);
 	};
 	
-	while (numVertices < NUMBER_OF_VERTICES_AIMED) {
+	while (numVertices < NUMVERTICES) {
 		f64 density, lowdens = 1.0e100;
 		long iLow = 0;
 		for (i = numRow1+1; i < numRows; i++)
@@ -1621,9 +1621,9 @@ int TriMesh::InitialiseOriginal(int token)
 	// PREVIOUS VERS:
 	//numTrianglesAllocated = (long)(2.02*(real)(numVertices+numRows
 	//	+ numRow[0] + numRow[numRows-1])); 	
-	if (numVertices != NUMBER_OF_VERTICES_AIMED) {
+	if (numVertices != NUMVERTICES) {
 		printf("error: numVertices %d NUM_AIMED %d \n",
-			numVertices, NUMBER_OF_VERTICES_AIMED);
+			numVertices, NUMVERTICES);
 		getch();
 	}
 	
@@ -2016,8 +2016,10 @@ int TriMesh::InitialiseOriginal(int token)
 	this->Coarsestphi.Invoke(numAuxVertices[NUM_COARSE_LEVELS-1]+1);
 #else
 
-	this->Coarsest.Invoke(numAuxVertices[NUM_COARSE_LEVELS-1]+1);
-	this->LUphi.Invoke(numAuxVertices[NUM_COARSE_LEVELS-1]);
+	// commented just to drop qd
+
+//	this->Coarsest.Invoke(numAuxVertices[NUM_COARSE_LEVELS-1]+1);
+//	this->LUphi.Invoke(numAuxVertices[NUM_COARSE_LEVELS-1]);
 
 #endif
 	return 0;
@@ -7406,7 +7408,7 @@ int TriMesh::Save(const char * filename)
 	// fwrite(&numAuxVertices[0],sizeof(long),1,fp);
 	fwrite(&numReverseJzTris,sizeof(long),1,fp);
 	
-	fwrite(&(EzTuning.x[0]),sizeof(double),1,fp);
+//	fwrite(&(EzTuning.x[0]),sizeof(double),1,fp);
 	
 	fwrite(&InnermostFrillCentroidRadius ,sizeof(double),1,fp);
 	fwrite(&OutermostFrillCentroidRadius ,sizeof(double),1,fp);
@@ -7504,7 +7506,7 @@ int TriMesh::Load(const char * filename)
 	read = fread(&file_EzTuning,sizeof(double),1,fp);
 	if (read != 1) {printf("3rror 5\n"); return 16;};
 
-	this->EzTuning = file_EzTuning;
+//	this->EzTuning = file_EzTuning;
 	if (this->numReverseJzTris != file_numRevJz) {
 		printf("this->numReverseJzTris %d file_numRevJz %d \n",
 			this->numReverseJzTris, file_numRevJz);
@@ -8861,7 +8863,7 @@ void TriMesh::CreateTilingAndResequence(TriMesh * pDestMesh) {
 	
 	// Also copy across any other stuff from source to dest:
 
-	pDestMesh->EzTuning = this->EzTuning;
+//	pDestMesh->EzTuning = this->EzTuning;
 	pDestMesh->Innermost_r_achieved = this->Innermost_r_achieved;
 	pDestMesh->Outermost_r_achieved = this->Outermost_r_achieved;
 	pDestMesh->InnermostFrillCentroidRadius = this->InnermostFrillCentroidRadius;

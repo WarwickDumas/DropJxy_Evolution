@@ -6,6 +6,7 @@
 #define qd_or_d dd_real
 
 #include "surfacegraph_tri.h"
+#include "vector_tensor.cu"
 
 // This is for extern declarations of the global variables used.
 // Definitions should live in DropJxy.cpp

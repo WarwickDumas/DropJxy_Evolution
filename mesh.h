@@ -1,6 +1,6 @@
 
 #include "FFxtubes.h"
-#include "bandlu.h" // must not include a cpp file here!
+//#include "bandlu.h" // must not include a cpp file here!
 
 #include <conio.h>
 // no - don't need to be calling getch() in a header file !
@@ -13,8 +13,7 @@
 //#include <dinput.h>
 #include <dxerr.h>
 #include "d3d.h"
-
-#include "cuda_struct.h"
+#include "FFxtubes.h"
 
 #ifndef mesh_h
 #define mesh_h
@@ -30,9 +29,6 @@
 
 
 #define CP_MAX  16
-
-#define MAXNEIGH    16  // large number needed to cater for links on aux mesh if we do not minimize connections.
-#define MAXNEIGH_d  16
 
 // 12*32768*5 = 2MB .. just to keep things in perspective.
 // We should keep the number down just to reduce fetch size.
@@ -51,10 +47,6 @@
 //long const SIZE_OF_MAJOR_PER_TRI_TILE = 128;
 //long const SIZE_OF_TRI_TILE_FOR_MAJOR = 256;
 //long const BEGINNING_OF_CENTRAL = threadsPerTileMinor * numTriTiles;
-
-long const NMINOR = threadsPerTileMinor * numTilesMinor;
-long const NUMVERTICES = threadsPerTileMajor* numTilesMajor;
-long const NUMTRIANGLES = NMINOR-NUMVERTICES;
 
 // DO NOT WANT THE SMART ARRAY CLASSES IN NVCC.
 // MOVED HERE.
@@ -510,6 +502,17 @@ struct plasma_data
 // so that we can more easily handle 14 doubles in L1 cache.
 
 // vxy helps us not get confused and add to wrong v
+
+// Note that bus is what? 48 bytes = 6 doubles. We want 12 doubles in a struct max
+// let's say that. And 12 better than 10 or 11.
+
+// n,n,T,T,T = 5. 
+// 7 v
+// n+v+T = 12.  ** So no advantage to contiguous fetch there. **
+// Az,Azdot is another
+// pos is on its own
+// B, Lap A, grad A on their own
+
 
 class Vertex
 {
@@ -1227,11 +1230,11 @@ public:
 	long numStartZCurrentTriangles, numEndZCurrentTriangles;
 
 	long StartAvgRow;
-	Matrix Coarsest;
-	Matrix LUphi;
+//	Matrix Coarsest;
+//	Matrix LUphi;
 	real scratchval;
 	
-	dd_real EzTuning; // ?!
+//	dd_real EzTuning; // ?!
 	
 	Vertex * AuxX[NUM_COARSE_LEVELS];  
 	Triangle * AuxT[NUM_COARSE_LEVELS]; 
@@ -1245,13 +1248,13 @@ public:
 	real Iz_prescribed, Epsilon_Iz, Epsilon_Iz_aux[NUM_COARSE_LEVELS];;
 	// hmm, why not dd_real?
 	
-	qd_or_d Epsilon_Iz_coeff_On_PhiAnode;
+//	qd_or_d Epsilon_Iz_coeff_On_PhiAnode;
 	//Epsilon_Iz_coeff_On_TuningFactor;
 	// Ez = TuneFac*pVertex->temp2.y
 	// Making qd_or_d to be consistent with the rest of 'gamma' calculation.
 
-	qd_or_d PhiAnode, PhiAnode_aux[NUM_COARSE_LEVELS]; // Auxiliary addition to Eext.
-	qd_or_d Epsilon_Iz_constant, Epsilon_Iz_Default[NUM_COARSE_LEVELS];
+//	qd_or_d PhiAnode, PhiAnode_aux[NUM_COARSE_LEVELS]; // Auxiliary addition to Eext.
+//	qd_or_d Epsilon_Iz_constant, Epsilon_Iz_Default[NUM_COARSE_LEVELS];
 	// plays same role as Epsilon_Iz_constant
 
 	// match data types for finest.
