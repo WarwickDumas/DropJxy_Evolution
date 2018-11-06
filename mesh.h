@@ -1245,7 +1245,7 @@ public:
 	long numRowsAux[NUM_COARSE_LEVELS];
 	long numInnermostRowAux[NUM_COARSE_LEVELS];
 	
-	real Iz_prescribed, Epsilon_Iz, Epsilon_Iz_aux[NUM_COARSE_LEVELS];;
+	real Iz_prescribed, Epsilon_Iz, Epsilon_Iz_aux[NUM_COARSE_LEVELS];
 	// hmm, why not dd_real?
 	
 //	qd_or_d Epsilon_Iz_coeff_On_PhiAnode;
@@ -1545,14 +1545,14 @@ public:
 						//	vertdata * pVertdata_host
 							);
 */
-	void PopulateSystdata_from_this(
+/*	void PopulateSystdata_from_this(
 							Systdata * pSystdata
 							);
 
 	void Populate_this_fromSystdata(
 							Systdata * pSystdata
 							);
-	
+	*/
 
 #ifdef CPU
 	void ViscosityAndAcceleration(real hsub);

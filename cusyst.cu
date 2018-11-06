@@ -16,10 +16,10 @@ cuSyst::cuSyst(){
 	bInvokedHost = false;
 }
 
-int cuSyst::Invoke(long Numvertices)
+int cuSyst::Invoke()
 {
-	 Nverts = Numvertices;
-	 Ntris = 2 * Nverts;
+	 Nverts = NUMVERTICES;
+	 Ntris = NUMTRIANGLES; // FFxtubes.h
 	 Nminor = Nverts + Ntris;
 
 	if (bInvoked == false) {
@@ -34,8 +34,9 @@ int cuSyst::Invoke(long Numvertices)
 			&& (!CallMAC(cudaMalloc((void**)&p_Indexneigh_triminor, Ntris*6 * sizeof(long))))
 			&& (!CallMAC(cudaMalloc((void**)&p_szPBC_triminor, Ntris * 6 * sizeof(char))))
 			&& (!CallMAC(cudaMalloc((void**)&p_tri_corner_index, Ntris * sizeof(LONG3))))
+			&& (!CallMAC(cudaMalloc((void**)&p_tri_periodic_corner_flags, Ntris * sizeof(CHAR4))))
 			&& (!CallMAC(cudaMalloc((void**)&p_who_am_I_to_corner, Ntris * sizeof(LONG3))))
-						
+
 			&& (!CallMAC(cudaMalloc((void**)&p_n_major, Nverts * sizeof(nvals))))
 			&& (!CallMAC(cudaMalloc((void**)&p_n_minor, Nminor * sizeof(nvals))))
 			&& (!CallMAC(cudaMalloc((void**)&p_T_minor, Nminor * sizeof(T3))))
@@ -47,7 +48,7 @@ int cuSyst::Invoke(long Numvertices)
 			&& (!CallMAC(cudaMalloc((void**)&p_B, Nminor * sizeof(f64_vec3))))
 
 			&& (!CallMAC(cudaMalloc((void**)&p_Lap_Az, Nminor * sizeof(f64))))
-			&& (!CallMAC(cudaMalloc((void**)&p_overall_v, Nminor * sizeof(f64_vec2))))
+			&& (!CallMAC(cudaMalloc((void**)&p_v_overall_minor, Nminor * sizeof(f64_vec2))))
 			
 			&& (!CallMAC(cudaMalloc((void**)&p_MomAdditionRate_ion, Nminor * sizeof(f64_vec3))))
 			&& (!CallMAC(cudaMalloc((void**)&p_MomAdditionRate_elec, Nminor * sizeof(f64_vec3))))
@@ -69,55 +70,58 @@ int cuSyst::Invoke(long Numvertices)
 		};
 	}
 	else {
-		if (Nverts != N) { printf("Systdata Error - Nverts %d != N %d\n", Nverts, N); getch(); }
+		if (Nverts != NUMVERTICES) { printf("cuSyst Error - Nverts %d != N %d\n", Nverts, NUMVERTICES); getch(); }
 		return 2;
 	};
 }
-void cuSyst::InvokeHost(long Numvertices)
+int cuSyst::InvokeHost()
 {
-	Nverts = Numvertices;
-	Ntris = 2 * Nverts;
+	Nverts = NUMVERTICES;
+	Ntris = NUMTRIANGLES;
 	Nminor = Nverts + Ntris;
-	    p_info = ( structural * )malloc(Nminor* sizeof(structural));
+	p_info = ( structural * )malloc(Nminor* sizeof(structural));
 		
-		p_izTri_vert = ( long *)malloc(Nverts*MAXNEIGH_d * sizeof(long));
-		p_izNeigh_vert = (long * )malloc(Nverts*MAXNEIGH_d * sizeof(long));
-		p_szPBC_vert = (char * )malloc(Nverts*MAXNEIGH_d * sizeof(char));
+	p_izTri_vert = ( long *)malloc(Nverts*MAXNEIGH_d * sizeof(long));
+	p_izNeigh_vert = (long * )malloc(Nverts*MAXNEIGH_d * sizeof(long));
+	p_szPBC_vert = (char * )malloc(Nverts*MAXNEIGH_d * sizeof(char));
 
-		p_Indexneigh_triminor = (long * )malloc(Ntris * 6 * sizeof(long));
-		p_szPBC_triminor = (char * )malloc(Ntris * 6 * sizeof(char));
-		p_tri_corner_index = ( LONG3 *)malloc(Ntris * sizeof(LONG3));
-		p_who_am_I_to_corner = (LONG3 * )malloc(Ntris * sizeof(LONG3));
+	p_Indexneigh_triminor = (long * )malloc(Ntris * 6 * sizeof(long));
+	p_szPBC_triminor = (char * )malloc(Ntris * 6 * sizeof(char));
+	p_tri_corner_index = ( LONG3 *)malloc(Ntris * sizeof(LONG3));
+	p_tri_periodic_corner_flags = (CHAR4 *)malloc(Ntris * sizeof(CHAR4));
+	p_who_am_I_to_corner = (LONG3 * )malloc(Ntris * sizeof(LONG3));
 
-		p_n_major = (nvals * )malloc(Nverts * sizeof(nvals));
-		p_n_minor = (nvals * )malloc(Nminor * sizeof(nvals));
-		p_T_minor = (T3 * )malloc(Nminor * sizeof(T3));
+	p_n_major = (nvals * )malloc(Nverts * sizeof(nvals));
+	p_n_minor = (nvals * )malloc(Nminor * sizeof(nvals));
+	p_T_minor = (T3 * )malloc(Nminor * sizeof(T3));
 
-		p_AAdot = ( AAdot *)malloc(Nminor * sizeof(AAdot));
+	p_AAdot = ( AAdot *)malloc(Nminor * sizeof(AAdot));
 
-		p_v_n = ( f64_vec3 *)malloc(Nminor * sizeof(f64_vec3));
-		p_vie = (v4 * )malloc(Nminor * sizeof(v4));
-		p_B = ( f64_vec3 *)malloc(Nminor * sizeof(f64_vec3));
+	p_v_n = ( f64_vec3 *)malloc(Nminor * sizeof(f64_vec3));
+	p_vie = (v4 * )malloc(Nminor * sizeof(v4));
+	p_B = ( f64_vec3 *)malloc(Nminor * sizeof(f64_vec3));
 
-		p_Lap_Az = (f64 * )malloc(Nminor * sizeof(f64));
-		p_overall_v = (f64_vec2 *)malloc(Nminor * sizeof(f64_vec2));
+	p_Lap_Az = (f64 * )malloc(Nminor * sizeof(f64));
+	p_v_overall_minor = (f64_vec2 *)malloc(Nminor * sizeof(f64_vec2));
 
-		p_MomAdditionRate_ion = (f64_vec3 * )malloc(Nminor * sizeof(f64_vec3));
-		p_MomAdditionRate_elec = (f64_vec3 *)malloc(Nminor * sizeof(f64_vec3));
-		p_MomAdditionRate_neut = (f64_vec3 *)malloc(Nminor * sizeof(f64_vec3));
+	p_MomAdditionRate_ion = (f64_vec3 * )malloc(Nminor * sizeof(f64_vec3));
+	p_MomAdditionRate_elec = (f64_vec3 *)malloc(Nminor * sizeof(f64_vec3));
+	p_MomAdditionRate_neut = (f64_vec3 *)malloc(Nminor * sizeof(f64_vec3));
 
-		p_AreaMinor = (f64 * )malloc(Nminor * sizeof(f64));
-		p_AreaMajor = (f64 * )malloc(Nverts * sizeof(f64));
+	p_AreaMinor = (f64 * )malloc(Nminor * sizeof(f64));
+	p_AreaMajor = (f64 * )malloc(Nverts * sizeof(f64));
 
-		if (p_Areamajor == 0) {
-			printf("failed to invokeHost the cusyst.\n")
-			getch();
-		}
-		else {
-			bInvokedHost = true;
-		};
+	if (p_AreaMajor == 0) {
+		printf("failed to invokeHost the cusyst.\n");
+		getch();
+		return 1;
+	}
+	else {
+		bInvokedHost = true;
+		return 0;
+	};
 }
-cuSyst::~cuSyst{
+cuSyst::~cuSyst(){
 	if (bInvoked)
 	{
 
@@ -128,6 +132,7 @@ cuSyst::~cuSyst{
 		cudaFree(p_Indexneigh_triminor);
 		cudaFree(p_szPBC_triminor);
 		cudaFree(p_tri_corner_index);
+		cudaFree(p_tri_periodic_corner_flags)
 		cudaFree(p_who_am_I_to_corner);
 		cudaFree(p_n_major);
 		cudaFree(p_n_minor);
@@ -137,7 +142,7 @@ cuSyst::~cuSyst{
 		cudaFree(p_vie);
 		cudaFree(p_B);
 		cudaFree(p_Lap_Az);
-		cudaFree(p_overall_v);
+		cudaFree(p_v_overall_minor);
 		cudaFree(p_MomAdditionRate_ion);
 		cudaFree(p_MomAdditionRate_elec);
 		cudaFree(p_MomAdditionRate_neut);
@@ -154,6 +159,7 @@ free(p_szPBC_vert);
 free(p_Indexneigh_triminor);
 free(p_szPBC_triminor);
 free(p_tri_corner_index);
+free(p_tri_periodic_corner_flags);
 free(p_who_am_I_to_corner);
 free(p_n_major);
 free(p_n_minor);
@@ -163,7 +169,7 @@ free(p_v_n);
 free(p_vie);
 free(p_B);
 free(p_Lap_Az);
-free(p_overall_v);
+free(p_v_overall_minor);
 free(p_MomAdditionRate_ion);
 free(p_MomAdditionRate_elec);
 free(p_MomAdditionRate_neut);
@@ -177,7 +183,7 @@ void cuSyst::SendToHost(cuSyst & Xhost)
 {
 	// We are going to need a host-allocated cuSyst in order to
 	// do the populating basically.
-	(!CallMAC(cudaMemcpy(Xhost.p_info, p_info, Nminor * sizeof(structural), cudaMemcpyDeviceToHost)))
+	if ((!CallMAC(cudaMemcpy(Xhost.p_info, p_info, Nminor * sizeof(structural), cudaMemcpyDeviceToHost)))
 
 		&& (!CallMAC(cudaMemcpy(Xhost.p_izTri_vert, p_izTri_vert, Nverts*MAXNEIGH_d * sizeof(long), cudaMemcpyDeviceToHost)))
 		&& (!CallMAC(cudaMemcpy(Xhost.p_izNeigh_vert, p_izNeigh_vert, Nverts*MAXNEIGH_d * sizeof(long), cudaMemcpyDeviceToHost)))
@@ -199,7 +205,7 @@ void cuSyst::SendToHost(cuSyst & Xhost)
 		&& (!CallMAC(cudaMemcpy(Xhost.p_B, p_B, Nminor * sizeof(f64_vec3), cudaMemcpyDeviceToHost)))
 
 		&& (!CallMAC(cudaMemcpy(Xhost.p_Lap_Az, p_Lap_Az, Nminor * sizeof(f64), cudaMemcpyDeviceToHost)))
-		&& (!CallMAC(cudaMemcpy(Xhost.p_overall_v, p_overall_v, Nminor * sizeof(f64_vec2), cudaMemcpyDeviceToHost)))
+		&& (!CallMAC(cudaMemcpy(Xhost.p_v_overall_minor, p_v_overall_minor, Nminor * sizeof(f64_vec2), cudaMemcpyDeviceToHost)))
 
 		&& (!CallMAC(cudaMemcpy(Xhost.p_MomAdditionRate_ion, p_MomAdditionRate_ion, Nminor * sizeof(f64_vec3), cudaMemcpyDeviceToHost)))
 		&& (!CallMAC(cudaMemcpy(Xhost.p_MomAdditionRate_elec, p_MomAdditionRate_elec, Nminor * sizeof(f64_vec3), cudaMemcpyDeviceToHost)))
@@ -207,7 +213,15 @@ void cuSyst::SendToHost(cuSyst & Xhost)
 
 		&& (!CallMAC(cudaMemcpy(Xhost.p_AreaMinor, p_AreaMinor, Nminor * sizeof(f64), cudaMemcpyDeviceToHost)))
 		&& (!CallMAC(cudaMemcpy(Xhost.p_AreaMajor, p_AreaMajor, Nverts * sizeof(f64), cudaMemcpyDeviceToHost)))
-		Call(cudaThreadSynchronize(), "cudaThreadSynchronize cuSyst::SendToHost");
+		)
+	{
+		// success - do nothing
+	}
+	else {
+		printf("cudaMemcpy error");
+		getch();
+	}
+	Call(cudaThreadSynchronize(), "cudaThreadSynchronize cuSyst::SendToHost");
 
 }
 void cuSyst::SendToDevice(cuSyst & Xdevice)
@@ -215,7 +229,7 @@ void cuSyst::SendToDevice(cuSyst & Xdevice)
 	// We are going to need a host-allocated cuSyst in order to
 	// do the populating basically.
 	if (
-		!CallMAC(cudaMemcpy(Xdevice.p_info, p_info, Nminor * sizeof(structural), cudaMemcpyHostToDevice)))
+		   (!CallMAC(cudaMemcpy(Xdevice.p_info, p_info, Nminor * sizeof(structural), cudaMemcpyHostToDevice)))
 
 		&& (!CallMAC(cudaMemcpy(Xdevice.p_izTri_vert, p_izTri_vert, Nverts*MAXNEIGH_d * sizeof(long), cudaMemcpyHostToDevice)))
 		&& (!CallMAC(cudaMemcpy(Xdevice.p_izNeigh_vert, p_izNeigh_vert, Nverts*MAXNEIGH_d * sizeof(long), cudaMemcpyHostToDevice)))
@@ -237,7 +251,7 @@ void cuSyst::SendToDevice(cuSyst & Xdevice)
 		&& (!CallMAC(cudaMemcpy(Xdevice.p_B, p_B, Nminor * sizeof(f64_vec3), cudaMemcpyHostToDevice)))
 
 		&& (!CallMAC(cudaMemcpy(Xdevice.p_Lap_Az, p_Lap_Az, Nminor * sizeof(f64), cudaMemcpyHostToDevice)))
-		&& (!CallMAC(cudaMemcpy(Xdevice.p_overall_v, p_overall_v, Nminor * sizeof(f64_vec2), cudaMemcpyHostToDevice)))
+		&& (!CallMAC(cudaMemcpy(Xdevice.p_v_overall_minor, p_v_overall_minor, Nminor * sizeof(f64_vec2), cudaMemcpyHostToDevice)))
 
 		&& (!CallMAC(cudaMemcpy(Xdevice.p_MomAdditionRate_ion, p_MomAdditionRate_ion, Nminor * sizeof(f64_vec3), cudaMemcpyHostToDevice)))
 		&& (!CallMAC(cudaMemcpy(Xdevice.p_MomAdditionRate_elec, p_MomAdditionRate_elec, Nminor * sizeof(f64_vec3), cudaMemcpyHostToDevice)))
@@ -249,21 +263,29 @@ void cuSyst::SendToDevice(cuSyst & Xdevice)
 	{
 
 	}
+	else {
+		printf("SendToDevice error"); getch();
+	}
 	Call(cudaThreadSynchronize(), "cudaThreadSynchronize cuSyst::SendToHost");
 }
 
-void cuSyst::PopulateFromTriMesh(const TriMesh * pX)
+void cuSyst::PopulateFromTriMesh(TriMesh * pX)
 {
 	// AsSUMES THIS cuSyst has been allocated on the host.
-	nVerts = pX->numVertices;
-	nTris = pX->numTriangles;
-	nMinor = nVerts + nTris;
+	if ((Nverts != pX->numVertices) ||
+		(Ntris != pX->numTriangles))
+	{
+		printf("ERROR (nVerts %d != pX->numVertices %d) || (nTris != pX->numTriangles)\n",
+			Nverts, pX->numVertices);
+		getch();
+		return;
+	}
 
 	plasma_data data;
 	long iMinor;
 	for (iMinor = 0; iMinor < NMINOR; iMinor++)
 	{
-		memcpy(&data, pX->pData[iMinor], sizeof(plasma_data));
+		memcpy(&data, &(pX->pData[iMinor]), sizeof(plasma_data));
 		p_n_minor[iMinor].n = data.n;
 		p_n_minor[iMinor].n_n = data.n_n;
 		if (iMinor > BEGINNING_OF_CENTRAL) {
@@ -284,17 +306,20 @@ void cuSyst::PopulateFromTriMesh(const TriMesh * pX)
 	}
 	
 	// AreaMajor??? pVertex->AreaCell?
-	Vertex * X = pX->X;
+	Vertex * pVertex;
+	pVertex = pX->X;
 	long izTri[MAXNEIGH],izNeigh[MAXNEIGH];
 	long tri_len;
+	long iVertex;
 	structural info;
-	for (iVertex = 0; iVertex < nVerts; iVertex++)
+	for (iVertex = 0; iVertex < Nverts; iVertex++)
 	{
-		tri_len = pVertex->GetTriangleIndexArray(izTri);
+		tri_len = pVertex->GetTriIndexArray(izTri);
 		info.neigh_len = tri_len;
 		memset(izTri+tri_len, 0, sizeof(long)*(MAXNEIGH-tri_len));
 		memcpy(p_izTri_vert + iVertex*MAXNEIGH, izTri, sizeof(long)*MAXNEIGH);
-		tri_len = pVertex->GetNeighbourIndexArray(izNeigh);
+
+		tri_len = pVertex->GetNeighIndexArray(izNeigh);
 		memset(izNeigh + tri_len, 0, sizeof(long)*(MAXNEIGH - tri_len));
 		memcpy(p_izNeigh_vert + iVertex*MAXNEIGH,izNeigh, sizeof(long)*MAXNEIGH);
 		
@@ -304,11 +329,51 @@ void cuSyst::PopulateFromTriMesh(const TriMesh * pX)
 		++pVertex;
 	};
 	
-
+	long iTri;
 	// Triangle structural?
+	Triangle * pTri = pX->T;
+	for (iTri = 0; iTri < Ntris; iTri++)
+	{
+		LONG3 tri_corner_index;
+		CHAR3 tri_periodic_corner_flags;
+		CHAR3 who_am_I_to_corner;
+
+		tri_corner_index.i1 = pTri->cornerptr[0] - pX->T;
+		tri_corner_index.i2 = pTri->cornerptr[1] - pX->T;
+		tri_corner_index.i3 = pTri->cornerptr[2] - pX->T;
+		p_tri_corner_index[iTri] = tri_corner_index;
+		
+		tri_len = pTri->cornerptr[0]->GetTriIndexArray(izTri);
+		for (i = 0; i < tri_len; i++)
+		{
+			if (izTri[i] == iTri) who_am_I_to_corner.c1 = i;
+		}
+		tri_len = pTri->cornerptr[1]->GetTriIndexArray(izTri);
+		for (i = 0; i < tri_len; i++)
+		{
+			if (izTri[i] == iTri) who_am_I_to_corner.c2 = i;
+		}
+		tri_len = pTri->cornerptr[2]->GetTriIndexArray(izTri);
+		for (i = 0; i < tri_len; i++)
+		{
+			if (izTri[i] == iTri) who_am_I_to_corner.c3 = i;
+		}
+
+		memset(&tri_periodic_corner_flags, 0, sizeof(CHAR3));
+		if (pTri->periodic != 0) {
+			if (pTri->cornerptr[0]->pos.x > 0.0) tri_corner_index.c1 = ROTATE_ME_ANTICLOCKWISE;
+			if (pTri->cornerptr[1]->pos.x > 0.0) tri_corner_index.c2 = ROTATE_ME_ANTICLOCKWISE;
+			if (pTri->cornerptr[2]->pos.x > 0.0) tri_corner_index.c3 = ROTATE_ME_ANTICLOCKWISE;
+		}
+		p_tri_periodic_corner_flags[iTri] = tri_periodic_corner_flags;
+		p_who_am_I_to_corner[iTri] = who_am_I_to_corner;
+		++pTri;
+	};
+
+
 }
 
-void cuSyst::PopulateTriMesh(const TriMesh * pX)
+void cuSyst::PopulateTriMesh(TriMesh * pX)
 {
 	// AsSUMES THIS cuSyst has been allocated on the host.
 

@@ -60,9 +60,7 @@ long const BEGINNING_OF_CENTRAL = threadsPerTileMinor*numTriTiles;
 
 long const NUMVERTICES = numTilesMajor*threadsPerTileMajor;//36864; //36000; // particularly applies for polar?
 											 // = 288*128
-
 long const NMINOR = threadsPerTileMinor * numTilesMinor;
-long const NUMVERTICES = threadsPerTileMajor* numTilesMajor;
 long const NUMTRIANGLES = NMINOR - NUMVERTICES;
 
 

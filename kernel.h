@@ -1,26 +1,6 @@
 #pragma once
 #include "cuda_struct.h"
 
-#define MAXNEIGH_d 12
-
-// Make these global device constants:
-static real const one_over_kB = 1.0 / kB; // multiply by this to convert to eV
-static real const one_over_kB_cubed = 1.0 / (kB*kB*kB); // multiply by this to convert to eV
-static real const kB_to_3halves = sqrt(kB)*kB;
-
-f64 M_i_over_in = m_i / (m_i + m_n);
-f64 M_e_over_en = m_e / (m_e + m_n);
-f64 M_n_over_ni = m_n / (m_i + m_n);
-f64 M_n_over_ne = m_n / (m_e + m_n);
-
-f64 const M_en = m_e * m_n / ((m_e + m_n)*(m_e + m_n));
-f64 const M_in = m_i * m_n / ((m_i + m_n)*(m_i + m_n));
-f64 const M_ei = m_e * m_i / ((m_e + m_i)*(m_e + m_i));
-f64 const m_en = m_e * m_n / (m_e + m_n);
-f64 const m_ei = m_e * m_i / (m_e + m_i);
-
-
-
 __global__ void kernelCalculateOverallVelocitiesVertices(
 	v4 * __restrict__ p_vie_major,
 	f64_vec3 * __restrict__ p_v_n_major,
@@ -121,11 +101,11 @@ __global__ void kernelAccumulateAdvectiveMassHeatRate(
 	nvals * __restrict__ p_n_upwind_minor,
 	v4 * __restrict__ p_vie_minor,
 	f64_vec3 * __restrict__ p_v_n_minor,
-	f64_vec2 * __restrict__ p_v_overall_minor
+	f64_vec2 * __restrict__ p_v_overall_minor,
 	T3 * __restrict__ p_T_minor, // may or may not overlap source: don't we only use from tris? so not overlap
 
 	nvals * __restrict__ p_n_dest_major,
-	T3 * __restrict__ p_T_dest_major,
+	T3 * __restrict__ p_T_dest_major
 	);
 
 
@@ -167,19 +147,16 @@ __global__ void kernelUpdateVelocityAndAzdot(
 	f64_vec3 * __restrict__ p_vn_out
 );
 
-
-
 __global__ void kernelAdd(
 	f64 * __restrict__ p_updated,
 	f64 beta,
 	f64 * __restrict__ p_added
 );
 
-__global__ void kernelResetFrillsAz << <numTriTiles, threadsPerTileMinor >> > (
+__global__ void kernelResetFrillsAz(
 	structural * __restrict__ p_info,
 	LONG3 * __restrict__ trineighbourindex,
 	f64 * __restrict__ p_Az);
-
 
 __global__ void kernelCreateEpsilonAndJacobi(
 	structural * __restrict__ p_info,
@@ -273,6 +250,40 @@ __global__ void kernelNeutral_pressure_and_momflux(
 );
 
 
+
+// Device-accessible constants not known at compile time:
+__constant__ long nBlocks, Nverts, uDataLen_d; // Nverts == numVertices
+
+__constant__ f64_tens2 Anticlockwise, Clockwise; // use this to do rotation.
+__constant__ f64 kB, c, q, m_e, m_ion, m_n,
+eoverm, qoverM, moverM, qovermc, qoverMc,
+FOURPI_Q_OVER_C, FOURPI_Q, FOURPI_OVER_C,
+one_over_kB, one_over_kB_cubed, kB_to_3halves,
+NU_EI_FACTOR, nu_eiBarconst, Nu_ii_Factor,
+
+Ez_strength_d,
+M_i_over_in,// = m_i / (m_i + m_n);
+M_e_over_en,// = m_e / (m_e + m_n);
+M_n_over_ni,// = m_n / (m_i + m_n);
+M_n_over_ne,// = m_n / (m_e + m_n);
+M_en, //= m_e * m_n / ((m_e + m_n)*(m_e + m_n));
+M_in, // = m_i * m_n / ((m_i + m_n)*(m_i + m_n));
+M_ei, // = m_e * m_i / ((m_e + m_i)*(m_e + m_i));
+m_en, // = m_e * m_n / (m_e + m_n);
+m_ei, // = m_e * m_i / (m_e + m_i);
+over_sqrt_m_ion, over_sqrt_m_e, over_sqrt_m_neutral,
+four_pi_over_c_ReverseJz,
+FRILL_CENTROID_OUTER_RADIUS_d, FRILL_CENTROID_INNER_RADIUS_d;
+
+// some of these we can do #define
+#define FOUR_PI 12.566370614359
+
+__constant__ f64 cross_s_vals_viscosity_ni_d[10], cross_s_vals_viscosity_nn_d[10],
+cross_T_vals_d[10], cross_s_vals_MT_ni_d[10];
+
+__constant__ f64 Iz_prescribed;
+__constant__ f64 negative_Iz_per_triangle; // -Iz_prescribed / (real)(numEndZCurrentTriangles - numStartZCurrentTriangles)
+__constant__ long numStartZCurrentTriangles, numEndZCurrentTriangles;
 
 
 

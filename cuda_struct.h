@@ -2,6 +2,8 @@
 #define cuda_struct_h
 // Avoid allocating and deallocating:
 
+#define MAXNEIGH_d 12
+
 // Here is what should be basically common object...
 // but not necessarily.
 
@@ -36,6 +38,10 @@
 struct CHAR4 {
 	char flag, per0, per1, per2;
 }; // 4 bytes
+struct CHAR3 {
+	char c1, c2, c3;
+};	// Can see the genuine case for padding it to 4 bytes ie using CHAR4 and never CHAR3.
+
 struct LONG3 {
 	long i1, i2, i3;
 }; // 12 bytes
@@ -168,8 +174,8 @@ struct Systdata {
 
 class cuSyst {
 private:
-	bool bInvoked, bInvokedHost;
 public:
+	bool bInvoked, bInvokedHost;
 	long Nverts, Ntris, Nminor;
 	
 	structural * p_info;
@@ -180,7 +186,10 @@ public:
 
 	 long * p_Indexneigh_triminor;
 	 char * p_szPBC_triminor; // 6*numTriangles
+	 
 	 LONG3 * p_tri_corner_index;
+	 CHAR4 * p_tri_periodic_corner_flags;
+
 	 LONG3 * p_who_am_I_to_corner;
  
 	 nvals * p_n_minor;
@@ -193,7 +202,7 @@ public:
 
 	 f64 * p_Lap_Az;
 
-	 f64_vec2 * p_overall_v;
+	 f64_vec2 * p_v_overall_minor;
 
 	 f64_vec3 * p_MomAdditionRate_ion;
 	 f64_vec3 * p_MomAdditionRate_elec;
@@ -204,47 +213,34 @@ public:
 	 
 	 f64 * p_AreaMinor;
 	 f64 * p_AreaMajor;
-	 
-	 
+	 	 
 	cuSyst();
 	int Invoke();
 	int InvokeHost();
-	void SendToHost(const TriMesh * pX);
-	void GetFromHost(const TriMesh * pX);
+	void SendToHost(cuSyst & Xhost);
+	void SendToDevice(cuSyst & Xdevice);
+
+	void PopulateFromTriMesh(TriMesh * pX);
+	void PopulateTriMesh(TriMesh * pX);
+
 	void PerformCUDA_Advance(const cuSyst * pX_target);
 	void ZeroData();
 	~cuSyst();
 };
 
 
-void PerformCUDA_Advance_2 (
-		const Systdata * pX_host, // populate in CPU MSVC routine...
-		long numVerts,
-		const real hsub, 
-		const int numSubsteps,
-		const Systdata * pX_host_target
-		);
-void PerformCUDA_Advance_2 (
-		const Systdata * pX_host, // populate in CPU MSVC routine...
-		long numVerts,
-		const real hsub, 
-		const int numSubsteps,
-		const Systdata * pX_host_target
-		);
+
 void PerformCUDA_Invoke_Populate (
-		const Systdata * pX_host, // populate in CPU MSVC routine...
-		long numVerts
+	cuSyst * pX_host, // populate in calling routine...
+	long numVerts,
+	f64 InnermostFrillCentroidRadius,
+	f64 OutermostFrillCentroidRadius
 		);
-void PerformCUDA_Advance_and_send_system (
-		//const Systdata * pX_host, // populate in CPU MSVC routine...
-		//long numVerts,
-		const real hsub, 
-		const int numSubsteps,
-		const Systdata * pX_host_target
-		);
+
 void FreeVideoResources ();
 
 __host__ bool Call(cudaError_t cudaStatus, char str[]);
+
 #define CallMAC(cudaStatus) Call(cudaStatus, #cudaStatus )   
 
 #define Set_f64_constant(dest, src) { \

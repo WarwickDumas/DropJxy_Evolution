@@ -3,7 +3,7 @@
 #include "globals.h"
 #include "headers.h"
 #include "FFxtubes.h"
-#include "cppconst.h"
+//#include "cppconst.h"
 
 #define VERT1 14631
 #define VERT2 14645
@@ -87,7 +87,7 @@ real inline Get_lnLambda(real n_e, real T_e)
 {
 	real lnLambda, factor, lnLambda_sq, lnLambda1, lnLambda2;
 
-	static real const one_over_kB = 1.0 / kB;
+	static real const one_over_kB = 1.0 / kB_;
 
 	real Te_eV = T_e * one_over_kB;
 	real Te_eV2 = Te_eV * Te_eV;
@@ -122,8 +122,8 @@ real inline Get_lnLambda(real n_e, real T_e)
 
 real inline Get_lnLambda_ion(real n_ion, real T_ion)
 {
-	static real const one_over_kB = 1.0 / kB; // multiply by this to convert to eV
-	static real const one_over_kB_cubed = 1.0 / (kB*kB*kB); // multiply by this to convert to eV
+	static real const one_over_kB = 1.0 / kB_; // multiply by this to convert to eV
+	static real const one_over_kB_cubed = 1.0 / (kB_*kB_*kB_); // multiply by this to convert to eV
 
 	real factor, lnLambda_sq;
 
@@ -1228,9 +1228,9 @@ void TriMesh::AdvanceDensityAndTemperature(f64 h_use, TriMesh * pHalfMesh, NTrat
 	f64 Div_v, Div_v_n, factor, factor_neut, Div_v_overall_integrated;
 	Vertex * pVertex = X;
 	Vertex * pVertDest = pHalfMesh->X;
-	static real const one_over_kB = 1.0 / kB; // multiply by this to convert to eV
-	static real const one_over_kB_cubed = 1.0 / (kB*kB*kB); // multiply by this to convert to eV
-	static real const kB_to_3halves = sqrt(kB)*kB;
+	static real const one_over_kB = 1.0 / kB_; // multiply by this to convert to eV
+	static real const one_over_kB_cubed = 1.0 / (kB_*kB_*kB_); // multiply by this to convert to eV
+	static real const kB_to_3halves = sqrt(kB_)*kB_;
 
 	f64 const M_en = m_e * m_n / ((m_e + m_n)*(m_e + m_n));
 	f64 const M_in = m_i * m_n / ((m_i + m_n)*(m_i + m_n));
@@ -1593,8 +1593,8 @@ void TriMesh::AccumulateDiffusiveHeatRateAndCalcIonisation(f64 h_use, NTrates NT
 
 	// It will make much more of a headache on GPU.
 	// The other option is to combine it with the advective mass & heat rates which already use minor info.
-	static real const kB_to_3halves = sqrt(kB)*kB;
-	static real const one_over_kB = 1.0 / kB;
+	static real const kB_to_3halves = sqrt(kB_)*kB_;
+	static real const one_over_kB = 1.0 / kB_;
 	static real const SIXTH = 1.0 / 6.0;
 	Vertex * pVertex = X;
 	long iVertex;
@@ -1672,7 +1672,7 @@ void TriMesh::AccumulateDiffusiveHeatRateAndCalcIonisation(f64 h_use, NTrates NT
 			sqrt_T = sqrt(tridata1.Ti); // again not that hard to save one call
 			nu_in_visc = tridata1.n_n * sigma_visc*sqrt(tridata1.Ti / m_ion + tridata1.Tn / m_n);
 			nu_ni_visc = nu_in_visc * (tridata1.n / tridata1.n_n);
-			nu_nn_visc1 = tridata1.n_n * Estimate_Neutral_Neutral_Viscosity_Cross_section(tridata1.Tn / kB)
+			nu_nn_visc1 = tridata1.n_n * Estimate_Neutral_Neutral_Viscosity_Cross_section(tridata1.Tn / kB_)
 				* sqrt(tridata1.Tn / m_n);
 			nu_ii = tridata1.n*kB_to_3halves*Get_lnLambda_ion(tridata1.n, tridata1.Ti) / (2.07e7*SQRT2*sqrt_T*tridata1.Ti);
 
@@ -1785,7 +1785,7 @@ void TriMesh::AccumulateDiffusiveHeatRateAndCalcIonisation(f64 h_use, NTrates NT
 					+ tridata2.n*tridata2.Te/ (m_e*nu_eHeart2));
 				nu_eHeart = 0.5*(nu_eHeart1 + nu_eHeart2);
 
-				omega = qovermc * 0.5*(tridata1.B+tridata2.B);
+				omega = eovermc_ * 0.5*(tridata1.B+tridata2.B);
 				f64 omega_sq = omega.dot(omega);
 				kappa.xx = kappa_parallel * (nu_eHeart*nu_eHeart +omega.x*omega.x) / (nu_eHeart * nu_eHeart +omega_sq);
 				kappa.xy = kappa_parallel * (omega.x*omega.y - nu_eHeart *omega.z) / (nu_eHeart * nu_eHeart + omega_sq);
@@ -1806,7 +1806,7 @@ void TriMesh::AccumulateDiffusiveHeatRateAndCalcIonisation(f64 h_use, NTrates NT
 				sqrt_T = sqrt(tridata2.Ti); // again not that hard to save one call
 				nu_in_visc = tridata2.n_n * sigma_visc*sqrt(tridata2.Ti / m_ion + tridata2.Tn / m_n);
 				nu_ni_visc = nu_in_visc * (tridata2.n / tridata2.n_n);
-				nu_nn_visc2 = tridata2.n_n * Estimate_Neutral_Neutral_Viscosity_Cross_section(tridata2.Tn / kB)
+				nu_nn_visc2 = tridata2.n_n * Estimate_Neutral_Neutral_Viscosity_Cross_section(tridata2.Tn *one_over_kB)
 					* sqrt(tridata2.Tn / m_n);
 				nu_ii = tridata2.n*kB_to_3halves*Get_lnLambda_ion(tridata2.n, tridata2.Ti) / (2.07e7*SQRT2*sqrt_T*tridata2.Ti);
 				
@@ -1856,7 +1856,7 @@ void TriMesh::AccumulateDiffusiveHeatRateAndCalcIonisation(f64 h_use, NTrates NT
 
 			// now add IONISATION:
 			
-			TeV = ourdata.Te / kB;
+			TeV = ourdata.Te / kB_;
 			f64 sqrtT = sqrt(TeV);
 
 			f64 temp = 1.0e-5*exp(-13.6 / TeV) / (13.6*(6.0*13.6 + TeV));
@@ -1880,7 +1880,7 @@ void TriMesh::AccumulateDiffusiveHeatRateAndCalcIonisation(f64 h_use, NTrates NT
 			ourrates.N -= recomb_rate;
 			ourrates.Nn += recomb_rate;
 
-			ourrates.NeTe += -TWOTHIRDS * 13.6*kB*ourrates.N + 0.5*ourdata.Tn*ionise_rate;
+			ourrates.NeTe += -TWOTHIRDS * 13.6*kB_*ourrates.N + 0.5*ourdata.Tn*ionise_rate;
 			ourrates.NiTi += 0.5*ourdata.Tn*ionise_rate;
 			ourrates.NnTn += (ourdata.Te + ourdata.Ti)*recomb_rate;
 			
@@ -4362,9 +4362,9 @@ void TriMesh::Accelerate2018(f64 h_use, TriMesh * pUseMesh, TriMesh * pDestMesh,
 	// data_1.Azdot 
 	f64 viz0_coeff_on_Lap_Az, vez0_coeff_on_Lap_Az;
 
-	static real const one_over_kB = 1.0 / kB; // multiply by this to convert to eV
-	static real const one_over_kB_cubed = 1.0 / (kB*kB*kB); // multiply by this to convert to eV
-	static real const kB_to_3halves = sqrt(kB)*kB;
+	static real const one_over_kB = 1.0 / kB_; // multiply by this to convert to eV
+	static real const one_over_kB_cubed = 1.0 / (kB_*kB_*kB_); // multiply by this to convert to eV
+	static real const kB_to_3halves = sqrt(kB_)*kB_;
 	Vertex * pVertex = X;
 	Triangle * pTri = T;
 	// v and A exist in minor cells, so both triangles and vertices.
@@ -4493,19 +4493,18 @@ void TriMesh::Accelerate2018(f64 h_use, TriMesh * pUseMesh, TriMesh * pDestMesh,
 				ROCAzdot_antiadvect = ROCAzduetoAdvection[iMinor];
 
 				vxy0 = data_k.vxy
-
 					+ h_use * ((m_e*MomAddRate.elec.xypart() + m_i*MomAddRate.ion.xypart())
 						/ (data_use.n*(m_i + m_e)*AreaMinor))
-
-					- h_use * (q / (2.0*c*(m_i + m_e)))*(data_k.vez - data_k.viz)*grad_Az
+				
+					- h_use * (q_/ (2.0*c_*(m_i + m_e)))*(data_k.vez - data_k.viz)*grad_Az
 					- (h_use / (2.0*(m_i + m_e)))*(m_n*M_in*nu_in_MT + m_n * M_en*nu_en_MT)*
 					(data_k.vxy - data_k.v_n.xypart() - vn0.xypart());
 
 				denom = 1.0 + (h_use / (2.0*(m_i + m_e)))*(m_n*M_in*nu_in_MT + m_n * M_en*nu_en_MT)*(1.0 - beta_ne - beta_ni);
 				vxy0 /= denom;
-				beta_xy_z = (h_use * q / (2.0*c*(m_i + m_e)*denom)) * grad_Az;
+				beta_xy_z = (h_use * q_ / (2.0*c_*(m_i + m_e)*denom)) * grad_Az;
 				
-				omega = qovermc * data_use.B; // Perhaps we'd rather B was stored separately
+				omega = eovermc_ * data_use.B; // Perhaps we'd rather B was stored separately
 
 				f64 nu_ei_effective = nu_eiBar * (1.0 - 0.9*nu_eiBar*(nu_eHeart*nu_eHeart + omega.z*omega.z) /
 					(nu_eHeart*(nu_eHeart*nu_eHeart + omega.x*omega.x + omega.y*omega.y + omega.z*omega.z)));
@@ -4517,7 +4516,7 @@ void TriMesh::Accelerate2018(f64 h_use, TriMesh * pUseMesh, TriMesh * pDestMesh,
 						+ h_use * MomAddRate.ion.z / (data_use.n*AreaMinor)
 
 						- 0.5*h_use*qoverMc*(2.0*data_k.Azdot
-							+ h_use * ROCAzdot_antiadvect + h_use * c*c*(Lap_Az + TWOPIoverc * q*data_use.n*(data_k.viz - data_k.vez)))
+							+ h_use * ROCAzdot_antiadvect + h_use *c_*c_*(Lap_Az + TWOPIoverc * q_*data_use.n*(data_k.viz - data_k.vez)))
 						- 0.5*h_use*qoverMc*(data_k.vxy + vxy0).dot(grad_Az);
 				} else {
 					viz0 = data_k.viz
@@ -4525,7 +4524,7 @@ void TriMesh::Accelerate2018(f64 h_use, TriMesh * pUseMesh, TriMesh * pDestMesh,
 						+ h_use * MomAddRate.ion.z / (data_use.n*AreaMinor)
 
 						- 0.5*h_use*qoverMc*(2.0*data_k.Azdot
-							+ h_use * ROCAzdot_antiadvect + h_use * c*c*( TWOPIoverc * q*data_use.n*(data_k.viz - data_k.vez)))
+							+ h_use * ROCAzdot_antiadvect + h_use *c_*c_*( TWOPIoverc * q_*data_use.n*(data_k.viz - data_k.vez)))
 						- 0.5*h_use*qoverMc*(data_k.vxy + vxy0).dot(grad_Az);
 				};
 				viz0 +=
@@ -4538,14 +4537,14 @@ void TriMesh::Accelerate2018(f64 h_use, TriMesh * pUseMesh, TriMesh * pDestMesh,
 				viz0 += -h_use * 0.5*M_ni*nu_in_MT *(data_k.viz - data_k.v_n.z - vn0.z)
 					+ h_use * 0.5*(moverM)*nu_ei_effective*(data_k.vez - data_k.viz);
 
-				denom = 1.0 + h_use * h_use*PI*qoverM*q*data_use.n + h_use * 0.5*qoverMc*(grad_Az.dot(beta_xy_z)) +
+				denom = 1.0 + h_use * h_use*PI*qoverM*q_*data_use.n + h_use * 0.5*qoverMc*(grad_Az.dot(beta_xy_z)) +
 					h_use * 0.5*M_ni*nu_in_MT*(1.0 - beta_ni) + h_use * 0.5*moverM*nu_ei_effective;
 
-				viz0_coeff_on_Lap_Az = -0.5*h_use*qoverMc*h_use*c*c / denom;
+				viz0_coeff_on_Lap_Az = -0.5*h_use*qoverMc*h_use*c_*c_ / denom;
 
 				viz0 /= denom;
 				sigma_i_zz = h_use * qoverM / denom;
-				beta_ie_z = (h_use*h_use*PI*qoverM*q*data_use.n
+				beta_ie_z = (h_use*h_use*PI*qoverM*q_*data_use.n
 					+ 0.5*h_use*qoverMc*(grad_Az.dot(beta_xy_z))
 					+ h_use * 0.5*M_ni*nu_in_MT*beta_ne
 					+ h_use * 0.5*moverM*nu_ei_effective) / denom;
@@ -4556,26 +4555,26 @@ void TriMesh::Accelerate2018(f64 h_use, TriMesh * pUseMesh, TriMesh * pDestMesh,
 
 						+ h_use * MomAddRate.elec.z / (data_use.n*AreaMinor)
 
-						+ h_use * 0.5*qovermc*(2.0*data_k.Azdot
+						+ h_use * 0.5*eovermc_*(2.0*data_k.Azdot
 							+ h_use * ROCAzdot_antiadvect
-							+ h_use * c*c*(Lap_Az
-								+ TWOPIoverc * q*data_use.n*(data_k.viz + viz0 - data_k.vez)))
+							+ h_use *c_*c_*(Lap_Az
+								+ TWOPIoverc * q_*data_use.n*(data_k.viz + viz0 - data_k.vez)))
 
-						+ 0.5*h_use*qovermc*(data_k.vxy + vxy0 + viz0 * beta_xy_z).dot(grad_Az);
+						+ 0.5*h_use*eovermc_*(data_k.vxy + vxy0 + viz0 * beta_xy_z).dot(grad_Az);
 				}
 				else {
 					vez0 = data_k.vez
 
 						+ h_use * MomAddRate.elec.z / (data_use.n*AreaMinor)
 
-						+ h_use * 0.5*qovermc*(2.0*data_k.Azdot
+						+ h_use * 0.5*eovermc_*(2.0*data_k.Azdot
 							+ h_use * ROCAzdot_antiadvect
-							+ h_use * c*c*(
-								TWOPIoverc * q*data_use.n*(data_k.viz + viz0 - data_k.vez)))
+							+ h_use *c_*c_*(
+								TWOPIoverc * q_*data_use.n*(data_k.viz + viz0 - data_k.vez)))
 
-						+ 0.5*h_use*qovermc*(data_k.vxy + vxy0 + viz0 * beta_xy_z).dot(grad_Az);
+						+ 0.5*h_use*eovermc_*(data_k.vxy + vxy0 + viz0 * beta_xy_z).dot(grad_Az);
 
-//					vez0_coeff_on_Lap_Az = h_use * h_use*0.5*qovermc* c*c; // always same, do not need
+//					vez0_coeff_on_Lap_Az = h_use * h_use*0.5*eovermc_*c_*c_; // always same, do not need
 				};
 				
 				vez0 -=
@@ -4585,15 +4584,15 @@ void TriMesh::Accelerate2018(f64 h_use, TriMesh * pUseMesh, TriMesh * pDestMesh,
 				// could store this from above and put opposite -- dividing by m_e instead of m_i
 				vez0 += -0.5*h_use*M_ne*nu_en_MT*(data_k.vez - data_k.v_n.z - vn0.z - beta_ni * viz0)
 					- 0.5*h_use*nu_ei_effective*(data_k.vez - data_k.viz - viz0);
-				denom = 1.0 + (h_use*h_use*PI*q*qoverm*data_use.n
-					+ 0.5*h_use*qovermc*(grad_Az.dot(beta_xy_z)))*(1.0 - beta_ie_z)
+				denom = 1.0 + (h_use*h_use*PI*q_*qoverm*data_use.n
+					+ 0.5*h_use*eovermc_*(grad_Az.dot(beta_xy_z)))*(1.0 - beta_ie_z)
 					+ 0.5*h_use*M_ne*nu_en_MT*(1.0 - beta_ne - beta_ni * beta_ie_z)
 					+ 0.5*h_use*nu_ei_effective*(1.0 - beta_ie_z);
 				
-				vez0_coeff_on_Lap_Az = h_use * h_use*0.5*qovermc* c*c/	denom; // always same, do not need
+				vez0_coeff_on_Lap_Az = h_use * h_use*0.5*eovermc_* c_*c_/	denom; // always same, do not need
 
-				sigma_e_zz = (-h_use * qoverm + h_use * h_use*PI*q*qoverm*data_use.n*sigma_i_zz
-					+ h_use * 0.5*qovermc*(grad_Az.dot(beta_xy_z))*sigma_i_zz
+				sigma_e_zz = (-h_use * qoverm + h_use * h_use*PI*q_*qoverm*data_use.n*sigma_i_zz
+					+ h_use * 0.5*eovermc_*(grad_Az.dot(beta_xy_z))*sigma_i_zz
 					+ 0.5*h_use*M_ne*nu_en_MT*beta_ni*sigma_i_zz
 					+ 0.5*h_use*nu_ei_effective*sigma_i_zz)
 					/ denom;
@@ -4614,25 +4613,25 @@ void TriMesh::Accelerate2018(f64 h_use, TriMesh * pUseMesh, TriMesh * pDestMesh,
 						"nu_enFX %1.12E nu_eiFX %1.12E denom %1.12E denom_n_comp %1.12E \n",
 						data_k.pos.x,data_k.pos.y,
 						vez0, data_k.vez, h_use * MomAddRate.elec.z / (data_use.n*AreaMinor),
-						h_use * 0.5*qovermc*(2.0*data_k.Azdot + h_use * c*c*(Lap_Az
-							+ TWOPIoverc * q*data_use.n*(data_k.viz + viz0 - data_k.vez))),
-						+0.5*h_use*qovermc*(data_k.vxy + vxy0 + viz0 * beta_xy_z).dot(grad_Az),
+						h_use * 0.5*eovermc_*(2.0*data_k.Azdot + h_use *c_*c_*(Lap_Az
+							+ TWOPIoverc * q_*data_use.n*(data_k.viz + viz0 - data_k.vez))),
+						+0.5*h_use*eovermc_*(data_k.vxy + vxy0 + viz0 * beta_xy_z).dot(grad_Az),
 						-1.5*h_use*nu_eiBar*((omega.x*omega.z - nu_eHeart * omega.y)*gradTe.x +
 						(omega.y*omega.z + nu_eHeart * omega.x)*gradTe.y) /
 							(m_e*nu_eHeart*(nu_eHeart*nu_eHeart + omega.x*omega.x + omega.y*omega.y + omega.z*omega.z)),
 						-0.5*h_use*M_ne*nu_en_MT*(data_k.vez - data_k.v_n.z - vn0.z - beta_ni * viz0),
 						-0.5*h_use*nu_ei_effective*(data_k.vez - data_k.viz - viz0),
 						denom,
-						h_use*h_use*PI*q*qoverm*data_use.n);
-					fprintf(fp, "hqovermc Azdot %1.12E hh0.5qcoverm Lap Az %1.12E hhqq_pi_over_m n (viz-vez) %1.12E \n",
-						h_use*qovermc*data_k.Azdot,
-						h_use*h_use*0.5*qoverm*c*Lap_Az,
-						h_use*h_use*q*qoverm*PI*(data_k.viz + viz0 - data_k.vez)*data_use.n);
+						h_use*h_use*PI*q_*qoverm*data_use.n);
+					fprintf(fp, "heovermc_ Azdot %1.12E hh0.5qcoverm Lap Az %1.12E hhqq_pi_over_m n (viz-vez) %1.12E \n",
+						h_use*eovermc_*data_k.Azdot,
+						h_use*h_use*0.5*qoverm*c_*Lap_Az,
+						h_use*h_use*q_*qoverm*PI*(data_k.viz + viz0 - data_k.vez)*data_use.n);
 					fprintf(fp, "data_k.Azdot %1.12E Lap_Az %1.12E viz-vez %1.12E n %1.12E \n", data_k.Azdot, Lap_Az, (data_k.viz + viz0 - data_k.vez), data_use.n);
 					fprintf(fp, "sigma_e_zz %1.12E -hq/m %1.12E sigma_iFX1 %1.12E gradAzFX %1.12E sigma_iFX2 %1.12E \n",
 						sigma_e_zz, -h_use * qoverm,
-						h_use * h_use*PI*q*qoverm*data_use.n*sigma_i_zz,
-						h_use * 0.5*qovermc*(grad_Az.dot(beta_xy_z))*sigma_i_zz,
+						h_use * h_use*PI*q_*qoverm*data_use.n*sigma_i_zz,
+						h_use * 0.5*eovermc_*(grad_Az.dot(beta_xy_z))*sigma_i_zz,
 						0.5*h_use*M_ne*nu_en_MT*beta_ni*sigma_i_zz
 						+ 0.5*h_use*nu_ei_effective*sigma_i_zz);
 					*/
@@ -4643,15 +4642,15 @@ void TriMesh::Accelerate2018(f64 h_use, TriMesh * pUseMesh, TriMesh * pDestMesh,
 #ifndef NODEBUGJZ0
 				vez0_component_vezk -= q * data_use.n*AreaMinor*data_k.vez;
 				vez0_component_Azdot -= q * data_use.n*AreaMinor*
-					(h_use*qovermc*data_k.Azdot);
+					(h_use*eovermc_*data_k.Azdot);
 				vez0_component_Azdotantiadvect -= q * data_use.n*AreaMinor*
-					(h_use*0.5*qovermc*(h_use*ROCAzdot_antiadvect));
+					(h_use*0.5*eovermc_*(h_use*ROCAzdot_antiadvect));
 				vez0_component_Lap_Az -= q * data_use.n*AreaMinor*
-					(h_use*0.5*qovermc*(h_use*c*c*Lap_Az));
+					(h_use*0.5*eovermc_*(h_use*c_*c*Lap_Az));
 				vez0_component_fric -= q * data_use.n*AreaMinor*
 					(-0.5*h_use*M_ne*nu_en_MT*(data_k.vez - data_k.v_n.z - vn0.z - beta_ni * viz0)
 						- 0.5*h_use*nu_ei_effective*(data_k.vez - data_k.viz - viz0));
-				vez0_component_total -= q*data_use.n*AreaMinor*vez0;
+				vez0_component_total -= q_*data_use.n*AreaMinor*vez0;
 				integral_n += data_use.n*AreaMinor;
 #endif
 				
@@ -4668,8 +4667,8 @@ void TriMesh::Accelerate2018(f64 h_use, TriMesh * pUseMesh, TriMesh * pDestMesh,
 				if (iPass == 0) {
 					
 					// Now calculate relationship Jz(Ez) :
-					Jz0 = q * data_1.n*(viz0 - vez0);
-					f64 sigma_zz = q * data_1.n*(sigma_i_zz - sigma_e_zz);
+					Jz0 = q_* data_1.n*(viz0 - vez0);
+					f64 sigma_zz = q_* data_1.n*(sigma_i_zz - sigma_e_zz);
 
 					Iz0 += Jz0 * AreaMinor; // Think dest mesh area minor has not been populated so usemesh is best we can do
 					SigmaIzz += sigma_zz * AreaMinor;
@@ -4686,31 +4685,31 @@ void TriMesh::Accelerate2018(f64 h_use, TriMesh * pUseMesh, TriMesh * pDestMesh,
 						data_1.v_n.z += beta_ne * data_1.vez + beta_ni * data_1.viz;
 
 						data_1.Azdot = data_k.Azdot
-							+ h_use * ROCAzdot_antiadvect + h_use * c*c*(Lap_Az +
-								0.5*FOURPI_OVER_C * q*data_use.n*(data_k.viz + data_1.viz
+							+ h_use * ROCAzdot_antiadvect + h_use *c_*c_*(Lap_Az +
+								0.5*FOURPI_OVER_C * q_*data_use.n*(data_k.viz + data_1.viz
 									- data_k.vez - data_1.vez));
 
-						Iz0 += q * data_1.n*(data_1.viz - data_1.vez)*AreaMinor;
+						Iz0 += q_* data_1.n*(data_1.viz - data_1.vez)*AreaMinor;
 
 						memcpy(pDestMesh->pData + iMinor, &data_1, sizeof(plasma_data));
 					}
 					else {
 						Azdot0[iMinor] = data_k.Azdot
-							+ h_use * ROCAzdot_antiadvect + h_use * c*c*(
-								0.5*FOURPI_OVER_C * q*data_use.n*(data_k.viz + data_1.viz
+							+ h_use * ROCAzdot_antiadvect + h_use *c_*c_*(
+								0.5*FOURPI_OVER_C * q_*data_use.n*(data_k.viz + data_1.viz
 									- data_k.vez - data_1.vez));
-						gamma[iMinor] = h_use * c*c*(1.0 + 0.5*FOURPI_OVER_C * q*data_use.n*(viz0_coeff_on_Lap_Az - vez0_coeff_on_Lap_Az));
+						gamma[iMinor] = h_use *c_*c_*(1.0 + 0.5*FOURPI_OVER_C * q_*data_use.n*(viz0_coeff_on_Lap_Az - vez0_coeff_on_Lap_Az));
 						
 					}
 					// This does not seem to come out equal to what it says on the graph.
 					// Seeing Jz = -2e16 and Azdot consistent with this, yet
 					// seeing Iz attained = -1e9. The well radius is about 0.1cm so 0.01*pi*(-2e16) = -6e14 roughly.
-					Jz0 = q * data_1.n*(data_1.viz-data_1.vez);
+					Jz0 = q_* data_1.n*(data_1.viz-data_1.vez);
 					if (Jz0 < minJz0) minJz0 = Jz0;
 		//			if ((iMinor > BEGINNING_OF_CENTRAL + 14630) 
 			//			&& (iMinor < BEGINNING_OF_CENTRAL + 14650)) {
 				//		printf("Area minor: %1.8E Jz %1.8E contribIz %1.8E\n",
-					//		AreaMinor, q * data_1.n*(data_1.viz - data_1.vez), q * data_1.n*(data_1.viz - data_1.vez)*AreaMinor);
+					//		AreaMinor, q_* data_1.n*(data_1.viz - data_1.vez), q_* data_1.n*(data_1.viz - data_1.vez)*AreaMinor);
 					//};
 					if (Jz0 > maxJz0) {
 						maxJz0 = Jz0;
@@ -4874,9 +4873,9 @@ void TriMesh::Accelerate2018(f64 h_use, TriMesh * pUseMesh, TriMesh * pDestMesh,
 							if ((iPass > 0) && (bFeint == false))
 								pDestMesh->pData[iMinor].Azdot = pData[iMinor].Azdot
 									// + h_use * ROCAzdot_antiadvect // == 0
-									+ h_use * (c*c*LapAzArray[iMinor] + 4.0*PI*c*Jz);
-							Azdot0[iMinor] = pData[iMinor].Azdot + +h_use * + 4.0*PI*c*Jz;
-							gamma[iMinor] = h_use * c*c;
+									+ h_use * (c_*c_*LapAzArray[iMinor] + 4.0*PI*c_*Jz);
+							Azdot0[iMinor] = pData[iMinor].Azdot + +h_use * + 4.0*PI*c_*Jz;
+							gamma[iMinor] = h_use *c_*c_;
 					//	};
 				//	};					
 				};
@@ -5380,16 +5379,16 @@ void TriMesh::GetGradTeOnVertices()
 //		// NOTE: Uses GradTe so it better exist.
 //		
 //		static Tensor3 const ID3x3 (1.0,0.0,0.0,0.0,1.0,0.0,0.0,0.0,1.0);
-//		static real const TWOTHIRDSqsq = 2.0*q*q/3.0;
+//		static real const TWOTHIRDSqsq_= 2.0*q_*q/3.0;
 //		static real const one_over_kB = 1.0/kB; // multiply by this to convert to eV
 //		static real const one_over_kB_cubed = 1.0/(kB*kB*kB); // multiply by this to convert to eV
 //		static real const kB_to_3halves = sqrt(kB)*kB;
 //		static real const over_sqrt_m_ion = 1.0/sqrt(m_ion);
 //		static real const over_sqrt_m_e = 1.0/sqrt(m_e);
 //		static real const qoverMc = q/(m_ion*c);
-//		static real const qovermc = q/(m_e*c);
+//		static real const eovermc_ = q/(m_e*c);
 //		static real const NU_EI_FACTOR = 1.0/(3.44e5);
-//		static real const nu_eiBarconst = //(4.0/3.0)*sqrt(2.0*PI/m_e)*q*q*q*q;
+//		static real const nu_eiBarconst = //(4.0/3.0)*sqrt(2.0*PI/m_e)*q_*q_*q_*q_;
 //		// don't know in what units but it IS exactly what we already had - see Formulary
 //									1.0/(3.44e5);
 //
@@ -5477,7 +5476,7 @@ void TriMesh::GetGradTeOnVertices()
 //
 //		// (n_n/n_i) transfer_rate_ni = transfer_rate_in
 //		
-//		omega_ce = qovermc*pTri->B;
+//		omega_ce = eovermc_*pTri->B;
 //		omega_ci = qoverMc*pTri->B; // note: if ion acceleration stage, we could if we wanted work out B at k+1 first.
 //		omega_ci_cross.MakeCross(omega_ci);
 //		
@@ -6269,8 +6268,8 @@ void TriMesh::CreateMeshDisplacement_zero_future_pressure()
 		{
 			totalvertexmass_grams = m_n*pVertex->Neut.mass + m_ion*pVertex->Ion.mass + m_e*pVertex->Elec.mass;
 			
-			JcrossB_contribution =  h*h*0.5*q*((pVertex->Ion.mom-pVertex->Elec.mom).cross(pVertex->B))/
-						(c*totalvertexmass_grams);
+			JcrossB_contribution =  h*h*0.5*q_*((pVertex->Ion.mom-pVertex->Elec.mom).cross(pVertex->B))/
+						(c_*totalvertexmass_grams);
 			
 			pVertex->AdvectedPosition0 = pVertex->pos
 				
@@ -6342,7 +6341,7 @@ void TriMesh::CreateMeshDisplacement_zero_future_pressure()
 	//	for (i = 0; i < 6; i++)
 	//	{
 	//		for (j = 0; j < 6; j++) 
-	//			// Hsq = multiply row i and column j of H
+	//			// Hsq_= multiply row i and column j of H
 	//			Hsq[i][j] = H[i][0]*H[0][j] + H[i][1]*H[1][j] + H[i][2]*H[2][j]
 	//				  + H[i][3]*H[3][j] + H[i][4]*H[4][j] + H[i][5]*H[5][j];
 	//	};

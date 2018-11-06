@@ -32,29 +32,27 @@ real const c_ = 29979245800.0 ;   // speed of light in vacuum (cm/s)
 real const Z_ = unity ;           // number of charges in ion species
 real const e_ = 4.8e-10  ;        // charge of electrons (statcoul)
 real const q_ = 4.8e-10  ;        // ion charge [unsigned]
-real const m_e = 9.10953e-28;    // electron mass in grams
+real const m_e_ = 9.10953e-28;    // electron mass in grams
 
 // NOTE CHANGE : 3 x mass :
 
 //real const m_i_ = 3.0*3.67291e-24;    // deuteron mass in grams
 
-real const m_i = 3.3475491e-24; // old: 3.67291e-24;    // deuteron mass in grams
+real const m_i_ = 3.3475491e-24; // old: 3.67291e-24;    // deuteron mass in grams
 // https://physics.nist.gov/cgi-bin/cuu/Value?md  
 // Proton + neutron would give 3.3475491e-24. Deuteron is proton+neutron right?
 
-real const m_ion_ = m_i;
-real const m_neutral_ = m_e + m_ion_;
+real const m_ion_ = m_i_;
+real const m_neutral_ = m_e_ + m_ion_;
 real const m_n_ = m_neutral_;
-real const m_n = m_n_;
 
-real const m_i_over_m_n = m_i / m_n;// 0.999917333695;   // Naughty - #define here yet not for m_e
-real const m_e_over_m_n = m_e / m_n; // 0.0002723738828549;
-real const over_m_e = 1.0 / m_e;// 1.09775147565242e+27;
-real const over_m_n = 1.0 / m_n;
-real const over_m_i = 1.0 / m_i;
+real const m_i_over_m_n = m_i_ / m_n_;// 0.999917333695;   // Naughty - #define here yet not for m_e
+real const m_e_over_m_n = m_e_ / m_n_; // 0.0002723738828549;
+real const over_m_e = 1.0 / m_e_;// 1.09775147565242e+27;
+real const over_m_n = 1.0 / m_n_;
+real const over_m_i = 1.0 / m_i_;
 #define TWO_PI_OVER_C 2.09584502195168e-10
 #define M_PI 3.141592653589793
-real const m_e_ = m_e;
 
 // To use #define we have to make sure the expression never appears within any other.
 // Need a terminating & perhaps initial character such as C for const. 

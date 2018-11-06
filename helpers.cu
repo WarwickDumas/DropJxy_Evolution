@@ -1,6 +1,8 @@
 
 // Device routines that can be #included by the kernels file.
 #include "cuda_struct.h"
+#include "kernel.h"
+
 
 #ifdef __CUDACC__
 __device__ __forceinline__ f64 GetEzShape(f64 r) {
@@ -62,15 +64,15 @@ __device__ __forceinline__ f64 Get_lnLambda_d(real n_e,real T_e)
 __device__ __forceinline__ f64_vec2 Anticlock_rotate2(const f64_vec2 arg)
 {
 	f64_vec2 result;
-	result.x = Anticlockwise2.xx*arg.x+Anticlockwise2.xy*arg.y;
-	result.y = Anticlockwise2.yx*arg.x+Anticlockwise2.yy*arg.y;
+	result.x = Anticlockwise.xx*arg.x+Anticlockwise.xy*arg.y;
+	result.y = Anticlockwise.yx*arg.x+Anticlockwise.yy*arg.y;
 	return result;
 }
 __device__ __forceinline__ f64_vec2 Clockwise_rotate2(const f64_vec2 arg)
 {
 	f64_vec2 result;
-	result.x = Clockwise2.xx*arg.x+Clockwise2.xy*arg.y;
-	result.y = Clockwise2.yx*arg.x+Clockwise2.yy*arg.y;
+	result.x = Clockwise.xx*arg.x+Clockwise.xy*arg.y;
+	result.y = Clockwise.yx*arg.x+Clockwise.yy*arg.y;
 	return result;
 }
 
@@ -399,200 +401,6 @@ __device__ __forceinline__ f64_vec2 GetRadiusIntercept(f64_vec2 x1,f64_vec2 x2,f
 
 
 
-
-__device__ __forceinline__ minmod(
-	real n[], // output array
-	real ndesire[], // array of desired values 
-	real n_avg,      // 
-	Vector2 central, // central position
-	f64_vec2 coord[MAXNEIGH]
-) // returns centre n
-{
-
-	// 2. Decide whether we can attain these values and get N,NT,Nv by setting
-	// n,nT,nv at vertex to be between highest and lowest corner desired value.
-
-	// If not, do not move a lower corner than n_avg, even lower, to attain a lower mass
-	// than we can get by putting the centre on a par with the lowest.
-	// instead, attain the desired low values then see how much mass then there is available to
-	// push somewhat up to the high corners, in sequence.
-
-	// Note: if n_avg < all desired corners, that is a sign we have to default to say 
-	// constant-in-cell.
-	real coeff[MAXNEIGH]; // with coord, that's 3 x 12 = 36 doubles! + ndesire.
-	bool fixed[MAXNEIGH]; 
-	real tri_area, coeffcent, N0, n_C, n_acceptable, N_attained, coeffremain;
-	real low_n, high_n;   
-	int i, inext;
-	bool found;
-				// we should stick some stuff in shared. 
-				// can we bring this out of inline?
-	
-	low_n = ndesire[0];
-	high_n = ndesire[0];
-	i = 0;
-	while (i < numCoords) {
-		if (low_n > ndesire[i]) low_n = ndesire[i];
-		if (high_n < ndesire[i]) high_n = ndesire[i];
-		++i;
-	};
-
-	// ISSUE:
-
-	if ((n_avg > high_n) || (n_avg < low_n)) {
-		// above/below all of them: minmod says give up and set constant
-		for (i = 0; i < numCoords; i++)
-			n[i] = n_avg;
-		return n_avg; // n_C 
-	};
-	// Perhaps not best behaviour -- rather we should treat each as an elastic link and min sum of squares.
-
-	// Now see if we can set n_avg to a value that achieves ndesire and N.
-	// work up a coefficient on n_C as well as what ndesire is giving us.
-
-	// We assign to each corner a coefficient to make life easier.
-	memset(coeff, 0, sizeof(real) * MAXNEIGH); // sheer amount of footprint is getting big
-	coeffcent = 0.0;
-	N0 = 0.0;
-#pragma unroll MAXNEIGH
-	for (i = 0; i < numCoords; i++)
-	{
-		inext = i + 1; if (inext == numCoords) inext = 0;
-
-		cptri.Clear();
-		cptri.add(coord[i]);
-		cptri.add(coord[inext]);
-		cptri.add(central);
-		tri_area = cptri.GetArea();
-
-		// How to take that area:
-
-		tri_area = fabs(0.5*((coord[i].x + coord[inext].x) * (coord[inext].y - coord[i].y)
-			+ (central.x + coord[inext].x) * (central.y - coord[inext].y)
-			+ (central.x + coord[i].x) * (coord[i].y - central.y)));
-		
-
-		
-		N0 += tri_area*THIRD*(ndesire[i] + ndesire[inext]);
-		coeff[i] += tri_area*THIRD;
-		coeff[inext] += tri_area*THIRD;
-		coeffcent += tri_area*THIRD;
-
-		// Is THIRD actually correct?
-	};
-
-	
-	// Here using N so maybe we do need AreaMajor
-
-
-	real n_C_need = (N - N0) / coeffcent;
-	if ((n_C_need > low_n) && (n_C_need < high_n))
-	{
-		// accept:
-		for (i = 0; i < numCoords; i++)
-			n[i] = ndesire[i];
-		return n_C_need;  // hopefully this is frequently the case.
-	};
-
-	memset(fixed, 0, sizeof(bool) * MAXNEIGH); // char would do
-
-
-	// 192 threads => 32 vars in L1, 10 in shared max.
-	// Try this:
-	// n_desire lives in shared. So 2 per thread, since only exists for tris.
-	// ShardModel lives in L1. So 12 n. 12 coeffs also. = 24
-	// Then we can otherwise carry out exactly this.
-
-
-	if (n_C_need < low_n) {
-		// the mass is low. So for those less than some n_acceptable,
-		// let them attain n_desire, and fix n_C = low_n.
-		// Then we'll see how high we can go with n_acceptable.
-
-		n_C = low_n;
-		n_acceptable = (N - coeffcent*n_C) / (area - THIRD*area);
-		// area-THIRD*area = sum of other coeffs, and of course
-		// coeffcent = THIRD*area
-		// n_acceptable > N/area since N=area*n_avg > area*low_n.
-
-		// We accept things that are less than this 'max average', and
-		// let that increase the threshold; go again until
-		// the time we do not find any new lower items ;				
-		do {
-			found = 0;
-			coeffremain = 0.0;
-			N_attained = coeffcent*low_n;
-			for (i = 0; i < numCoords; i++)
-			{
-				if (fixed[i] == 0) {
-					if (ndesire[i] < n_acceptable) {
-						// yes, use ndesire[i] ...
-						fixed[i] = true;
-						n[i] = ndesire[i];
-						N_attained += n[i] * coeff[i];
-						found = true;
-					}
-					else {
-						coeffremain += coeff[i];
-					};
-				}
-				else {
-					N_attained += n[i] * coeff[i];
-				};
-			};
-			// It can happen that eventually ALL are found
-			// to be < n_acceptable due to FP error.
-			// On next pass found will be false.
-			if ((found != 0) && (coeffremain > 0.0)) {
-				n_acceptable = (N - N_attained) / coeffremain;
-				// The value to which we have to set the remaining
-				// n values.
-			};
-		} while (found != 0);
-
-		// Now we should set the remaining values to n_acceptable
-		// which is less than ndesire[i] in all those cases.
-		for (i = 0; i < numCoords; i++)
-		{
-			if (fixed[i] == 0) n[i] = n_acceptable;
-		};
-		return n_C;
-
-	}
-	else {
-		n_C = high_n;
-		n_acceptable = (N - coeffcent*n_C) / (area - THIRD*area);
-		do {
-			found = 0;
-			coeffremain = 0.0;
-			N_attained = coeffcent*high_n;
-			for (i = 0; i < numCoords; i++)
-			{
-				if (fixed[i] == 0) {
-					if (ndesire[i] > n_acceptable) {
-						// yes, use ndesire[i] ...
-						fixed[i] = true;
-						n[i] = ndesire[i];
-						N_attained += n[i] * coeff[i];
-						found = true;
-					}
-					else {
-						coeffremain += coeff[i];
-					};
-				}
-				else {
-					N_attained += n[i] * coeff[i];
-				};
-			};
-			if ((found != 0) && (coeffremain > 0.0)) {
-				n_acceptable = (N - N_attained) / coeffremain;
-			};
-		} while (found != 0);
-
-		for (i = 0; i < numCoords; i++)
-		{
-			if (fixed[i] == 0) n[i] = n_acceptable;
-		};
-		return n_C;
-	};
+__device__ __forceinline__ f64 GetEzShape(f64 r) {
+	return 1.0 - 1.0 / (1.0 + exp(-16.0*(r - 4.2))); // At 4.0cm it is 96% as strong as at tooth. At 4.4 it is 4%.
 }
