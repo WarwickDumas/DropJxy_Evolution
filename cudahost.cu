@@ -434,8 +434,7 @@ void cuSyst::PerformCUDA_Advance(const cuSyst * pX_target, const cuSyst * pX_hal
 		this->p_tri_corner_index,
 		this->p_who_am_I_to_corner);
 	Call(cudaThreadSynchronize(), "cudaTS InferMinorDensities");
-
-
+	
 	kernelCalculateUpwindDensity_tris<<<numTriTiles,threadsPerTileMinor>>>(
 		this->p_info,
 		p_n_shards_n,
@@ -454,6 +453,7 @@ void cuSyst::PerformCUDA_Advance(const cuSyst * pX_target, const cuSyst * pX_hal
 	cudaMemset(p_div_v_neut, 0, sizeof(f64)*NUMVERTICES);
 	cudaMemset(p_div_v, 0, sizeof(f64)*NUMVERTICES);
 	cudaMemset(NTadditionrates, 0, sizeof(NTrates)*NUMVERTICES);
+
 	kernelAccumulateAdvectiveMassHeatRate<<<numTilesMajor,threadsPerTileMajor>>>(
 		0.5*TIMESTEP, // why it appears here?
 		this->p_info,
@@ -495,8 +495,6 @@ void cuSyst::PerformCUDA_Advance(const cuSyst * pX_target, const cuSyst * pX_hal
 	Call(cudaThreadSynchronize(), "cudaTS AccumulateDiffusiveHeatRate");
 	// To increase the efficiency we want to make a clever 2nd set of major tiles of size 192. Also try 256, 384.
 
-	// WHERE is NTadditionrates zeroed?
-
 	kernelAdvanceDensityAndTemperature<<<numTilesMajor,threadsPerTileMajor>>>(
 		0.5*TIMESTEP, 
 		this->p_info+BEGINNING_OF_CENTRAL,
@@ -511,7 +509,8 @@ void cuSyst::PerformCUDA_Advance(const cuSyst * pX_target, const cuSyst * pX_hal
 		p_div_v_neut, p_div_v,
 		p_Integrated_div_v_overall,
 		this->p_AreaMajor,
-		pX_half->p_n_major, pX_half->p_T_minor + BEGINNING_OF_CENTRAL
+		pX_half->p_n_major, 
+		pX_half->p_T_minor + BEGINNING_OF_CENTRAL
 		);
 	Call(cudaThreadSynchronize(), "cudaTS Advance_n_and_T");
 	

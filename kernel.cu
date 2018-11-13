@@ -709,7 +709,7 @@ __global__ void kernelInferMinorDensitiesFromShardModel(
 	long const index = threadIdx.x + blockIdx.x * blockDim.x; // INDEX OF VERTEX
 	structural info = p_info[index];
 
-	if (index > BEGINNING_OF_CENTRAL)
+	if (index >= BEGINNING_OF_CENTRAL)
 	{
 		if (info.flag == DOMAIN_VERTEX) {
 			nvals result;
@@ -718,8 +718,13 @@ __global__ void kernelInferMinorDensitiesFromShardModel(
 			p_n_minor[index] = result;
 		} else {
 			// Outermost vertex?
-
-
+			result.n = 0.0;
+			result.n_n = 0.0;
+			if (info.flag == OUTERMOST) {
+				result.n = 1.0e18;
+				result.n_n = 1.0e12;
+			};
+			p_n_minor[index] = result;
 		}
 	} else {
 		if (info.flag == DOMAIN_TRIANGLE) {
@@ -741,36 +746,39 @@ __global__ void kernelInferMinorDensitiesFromShardModel(
 				nvals result;
 				LONG3 tri_corner_index = p_tri_corner_index[index];
 				LONG3 who_am_I_to_corner = p_who_am_I_to_corner[index];
-				result.n = 0.5*
+				result.n = 0.0;
+				result.n_n = 0.0;
 					(p_n_shards[tri_corner_index.i1].n[who_am_I_to_corner.i1]
-						+ p_n_shards[tri_corner_index.i2].n[who_am_I_to_corner.i2]);
+						+ p_n_shards[tri_corner_index.i2].n[who_am_I_to_corner.i2]
+						+ p_n_shards[tri_corner_index.i3].n[who_am_I_to_corner.i3]);
 				result.n_n = 0.5*
 					(p_n_shards_n[tri_corner_index.i1].n[who_am_I_to_corner.i1]
-						+ p_n_shards_n[tri_corner_index.i2].n[who_am_I_to_corner.i2]);
+						+ p_n_shards_n[tri_corner_index.i2].n[who_am_I_to_corner.i2]
+						+ p_n_shards_n[tri_corner_index.i3].n[who_am_I_to_corner.i3]);
+				
+				structural info1, info2, info3;
+				info1 = p_info[BEGINNING_OF_CENTRAL + tri_corner_index.i1];
+				info2 = p_info[BEGINNING_OF_CENTRAL + tri_corner_index.i2];
+				info3 = p_info[BEGINNING_OF_CENTRAL + tri_corner_index.i3];
+				int numabove = 0;
+				if (info1.flag == DOMAIN_VERTEX) {
+					numabove++;
+					result.n += p_n_shards[tri_corner_index.i1].n[who_am_I_to_corner.i1];
+					result.n_n += p_n_shards_n[tri_corner_index.i1].n[who_am_I_to_corner.i1];
+				};
+				if (info2.flag == DOMAIN_VERTEX) {
+					numabove++;
+					result.n += p_n_shards[tri_corner_index.i2].n[who_am_I_to_corner.i2];
+					result.n_n += p_n_shards_n[tri_corner_index.i2].n[who_am_I_to_corner.i2];
+				};
+				if (info3.flag == DOMAIN_VERTEX) {
+					numabove++;
+					result.n += p_n_shards[tri_corner_index.i3].n[who_am_I_to_corner.i3];
+					result.n_n += p_n_shards_n[tri_corner_index.i4].n[who_am_I_to_corner.i3];
+				};
+				result.n /= (f64)numabove;
+				result.n_n /= (f64)numabove;
 				p_n_minor[index] = result;
-
-
-				// This is no good and incorrect.
-
-
-				// What do we do if only 1 vertex is above ins? In general, what?
-
-
-
-				//
-
-
-
-
-
-				//
-
-
-
-
-
-				//
-
 			}
 		}		
 	}
@@ -3850,6 +3858,14 @@ __global__ void kernelCreate_pressure_gradT_and_gradA_LapA_CurlA_minor(
 			// Let's make life easier and load up an array of 6 n's beforehand.
 			f64 n_array[6];
 
+			// indexminor sequence:
+			// 0 = corner 0
+			// 1 = neighbour 2
+			// 2 = corner 1
+			// 3 = neighbour 0
+			// 4 = corner 2
+			// 5 = neighbour 1
+
 			short who_am_I = who_am_I_to_corners[0];
 			short tri_len = p_info_minor[cornerindex.i1 + BEGINNING_OF_CENTRAL].neigh_len;
 
@@ -3858,6 +3874,8 @@ __global__ void kernelCreate_pressure_gradT_and_gradA_LapA_CurlA_minor(
 				short who_prev = who_am_I - 1;
 				if (who_prev < 0) who_prev = tri_len - 1;
 				// Worry about pathological cases later.
+
+
 				n_array[0] = THIRD*(shared_n_shards[cornerindex.i1 - StartMajor].n[who_prev]
 					+ shared_n_shards[cornerindex.i1 - StartMajor].n[who_am_I]
 					+ shared_n_shards[cornerindex.i1 - StartMajor].n_cent);
