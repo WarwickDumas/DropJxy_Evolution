@@ -14,6 +14,7 @@
 #include "flags.h"
 #include "FFxtubes.h"
 #include "cppconst.h"
+#include "cuda_struct.h"
 
 #include "d3d.h"    
 #include <d3dx9.h> 
@@ -64,6 +65,7 @@ unsigned int cw; // control word for floating point hardware exception hiding
 
 TriMesh * pX, *pXnew;
 TriMesh X1, X2, X3;
+cuSyst cuSyst_host;
 
 D3DXVECTOR3 GlobalEye, GlobalLookat, GlobalPlanEye, GlobalPlanEye2, GlobalPlanLookat,
 GlobalPlanLookat2, GlobalEye2, GlobalLookat2;
@@ -1306,6 +1308,8 @@ Error:
 
 LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
+	static bool bInvoked_cuSyst = false;
+
 	int iAntiskips;
 	int wmId, wmEvent;
 	int i, j, ctr;
@@ -1570,20 +1574,39 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 		if (wParam == 1)
 		{
 			KillTimer(hWnd, 1);
+
+			if (bInvoked_cuSyst == false) {
+				cuSyst_host.InvokeHost();
+				bInvoked_cuSyst = true;
+				cuSyst_host.PopulateFromTriMesh(pX);
+
+				PerformCUDA_Invoke_Populate(
+					&cuSyst_host,
+					NUMVERTICES,
+					pX->InnermostFrillCentroidRadius,
+					pX->OutermostFrillCentroidRadius,
+					pX->numStartZCurrentTriangles,
+					pX->numEndZCurrentTriangles	);
+			}
+
 			// Run 1 step:
 			if (steps_remaining > 0)
 			{
 				failed = 0;
+								
+				printf("evaltime %1.8E\n", evaltime);
+//				for (int iStep = 0; iStep < STEPS_PER_LOOP; iStep++) {
+//					printf("evaltime %1.8E\n", evaltime);
+//					pX->Advance(pXnew, &X3);
+//					temp = pX;
+//					pX = pXnew;
+//					pXnew = temp;
+//				};
 
-				for (int iStep = 0; iStep < STEPS_PER_LOOP; iStep++) {
-					printf("evaltime %1.8E\n", evaltime);
+				PerformCUDA_RunStepsAndReturnSystem(&cuSyst_host);
+				// For now:
+				cuSyst_host.PopulateTriMesh(pX);
 
-					pX->Advance(pXnew, &X3);
-
-					temp = pX;
-					pX = pXnew;
-					pXnew = temp;
-				};
 				steps_remaining -= STEPS_PER_LOOP;
 				GlobalStepsCounter += STEPS_PER_LOOP;
 				//evaltime += h;	// this is done during the step

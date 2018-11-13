@@ -73,13 +73,45 @@ struct v4 {
 
 struct nvals {
 	f64 n, n_n;
+	nvals(f64 n_, f64 nn_) {
+		n = n_; n_n = nn_;
+	}
+	nvals() {}
+	void __device__ __forceinline__ operator+= (const nvals &nval) {
+		n += nval.n;
+		n_n += nval.n_n;
+	}
 };
+nvals __device__ inline operator* (const real hh, const nvals & nval) 
+{
+	return nvals(hh*nval.n, hh*nval.n_n);
+}
+
+struct f64_12 {
+	f64 n[12];
+};
+
 struct T2 {
 	f64 Ti, Te;
 };
 struct T3 {
 	f64 Tn, Ti, Te;
+	T3(f64 Tn_, f64 Ti_, f64 Te_) {
+		Tn = Tn_; Ti = Ti_; Te = Te_;
+	}
+	T3(){}
+	void __device__ __forceinline__ operator+= (const T3 &T) {
+		Tn += T.Tn;
+		Ti += T.Ti;
+		Te += T.Te;
+	}
 };
+T3 __device__ inline operator* (const real hh, const T3 &T) 
+{
+	return T3(hh*T.Tn, hh*T.Ti, hh*T.Te);
+};
+
+
 struct AAdot {
 	f64 Az, Azdot;
 };
@@ -182,14 +214,18 @@ public:
 	 
 	 long * p_izTri_vert;
 	 long * p_izNeigh_vert;
-	 char * p_szPBC_vert;   // MAXNEIGH*numVertices
+	 char * p_szPBCtri_vert;   // MAXNEIGH*numVertices
+	 char * p_szPBCneigh_vert;
 
-	 long * p_Indexneigh_triminor;
+	 long * p_izNeigh_TriMinor;
 	 char * p_szPBC_triminor; // 6*numTriangles
 	 
 	 LONG3 * p_tri_corner_index;
 	 CHAR4 * p_tri_periodic_corner_flags;
 
+	 LONG3 * p_tri_neigh_index;
+	 CHAR4 * p_tri_periodic_neigh_flags;    
+	 
 	 LONG3 * p_who_am_I_to_corner;
  
 	 nvals * p_n_minor;
@@ -201,12 +237,8 @@ public:
 	 f64_vec3 * p_B;
 
 	 f64 * p_Lap_Az;
-
 	 f64_vec2 * p_v_overall_minor;
-
-	 f64_vec3 * p_MomAdditionRate_ion;
-	 f64_vec3 * p_MomAdditionRate_elec;
-	 f64_vec3 * p_MomAdditionRate_neut;
+	 nvals * p_n_upwind_minor;
 
 	 //f64_vec2 * p_pos; // vertex positions are a subset?
 	 // We made structural * p_info assuming if we want pos we also want flags...
@@ -219,11 +251,12 @@ public:
 	int InvokeHost();
 	void SendToHost(cuSyst & Xhost);
 	void SendToDevice(cuSyst & Xdevice);
+	void CopyStructuralDetailsFrom(cuSyst & src); // on device
 
 	void PopulateFromTriMesh(TriMesh * pX);
 	void PopulateTriMesh(TriMesh * pX);
 
-	void PerformCUDA_Advance(const cuSyst * pX_target);
+	void PerformCUDA_Advance(const cuSyst * pX_target, const cuSyst * pX_half);
 	void ZeroData();
 	~cuSyst();
 };
@@ -234,12 +267,16 @@ void PerformCUDA_Invoke_Populate (
 	cuSyst * pX_host, // populate in calling routine...
 	long numVerts,
 	f64 InnermostFrillCentroidRadius,
-	f64 OutermostFrillCentroidRadius
+	f64 OutermostFrillCentroidRadius,
+	long numStartZCurrentTriangles_,
+	long numEndZCurrentTriangles_
 		);
+
+void PerformCUDA_RunStepsAndReturnSystem(cuSyst * pX_host);
 
 void FreeVideoResources ();
 
-__host__ bool Call(cudaError_t cudaStatus, char str[]);
+extern __host__ bool Call(cudaError_t cudaStatus, char str[]);
 
 #define CallMAC(cudaStatus) Call(cudaStatus, #cudaStatus )   
 

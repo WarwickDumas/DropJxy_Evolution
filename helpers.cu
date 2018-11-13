@@ -79,20 +79,86 @@ __device__ __forceinline__ f64_vec2 Clockwise_rotate2(const f64_vec2 arg)
 __device__ __forceinline__ f64_vec3 Anticlock_rotate3(const f64_vec3 arg)
 {
 	f64_vec3 result;
-	result.x = Anticlockwise2.xx*arg.x+Anticlockwise2.xy*arg.y;
-	result.y = Anticlockwise2.yx*arg.x+Anticlockwise2.yy*arg.y;
+	result.x = Anticlockwise.xx*arg.x+Anticlockwise.xy*arg.y;
+	result.y = Anticlockwise.yx*arg.x+Anticlockwise.yy*arg.y;
 	result.z = arg.z;
 	return result;
 }
 __device__ __forceinline__ f64_vec3 Clockwise_rotate3(const f64_vec3 arg)
 {
 	f64_vec3 result;
-	result.x = Clockwise2.xx*arg.x+Clockwise2.xy*arg.y;
-	result.y = Clockwise2.yx*arg.x+Clockwise2.yy*arg.y;
+	result.x = Clockwise.xx*arg.x+Clockwise.xy*arg.y;
+	result.y = Clockwise.yx*arg.x+Clockwise.yy*arg.y;
 	result.z = arg.z;
 	return result;
 }
 
+void Estimate_Ion_Neutral_Cross_sections_d(real T, // call with T in electronVolts
+	real * p_sigma_in_MT,
+	real * p_sigma_in_visc)
+{
+	if (T > cross_T_vals[9]) {
+		*p_sigma_in_MT = cross_s_vals_MT_ni_d[9];
+		*p_sigma_in_visc = cross_s_vals_viscosity_ni_d[9];
+		return;
+	}
+	if (T < cross_T_vals[0]) {
+		*p_sigma_in_MT = cross_s_vals_MT_ni_d[0];
+		*p_sigma_in_visc = cross_s_vals_viscosity_ni_d[0];
+		return;
+	}
+	int i = 1;
+	//while (T > cross_T_vals_d[i]) i++;
+
+	if (T > cross_T_vals_d[5]) {
+		if (T > cross_T_vals_d[7]) {
+			if (T > cross_T_vals_d[8])
+			{
+				i = 9; // top of interval
+			}
+			else {
+				i = 8;
+			};
+		}
+		else {
+			if (T > cross_T_vals_d[6]) {
+				i = 7;
+			}
+			else {
+				i = 6;
+			};
+		};
+	}
+	else {
+		if (T > cross_T_vals_d[3]) {
+			if (T > cross_T_vals_d[4]) {
+				i = 5;
+			}
+			else {
+				i = 4;
+			};
+		}
+		else {
+			if (T > cross_T_vals_d[2]) {
+				i = 3;
+			}
+			else {
+				if (T > cross_T_vals_d[1]) {
+					i = 2;
+				}
+				else {
+					i = 1;
+				};
+			};
+		};
+	};
+	// T lies between i-1,i
+	real ppn = (T - cross_T_vals_d[i - 1]) / (cross_T_vals_d[i] - cross_T_vals_d[i - 1]);
+
+	*p_sigma_in_MT = ppn * cross_s_vals_MT_ni_d[i] + (1.0 - ppn)*cross_s_vals_MT_ni_d[i - 1];
+	*p_sigma_in_visc = ppn * cross_s_vals_viscosity_ni_d[i] + (1.0 - ppn)*cross_s_vals_viscosity_ni_d[i - 1];
+	return;
+}
 
 __device__ __forceinline__ f64 Estimate_Neutral_MT_Cross_section(f64 T)
 {
@@ -398,9 +464,3 @@ __device__ __forceinline__ f64_vec2 GetRadiusIntercept(f64_vec2 x1,f64_vec2 x2,f
 	return result;
 }
 
-
-
-
-__device__ __forceinline__ f64 GetEzShape(f64 r) {
-	return 1.0 - 1.0 / (1.0 + exp(-16.0*(r - 4.2))); // At 4.0cm it is 96% as strong as at tooth. At 4.4 it is 4%.
-}

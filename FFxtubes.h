@@ -54,6 +54,10 @@ long const numTilesMinor = 432; // 432 = 288+144
 
 long const threadsPerTileMinor = 256;
 long const threadsPerTileMajor = 128; // see about it - usually we take info from minor.
+
+long const threadsPerTileMajorClever = 256;
+long const numTilesMajorClever = 144;
+
 long const SIZE_OF_MAJOR_PER_TRI_TILE = 128;
 long const SIZE_OF_TRI_TILE_FOR_MAJOR = 256;
 long const BEGINNING_OF_CENTRAL = threadsPerTileMinor*numTriTiles;
@@ -193,7 +197,8 @@ real const UNIFORM_n = 1.0e12;  // ionisation fraction at room temp would be tin
 real const FILAMENT_OWN_PEAK_T = 4.8e-12;
 real const UNIFORM_T= 4.0e-14; // 300K
 
-real const BZ_CONSTANT = 2.7;  // Constant Bz before any plasma Bz:
+#define BZ_CONSTANT     2.7  
+							   // Constant Bz before any plasma Bz:
 					   // 0.3 G from Earth and 2.4 G from coil
 real const RELATIVEINITIALJZUNIFORM = 0.0; 
 // note it is not wise to have uniform current w/o uniform ion density - can revisit this

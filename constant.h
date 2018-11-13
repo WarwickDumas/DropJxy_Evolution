@@ -34,13 +34,7 @@ real const e_ = 4.8e-10  ;        // charge of electrons (statcoul)
 real const q_ = 4.8e-10  ;        // ion charge [unsigned]
 real const m_e_ = 9.10953e-28;    // electron mass in grams
 
-// NOTE CHANGE : 3 x mass :
-
-//real const m_i_ = 3.0*3.67291e-24;    // deuteron mass in grams
-
-real const m_i_ = 3.3475491e-24; // old: 3.67291e-24;    // deuteron mass in grams
-// https://physics.nist.gov/cgi-bin/cuu/Value?md  
-// Proton + neutron would give 3.3475491e-24. Deuteron is proton+neutron right?
+real const m_i_ = 3.343583003169e-24; // deuteron mass in grams: binding energy makes < proton+neutron
 
 real const m_ion_ = m_i_;
 real const m_neutral_ = m_e_ + m_ion_;
@@ -83,6 +77,7 @@ real const FOUR_PI_OVER_C_ = FOURPIOVERC_;
 real const NU_EI_FACTOR_ = 1.0/(3.44e5);
 //real const NU_II_FACTOR = 1.0/(sqrt(2.0)*2.09e7);
 // sqrt in .h file == bad
+real const Nu_ii_Factor_ = 3.38329e-8;
 
 real const nu_eiBarconst_ = //(4.0/3.0)*sqrt(2.0*PI/m_e)*q*q*q*q;
 		// don't know in what units but it IS exactly what we already had - see Formulary
@@ -101,7 +96,7 @@ real const nu_eiBarconst_ = //(4.0/3.0)*sqrt(2.0*PI/m_e)*q*q*q*q;
 #define ALPHA_ELECTRON   0.73
 
 #define E0     13.6
-
+#define SIXTH  0.166666666666666
 
 real const cross_T_vals[10] = {0.1,0.501187,1.0,1.99526,3.16228,5.01187,7.94328,12.5893,19.9526,31.6228};
 

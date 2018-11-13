@@ -409,7 +409,7 @@ void TriMesh::EnsureAnticlockwiseTriangleCornerSequences_SetupTriMinorNeighbours
 				PBC[3] = ROTATE_ME_CLOCKWISE;
 			if ((pTri->neighbours[1]->periodic != 0) && (pTri->cent.x > 0.0)) 
 				PBC[5] = ROTATE_ME_CLOCKWISE;
-			
+			::Estimate_Ion_Neutral_Cross_sections
 		} else {
 			// we are periodic tri; bit of guesswork for now:
 			if (pTri->cornerptr[0]->pos.x > 0.0) 
