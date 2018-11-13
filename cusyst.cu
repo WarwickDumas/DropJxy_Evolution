@@ -1,6 +1,8 @@
 
 #include "cuda_struct.h"
 #pragma once
+#ifndef CUSYSTCU
+#define CUSYSTCU
 
 __host__ bool Call(cudaError_t cudaStatus, char str[])
 {
@@ -107,7 +109,7 @@ int cuSyst::InvokeHost()
 
 	p_Lap_Az = (f64 * )malloc(Nminor * sizeof(f64));
 	p_v_overall_minor = (f64_vec2 *)malloc(Nminor * sizeof(f64_vec2));
-	p_n_upwind_minor = (f64 *)malloc(Nminor * sizeof(nvals));
+	p_n_upwind_minor = (nvals *)malloc(Nminor * sizeof(nvals));
 
 	p_AreaMinor = (f64 * )malloc(Nminor * sizeof(f64));
 	p_AreaMajor = (f64 * )malloc(Nverts * sizeof(f64));
@@ -148,9 +150,6 @@ cuSyst::~cuSyst(){
 		cudaFree(p_B);
 		cudaFree(p_Lap_Az);
 		cudaFree(p_v_overall_minor);
-		cudaFree(p_MomAdditionRate_ion);
-		cudaFree(p_MomAdditionRate_elec);
-		cudaFree(p_MomAdditionRate_neut);
 		cudaFree(p_AreaMinor);
 		cudaFree(p_AreaMajor);
 
@@ -179,9 +178,6 @@ free(p_vie);
 free(p_B);
 free(p_Lap_Az);
 free(p_v_overall_minor);
-free(p_MomAdditionRate_ion);
-free(p_MomAdditionRate_elec);
-free(p_MomAdditionRate_neut);
 free(p_AreaMinor);
 free(p_AreaMajor);
 
@@ -221,10 +217,6 @@ void cuSyst::SendToHost(cuSyst & Xhost)
 
 		&& (!CallMAC(cudaMemcpy(Xhost.p_Lap_Az, p_Lap_Az, Nminor * sizeof(f64), cudaMemcpyDeviceToHost)))
 		&& (!CallMAC(cudaMemcpy(Xhost.p_v_overall_minor, p_v_overall_minor, Nminor * sizeof(f64_vec2), cudaMemcpyDeviceToHost)))
-
-		&& (!CallMAC(cudaMemcpy(Xhost.p_MomAdditionRate_ion, p_MomAdditionRate_ion, Nminor * sizeof(f64_vec3), cudaMemcpyDeviceToHost)))
-		&& (!CallMAC(cudaMemcpy(Xhost.p_MomAdditionRate_elec, p_MomAdditionRate_elec, Nminor * sizeof(f64_vec3), cudaMemcpyDeviceToHost)))
-		&& (!CallMAC(cudaMemcpy(Xhost.p_MomAdditionRate_neut, p_MomAdditionRate_neut, Nminor * sizeof(f64_vec3), cudaMemcpyDeviceToHost)))
 
 		&& (!CallMAC(cudaMemcpy(Xhost.p_AreaMinor, p_AreaMinor, Nminor * sizeof(f64), cudaMemcpyDeviceToHost)))
 		&& (!CallMAC(cudaMemcpy(Xhost.p_AreaMajor, p_AreaMajor, Nverts * sizeof(f64), cudaMemcpyDeviceToHost)))
@@ -495,4 +487,5 @@ void cuSyst::PopulateTriMesh(TriMesh * pX)
 		pX->AreaMinorArray[iMinor] = p_AreaMinor[iMinor];
 	};
 }
-                             
+                            
+#endif

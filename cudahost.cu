@@ -33,7 +33,6 @@ cuSyst cuSyst1, cuSyst2, cuSyst3;
 // This time around find another way to populate.
 // We do need a temporary such object in the routine where we populate the device one.
 // I guess as before we want an InvokeHost routine because of that.
-
 __device__ real * p_summands, *p_Iz0_summands, *p_Iz0_initial,*p_scratch_d;
 f64 * p_summands_host, *p_Iz0_summands_host, *p_Iz0_initial_host;
 __device__ f64 * p_temp1, *p_temp2, *p_temp3,*p_temp4, *p_temp5, *p_temp6;
@@ -50,6 +49,8 @@ __device__ species3 *p_nu_major;
 __device__ f64_vec2 * p_GradAz, *p_GradTe;
 __device__ ShardModel *p_n_shards, *p_n_shards_n;
 __device__ NTrates *NTadditionrates;
+
+long numReverseJzTriangles =
 
 //f64 Tri_n_n_lists[NMINOR][6],Tri_n_lists[NMINOR][6];
 // Not clear if I ended up using Tri_n_n_lists - but it was a workable way if not.
@@ -177,6 +178,7 @@ void PerformCUDA_Invoke_Populate(
 	Set_f64_constant(FRILL_CENTROID_INNER_RADIUS_d, InnermostFrillCentroidRadius);
 
 	// four_pi_over_c_ReverseJz, EzStrength_d; // set at the time
+	numReverseJzTriangles = numEndZCurrentTriangles_ - numStartZCurrentTriangles_;
 	long * longaddress;
 	Call(cudaGetSymbolAddress((void **)(&longaddress), numStartZCurrentTriangles),
 		"cudaGetSymbolAddress((void **)(&longaddress), numStartZCurrentTriangles)");
@@ -366,6 +368,7 @@ void PerformCUDA_RunStepsAndReturnSystem(cuSyst * pX_host)
 void cuSyst::PerformCUDA_Advance(const cuSyst * pX_target, const cuSyst * pX_half)
 {
 	long iMinor, iSubstep;
+	f64 Iz_prescribed;
 
 	cudaEvent_t start, stop;
 	cudaEventCreate(&start);
@@ -550,7 +553,8 @@ void cuSyst::PerformCUDA_Advance(const cuSyst * pX_target, const cuSyst * pX_hal
 		p_GradTe,
 		p_GradAz,
 		p_LapAz,
-		this->p_B
+		this->p_B,
+		this->p_AreaMinor
 	);
 	Call(cudaThreadSynchronize(), "cudaTS kernelCreate_pressure_gradT_and_gradA_LapA_CurlA_minor");
 	
@@ -565,7 +569,7 @@ void cuSyst::PerformCUDA_Advance(const cuSyst * pX_target, const cuSyst * pX_hal
 		this->p_izNeigh_TriMinor,
 		this->p_szPBC_triminor,
 
-		p_AdditionalMomrates,
+		p_MAR_neut, p_MAR_ion, p_MAR_elec,
 		p_n_shards
 	);
 	Call(cudaThreadSynchronize(), "cudaTS kernelCreate_momflux_minor");
@@ -575,7 +579,7 @@ void cuSyst::PerformCUDA_Advance(const cuSyst * pX_target, const cuSyst * pX_hal
 		this->p_v_n,
 		p_n_shards_n,
 		this->p_v_overall_minor,
-		p_MAR_neut, p_MAR_ion, p_MAR_elec
+		p_MAR_neut
 	);
 	Call(cudaThreadSynchronize(), "cudaTS kernelNeutral_pressure_and_momflux");
 
@@ -586,7 +590,7 @@ void cuSyst::PerformCUDA_Advance(const cuSyst * pX_target, const cuSyst * pX_hal
 		pX_half->p_info,
 		pX_half->p_n_minor,
 		pX_half->p_izTri_vert,
-		pX_half->p_szPBC_vert, // could be more intelligent way than storing and copying 3x
+		pX_half->p_szPBCtri_vert, // could be more intelligent way than storing and copying 3x
 		p_n_shards,
 		p_n_shards_n,
 //		p_Tri_n_lists,
@@ -602,12 +606,12 @@ void cuSyst::PerformCUDA_Advance(const cuSyst * pX_target, const cuSyst * pX_hal
 		pX_half->p_tri_corner_index,
 		pX_half->p_who_am_I_to_corner);// (At the moment just repopulating tri minor n.)
 	Call(cudaThreadSynchronize(), "cudaTS InferMinorDensities pX_half");
-
-	neg_Iz_per_triangle = Iz_prescribed_ / (f64) numReverseJzTriangles;
+	
+	f64 neg_Iz_per_triangle = Iz_prescribed / (f64) numReverseJzTriangles;
 	Set_f64_constant(negative_Iz_per_triangle, &neg_Iz_per_triangle);
 	// Get suitable v to use for resistive heating:
 	kernelPopulateOhmsLaw <<<numTilesMinor, threadsPerTileMinor>>>(
-		0.5*h,
+		0.5*TIMESTEP,
 
 		this->p_info,
 		p_AdditionalMomRates,
@@ -639,7 +643,7 @@ void cuSyst::PerformCUDA_Advance(const cuSyst * pX_target, const cuSyst * pX_hal
 
 	
 	// Now calculate Ez_strength to achieve Iz_prescribed:
-	IzPrescribed = GetIzPrescribed(evaltime); // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+	Iz_prescribed = GetIzPrescribed(evaltime); // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 	long iTile;
 	f64 Iz0 = 0.0;
 	f64 sigma_Izz = 0.0;

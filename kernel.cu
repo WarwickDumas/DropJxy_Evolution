@@ -2150,7 +2150,7 @@ __global__ void kernelPopulateOhmsLaw(
 			h_use * 0.5*qovermc*(2.0*Azdot_k
 				+ h_use * ROCAzdot_antiadvect
 				+ h_use * c*c*(Lap_Az
-					+ 0.5*FOURPIoverc * q*n_use.n*(vie_k.viz + v0.viz - vie_k.vez))) // ?????????????????
+					+ 0.5*FOURPI_Q_OVER_C*n_use.n*(vie_k.viz + v0.viz - vie_k.vez))) // ?????????????????
 			+ 0.5*h_use*qovermc*(vie_k.vxy + v0.vxy + v0.viz * ohm.beta_xy_z).dot(grad_Az[threadIdx.x]);
 
 		v0.vez -=
@@ -3267,7 +3267,8 @@ __global__ void kernelCreate_pressure_gradT_and_gradA_LapA_CurlA_minor(
 	f64_vec2 * __restrict__ p_GradTe,
 	f64_vec2 * __restrict__ p_GradAz,
 	f64 * __restrict__ p_LapAz,
-	f64_vec3 * __restrict__ p_B
+	f64_vec3 * __restrict__ p_B,
+	f64 * __restrict__ p_AreaMinor
 )
 {
 	// Getting this down to 8 vars we could have 512 threads (12 vars/thread total with vertex vars)
@@ -4288,7 +4289,9 @@ __global__ void kernelCreate_momflux_minor(
 	LONG3 * __restrict__ p_who_am_I_to_corners,
 	LONG3 * __restrict__ p_tricornerindex,
 
-	three_vec3 * __restrict__ p_AdditionalMomrates,
+	f64_vec3 * __restrict__ p_MAR_neut,
+	f64_vec3 * __restrict__ p_MAR_ion,
+	f64_vec3 * __restrict__ p_MAR_elec,
 	ShardModel * __restrict__ p_n_shards
 )
 {
@@ -4344,7 +4347,8 @@ __global__ void kernelCreate_momflux_minor(
 
 		AreaMinor = 0.0;
 		three_vec3 ownrates;
-		memcpy(&ownrates, &(p_AdditionalMomrates[iVertex + BEGINNING_OF_CENTRAL]), sizeof(three_vec3));
+		memcpy(&(ownrates.ion), &(p_MAR_ion[iVertex + BEGINNING_OF_CENTRAL]), sizeof(f64_vec3));
+		memcpy(&(ownrates.elec), &(p_MAR_elec[iVertex + BEGINNING_OF_CENTRAL]), sizeof(f64_vec3));
 
 		// Now bear in mind:
 		// We will often have to do the viscosity calc, and using minor cells.
@@ -4516,7 +4520,8 @@ __global__ void kernelCreate_momflux_minor(
 
 			
 			// No neutral stuff in this kernel, momrates should be set now:
-			memcpy(p_AdditionalMomrates + iVertex + BEGINNING_OF_CENTRAL, &ownrates, sizeof(three_vec3));
+			memcpy(p_MAR_ion + iVertex + BEGINNING_OF_CENTRAL, &(ownrates.ion), sizeof(f64_vec3));
+			memcpy(p_MAR_elec + iVertex + BEGINNING_OF_CENTRAL, &(ownrates.elec), sizeof(f64_vec3));
 		}
 		else {
 			// NOT domain vertex: Do nothing
@@ -4537,7 +4542,9 @@ __global__ void kernelCreate_momflux_minor(
 	memcpy(szPBC, p_szPBCtriminor + iMinor * 6, sizeof(char) * 6);
 
 	three_vec3 ownrates_minor;
-	memcpy(&ownrates_minor, p_AdditionalMomrates + iMinor, sizeof(three_vec3));
+	memcpy(&(ownrates_minor.ion), &(p_MAR_ion[iMinor]), sizeof(f64_vec3));
+	memcpy(&(ownrates_minor.elec), &(p_MAR_elec[iMinor]), sizeof(f64_vec3));
+
 	// this is not a clever way of doing it. Want more careful.
 
 	f64 vez0, viz0, viz1, vez1;
@@ -4850,8 +4857,9 @@ __global__ void kernelCreate_momflux_minor(
 			};
 			f64_vec2 overall_v_ours = p_overall_v_minor[iMinor];
 			
-			memcpy(p_AdditionalMomrates + iMinor, &ownrates_minor, sizeof(three_vec3));
-		} else {
+			memcpy(&(p_MAR_ion[iMinor]), &(ownrates_minor.ion), sizeof(f64_vec3));
+			memcpy(&(p_MAR_elec[iMinor]), &(ownrates_minor.elec), sizeof(f64_vec3));
+	} else {
 			// Not domain, not crossing_ins, not a frill
 			// ==========================================
 		} // non-domain tri
@@ -4868,7 +4876,7 @@ __global__ void kernelNeutral_pressure_and_momflux(
 	f64_vec3 * __restrict__ p_v_n,
 	ShardModel * __restrict__ p_n_shards_n,
 	f64_vec2 * __restrict__ p_v_overall_minor,
-	three_vec3 * __restrict__ p_AdditionalMomRates
+	f64_vec3 * __restrict__ p_MAR_neut
 )
 {
 

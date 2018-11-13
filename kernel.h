@@ -250,8 +250,9 @@ __global__ void kernelCreate_pressure_gradT_and_gradA_LapA_CurlA_minor(
 
 	f64_vec2 * __restrict__ p_GradTe,
 	f64_vec2 * __restrict__ p_GradAz,
-	f64_vec2 * __restrict__ p_LapAz,
-	f64_vec3 * __restrict__ p_B
+	f64 * __restrict__ p_LapAz,
+	f64_vec3 * __restrict__ p_B,
+	f64 * __restrict__ p_AreaMinor
 );
 
 __global__ void kernelCreate_momflux_minor(
@@ -265,7 +266,9 @@ __global__ void kernelCreate_momflux_minor(
 	long * __restrict__ p_izNeighTriMinor,
 	char * __restrict__ p_szPBCtriminor,
 
-	three_vec3 * __restrict__ p_AdditionalMomrates,
+	f64_vec3 * __restrict__ p_MAR_neut,
+	f64_vec3 * __restrict__ p_MAR_ion,
+	f64_vec3 * __restrict__ p_MAR_elec,
 	ShardModel * __restrict__ p_n_shards
 );
 
@@ -275,7 +278,7 @@ __global__ void kernelNeutral_pressure_and_momflux(
 	f64_vec3 * __restrict__ p_v_n,
 	ShardModel * __restrict__ p_n_shards_n,
 	f64_vec2 * __restrict__ p_v_overall_minor,
-	three_vec3 * __restrict__ p_AdditionalMomRates
+	f64_vec3 * __restrict__ p_MAR_neut
 );
 
 
