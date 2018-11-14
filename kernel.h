@@ -138,7 +138,9 @@ __global__ void kernelPopulateOhmsLaw(
 	f64 h_use,
 
 	structural * __restrict__ p_info_minor,
-	three_vec3 * __restrict__ p_AdditionalMomRates,
+	f64_vec3 * __restrict__ p_MAR_neut,
+	f64_vec3 * __restrict__ p_MAR_ion,
+	f64_vec3 * __restrict__ p_MAR_elec,
 	f64_vec3 * __restrict__ p_B,
 	f64 * __restrict__ p_LapAz,
 	f64_vec2 * __restrict__ p_GradAz,
@@ -161,14 +163,16 @@ __global__ void kernelPopulateOhmsLaw(
 	bool bFeint);
 
 
-__global__ void kernelUpdateVelocityAndAzdot(
+__global__ void kernelUpdateVelocityAndAzdotAndAz(
 	f64 h_use,
 	f64_vec3 * __restrict__ p_vn0,
 	v4 * __restrict__ p_v0,
 	OhmsCoeffs * __restrict__ p_OhmsCoeffs,
 	AAdot * __restrict__ p_Azdot_update,
 	v4 * __restrict__ p_vie_out,
-	f64_vec3 * __restrict__ p_vn_out
+	f64_vec3 * __restrict__ p_vn_out,
+	f64_vec2 * __restrict__ p_GradAz,
+	f64_vec2 * __restrict__ p_v_overall_minor
 );
 
 
@@ -219,6 +223,15 @@ __global__ void kernelGetLap_verts(
 	f64 * __restrict__ p_LapAz);
 */
 
+
+__global__ void kernelGetLapCoeffs(
+	structural * __restrict__ p_info,
+	long * __restrict__ p_izTri,
+	long * __restrict__ p_izNeighMinor,
+	char * __restrict__ p_szPBCtri_vertex,
+	char * __restrict__ p_szPBCtriminor,
+	f64 * __restrict__ p_LapCoeffSelf);
+
 __global__ void kernelGetLap_minor(
 	structural * __restrict__ p_info,
 	f64 * __restrict__ p_Az,
@@ -242,6 +255,9 @@ __global__ void kernelCreate_pressure_gradT_and_gradA_LapA_CurlA_minor(
 	long * __restrict__ p_izNeighTriMinor,
 	char * __restrict__ p_szPBCtriminor,
 
+	LONG3 * __restrict__ p_who_am_I_to_corners,
+	LONG3 * __restrict__ p_tricornerindex,
+
 	f64_vec3 * __restrict__ p_MAR_neut,
 	f64_vec3 * __restrict__ p_MAR_ion,
 	f64_vec3 * __restrict__ p_MAR_elec,
@@ -254,6 +270,22 @@ __global__ void kernelCreate_pressure_gradT_and_gradA_LapA_CurlA_minor(
 	f64_vec3 * __restrict__ p_B,
 	f64 * __restrict__ p_AreaMinor
 );
+
+__global__ void kernelInterpolateVarsAndPositions(
+	f64 ppn,
+	structural * __restrict__ p_info1,
+	structural * __restrict__ p_info2,
+	nvals * __restrict__ p_n_minor1,
+	nvals * __restrict__ p_n_minor2,
+	T3 * __restrict__ p_T_minor1,
+	T3 * __restrict__ p_T_minor2,
+	f64_vec3 * __restrict__ p_B1,
+	f64_vec3 * __restrict__ p_B2,
+
+	structural * __restrict__ p_info_dest,
+	nvals * __restrict__ p_n_minor,
+	T3 * __restrict__ p_T_minor,
+	f64_vec3 * __restrict__ p_B);
 
 __global__ void kernelCreate_momflux_minor(
 
@@ -304,10 +336,6 @@ one_over_kB, one_over_kB_cubed, kB_to_3halves,
 
 NU_EI_FACTOR, nu_eiBarconst, Nu_ii_Factor,
 
-
-
-Ez_strength_d,
-
 M_i_over_in,// = m_i / (m_i + m_n);
 
 M_e_over_en,// = m_e / (m_e + m_n);
@@ -346,7 +374,7 @@ cross_T_vals_d[10], cross_s_vals_MT_ni_d[10];
 
 
 
-__constant__ f64 Iz_prescribed;
+__constant__ f64 Ez_strength;
 
 __constant__ f64 negative_Iz_per_triangle; // -Iz_prescribed / (real)(numEndZCurrentTriangles - numStartZCurrentTriangles)
 

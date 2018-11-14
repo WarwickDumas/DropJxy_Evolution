@@ -1,4 +1,3 @@
-
 #include "kernel.h"
 #include "vector_tensor.cu"
 #include "cuda_struct.h"
@@ -10,7 +9,7 @@ __global__ void kernelCalculateOverallVelocitiesVertices(
 	v4 * __restrict__ p_vie_major,
 	f64_vec3 * __restrict__ p_v_n_major,
 	nvals * __restrict__ p_n_major,
-	f64_vec2 * __restrict__ p_v_overall_major	)
+	f64_vec2 * __restrict__ p_v_overall_major)
 {
 	long const index = threadIdx.x + blockIdx.x * blockDim.x; // INDEX OF VERTEX
 	v4 const vie = p_vie_major[index];
@@ -86,8 +85,9 @@ __global__ void kernelAverageOverallVelocitiesTriangles(
 		if (tri_corner_per_flag.per2 == ROTATE_ME_CLOCKWISE) vcorner = Clockwise*vcorner;
 		if (tri_corner_per_flag.per2 == ROTATE_ME_ANTICLOCKWISE) vcorner = Anticlockwise*vcorner;
 		v += vcorner;
-	} else {
-		
+	}
+	else {
+
 		// What else?
 
 	}
@@ -105,7 +105,7 @@ __global__ void kernelAdvectPositions_CopyTris(
 	// with cudaMemcpy, even ahead of steps?
 	// Is there a reason we cannot put into the above routine
 	// with a split for "this is a vertex->just use its overall v"
-	)
+)
 {
 	long const index = threadIdx.x + blockIdx.x * blockDim.x; // INDEX OF VERTEX
 	structural info = p_info_src[index];
@@ -121,7 +121,7 @@ __global__ void kernelAverage_n_T_x_to_tris(
 	structural * __restrict__ p_info,
 	LONG3 * __restrict__ p_tri_corner_index,
 	CHAR4 * __restrict__ p_tri_periodic_corner_flags
-	)
+)
 {
 	__shared__ nvals shared_n[threadsPerTileMajor];
 	__shared__ T3 shared_T[threadsPerTileMajor];
@@ -148,7 +148,7 @@ __global__ void kernelAverage_n_T_x_to_tris(
 	f64_vec2 pos(0.0, 0.0);
 
 	if (info.flag == DOMAIN_TRIANGLE) {
-		
+
 		f64_vec2 poscorner;
 		if ((tri_corner_index.i1 >= StartMajor) && (tri_corner_index.i1 < EndMajor))
 		{
@@ -195,12 +195,13 @@ __global__ void kernelAverage_n_T_x_to_tris(
 		if (tri_corner_per_flag.per2 == ROTATE_ME_ANTICLOCKWISE) poscorner = Anticlockwise*poscorner;
 		pos += poscorner;
 
-	} else {
+	}
+	else {
 		// What else?
 
-		
+
 	}
-	
+
 	p_n_minor[index] = n;
 	p_T_minor[index] = T;
 	info.pos = pos;
@@ -208,15 +209,15 @@ __global__ void kernelAverage_n_T_x_to_tris(
 }
 
 __global__ void kernelCreateShardModelOfDensities_And_SetMajorArea(
-	structural * __restrict__ p_info_minor, 
+	structural * __restrict__ p_info_minor,
 	nvals * __restrict__ p_n_minor,
-	
+
 	long * __restrict__ p_izTri_vert,
 	char * __restrict__ p_szPBCtri_vert,
 	ShardModel * __restrict__ p_n_shards,
 	ShardModel * __restrict__ p_n_n_shards,
-//	long * __restrict__ Tri_n_lists,
-//	long * __restrict__ Tri_n_n_lists	,
+	//	long * __restrict__ Tri_n_lists,
+	//	long * __restrict__ Tri_n_n_lists	,
 	f64 * __restrict__ p_AreaMajor)// sets n_shards_n, n_shards, Tri_n_n_lists, Tri_n_lists
 {
 	// called for major tile
@@ -235,7 +236,7 @@ __global__ void kernelCreateShardModelOfDensities_And_SetMajorArea(
 
 	__shared__ f64_vec2 shared_pos[threadsPerTileMinor];
 	__shared__ nvals shared_n[threadsPerTileMinor];
-	
+
 	// Here 4 doubles/minor. In 16*1024, 4 double*8 bytes*512 minor. 256 major. 
 	// Choosing to store n_n while doing n which is not necessary.
 
@@ -243,16 +244,16 @@ __global__ void kernelCreateShardModelOfDensities_And_SetMajorArea(
 	int iNeigh, tri_len;
 	f64 N_n, N, interpolated_n, interpolated_n_n;
 	long i, inext, o1, o2;
-	
+
 	//memset(Tri_n_n_lists, 0, sizeof(f64)*NUMTRIANGLES * 6);
 	//memset(Tri_n_lists, 0, sizeof(f64)*NUMTRIANGLES * 6);
 
 	// We can afford to stick 6-8 doubles in shared. 8 vars*8 bytes*256 threads = 16*1024.
-	{	
+	{
 		structural info2[2];
 		memcpy(info2, p_info_minor + blockIdx.x*threadsPerTileMinor + 2 * threadIdx.x, sizeof(structural) * 2);
-		shared_pos[2*threadIdx.x] = info2[0].pos;
-		shared_pos[2*threadIdx.x+1] = info2[1].pos;
+		shared_pos[2 * threadIdx.x] = info2[0].pos;
+		shared_pos[2 * threadIdx.x + 1] = info2[1].pos;
 		memcpy(&(shared_n[2 * threadIdx.x]), p_n_minor + blockIdx.x*threadsPerTileMinor + 2 * threadIdx.x, sizeof(nvals) * 2);
 	}
 	long const StartMinor = blockIdx.x*threadsPerTileMinor; // vertex index
@@ -260,10 +261,10 @@ __global__ void kernelCreateShardModelOfDensities_And_SetMajorArea(
 
 	__syncthreads();
 
-   // To fit in Tri_n_n_lists stuff we should first let coeff[] go out of scope.
+	// To fit in Tri_n_n_lists stuff we should first let coeff[] go out of scope.
 	long const iVertex = threadIdx.x + blockIdx.x * blockDim.x; // INDEX OF VERTEX
-	structural info = p_info_minor[BEGINNING_OF_CENTRAL+iVertex];
-	
+	structural info = p_info_minor[BEGINNING_OF_CENTRAL + iVertex];
+
 	if (info.flag == DOMAIN_VERTEX) {
 
 		long izTri[MAXNEIGH];
@@ -275,17 +276,18 @@ __global__ void kernelCreateShardModelOfDensities_And_SetMajorArea(
 		memcpy(izTri, p_izTri_vert + MAXNEIGH_d*iVertex, sizeof(long)*MAXNEIGH_d);
 
 		f64 n_avg = p_n_minor[BEGINNING_OF_CENTRAL + iVertex].n;
-		
+
 		if ((izTri[0] >= StartMinor) && (izTri[0] < EndMinor)) {
 			pos0 = shared_pos[izTri[0] - StartMinor];
 			ndesire0 = shared_n[izTri[0] - StartMinor].n;
-		} else {
+		}
+		else {
 			pos0 = p_info_minor[izTri[0]].pos;
 			ndesire0 = p_n_minor[izTri[0]].n;
 		}
 		if (szPBC[0] == ROTATE_ME_CLOCKWISE) pos0 = Clockwise*pos0;
 		if (szPBC[0] == ROTATE_ME_ANTICLOCKWISE) pos0 = Anticlockwise*pos0;
-		
+
 		f64 tri_area;
 		f64 N0 = 0.0; f64 coeffcent = 0.0;
 		memset(coeff, 0, sizeof(f64)*MAXNEIGH_d);
@@ -303,7 +305,8 @@ __global__ void kernelCreateShardModelOfDensities_And_SetMajorArea(
 			if ((izTri[inext] >= StartMinor) && (izTri[inext] < EndMinor)) {
 				pos1 = shared_pos[izTri[inext] - StartMinor];
 				ndesire1 = shared_n[izTri[inext] - StartMinor].n;
-			} else {
+			}
+			else {
 				pos1 = p_info_minor[izTri[inext]].pos;
 				ndesire1 = p_n_minor[izTri[inext]].n;
 			};
@@ -333,26 +336,28 @@ __global__ void kernelCreateShardModelOfDensities_And_SetMajorArea(
 		// repeatedly. We have to reload n lots of times.
 		// This is not the typical case.
 
-		if ((n_avg > high_n) || (n_avg < low_n)){
+		if ((n_avg > high_n) || (n_avg < low_n)) {
 #pragma unroll MAXNEIGH
 			for (i = 0; i < info.neigh_len; i++)
 				n_.n[i] = n_avg;
 			n_.n_cent = n_avg;
 
-		} else {
+		}
+		else {
 			real n_C_need = (n_avg*AreaMajor - N0) / coeffcent;
 
 			if ((n_C_need > low_n) && (n_C_need < high_n)) {
 				n_.n_cent = n_C_need;
 
-			} else {
+			}
+			else {
 				// The laborious case.
-				
+
 				bool fixed[MAXNEIGH];
-				memset(fixed, 0, sizeof(bool) * MAXNEIGH); 
+				memset(fixed, 0, sizeof(bool) * MAXNEIGH);
 				// cannot fit even this alongside the rest we have in L1.
 				// Can we make szPBC go out of scope by here?
-				
+
 				f64 n_C, n_acceptable;
 				if (n_C_need < low_n) {
 					// the mass is low. So for those less than some n_acceptable,
@@ -377,12 +382,13 @@ __global__ void kernelCreateShardModelOfDensities_And_SetMajorArea(
 						{
 							if (fixed[i] == 0) {
 								// Go collect ndesire[i]:
-								
+
 								f64 ndesire;
 								if ((izTri[i] >= StartMinor) && (izTri[i] < EndMinor))
 								{
 									ndesire = shared_n[izTri[i] - StartMinor].n;
-								} else {
+								}
+								else {
 									ndesire = p_n_minor[izTri[i]].n;
 								};
 								if (ndesire < n_acceptable) { // yes, use ndesire[i] ...
@@ -390,7 +396,8 @@ __global__ void kernelCreateShardModelOfDensities_And_SetMajorArea(
 									n_.n[i] = ndesire;
 									N_attained += n_.n[i] * coeff[i];
 									found = true;
-								} else {
+								}
+								else {
 									coeffremain += coeff[i];
 								};
 							}
@@ -408,7 +415,8 @@ __global__ void kernelCreateShardModelOfDensities_And_SetMajorArea(
 						};
 					} while (found != 0);
 
-				} else {
+				}
+				else {
 					n_C = high_n;
 					n_acceptable = (n_avg*AreaMajor - coeffcent*n_C) / (AreaMajor - THIRD*AreaMajor);
 					bool found = 0;
@@ -443,14 +451,14 @@ __global__ void kernelCreateShardModelOfDensities_And_SetMajorArea(
 							else {
 								N_attained += n_.n[i] * coeff[i];
 							};
-							
+
 						};
 						if ((found != 0) && (coeffremain > 0.0)) {
 							n_acceptable = (n_avg*AreaMajor - N_attained) / coeffremain;
 						};
 					} while (found != 0);
 
-				};	
+				};
 				// Now we should set the remaining values to n_acceptable
 				// which is less than ndesire[i] in all those cases.
 				for (i = 0; i < info.neigh_len; i++)
@@ -462,7 +470,7 @@ __global__ void kernelCreateShardModelOfDensities_And_SetMajorArea(
 		};
 
 		memcpy(&(p_n_shards[iVertex]), &n_, sizeof(ShardModel));
-		
+
 		// Now start again: neutrals
 
 		n_avg = p_n_minor[BEGINNING_OF_CENTRAL + iVertex].n_n;
@@ -478,12 +486,12 @@ __global__ void kernelCreateShardModelOfDensities_And_SetMajorArea(
 		if (szPBC[0] == ROTATE_ME_CLOCKWISE) pos0 = Clockwise*pos0;
 		if (szPBC[0] == ROTATE_ME_ANTICLOCKWISE) pos0 = Anticlockwise*pos0;
 
-		N0 = 0.0; 
+		N0 = 0.0;
 		//coeffcent = 0.0;
 		//memset(coeff, 0, sizeof(f64)*MAXNEIGH_d); // keep em
 		high_n = ndesire0;
 		low_n = ndesire0;
-		
+
 #pragma unroll MAXNEIGH
 		for (i = 0; i < info.neigh_len; i++)
 		{
@@ -494,7 +502,8 @@ __global__ void kernelCreateShardModelOfDensities_And_SetMajorArea(
 			if ((izTri[inext] >= StartMinor) && (izTri[inext] < EndMinor)) {
 				pos1 = shared_pos[izTri[inext] - StartMinor];
 				ndesire1 = shared_n[izTri[inext] - StartMinor].n_n;
-			} else {
+			}
+			else {
 				pos1 = p_info_minor[izTri[inext]].pos;
 				ndesire1 = p_n_minor[izTri[inext]].n_n;
 			};
@@ -510,13 +519,13 @@ __global__ void kernelCreateShardModelOfDensities_And_SetMajorArea(
 					+ (info.pos.x + pos0.x) * (pos0.y - info.pos.y)));
 
 			N0 += tri_area*THIRD*(ndesire0 + ndesire1); // Could consider moving it into loop above.
-			
+
 			pos0 = pos1;
 			ndesire0 = ndesire1;
 		};
 		// . If n_avg > n_max_corners then set all to n_avg.
 		// . If n_min < n_needed < n_max then set n_cent = n_needed
-		
+
 		// Otherwise, we now have coeff array populated and will go round
 		// repeatedly. We have to reload n lots of times.
 		// This is not the typical case.
@@ -527,13 +536,15 @@ __global__ void kernelCreateShardModelOfDensities_And_SetMajorArea(
 				n_.n[i] = n_avg;
 			n_.n_cent = n_avg;
 
-		} else {
+		}
+		else {
 			real n_C_need = (n_avg*AreaMajor - N0) / coeffcent;
 
 			if ((n_C_need > low_n) && (n_C_need < high_n)) {
 				n_.n_cent = n_C_need; // accept desired values
 
-			} else {
+			}
+			else {
 				// The laborious case.
 
 				bool fixed[MAXNEIGH];
@@ -570,7 +581,8 @@ __global__ void kernelCreateShardModelOfDensities_And_SetMajorArea(
 								if ((izTri[i] >= StartMinor) && (izTri[i] < EndMinor))
 								{
 									ndesire = shared_n[izTri[i] - StartMinor].n_n;
-								} else {
+								}
+								else {
 									ndesire = p_n_minor[izTri[i]].n_n;
 								};
 								if (ndesire < n_acceptable) { // yes, use ndesire[i] ...
@@ -578,10 +590,12 @@ __global__ void kernelCreateShardModelOfDensities_And_SetMajorArea(
 									n_.n[i] = ndesire;
 									N_attained += n_.n[i] * coeff[i];
 									found = true;
-								} else {
+								}
+								else {
 									coeffremain += coeff[i];
 								};
-							} else {
+							}
+							else {
 								N_attained += n_.n[i] * coeff[i];
 							};
 						};
@@ -595,7 +609,8 @@ __global__ void kernelCreateShardModelOfDensities_And_SetMajorArea(
 						};
 					} while (found != 0);
 
-				} else {
+				}
+				else {
 					n_C = high_n;
 					n_acceptable = (n_avg*AreaMajor - coeffcent*n_C) / (AreaMajor - THIRD*AreaMajor);
 					bool found = 0;
@@ -649,50 +664,51 @@ __global__ void kernelCreateShardModelOfDensities_And_SetMajorArea(
 		};
 
 		memcpy(&(p_n_n_shards[iVertex]), &n_, sizeof(ShardModel));
-		
+
 		// Now done both species.
 
-	} else { // DOMAIN_VERTEX
+	}
+	else { // DOMAIN_VERTEX
 		memset(&(p_n_shards[iVertex]), 0, sizeof(ShardModel));
 		memset(&(p_n_n_shards[iVertex]), 0, sizeof(ShardModel));
 	};
 
 	// NexT:  tri_n_lists.
-	
+
 	// Think I am not using this passing mechanism for n_shards information.
 
 	/*
-		for (i = 0; i < cp.numCoords; i++)
-		{
-			// for 2 triangles each corner:
+	for (i = 0; i < cp.numCoords; i++)
+	{
+	// for 2 triangles each corner:
 
-			// first check which number corner this vertex is
-			// make sure we enter them in order that goes anticlockwise for the 
-			// Then we need to make izMinorNeigh match this somehow
+	// first check which number corner this vertex is
+	// make sure we enter them in order that goes anticlockwise for the
+	// Then we need to make izMinorNeigh match this somehow
 
-			// Let's say izMinorNeigh goes [across corner 0, across edge 2, corner 1, edge 0, corner 2, edge 1]
-			// We want 0,1 to be the values corresp corner 0.
+	// Let's say izMinorNeigh goes [across corner 0, across edge 2, corner 1, edge 0, corner 2, edge 1]
+	// We want 0,1 to be the values corresp corner 0.
 
-			// shard value 0 is in tri 0. We look at each pair of shard values in turn to interpolate.
+	// shard value 0 is in tri 0. We look at each pair of shard values in turn to interpolate.
 
-			inext = i + 1; if (inext == cp.numCoords) inext = 0;
+	inext = i + 1; if (inext == cp.numCoords) inext = 0;
 
-			interpolated_n = THIRD * (n_shards[iVertex].n[i] + n_shards[iVertex].n[inext] + n_shards[iVertex].n_cent);
-			interpolated_n_n = THIRD * (n_shards_n[iVertex].n[i] + n_shards_n[iVertex].n[inext] + n_shards_n[iVertex].n_cent);
-			// contribute to tris i and inext:
-			o1 = (T + izTri[i])->GetCornerIndex(X + iVertex);
-			o2 = (T + izTri[inext])->GetCornerIndex(X + iVertex);
+	interpolated_n = THIRD * (n_shards[iVertex].n[i] + n_shards[iVertex].n[inext] + n_shards[iVertex].n_cent);
+	interpolated_n_n = THIRD * (n_shards_n[iVertex].n[i] + n_shards_n[iVertex].n[inext] + n_shards_n[iVertex].n_cent);
+	// contribute to tris i and inext:
+	o1 = (T + izTri[i])->GetCornerIndex(X + iVertex);
+	o2 = (T + izTri[inext])->GetCornerIndex(X + iVertex);
 
-			// Now careful which one's which:
+	// Now careful which one's which:
 
-			// inext sees this point as more anticlockwise.
+	// inext sees this point as more anticlockwise.
 
-			Tri_n_lists[izTri[inext]][o2 * 2 + 1] = interpolated_n;
-			Tri_n_lists[izTri[i]][o1 * 2] = interpolated_n;
+	Tri_n_lists[izTri[inext]][o2 * 2 + 1] = interpolated_n;
+	Tri_n_lists[izTri[i]][o1 * 2] = interpolated_n;
 
-			Tri_n_n_lists[izTri[inext]][o2 * 2 + 1] = interpolated_n_n;
-			Tri_n_n_lists[izTri[i]][o1 * 2] = interpolated_n_n;
-		};*/
+	Tri_n_n_lists[izTri[inext]][o2 * 2 + 1] = interpolated_n_n;
+	Tri_n_n_lists[izTri[i]][o1 * 2] = interpolated_n_n;
+	};*/
 
 }
 
@@ -708,15 +724,16 @@ __global__ void kernelInferMinorDensitiesFromShardModel(
 
 	long const index = threadIdx.x + blockIdx.x * blockDim.x; // INDEX OF VERTEX
 	structural info = p_info[index];
+	nvals result;
 
 	if (index >= BEGINNING_OF_CENTRAL)
 	{
 		if (info.flag == DOMAIN_VERTEX) {
-			nvals result;
 			result.n = p_n_shards[index - BEGINNING_OF_CENTRAL].n_cent;
 			result.n_n = p_n_shards_n[index - BEGINNING_OF_CENTRAL].n_cent;
 			p_n_minor[index] = result;
-		} else {
+		}
+		else {
 			// Outermost vertex?
 			result.n = 0.0;
 			result.n_n = 0.0;
@@ -726,9 +743,9 @@ __global__ void kernelInferMinorDensitiesFromShardModel(
 			};
 			p_n_minor[index] = result;
 		}
-	} else {
+	}
+	else {
 		if (info.flag == DOMAIN_TRIANGLE) {
-			nvals result;
 			LONG3 tri_corner_index = p_tri_corner_index[index];
 			LONG3 who_am_I_to_corner = p_who_am_I_to_corner[index];
 			result.n = THIRD*
@@ -743,19 +760,18 @@ __global__ void kernelInferMinorDensitiesFromShardModel(
 		}
 		else {
 			if (info.flag == CROSSING_INS) {
-				nvals result;
 				LONG3 tri_corner_index = p_tri_corner_index[index];
 				LONG3 who_am_I_to_corner = p_who_am_I_to_corner[index];
 				result.n = 0.0;
 				result.n_n = 0.0;
-					(p_n_shards[tri_corner_index.i1].n[who_am_I_to_corner.i1]
-						+ p_n_shards[tri_corner_index.i2].n[who_am_I_to_corner.i2]
-						+ p_n_shards[tri_corner_index.i3].n[who_am_I_to_corner.i3]);
+				(p_n_shards[tri_corner_index.i1].n[who_am_I_to_corner.i1]
+					+ p_n_shards[tri_corner_index.i2].n[who_am_I_to_corner.i2]
+					+ p_n_shards[tri_corner_index.i3].n[who_am_I_to_corner.i3]);
 				result.n_n = 0.5*
 					(p_n_shards_n[tri_corner_index.i1].n[who_am_I_to_corner.i1]
 						+ p_n_shards_n[tri_corner_index.i2].n[who_am_I_to_corner.i2]
 						+ p_n_shards_n[tri_corner_index.i3].n[who_am_I_to_corner.i3]);
-				
+
 				structural info1, info2, info3;
 				info1 = p_info[BEGINNING_OF_CENTRAL + tri_corner_index.i1];
 				info2 = p_info[BEGINNING_OF_CENTRAL + tri_corner_index.i2];
@@ -774,13 +790,13 @@ __global__ void kernelInferMinorDensitiesFromShardModel(
 				if (info3.flag == DOMAIN_VERTEX) {
 					numabove++;
 					result.n += p_n_shards[tri_corner_index.i3].n[who_am_I_to_corner.i3];
-					result.n_n += p_n_shards_n[tri_corner_index.i4].n[who_am_I_to_corner.i3];
+					result.n_n += p_n_shards_n[tri_corner_index.i3].n[who_am_I_to_corner.i3];
 				};
 				result.n /= (f64)numabove;
 				result.n_n /= (f64)numabove;
 				p_n_minor[index] = result;
 			}
-		}		
+		}
 	}
 }
 
@@ -788,7 +804,7 @@ __global__ void kernelCalculateNu_eHeartNu_iHeart_nu_nn_visc(
 	structural * __restrict__ p_info,
 	nvals * __restrict__ p_n,
 	T3 * __restrict__ p_T,
-	species3 * __restrict__ p_nu 
+	species3 * __restrict__ p_nu
 ) {
 	// Save nu_iHeart, nu_eHeart, nu_nn_visc.
 
@@ -821,15 +837,16 @@ __global__ void kernelCalculateNu_eHeartNu_iHeart_nu_nn_visc(
 		//nu_nn_visc:
 		nu.n = our_n.n_n * Estimate_Neutral_Neutral_Viscosity_Cross_section(T.Tn * one_over_kB)
 			* sqrt(T.Tn / m_n);
-		nu_ii = our_n.n*kB_to_3halves*Get_lnLambda_ion_d(our_n.n, T.Ti) *Nu_ii_Factor/
-			   (sqrt_T*T.Ti);
+		nu_ii = our_n.n*kB_to_3halves*Get_lnLambda_ion_d(our_n.n, T.Ti) *Nu_ii_Factor /
+			(sqrt_T*T.Ti);
 		// nu_iHeart:
 		nu.i = 0.75*nu_in_visc + 0.8*nu_ii - 0.25*(nu_in_visc*nu_ni_visc) / (3.0*nu_ni_visc + nu.n);
 
 		//shared_n_over_nu[threadIdx.x].e = our_n.n / nu.e;
-	//	shared_n_over_nu[threadIdx.x].i = our_n.n / nu.i;
-	//	shared_n_over_nu[threadIdx.x].n = our_n.n_n / nu.n;
-	} else {
+		//	shared_n_over_nu[threadIdx.x].i = our_n.n / nu.i;
+		//	shared_n_over_nu[threadIdx.x].n = our_n.n_n / nu.n;
+	}
+	else {
 		memset(&nu, 0, sizeof(species3));
 	}
 
@@ -860,53 +877,53 @@ __global__ void kernelAccumulateDiffusiveHeatRateAndCalcIonisation(
 	__shared__ f64_vec2 shared_pos[threadsPerTileMajor]; // 2
 	__shared__ T3 shared_T[threadsPerTileMajor];      // +3
 	__shared__ species3 shared_n_over_nu[threadsPerTileMajor];   // +3
-	// saves a lot of work to compute the relevant nu once for each vertex not 6 or 12 times.
+																 // saves a lot of work to compute the relevant nu once for each vertex not 6 or 12 times.
 	__shared__ f64_vec2 shared_B[threadsPerTileMajor]; // +2
-	// B is smooth. Unfortunately we have not fitted in Bz here.
-	// In order to do that perhaps rewrite so that variables are overwritten in shared.
-	// We do not need all T and nu in shared at the same time.
-	// This way is easier for NOW.
+													   // B is smooth. Unfortunately we have not fitted in Bz here.
+													   // In order to do that perhaps rewrite so that variables are overwritten in shared.
+													   // We do not need all T and nu in shared at the same time.
+													   // This way is easier for NOW.
 	__shared__ f64 shared_nu_iHeart[threadsPerTileMajor];
 	__shared__ f64 shared_nu_eHeart[threadsPerTileMajor];
-	
+
 	// Balance of shared vs L1: 16 doubles vs 5 doubles per thread at 384 threads/SM.
 	__shared__ long Indexneigh[MAXNEIGH_d*threadsPerTileMajor]; // assume 48 bytes
 	char PBCneigh[MAXNEIGH_d*threadsPerTileMajor]; // 12 bytes each from L1. Have 42 per thread at 384 threads.
-	  // Note that limiting to 16 doubles actually allows 384 threads in 48K. 128K/(384*8) = 42 f64 registers/thread.
-	// We managed this way: 2+3+3+2+2+6+1.5 [well, 12 bytes really] = 19.5
-	// 48K/(18*8) = 341 threads. Aim 320 = 2x180? Sadly not room for 384.
-	// But nothing to stop making a "clever major block" of 320=256+64, or of 160.
-	// We should at any rate try a major block of size 256. If 1 block will run at a time, so be it.
+												   // Note that limiting to 16 doubles actually allows 384 threads in 48K. 128K/(384*8) = 42 f64 registers/thread.
+												   // We managed this way: 2+3+3+2+2+6+1.5 [well, 12 bytes really] = 19.5
+												   // 48K/(18*8) = 341 threads. Aim 320 = 2x180? Sadly not room for 384.
+												   // But nothing to stop making a "clever major block" of 320=256+64, or of 160.
+												   // We should at any rate try a major block of size 256. If 1 block will run at a time, so be it.
 
-	// Leave L1 in case of register overflow into it. <-- don't know how likely - do we only have 31 doubles in registry
-	// regardless # of threads and space? Or can be 63?
+												   // Leave L1 in case of register overflow into it. <-- don't know how likely - do we only have 31 doubles in registry
+												   // regardless # of threads and space? Or can be 63?
 
-	// Remains to be seen if this is best strategy, just having a go.
-	
+												   // Remains to be seen if this is best strategy, just having a go.
+
 	long const StartMajor = blockIdx.x*blockDim.x;
 	long const EndMajor = StartMajor + blockDim.x;
 	long const index = threadIdx.x + blockIdx.x * blockDim.x; // INDEX OF VERTEX
 
 	T3 our_T; // know own. Can remove & use shared value if register pressure too great?
-	
-					 // 1. Load T and n
-					 // 2. Create kappa in shared & load B --> syncthreads
-					 // 3. Create grad T and create flows
-					 // For now without any overwriting, we can do all in 1 pass through neighbours
-					 // 4. Ionisation too!
-	
+
+			  // 1. Load T and n
+			  // 2. Create kappa in shared & load B --> syncthreads
+			  // 3. Create grad T and create flows
+			  // For now without any overwriting, we can do all in 1 pass through neighbours
+			  // 4. Ionisation too!
+
 	structural info = p_info_sharing[index];
 	shared_pos[threadIdx.x] = info.pos;
 	species3 our_nu;
 	nvals our_n;
 
-	
+
 	if (info.flag == DOMAIN_VERTEX) {
-						
+
 		our_n = p_n_major[index]; // never used again once we have kappa
 		our_nu = p_nu_major[index];
 		our_T = p_T_major[index]; // CAREFUL: Pass vertex array if we use vertex index
-		shared_n_over_nu[threadIdx.x].e = our_n.n/our_nu.e;
+		shared_n_over_nu[threadIdx.x].e = our_n.n / our_nu.e;
 		shared_n_over_nu[threadIdx.x].i = our_n.n / our_nu.i;
 		shared_n_over_nu[threadIdx.x].n = our_n.n_n / our_nu.n;
 		shared_nu_iHeart[threadIdx.x] = our_nu.i;
@@ -914,34 +931,35 @@ __global__ void kernelAccumulateDiffusiveHeatRateAndCalcIonisation(
 		shared_B[threadIdx.x] = p_B_major[index].xypart();
 		shared_T[threadIdx.x] = our_T;
 
-	} else {
-			// SHOULD NOT BE LOOKING INTO INS.
-			// Is OUTERMOST another thing that comes to this branch? What about it? Should we also rule out traffic?
-    
-			// How do we avoid?
+	}
+	else {
+		// SHOULD NOT BE LOOKING INTO INS.
+		// Is OUTERMOST another thing that comes to this branch? What about it? Should we also rule out traffic?
+
+		// How do we avoid?
 		memset(&(shared_B[threadIdx.x]), 0, sizeof(f64_vec2));
 		memset(&(shared_n_over_nu[threadIdx.x]), 0, sizeof(species3));
 		shared_nu_iHeart[threadIdx.x] = 0.0;
 		shared_nu_eHeart[threadIdx.x] = 0.0;
 		memset(&(shared_T[threadIdx.x]), 0, sizeof(T3));
-			// Almost certainly, we take block that is in domain
-			// And it will look into ins.
-			// Simple criterion: iVertex < value means within ins
-			// and therefore no traffic.
+		// Almost certainly, we take block that is in domain
+		// And it will look into ins.
+		// Simple criterion: iVertex < value means within ins
+		// and therefore no traffic.
 		// !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 	}
 	__syncthreads();
-	
+
 	f64 Area_quadrilateral;			// + 1
 	f64_vec2 grad_T;				// + 2
 	T3 T_anti, T_clock, T_out;		// + 9
-	// we do need to be able to populate it from outside block!
-	// We so prefer not to have to access 3 times but to store it once we read T*3
+									// we do need to be able to populate it from outside block!
+									// We so prefer not to have to access 3 times but to store it once we read T*3
 	f64_vec2 pos_clock, pos_anti, pos_out; // we do need to be able to populate from outside block!
-	//species3 nu_clock, nu_anti, nu_out; // + 6 + 9   same logic, we need to store external
-	// avoid storing external of this. We are running out of registers.
-	//f64_tens2 kappa;				// + 4     
-	f64_vec2 B_out; 
+										   //species3 nu_clock, nu_anti, nu_out; // + 6 + 9   same logic, we need to store external
+										   // avoid storing external of this. We are running out of registers.
+										   //f64_tens2 kappa;				// + 4     
+	f64_vec2 B_out;
 	f64 AreaMajor = 0.0;
 	// 29 doubles right there.
 	NTrates ourrates;   // 5 more ---> 34
@@ -951,11 +969,12 @@ __global__ void kernelAccumulateDiffusiveHeatRateAndCalcIonisation(
 
 	// Need this, we are adding on to existing d/dt N,NT :
 	memcpy(&ourrates, NTadditionrates + index, sizeof(NTrates));
-	
+
 	if ((info.flag == INNERMOST) || (info.flag == OUTERMOST))
 	{
 		// [ Ignore flux into edge of outermost vertex I guess ???]
-	} else {
+	}
+	else {
 		if (info.flag == DOMAIN_VERTEX) {
 			// The idea of not sending blocks full of non-domain vertices is another idea. Fiddly with indices.
 
@@ -978,9 +997,9 @@ __global__ void kernelAccumulateDiffusiveHeatRateAndCalcIonisation(
 				pos_clock = info2.pos;
 				T_clock = p_T_major[indexneigh];
 				//	B_clock = p_B[indexneigh];
-					// reconstruct nu_clock:
-					//n2 n_clock = p_n[indexneigh];
-					// could we save something by using just opposing points instead of 5/12 for nu?
+				// reconstruct nu_clock:
+				//n2 n_clock = p_n[indexneigh];
+				// could we save something by using just opposing points instead of 5/12 for nu?
 			};
 
 			char PBC = PBCneigh[MAXNEIGH_d*threadIdx.x + info.neigh_len - 1];
@@ -1040,7 +1059,7 @@ __global__ void kernelAccumulateDiffusiveHeatRateAndCalcIonisation(
 				// Do we even really need to be doing with B_anti? Why not just
 				// take just once the nu and B from opposite and take 0.5 average with self.
 				// It will not make a huge difference to anything.
-			
+
 				f64_vec2 edge_normal;
 				edge_normal.x = THIRD*(pos_anti.y - pos_clock.y);
 				edge_normal.y = THIRD*(pos_clock.x - pos_anti.x);
@@ -1084,32 +1103,33 @@ __global__ void kernelAccumulateDiffusiveHeatRateAndCalcIonisation(
 							+ shared_n_over_nu[threadIdx.x].e)
 						*(0.5*(T_out.Te + our_T.Te)) * over_m_e;
 
-					kappa_parallel_i = 
-						(20.0/9.0) *
+					kappa_parallel_i =
+						(20.0 / 9.0) *
 						0.5*(shared_n_over_nu[indexneigh - StartMajor].i
-							          + shared_n_over_nu[threadIdx.x].i  )
-							*(0.5*(T_out.Ti + our_T.Ti)) * over_m_i;
-					
+							+ shared_n_over_nu[threadIdx.x].i)
+						*(0.5*(T_out.Ti + our_T.Ti)) * over_m_i;
+
 					kappa_neut = NEUTRAL_KAPPA_FACTOR * 0.5*(shared_n_over_nu[indexneigh - StartMajor].n
-										+ shared_n_over_nu[threadIdx.x].n)
-										*(0.5*(T_out.Tn + our_T.Tn)) * over_m_n;
+						+ shared_n_over_nu[threadIdx.x].n)
+						*(0.5*(T_out.Tn + our_T.Tn)) * over_m_n;
 					// If we don't carry kappa_ion we are carrying shared_n_over_nu because
 					// we must load that only once for the exterior neighs. So might as well carry kappa_ion.
-					nu_eHeart = 0.5*(our_nu.e + shared_nu_eHeart[indexneigh - StartMajor]); 
-					nu_iHeart = 0.5*(our_nu.i + shared_nu_iHeart[indexneigh - StartMajor]);					
-				} else {
+					nu_eHeart = 0.5*(our_nu.e + shared_nu_eHeart[indexneigh - StartMajor]);
+					nu_iHeart = 0.5*(our_nu.i + shared_nu_iHeart[indexneigh - StartMajor]);
+				}
+				else {
 					nvals n_out = p_n_major[indexneigh];
 					f64_vec3 B_out3 = p_B_major[indexneigh];
 					B_out = B_out3.xypart();
 					T_out = p_T_major[indexneigh];  // reason to combine n,T . How often do we load only 1 of them?
-					// Calculate n/nu out there:
+													// Calculate n/nu out there:
 					species3 nu_out = p_nu_major[indexneigh];
 
 					kappa_parallel_e =
 						2.5*0.5*(n_out.n / nu_out.e + shared_n_over_nu[threadIdx.x].e)
 						*(0.5*(T_out.Te + our_T.Te))* over_m_e;
 					kappa_parallel_i =
-						(20.0/9.0) * 0.5*(n_out.n/nu_out.i + shared_n_over_nu[threadIdx.x].i)
+						(20.0 / 9.0) * 0.5*(n_out.n / nu_out.i + shared_n_over_nu[threadIdx.x].i)
 						*0.5*(T_out.Ti + our_T.Ti)*over_m_i;
 					kappa_neut = NEUTRAL_KAPPA_FACTOR * 0.5*(n_out.n_n / nu_out.n + shared_n_over_nu[threadIdx.x].n)
 						*0.5*(T_out.Tn + our_T.Tn)*over_m_n;
@@ -1123,7 +1143,7 @@ __global__ void kernelAccumulateDiffusiveHeatRateAndCalcIonisation(
 				if (PBC == NEEDS_ANTI) 	B_out = Anticlock_rotate2(B_out);
 				if (PBC == NEEDS_CLOCK)	B_out = Clockwise_rotate2(B_out);
 
-				f64_vec3 omega = Make3(qovermc * 0.5*(shared_B[threadIdx.x] + B_out),BZ_CONSTANT*qovermc);
+				f64_vec3 omega = Make3(qovermc * 0.5*(shared_B[threadIdx.x] + B_out), BZ_CONSTANT*qovermc);
 
 				// if the outward gradient of T is positive, inwardheatflux is positive.
 				//kappa_grad_T_dot_edge_normal = 
@@ -1158,7 +1178,7 @@ __global__ void kernelAccumulateDiffusiveHeatRateAndCalcIonisation(
 					) / Area_quadrilateral;
 
 				omega = Make3(qoverMc * 0.5*(shared_B[threadIdx.x] + B_out), BZ_CONSTANT*qoverMc);
-				
+
 				ourrates.NiTi += TWOTHIRDS * kappa_parallel_i *(
 					edge_normal.x*(
 					(nu_iHeart*nu_iHeart + omega.x*omega.x)*grad_T.x +
@@ -1225,9 +1245,10 @@ __global__ void kernelAccumulateDiffusiveHeatRateAndCalcIonisation(
 
 			memcpy(NTadditionrates + index, &ourrates, sizeof(NTrates));
 
-		} else {
+		}
+		else {
 			// Not DOMAIN_VERTEX or INNERMOST or OUTERMOST
-			
+
 			// [ Ignore flux into edge of outermost vertex I guess ???]
 
 		};
@@ -1238,7 +1259,7 @@ __global__ void kernelAccumulateDiffusiveHeatRateAndCalcIonisation(
 __global__ void kernelAdvanceDensityAndTemperature(
 	f64 h_use,
 	structural * __restrict__ p_info_major,
-	nvals * __restrict__ p_n_major, 
+	nvals * __restrict__ p_n_major,
 	T3 * __restrict__ p_T_major,
 	NTrates * __restrict__ NTadditionrates,
 
@@ -1248,25 +1269,25 @@ __global__ void kernelAdvanceDensityAndTemperature(
 	v4 * __restrict__ p_vie_use,
 	f64_vec3 * __restrict__ p_v_n_use,
 
-	f64 * __restrict__ p_div_v_neut, 
+	f64 * __restrict__ p_div_v_neut,
 	f64 * __restrict__ p_div_v,
 	f64 * __restrict__ p_Integrated_div_v_overall,
 	f64 * __restrict__ p_AreaMajor, // hmm
 
-	nvals * __restrict__ p_n_major_dest, 
+	nvals * __restrict__ p_n_major_dest,
 	T3 * __restrict__ p_T_major_dest
-	)
+)
 {
 	// runs for major tile
 	// nu would have been a better choice to go in shared as it coexists with the 18 doubles in "LHS","inverted".
 	// Important to set 48K L1 for this routine.
-	
+
 	__shared__ nvals n_src_or_use[threadsPerTileMajor];
 	__shared__ f64 AreaMajor[threadsPerTileMajor];
 
 	long const index = threadIdx.x + blockIdx.x * blockDim.x; // INDEX OF VERTEX
 	structural info = p_info_major[index];
-	
+
 	if (info.flag == DOMAIN_VERTEX) {
 
 		n_src_or_use[threadIdx.x] = p_n_major[index];  // used throughout so a good candidate to stick in shared mem
@@ -1282,7 +1303,7 @@ __global__ void kernelAdvanceDensityAndTemperature(
 			newdata.NeTe = h_use * AdditionNT.NeTe;
 		}
 		{
-			nvals n_dest; 
+			nvals n_dest;
 			f64 Div_v_overall_integrated = p_Integrated_div_v_overall[index];
 			n_dest.n = newdata.N / (AreaMajor[threadIdx.x] + h_use*Div_v_overall_integrated); // Do have to worry whether advection steps are too frequent.
 			n_dest.n_n = newdata.Nn / (AreaMajor[threadIdx.x] + h_use*Div_v_overall_integrated); // What could do differently: know ROC area as well as mass flux through walls
@@ -1325,9 +1346,9 @@ __global__ void kernelAdvanceDensityAndTemperature(
 		// factor (1/(1+h div v))^(2/3) --> that's same
 		{
 			T3 T_src = p_T_major[index];
-			newdata.NnTn += n_src_or_use[threadIdx.x].n_n*AreaMajor[threadIdx.x]*T_src.Tn*factor_neut;
-			newdata.NiTi += n_src_or_use[threadIdx.x].n*AreaMajor[threadIdx.x]*T_src.Ti*factor;
-			newdata.NeTe += n_src_or_use[threadIdx.x].n*AreaMajor[threadIdx.x]*T_src.Te*factor;  // 
+			newdata.NnTn += n_src_or_use[threadIdx.x].n_n*AreaMajor[threadIdx.x] * T_src.Tn*factor_neut;
+			newdata.NiTi += n_src_or_use[threadIdx.x].n*AreaMajor[threadIdx.x] * T_src.Ti*factor;
+			newdata.NeTe += n_src_or_use[threadIdx.x].n*AreaMajor[threadIdx.x] * T_src.Te*factor;  // 
 		}
 
 		f64 nu_ne_MT, nu_en_MT, nu_ni_MT, nu_in_MT, nu_ei; // optimize after
@@ -1362,7 +1383,7 @@ __global__ void kernelAdvanceDensityAndTemperature(
 			nu_ei = nu_eiBarconst * kB_to_3halves*n_src_or_use[threadIdx.x].n*lnLambda /
 				(T_use.Te*sqrt_Te);
 
-	//		nu_ie = nu_ei;
+			//		nu_ie = nu_ei;
 
 			//	nu_eHeart = 1.87*nu_eiBar + data_k.n_n*s_en_visc*electron_thermal;
 		}
@@ -1375,19 +1396,19 @@ __global__ void kernelAdvanceDensityAndTemperature(
 			f64_vec3 v_n = p_v_n_use[index];
 			v4 vie = p_vie_use[index];
 
-			newdata.NeTe += h_use*(AreaMajor[threadIdx.x]*TWOTHIRDS*nu_en_MT*m_en*(
+			newdata.NeTe += h_use*(AreaMajor[threadIdx.x] * TWOTHIRDS*nu_en_MT*m_en*(
 				(v_n.x - vie.vxy.x)*(v_n.x - vie.vxy.x)
 				+ (v_n.y - vie.vxy.y)*(v_n.y - vie.vxy.y)
 				+ (v_n.z - vie.vez)*(v_n.z - vie.vez))
 
-				+ AreaMajor[threadIdx.x]*TWOTHIRDS*nu_ei*m_ei*(vie.vez - vie.viz)*(vie.vez - vie.viz));
+				+ AreaMajor[threadIdx.x] * TWOTHIRDS*nu_ei*m_ei*(vie.vez - vie.viz)*(vie.vez - vie.viz));
 
-			newdata.NiTi += h_use*(AreaMajor[threadIdx.x]*TWOTHIRDS*nu_in_MT*M_in*m_n*(
+			newdata.NiTi += h_use*(AreaMajor[threadIdx.x] * TWOTHIRDS*nu_in_MT*M_in*m_n*(
 				(v_n.x - vie.vxy.x)*(v_n.x - vie.vxy.x)
 				+ (v_n.y - vie.vxy.y)*(v_n.y - vie.vxy.y)
 				+ (v_n.z - vie.viz)*(v_n.z - vie.viz)));
 
-			newdata.NnTn += h_use*(AreaMajor[threadIdx.x]*TWOTHIRDS*nu_ni_MT*M_in*m_i*(
+			newdata.NnTn += h_use*(AreaMajor[threadIdx.x] * TWOTHIRDS*nu_ni_MT*M_in*m_i*(
 				(v_n.x - vie.vxy.x)*(v_n.x - vie.vxy.x)
 				+ (v_n.y - vie.vxy.y)*(v_n.y - vie.vxy.y)
 				+ (v_n.z - vie.viz)*(v_n.z - vie.viz)));
@@ -1436,12 +1457,14 @@ __global__ void kernelAdvanceDensityAndTemperature(
 
 		p_T_major_dest[index] = T_dest;
 
-	} else {
+	}
+	else {
 		// nothing to do ??
 		if (info.flag == OUTERMOST) {
 			p_n_major_dest[index] = p_n_major[index];
 			p_T_major_dest[index] = p_T_major[index];
-		} else {
+		}
+		else {
 			memset(p_n_major_dest + index, 0, sizeof(nvals));
 			memset(p_T_major_dest + index, 0, sizeof(T3));
 		};
@@ -1460,23 +1483,23 @@ __global__ void kernelCalculateUpwindDensity_tris(
 	LONG3 * __restrict__ p_which_iTri_number_am_I,
 	CHAR4 * __restrict__ p_szPBCneigh_tris,
 	nvals * __restrict__ p_n_upwind_minor // result
-	) 
+)
 {
 	// The idea is to take the upwind n on each side of each
 	// major edge through this tri, weighted by |v.edge_normal|
 	// to produce an average.
 	__shared__ f64_vec2 shared_pos[threadsPerTileMinor]; // 4 doubles/vertex
 	__shared__ f64_12 shared_shards[threadsPerTileMajor];  // + 12
-	// 15 doubles right there. Max 21 for 288 vertices. 16 is okay.
-	// Might as well stick 1 more double  in there if we get worried about registers.
+														   // 15 doubles right there. Max 21 for 288 vertices. 16 is okay.
+														   // Might as well stick 1 more double  in there if we get worried about registers.
 
-	// #############################################%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%###############
-	// We need a reverse index: this triangle carry 3 indices to know who it is to its corners.
-	
+														   // #############################################%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%###############
+														   // We need a reverse index: this triangle carry 3 indices to know who it is to its corners.
+
 	long const iTri = blockDim.x*blockIdx.x + threadIdx.x;
 	structural const info = p_info_minor[iTri];
 	nvals result;
-	
+
 	shared_pos[threadIdx.x] = info.pos;
 	long const StartMajor = blockIdx.x*threadsPerTileMajor;
 	long const EndMajor = StartMajor + threadsPerTileMajor;
@@ -1495,7 +1518,7 @@ __global__ void kernelCalculateUpwindDensity_tris(
 	LONG3 tricornerindex, trineighindex;
 	LONG3 who_am_I;
 	f64_vec2 v_overall;
-	
+
 	char szPBC_triminor[6];
 	CHAR4 szPBC_neighs;
 
@@ -1514,42 +1537,46 @@ __global__ void kernelCalculateUpwindDensity_tris(
 		if ((tricornerindex.i1 >= StartMajor) && (tricornerindex.i1 < EndMajor))
 		{
 			n0 = shared_shards[tricornerindex.i1 - StartMajor].n[who_am_I.i1]; // whoa, be careful with data type / array
-		} else {
+		}
+		else {
 			n0 = p_n_shard_major[tricornerindex.i1].n[who_am_I.i1];
 			// at least it's 1 bus journey this way instead of 2 to fetch n_shards.
 		}
 		if ((tricornerindex.i2 >= StartMajor) && (tricornerindex.i2 < EndMajor))
 		{
 			n1 = shared_shards[tricornerindex.i2 - StartMajor].n[who_am_I.i2];
-		} else {
+		}
+		else {
 			n1 = p_n_shard_major[tricornerindex.i2].n[who_am_I.i2];
 			// at least it's 1 bus journey this way instead of 2 to fetch n_shards.
 		}
 		if ((tricornerindex.i3 >= StartMajor) && (tricornerindex.i3 < EndMajor))
 		{
 			n2 = shared_shards[tricornerindex.i3 - StartMajor].n[who_am_I.i3];
-		} else {
+		}
+		else {
 			n2 = p_n_shard_major[tricornerindex.i3].n[who_am_I.i3];
 			// at least it's 1 bus journey this way instead of 2 to fetch n_shards.
 		}
 
 		v_overall = p_overall_v_minor[iTri];
 		f64_vec2 relv = p_vie_minor[iTri].vxy - v_overall;
-		
+
 		trineighindex = p_trineighindex[iTri];
 		f64_vec2 nearby_pos;
 		if ((trineighindex.i1 >= StartMinor) && (trineighindex.i1 < EndMinor)) {
 			nearby_pos = shared_pos[trineighindex.i1 - StartMinor];
-		} else {
+		}
+		else {
 			nearby_pos = p_info_minor[trineighindex.i1].pos;
 		}
 		if (szPBC_neighs.per0 == ROTATE_ME_CLOCKWISE) {
 			nearby_pos = Clockwise*nearby_pos;
-		} 
+		}
 		if (szPBC_neighs.per0 == ROTATE_ME_ANTICLOCKWISE) {
 			nearby_pos = Anticlockwise*nearby_pos;
 		}
-		
+
 		edge_normal0.x = nearby_pos.y - info.pos.y;
 		edge_normal0.y = info.pos.x - nearby_pos.x;
 		// CAREFUL AS FUCK : which side is which???
@@ -1557,14 +1584,15 @@ __global__ void kernelCalculateUpwindDensity_tris(
 		// We don't know if the corners have been numbered anticlockwise?
 		// Could arrange it though.
 		// So 1 is anticlockwise for edge 0.
-		
+
 		f64 numerator = 0.0;
 		f64 dot1, dot2;
 		f64 dot0 = relv.dot(edge_normal0);
 		if (dot0 > 0.0) // v faces anticlockwise
 		{
 			numerator += dot0*n2;
-		} else {
+		}
+		else {
 			dot0 = -dot0;
 			numerator += dot0*n1;
 		}
@@ -1606,7 +1634,7 @@ __global__ void kernelCalculateUpwindDensity_tris(
 		if (szPBC_neighs.per2 == ROTATE_ME_ANTICLOCKWISE) {
 			nearby_pos = Anticlockwise*nearby_pos;
 		}
-		
+
 		edge_normal2.x = nearby_pos.y - info.pos.y;
 		edge_normal2.y = info.pos.x - nearby_pos.x;
 
@@ -1614,25 +1642,28 @@ __global__ void kernelCalculateUpwindDensity_tris(
 		if (dot2 > 0.0)
 		{
 			numerator += dot2*n1;
-		} else {
+		}
+		else {
 			dot2 = -dot2;
 			numerator += dot2*n0;
 		}
 
 		result.n = numerator / (dot0 + dot1 + dot2);
 		// Argument against fabs in favour of squared weights?
-		
-	} else {
+
+	}
+	else {
 		if (info.flag == CROSSING_INS) {
 			result.n = ;
-		} else {
+		}
+		else {
 			result.n = 0.0;
 		};
 	};
 
 	// Now same for upwind neutral density:
 	// In order to use syncthreads we had to come out of the branching.
-	
+
 	if (threadIdx.x < threadsPerTileMajor)
 	{
 		memcpy(&(shared_shards[threadIdx.x].n), &(p_n_shard_n_major[threadsPerTileMajor*blockIdx.x + threadIdx.x].n),
@@ -1671,7 +1702,7 @@ __global__ void kernelCalculateUpwindDensity_tris(
 		}
 
 		f64_vec2 relv = p_v_n_minor[iTri].xypart() - v_overall;
-		
+
 		f64 numerator = 0.0;
 		f64 dot1, dot2;
 		f64 dot0 = relv.dot(edge_normal0);
@@ -1705,8 +1736,9 @@ __global__ void kernelCalculateUpwindDensity_tris(
 		}
 
 		result.n_n = numerator / (dot0 + dot1 + dot2);
-		
-	} else {
+
+	}
+	else {
 		if (info.flag == CROSSING_INS) {
 			result.n_n = ;
 		}
@@ -1714,7 +1746,7 @@ __global__ void kernelCalculateUpwindDensity_tris(
 			result.n_n = 0.0;
 		};
 	};
-	
+
 	p_n_upwind_minor[iTri] = result;
 
 }
@@ -1737,7 +1769,7 @@ __global__ void kernelAccumulateAdvectiveMassHeatRate(
 	f64 * __restrict__ p_div_v,
 	f64 * __restrict__ p_div_v_n,
 	f64 * __restrict__ p_Integrated_div_v_overall
-	)
+)
 {
 	// Use the upwind density from tris together with v_tri.
 	// Seems to include a factor h
@@ -1767,9 +1799,9 @@ __global__ void kernelAccumulateAdvectiveMassHeatRate(
 		memcpy(info, p_info_minor + (threadsPerTileMinor*blockDim.x + 2 * threadIdx.x), sizeof(structural) * 2);
 		shared_pos[2 * threadIdx.x] = info[0].pos;
 		shared_pos[2 * threadIdx.x + 1] = info[1].pos;
-		memcpy(&(shared_n_upwind[2*threadIdx.x]), p_n_upwind_minor + (threadsPerTileMinor*blockDim.x + 2 * threadIdx.x), sizeof(nvals) * 2);
+		memcpy(&(shared_n_upwind[2 * threadIdx.x]), p_n_upwind_minor + (threadsPerTileMinor*blockDim.x + 2 * threadIdx.x), sizeof(nvals) * 2);
 		v4 vie[2];
-		memcpy(&vie,p_vie_minor + (threadsPerTileMinor*blockDim.x + 2 * threadIdx.x), sizeof(v4) * 2);
+		memcpy(&vie, p_vie_minor + (threadsPerTileMinor*blockDim.x + 2 * threadIdx.x), sizeof(v4) * 2);
 		shared_vxy[2 * threadIdx.x] = vie[0].vxy;
 		shared_vxy[2 * threadIdx.x + 1] = vie[1].vxy;
 		f64_vec3 v_n[2];
@@ -1800,6 +1832,7 @@ __global__ void kernelAccumulateAdvectiveMassHeatRate(
 		// Now we are assuming what? Neigh 0 is below tri 0, so 0 1 are on neigh 0
 		CHECK ASSUMPTION!!;
 		//
+		and check how n_shard got used.;
 
 		f64_vec2 edge_normal, endpt0, endpt1;
 		f64_vec2 vxy_prev, vxy_next;
@@ -1808,7 +1841,7 @@ __global__ void kernelAccumulateAdvectiveMassHeatRate(
 		f64_vec2 v_overall_prev, v_overall_next;
 		f64 Te_next, Te_prev, Ti_next, Ti_prev, Tn_next, Tn_prev;
 
-		short inext,i = 0;
+		short inext, i = 0;
 		long iTri = izTri[0];
 		v_overall_prev = p_v_overall_minor[iTri];
 		if ((iTri >= StartMinor) && (iTri < EndMinor)) {
@@ -1940,7 +1973,7 @@ __global__ void kernelAccumulateAdvectiveMassHeatRate(
 		NTplus.NiTi = -h_use*totalheatflux_out.Ti;
 		NTplus.NnTn = -h_use*totalheatflux_out.Tn;
 
-		memcpy(p_NTadditionrates + iVertex, &NTplus, sizeof(NTrates)); 
+		memcpy(p_NTadditionrates + iVertex, &NTplus, sizeof(NTrates));
 
 		// What we need now: 
 		//	* Cope with non-domain vertex
@@ -1948,7 +1981,8 @@ __global__ void kernelAccumulateAdvectiveMassHeatRate(
 		p_div_v_n[iVertex] = Integrated_div_v_n / AreaMajor;
 		p_Integrated_div_v_overall[iVertex] = Integrated_div_v_overall;
 		// 3 divisions -- could speed up by creating 1.0/AreaMajor. Except it's bus time anyway.
-	} else {
+	}
+	else {
 		p_div_v[iVertex] = 0.0;
 		p_div_v_n[iVertex] = 0.0;
 		p_Integrated_div_v_overall[iVertex] = 0.0;
@@ -1960,7 +1994,9 @@ __global__ void kernelPopulateOhmsLaw(
 	f64 h_use,
 
 	structural * __restrict__ p_info_minor,
-	three_vec3 * __restrict__ p_AdditionalMomRates,
+	f64_vec3 * __restrict__ p_MAR_neut,
+	f64_vec3 * __restrict__ p_MAR_ion,
+	f64_vec3 * __restrict__ p_MAR_elec,
 	f64_vec3 * __restrict__ p_B,
 	f64 * __restrict__ p_LapAz,
 	f64_vec2 * __restrict__ p_GradAz,
@@ -1998,37 +2034,44 @@ __global__ void kernelPopulateOhmsLaw(
 	f64_vec3 vn0;
 
 	long const iMinor = threadIdx.x + blockIdx.x * blockDim.x; // INDEX OF VERTEX
-	
+
 	structural info = p_info_minor[iMinor];
 
 	if ((info.flag == DOMAIN_VERTEX) || (info.flag == DOMAIN_TRIANGLE))
 	{
 		v4 vie_k = p_vie_src[iMinor];
 		f64_vec3 v_n_src = p_v_n_src[iMinor];
-		
+
 		nvals n_use = p_n_minor_use[iMinor];
 		AreaMinor = p_AreaMinor[iMinor];
 		// Are we better off with operator = or with memcpy?
 		vn0 = v_n_src;
 		{
-			three_vec3 MomAddRate;
-			memcpy(&MomAddRate, p_AdditionalMomRates + iMinor, sizeof(three_vec3));
+			f64_vec3 MAR;
+			memcpy(&MAR, p_MAR_neut + iMinor, sizeof(f64_vec3));
 			// CHECK IT IS INTENDED TO AFFECT Nv
 
-			vn0.x += h_use * (MomAddRate.neut.x / (n_use.n_n*AreaMinor));
-			vn0.y += h_use * (MomAddRate.neut.y / (n_use.n_n*AreaMinor));// MomAddRate is addition rate for Nv. Divide by N.
+			vn0.x += h_use * (MAR.x / (n_use.n_n*AreaMinor));
+			vn0.y += h_use * (MAR.y / (n_use.n_n*AreaMinor));// MomAddRate is addition rate for Nv. Divide by N.
 
+			memcpy(&MAR, p_MAR_ion + iMinor, sizeof(f64_vec3));
+			
 			v0.vxy = vie_k.vxy
-				+ h_use * ((m_e*MomAddRate.elec.xypart()
-					+ m_i*MomAddRate.ion.xypart())
+				+ h_use * (
+					+ m_i*MAR.xypart())
 					/ (n_use.n*(m_i + m_e)*AreaMinor));
 
 			v0.viz = vie_k.viz
-				+ h_use * MomAddRate.ion.z / (n_use.n*AreaMinor);
-			v0.vez = vie_k.vez
-				+ h_use * MomAddRate.elec.z / (n_use.n*AreaMinor);   // UM WHY WAS THIS NEGATIVE
+				+ h_use * MAR.z / (n_use.n*AreaMinor);
 
-																	 // + !!!!
+			memcpy(&MAR, p_MAR_elec + iMinor, sizeof(f64_vec3));
+
+			v0.vxy += h_use * ((m_e*MAR.xypart())
+					/ (n_use.n*(m_i + m_e)*AreaMinor));
+
+			v0.vez = vie_k.vez
+				+ h_use * MAR.z / (n_use.n*AreaMinor);   // UM WHY WAS THIS NEGATIVE
+													 // + !!!!
 		}
 
 		OhmsCoeffs ohm;
@@ -2314,13 +2357,13 @@ __global__ void kernelPopulateOhmsLaw(
 __global__ void kernelUpdateVelocityAndAzdotAndAz(
 	f64 h_use,
 	f64_vec3 * __restrict__ p_vn0,
-	v4 * __restrict__ p_v0, 
+	v4 * __restrict__ p_v0,
 	OhmsCoeffs * __restrict__ p_OhmsCoeffs,
 	AAdot * __restrict__ p_AAzdot_update,
 
 	v4 * __restrict__ p_vie_out,
 	f64_vec3 * __restrict__ p_vn_out,
-	f64 * __restrict__ p_GradAz,
+	f64_vec2 * __restrict__ p_GradAz,
 	f64_vec2 * __restrict__ p_v_overall_minor
 ) {
 	long iMinor = blockIdx.x*blockDim.x + threadIdx.x;
@@ -2329,8 +2372,8 @@ __global__ void kernelUpdateVelocityAndAzdotAndAz(
 	v4 v;
 	v4 v0 = p_v0[iMinor];
 
-	v.vez = v0.vez + ohm.sigma_e_zz * Ez_strength_d;  // 2
-	v.viz = v0.viz + ohm.sigma_i_zz * Ez_strength_d;  // 2
+	v.vez = v0.vez + ohm.sigma_e_zz * Ez_strength;  // 2
+	v.viz = v0.viz + ohm.sigma_i_zz * Ez_strength;  // 2
 	v.vxy = v0.vxy + ohm.beta_xy_z * (v.viz - v.vez);   // 4
 	f64_vec3 v_n = p_vn0[iMinor];							 // 3 sep
 	v_n.x += (ohm.beta_ne + ohm.beta_ni)*v.vxy.x;    // 2
@@ -2358,10 +2401,10 @@ __global__ void kernelUpdateVelocityAndAzdotAndAz(
 	temp.Azdot += h_use*c*TWOPI*q*n_use.n*(v.viz - v.vez);
 
 	temp.Az += h_use*temp.Azdot // !
-		// If we want to give some Azdot_k then it needs to happen in "Accelerate" routine
-		// check how we use accelerate later on in cudahost.cu ..
-			 + (pDestMesh->pData[iMinor].pos - pData[iMinor].pos).dot(grad_Az);
-	
+								// If we want to give some Azdot_k then it needs to happen in "Accelerate" routine
+								// check how we use accelerate later on in cudahost.cu ..
+		+ (pDestMesh->pData[iMinor].pos - pData[iMinor].pos).dot(grad_Az);
+
 	////////////////////////////////////////////
 	// STILL NEED TO RESET Az IN FRILLS
 	////////////////////////////////////////////
@@ -2385,7 +2428,7 @@ __global__ void kernelAdd(
 __global__ void kernelResetFrillsAz(
 	structural * __restrict__ p_info,
 	LONG3 * __restrict__ trineighbourindex,
-	f64 * __restrict__ p_Az) 
+	f64 * __restrict__ p_Az)
 {
 	long const index = blockDim.x*blockIdx.x + threadIdx.x;
 	structural info = p_info[index];
@@ -2393,9 +2436,9 @@ __global__ void kernelResetFrillsAz(
 	{
 
 		****************************
-		Please make sure they have distinct codes to all else.
-		
-		LONG3 izNeigh = trineighbourindex[index];
+			Please make sure they have distinct codes to all else.
+
+			LONG3 izNeigh = trineighbourindex[index];
 
 		p_Az[index] = p_Az[izNeigh.i1];
 	}
@@ -2423,7 +2466,7 @@ __global__ void kernelCreateEpsilonAndJacobi(
 	}
 	else {
 		eps = p_Az_array_next[index] - h_use * p_gamma[index] * p_Lap_Aznext[index]
-			- p_Az_array[index]-h_use*p_Azdot0[index];
+			- p_Az_array[index] - h_use*p_Azdot0[index];
 		p_Jacobi_x[index] = -eps / (1.0 - h_use * p_gamma[index] * p_LapCoeffself[index]);
 	};
 	p_epsilon[index] = eps;
@@ -2442,7 +2485,7 @@ __global__ void kernelAccumulateSummands(
 	f64 * __restrict__ p_sum_eps_eps)
 {
 	long const index = blockDim.x*blockIdx.x + threadIdx.x;
-	
+
 	__shared__ f64 sumdata1[threadsPerTileMinor];
 	__shared__ f64 sumdata2[threadsPerTileMinor];
 	__shared__ f64 sumdata3[threadsPerTileMinor];
@@ -2471,7 +2514,7 @@ __global__ void kernelAccumulateSummands(
 		{
 			sumdata1[threadIdx.x] += sumdata1[threadIdx.x + k];
 			sumdata2[threadIdx.x] += sumdata2[threadIdx.x + k];
-			sumdata3[threadIdx.x] += sumdata3[threadIdx.x + k];			
+			sumdata3[threadIdx.x] += sumdata3[threadIdx.x + k];
 		};
 		__syncthreads();
 
@@ -2497,62 +2540,62 @@ __global__ void kernelAccumulateSummands(
 }
 
 /*__global__ void kernelGetLap_verts(
-	structural * __restrict__ p_info,
-	f64 * __restrict__ p_Az,
-	long * __restrict__ p_izNeighMinor,
-	long * __restrict__ p_izTri,
-	f64 * __restrict__ p_LapAz)
+structural * __restrict__ p_info,
+f64 * __restrict__ p_Az,
+long * __restrict__ p_izNeighMinor,
+long * __restrict__ p_izTri,
+f64 * __restrict__ p_LapAz)
 {
-	__shared__ f64_vec2 shared_pos[threadsPerTileMinor];
-	__shared__ f64_vec2 shared_pos_verts[threadsPerTileMajor];
-	__shared__ f64 shared_Az[threadsPerTileMinor];
-	__shared__ f64 shared_Az_verts[threadsPerTileMajor];
+__shared__ f64_vec2 shared_pos[threadsPerTileMinor];
+__shared__ f64_vec2 shared_pos_verts[threadsPerTileMajor];
+__shared__ f64 shared_Az[threadsPerTileMinor];
+__shared__ f64 shared_Az_verts[threadsPerTileMajor];
 
-	// For now, stick with idea that vertices have just major indices that come after tris.
-	// Minor indices are not made contiguous - although it might be better ultimately.
-	
-	long const iVertex = blockDim.x*blockIdx.x+threadIdx.x;
+// For now, stick with idea that vertices have just major indices that come after tris.
+// Minor indices are not made contiguous - although it might be better ultimately.
 
-	structural info = p_info[iVertex+BEGINNING_OF_CENTRAL];
-	shared_pos_verts[threadIdx.x] = info.pos;
-	shared_Az_verts[threadIdx.x] = p_Az[iVertex+BEGINNING_OF_CENTRAL];
-	{
-		structural info2[2];
-		memcpy(info2,p_info[threadsPerTileMinor*blockIdx.x + 2*threadIdx.x,2*sizeof(structural));
-		shared_pos[threadIdx.x*2] = info2[0].pos;
-		shared_pos[threadIdx.x*2+1] = info2[1].pos;
-		memcpy(shared_Az+threadIdx.x*2,p_Az[threadsPerTileMinor*blockIdx.x+2*threadIdx.x,2*sizeof(f64));
-	}
+long const iVertex = blockDim.x*blockIdx.x+threadIdx.x;
 
-	__syncthreads();
+structural info = p_info[iVertex+BEGINNING_OF_CENTRAL];
+shared_pos_verts[threadIdx.x] = info.pos;
+shared_Az_verts[threadIdx.x] = p_Az[iVertex+BEGINNING_OF_CENTRAL];
+{
+structural info2[2];
+memcpy(info2,p_info[threadsPerTileMinor*blockIdx.x + 2*threadIdx.x,2*sizeof(structural));
+shared_pos[threadIdx.x*2] = info2[0].pos;
+shared_pos[threadIdx.x*2+1] = info2[1].pos;
+memcpy(shared_Az+threadIdx.x*2,p_Az[threadsPerTileMinor*blockIdx.x+2*threadIdx.x,2*sizeof(f64));
+}
 
-	{
-		f64 Our_integral_Lap_Az = 0.0;
-		f64 AreaMinor = 0.0;
-		long tri_len = info.neigh_len;
-		long izTri[MAXNEIGH];
+__syncthreads();
 
-		memcpy(izTri,p_izTri+MAXNEIGH*index,sizeof(long)*MAXNEIGH);
+{
+f64 Our_integral_Lap_Az = 0.0;
+f64 AreaMinor = 0.0;
+long tri_len = info.neigh_len;
+long izTri[MAXNEIGH];
 
-		iprev = tri_len-1;
-		if ((izTri[iprev] >= StartMinor) && (izTri[iprev] < EndMajor))
-		{
-			prevAz = shared_Az[izTri[iprev]-StartMinor];
-			prevpos = shared_pos[izTri[iprev]-StartMinor];
-		} else {
-			
-		}
-	}
-	// Better if we use same share to do both tris and verts
+memcpy(izTri,p_izTri+MAXNEIGH*index,sizeof(long)*MAXNEIGH);
 
-	// Idea: let's make it called for # minor threads, each loads 1 shared value,
-	// and only half the threads run first for the vertex part. That is a pretty good idea.
-		
-	long const iTri = threadsPerTileMinor*blockIdx.x + 2*threadIdx.x;
+iprev = tri_len-1;
+if ((izTri[iprev] >= StartMinor) && (izTri[iprev] < EndMajor))
+{
+prevAz = shared_Az[izTri[iprev]-StartMinor];
+prevpos = shared_pos[izTri[iprev]-StartMinor];
+} else {
 
-	ourAz = shared_Az[2*threadIdx.x];
-	
-	
+}
+}
+// Better if we use same share to do both tris and verts
+
+// Idea: let's make it called for # minor threads, each loads 1 shared value,
+// and only half the threads run first for the vertex part. That is a pretty good idea.
+
+long const iTri = threadsPerTileMinor*blockIdx.x + 2*threadIdx.x;
+
+ourAz = shared_Az[2*threadIdx.x];
+
+
 }*/
 
 __global__ void kernelGetLap_minor(
@@ -2561,7 +2604,7 @@ __global__ void kernelGetLap_minor(
 
 	long * __restrict__ p_izTri,
 	long * __restrict__ p_izNeighMinor,
-	char * __restrict__ p_szPBCtri_vertex, 
+	char * __restrict__ p_szPBCtri_vertex,
 	char * __restrict__ p_szPBCtriminor,
 
 	f64 * __restrict__ p_LapAz)
@@ -2592,7 +2635,7 @@ __global__ void kernelGetLap_minor(
 		shared_pos_verts[threadIdx.x] = info.pos;
 		shared_Az_verts[threadIdx.x] = p_Az[iVertex + BEGINNING_OF_CENTRAL];
 	};
-	
+
 	__syncthreads();
 
 	f64 ourAz, oppAz, prevAz, nextAz;
@@ -2647,11 +2690,12 @@ __global__ void kernelGetLap_minor(
 		short inext, iend = tri_len;
 		f64_vec2 projendpt0, edge_normal;
 		if ((info.flag == INNERMOST) || (info.flag == OUTERMOST)) {
-			
+
 			iend = tri_len - 2;
 			if (info.flag == OUTERMOST) {
 				endpt0.project_to_radius(projendpt0, FRILL_CENTROID_OUTER_RADIUS_d); // back of cell for Lap purposes
-			} else {
+			}
+			else {
 				endpt0.project_to_radius(projendpt0, FRILL_CENTROID_INNER_RADIUS_d); // back of cell for Lap purposes
 			};
 			edge_normal.x = endpt0.y - projendpt0.y;
@@ -2729,7 +2773,8 @@ __global__ void kernelGetLap_minor(
 
 			if (pVertex->flags == OUTERMOST) {
 				endpt1.project_to_radius(projendpt1, FRILL_CENTROID_OUTER_RADIUS_d);
-			} else {
+			}
+			else {
 				endpt1.project_to_radius(projendpt1, FRILL_CENTROID_INNER_RADIUS_d);
 			};
 			edge_normal.x = projendpt1.y - endpt1.y;
@@ -2756,8 +2801,9 @@ __global__ void kernelGetLap_minor(
 	if ((info.flag == OUTER_FRILL) || (info.flag == INNER_FRILL)) {
 		if ((izNeighMinor[0] >= StartMinor) && (izNeighMinor[0] < EndMinor))
 		{
-			oppAz = shared_Az[izNeighMinor[0]-StartMinor];
-		} else {
+			oppAz = shared_Az[izNeighMinor[0] - StartMinor];
+		}
+		else {
 			oppAz = p_Az[izNeighMinor[0]];
 		};
 		p_LapAz[iMinor] = oppAz - ourAz;
@@ -2772,39 +2818,43 @@ __global__ void kernelGetLap_minor(
 		{
 			prevAz = shared_Az[izNeighMinor[iprev] - StartMinor];
 			prevpos = shared_pos[izNeighMinor[iprev] - StartMinor];
-		} else {
+		}
+		else {
 			if ((izNeighMinor[iprev] >= StartMajor + BEGINNING_OF_CENTRAL) &&
-				(izNeighMinor[iprev] < EndMajor + BEGINNING_OF_CENTRAL)) 
+				(izNeighMinor[iprev] < EndMajor + BEGINNING_OF_CENTRAL))
 			{
 				prevAz = shared_Az_verts[izNeighMinor[iprev] - BEGINNING_OF_CENTRAL - StartMajor];
 				prevpos = shared_pos_verts[izNeighMinor[iprev] - BEGINNING_OF_CENTRAL - StartMajor];
-			} else {
+			}
+			else {
 				prevAz = p_Az[izNeighMinor[iprev]];
 				prevpos = p_info[izNeighMinor[iprev]].pos;
 			};
 		};
 		if (szPBC[iprev] == ROTATE_ME_CLOCKWISE) prevpos = Clockwise*prevpos;
 		if (szPBC[iprev] == ROTATE_ME_ANTICLOCKWISE) prevpos = Anticlockwise*prevpos;
-	
+
 		i = 0;
 		if ((izNeighMinor[i] >= StartMinor) && (izNeighMinor[i] < EndMinor))
 		{
 			oppAz = shared_Az[izNeighMinor[i] - StartMinor];
 			opppos = shared_pos[izNeighMinor[i] - StartMinor];
-		} else {
+		}
+		else {
 			if ((izNeighMinor[i] >= StartMajor + BEGINNING_OF_CENTRAL) &&
-			(izNeighMinor[i] < EndMajor + BEGINNING_OF_CENTRAL))
+				(izNeighMinor[i] < EndMajor + BEGINNING_OF_CENTRAL))
 			{
 				oppAz = shared_Az_verts[izNeighMinor[i] - BEGINNING_OF_CENTRAL - StartMajor];
 				opppos = shared_pos_verts[izNeighMinor[i] - BEGINNING_OF_CENTRAL - StartMajor];
-			} else {
+			}
+			else {
 				oppAz = p_Az[izNeighMinor[i]];
 				opppos = p_info[izNeighMinor[i]].pos;
 			};
 		};
 		if (szPBC[i] == ROTATE_ME_CLOCKWISE) opppos = Clockwise*opppos;
 		if (szPBC[i] == ROTATE_ME_ANTICLOCKWISE) opppos = Anticlockwise*opppos;
-		
+
 #pragma unroll 
 		for (i = 0; i < 6; i++)
 		{
@@ -2865,7 +2915,7 @@ __global__ void kernelGetLap_minor(
 				);
 
 			//f64_vec2 grad_Az = integ_grad_Az / area_quadrilateral;
-			Our_integral_Lap_Az += integ_grad_Az.dot(edge_normal)/ area_quadrilateral;
+			Our_integral_Lap_Az += integ_grad_Az.dot(edge_normal) / area_quadrilateral;
 
 			AreaMinor += (0.5*endpt0.x + 0.5*endpt1.x)*edge_normal.x;
 
@@ -2877,7 +2927,7 @@ __global__ void kernelGetLap_minor(
 			// There is an even quicker way which is to rotate pointers. No memcpy needed.
 		};
 
-		p_LapAz[iMinor] = Our_integral_Lap_Az / AreaMinor;	
+		p_LapAz[iMinor] = Our_integral_Lap_Az / AreaMinor;
 	};
 
 }
@@ -2960,7 +3010,8 @@ __global__ void kernelGetLapCoeffs(
 			iend = tri_len - 2;
 			if (info.flag == OUTERMOST) {
 				endpt0.project_to_radius(projendpt0, FRILL_CENTROID_OUTER_RADIUS_d); // back of cell for Lap purposes
-			} else {
+			}
+			else {
 				endpt0.project_to_radius(projendpt0, FRILL_CENTROID_INNER_RADIUS_d); // back of cell for Lap purposes
 			};
 			edge_normal.x = endpt0.y - projendpt0.y;
@@ -3079,7 +3130,8 @@ __global__ void kernelGetLapCoeffs(
 		if ((izNeighMinor[0] >= StartMinor) && (izNeighMinor[0] < EndMinor))
 		{
 			oppAz = shared_Az[izNeighMinor[0] - StartMinor];
-		} else {
+		}
+		else {
 			oppAz = p_Az[izNeighMinor[0]];
 		};
 		LapAz_array[iMinor] = oppAz - ourAz;
@@ -3205,7 +3257,7 @@ __global__ void kernelInterpolateVarsAndPositions(
 	structural * __restrict__ p_info_dest,
 	nvals * __restrict__ p_n_minor,
 	T3 * __restrict__ p_T_minor,
-	f64_vec3 * __restrict__ p_B )
+	f64_vec3 * __restrict__ p_B)
 {
 	long const iMinor = blockIdx.x*blockDim.x + threadIdx.x;
 	structural info1 = p_info1[iMinor];
@@ -3339,7 +3391,8 @@ __global__ void kernelCreate_pressure_gradT_and_gradA_LapA_CurlA_minor(
 			shared_T_verts[threadIdx.x].Te = T_.Te;
 			shared_T_verts[threadIdx.x].Ti = T_.Ti;
 			memcpy(&(shared_n_shards[threadIdx.x]), &(p_n_shards[iVertex]), sizeof(ShardModel)); // + 13
-		} else {
+		}
+		else {
 			// save several bus trips;
 			// it still manages to coalesce, let's hope, because ShardModel is 13 doubles not 12.
 			shared_T_verts[threadIdx.x].Te = 0.0;
@@ -3385,7 +3438,7 @@ __global__ void kernelCreate_pressure_gradT_and_gradA_LapA_CurlA_minor(
 		ourAzdot = shared_Azdot_verts[threadIdx.x];
 
 		if (info.flag == DOMAIN_VERTEX) {
-			
+
 			short iprev = tri_len - 1;
 			if ((izTri[iprev] >= StartMinor) && (izTri[iprev] < EndMinor))
 			{
@@ -3435,7 +3488,8 @@ __global__ void kernelCreate_pressure_gradT_and_gradA_LapA_CurlA_minor(
 				iend = tri_len - 2;
 				if (info.flag == OUTERMOST) {
 					endpt0.project_to_radius(projendpt0, FRILL_CENTROID_OUTER_RADIUS_d); // back of cell for Lap purposes
-				} else {
+				}
+				else {
 					endpt0.project_to_radius(projendpt0, FRILL_CENTROID_INNER_RADIUS_d); // back of cell for Lap purposes
 				}
 				edge_normal.x = endpt0.y - projendpt0.y;
@@ -3549,7 +3603,8 @@ __global__ void kernelCreate_pressure_gradT_and_gradA_LapA_CurlA_minor(
 
 				if (info.flag == OUTERMOST) {
 					endpt1.project_to_radius(projendpt1, FRILL_CENTROID_OUTER_RADIUS_d);
-				} else {
+				}
+				else {
 					endpt1.project_to_radius(projendpt1, FRILL_CENTROID_INNER_RADIUS_d);
 				};
 				edge_normal.x = projendpt1.y - endpt1.y;
@@ -3575,7 +3630,8 @@ __global__ void kernelCreate_pressure_gradT_and_gradA_LapA_CurlA_minor(
 
 			// No neutral stuff in this kernel, momrates should be set now:
 			memcpy(p_AdditionalMomrates + iVertex + BEGINNING_OF_CENTRAL, &ownrates, sizeof(three_vec3));
-		} else {
+		}
+		else {
 			// NOT domain vertex: Do Az, Azdot only:
 
 
@@ -3623,7 +3679,8 @@ __global__ void kernelCreate_pressure_gradT_and_gradA_LapA_CurlA_minor(
 				iend = tri_len - 2;
 				if (info.flag == OUTERMOST) {
 					endpt0.project_to_radius(projendpt0, FRILL_CENTROID_OUTER_RADIUS_d); // back of cell for Lap purposes
-				} else {
+				}
+				else {
 					endpt0.project_to_radius(projendpt0, FRILL_CENTROID_INNER_RADIUS_d); // back of cell for Lap purposes
 				}
 				edge_normal.x = endpt0.y - projendpt0.y;
@@ -3691,11 +3748,11 @@ __global__ void kernelCreate_pressure_gradT_and_gradA_LapA_CurlA_minor(
 
 				AreaMinor += (0.5*endpt0.x + 0.5*endpt1.x)*edge_normal.x;
 				endpt0 = endpt1;
-			
+
 				prevpos = opppos;
 				prevAz = oppAz;
 				prevAzdot = oppAzdot;
-			
+
 				opppos = nextpos;
 				oppAz = nextAz;
 				oppAzdot = nextAzdot;
@@ -3711,7 +3768,8 @@ __global__ void kernelCreate_pressure_gradT_and_gradA_LapA_CurlA_minor(
 
 				if (info.flag == OUTERMOST) {
 					endpt1.project_to_radius(projendpt1, FRILL_CENTROID_OUTER_RADIUS_d);
-				} else {
+				}
+				else {
 					endpt1.project_to_radius(projendpt1, FRILL_CENTROID_INNER_RADIUS_d);
 				};
 				edge_normal.x = projendpt1.y - endpt1.y;
@@ -3734,12 +3792,12 @@ __global__ void kernelCreate_pressure_gradT_and_gradA_LapA_CurlA_minor(
 		};
 
 	}; // was it domain vertex or Az-only
-	// This branching is itself a good argument for doing Az in ITS own separate routine with no need for n_shard.
+	   // This branching is itself a good argument for doing Az in ITS own separate routine with no need for n_shard.
 
-	// __syncthreads(); // end of first vertex part
-	// Do we need syncthreads? Not overwriting any shared data here...
+	   // __syncthreads(); // end of first vertex part
+	   // Do we need syncthreads? Not overwriting any shared data here...
 
-	// now the minor with n_ion part:
+	   // now the minor with n_ion part:
 	info = p_info_minor[iMinor];
 	ourAz = shared_Az[threadIdx.x];
 
@@ -3748,7 +3806,7 @@ __global__ void kernelCreate_pressure_gradT_and_gradA_LapA_CurlA_minor(
 	memcpy(izNeighMinor, p_izNeighMinor + iMinor * 6, sizeof(long) * 6);
 	memcpy(szPBC, p_szPBCtriminor + iMinor * 6, sizeof(char) * 6);
 
-//	T2 prevT, nextT, oppT;
+	//	T2 prevT, nextT, oppT;
 	//f64 prevAz, nextAz, oppAz, ourAz;
 	//f64 prevAzdot, nextAzdot, oppAzdot, ourAzdot;
 
@@ -3759,7 +3817,8 @@ __global__ void kernelCreate_pressure_gradT_and_gradA_LapA_CurlA_minor(
 		if ((izNeighMinor[0] >= StartMinor) && (izNeighMinor[0] < EndMinor))
 		{
 			oppAz = shared_Az[izNeighMinor[0] - StartMinor];
-		} else {
+		}
+		else {
 
 			AAdot temp = p_AAdot[izNeighMinor[0]];
 			oppAz = temp.Az;
@@ -3791,7 +3850,7 @@ __global__ void kernelCreate_pressure_gradT_and_gradA_LapA_CurlA_minor(
 
 			memcpy(&ownrates_minor, p_AdditionalMomrates + iMinor, sizeof(three_vec3));
 
-			iprev = 5; 
+			iprev = 5;
 			i = 0;
 			if ((izNeighMinor[iprev] >= StartMinor) && (izNeighMinor[iprev] < EndMinor))
 			{
@@ -3799,7 +3858,8 @@ __global__ void kernelCreate_pressure_gradT_and_gradA_LapA_CurlA_minor(
 				prevpos = shared_pos[izNeighMinor[iprev] - StartMinor];
 				prevT = shared_T[izNeighMinor[iprev] - StartMinor];
 				prevAzdot = shared_Azdot[izNeighMinor[iprev] - StartMinor];
-			} else {
+			}
+			else {
 				if ((izNeighMinor[iprev] >= StartMajor + BEGINNING_OF_CENTRAL) &&
 					(izNeighMinor[iprev] < EndMajor + BEGINNING_OF_CENTRAL))
 				{
@@ -3827,7 +3887,8 @@ __global__ void kernelCreate_pressure_gradT_and_gradA_LapA_CurlA_minor(
 				oppT = shared_T[izNeighMinor[i] - StartMinor];
 				oppAzdot = shared_Azdot[izNeighMinor[i] - StartMinor];
 				opppos = shared_pos[izNeighMinor[i] - StartMinor];
-			} else {
+			}
+			else {
 				if ((izNeighMinor[i] >= StartMajor + BEGINNING_OF_CENTRAL) &&
 					(izNeighMinor[i] < EndMajor + BEGINNING_OF_CENTRAL))
 				{
@@ -3884,7 +3945,8 @@ __global__ void kernelCreate_pressure_gradT_and_gradA_LapA_CurlA_minor(
 				n_array[1] = THIRD*(shared_n_shards[cornerindex.i1 - StartMajor].n[who_next]
 					+ shared_n_shards[cornerindex.i1 - StartMajor].n[who_am_I]
 					+ shared_n_shards[cornerindex.i1 - StartMajor].n_cent);
-			} else {
+			}
+			else {
 				// comes from elsewhere
 				f64 ncent = p_n_shards[cornerindex.i1].n_cent;
 				short who_prev = who_am_I - 1;
@@ -3894,7 +3956,8 @@ __global__ void kernelCreate_pressure_gradT_and_gradA_LapA_CurlA_minor(
 					memcpy(&temp, p_n_shards[cornerindex.i1].n, sizeof(f64_vec2));
 					n_array[0] = THIRD*(p_n_shards[cornerindex.i1].n[who_prev] + temp.x + ncent);
 					n_array[1] = THIRD*(temp.x + temp.y + ncent);
-				} else {
+				}
+				else {
 					short who_next = who_am_I + 1;
 					if (who_next == tri_len) {
 						f64_vec2 temp;
@@ -3928,7 +3991,8 @@ __global__ void kernelCreate_pressure_gradT_and_gradA_LapA_CurlA_minor(
 				n_array[3] = THIRD*(shared_n_shards[cornerindex.i2 - StartMajor].n[who_next]
 					+ shared_n_shards[cornerindex.i2 - StartMajor].n[who_am_I]
 					+ shared_n_shards[cornerindex.i2 - StartMajor].n_cent);
-			} else {
+			}
+			else {
 				// comes from elsewhere
 				f64 ncent = p_n_shards[cornerindex.i2].n_cent;
 				short who_prev = who_am_I - 1;
@@ -3938,7 +4002,8 @@ __global__ void kernelCreate_pressure_gradT_and_gradA_LapA_CurlA_minor(
 					memcpy(&temp, p_n_shards[cornerindex.i2].n, sizeof(f64_vec2));
 					n_array[2] = THIRD*(p_n_shards[cornerindex.i2].n[who_prev] + temp.x + ncent);
 					n_array[3] = THIRD*(temp.x + temp.y + ncent);
-				} else {
+				}
+				else {
 					short who_next = who_am_I + 1;
 					if (who_next == tri_len) {
 						f64_vec2 temp;
@@ -3972,7 +4037,8 @@ __global__ void kernelCreate_pressure_gradT_and_gradA_LapA_CurlA_minor(
 				n_array[5] = THIRD*(shared_n_shards[cornerindex.i3 - StartMajor].n[who_next]
 					+ shared_n_shards[cornerindex.i3 - StartMajor].n[who_am_I]
 					+ shared_n_shards[cornerindex.i3 - StartMajor].n_cent);
-			} else {
+			}
+			else {
 				// comes from elsewhere
 				f64 ncent = p_n_shards[cornerindex.i3].n_cent;
 				short who_prev = who_am_I - 1;
@@ -3982,14 +4048,16 @@ __global__ void kernelCreate_pressure_gradT_and_gradA_LapA_CurlA_minor(
 					memcpy(&temp, p_n_shards[cornerindex.i3].n, sizeof(f64_vec2));
 					n_array[4] = THIRD*(p_n_shards[cornerindex.i3].n[who_prev] + temp.x + ncent);
 					n_array[5] = THIRD*(temp.x + temp.y + ncent);
-				} else {
+				}
+				else {
 					short who_next = who_am_I + 1;
 					if (who_next == tri_len) {
 						f64_vec2 temp;
 						memcpy(&temp, &(p_n_shards[cornerindex.i3].n[who_prev]), sizeof(f64_vec2));
 						n_array[4] = THIRD*(temp.x + temp.y + ncent);
 						n_array[5] = THIRD*(p_n_shards[cornerindex.i3].n[0] + temp.y + ncent);
-					} else {
+					}
+					else {
 						// typical case
 						f64_vec3 temp;
 						memcpy(&temp, &(p_n_shards[cornerindex.i3].n[who_prev]), sizeof(f64) * 3);
@@ -4016,7 +4084,8 @@ __global__ void kernelCreate_pressure_gradT_and_gradA_LapA_CurlA_minor(
 					nextT = shared_T[izNeighMinor[inext] - StartMinor];
 					nextAzdot = shared_Azdot[izNeighMinor[inext] - StartMinor];
 					nextpos = shared_pos[izNeighMinor[inext] - StartMinor];
-				} else {
+				}
+				else {
 					if ((izNeighMinor[inext] >= StartMajor + BEGINNING_OF_CENTRAL) &&
 						(izNeighMinor[inext] < EndMajor + BEGINNING_OF_CENTRAL))
 					{
@@ -4024,14 +4093,15 @@ __global__ void kernelCreate_pressure_gradT_and_gradA_LapA_CurlA_minor(
 						nextAzdot = shared_Azdot_verts[izNeighMinor[inext] - BEGINNING_OF_CENTRAL - StartMajor];
 						nextT = shared_T_verts[izNeighMinor[inext] - BEGINNING_OF_CENTRAL - StartMajor];
 						nextpos = shared_pos_verts[izNeighMinor[inext] - BEGINNING_OF_CENTRAL - StartMajor];
-					} else {
+					}
+					else {
 
 						AAdot temp = p_AAdot[izNeighMinor[inext]];
 						nextAz = temp.Az;
-						nextAzdot = temp.Azdot; 
+						nextAzdot = temp.Azdot;
 						T3 next_T = p_T_minor[izNeighMinor[inext]];
 						nextT.Te = next_T.Te; nextT.Ti = next_T.Ti;
-							
+
 						next_T = p_T_minor[izNeighMinor[inext] - BEGINNING_OF_CENTRAL - StartMajor];
 						nextpos = p_info_minor[izNeighMinor[inext]].pos;
 					};
@@ -4087,7 +4157,7 @@ __global__ void kernelCreate_pressure_gradT_and_gradA_LapA_CurlA_minor(
 				n0 = n_array[i];
 				n1 = n_array[inext]; // !
 
-				// *********
+									 // *********
 				Verify that tri 0 is formed from our vertex, neigh 0 and neigh 1;
 				// *********
 
@@ -4131,7 +4201,8 @@ __global__ void kernelCreate_pressure_gradT_and_gradA_LapA_CurlA_minor(
 
 			// No neutral stuff in this kernel, momrates should be set now:
 			memcpy(p_AdditionalMomrates + iMinor, &ownrates_minor, sizeof(three_vec3));
-		} else {
+		}
+		else {
 			// Not domain, not crossing_ins, not a frill
 			// ==========================================
 
@@ -4185,93 +4256,93 @@ __global__ void kernelCreate_pressure_gradT_and_gradA_LapA_CurlA_minor(
 			if (szPBC[i] == ROTATE_ME_CLOCKWISE) opppos = Clockwise*opppos;
 			if (szPBC[i] == ROTATE_ME_ANTICLOCKWISE) opppos = Anticlockwise*opppos;
 
-						
-#pragma unroll 
-				for (i = 0; i < 6; i++)
-				{
-					inext = i + 1; if (inext > 5) inext = 0;
 
-					if ((izNeighMinor[inext] >= StartMinor) && (izNeighMinor[inext] < EndMinor))
+#pragma unroll 
+			for (i = 0; i < 6; i++)
+			{
+				inext = i + 1; if (inext > 5) inext = 0;
+
+				if ((izNeighMinor[inext] >= StartMinor) && (izNeighMinor[inext] < EndMinor))
+				{
+					nextAz = shared_Az[izNeighMinor[inext] - StartMinor];
+					nextAzdot = shared_Azdot[izNeighMinor[inext] - StartMinor];
+					nextpos = shared_pos[izNeighMinor[inext] - StartMinor];
+				}
+				else {
+					if ((izNeighMinor[inext] >= StartMajor + BEGINNING_OF_CENTRAL) &&
+						(izNeighMinor[inext] < EndMajor + BEGINNING_OF_CENTRAL))
 					{
-						nextAz = shared_Az[izNeighMinor[inext] - StartMinor];
-						nextAzdot = shared_Azdot[izNeighMinor[inext] - StartMinor];
-						nextpos = shared_pos[izNeighMinor[inext] - StartMinor];
+						nextAz = shared_Az_verts[izNeighMinor[inext] - BEGINNING_OF_CENTRAL - StartMajor];
+						nextAzdot = shared_Azdot_verts[izNeighMinor[inext] - BEGINNING_OF_CENTRAL - StartMajor];
+						nextpos = shared_pos_verts[izNeighMinor[inext] - BEGINNING_OF_CENTRAL - StartMajor];
 					}
 					else {
-						if ((izNeighMinor[inext] >= StartMajor + BEGINNING_OF_CENTRAL) &&
-							(izNeighMinor[inext] < EndMajor + BEGINNING_OF_CENTRAL))
-						{
-							nextAz = shared_Az_verts[izNeighMinor[inext] - BEGINNING_OF_CENTRAL - StartMajor];
-							nextAzdot = shared_Azdot_verts[izNeighMinor[inext] - BEGINNING_OF_CENTRAL - StartMajor];
-							nextpos = shared_pos_verts[izNeighMinor[inext] - BEGINNING_OF_CENTRAL - StartMajor];
-						}
-						else {
-							AAdot temp = p_AAdot[izNeighMinor[inext]];
-							nextAz = temp.Az;
-							nextAzdot = temp.Azdot;
-							nextpos = p_info_minor[izNeighMinor[inext]].pos;
-						};
+						AAdot temp = p_AAdot[izNeighMinor[inext]];
+						nextAz = temp.Az;
+						nextAzdot = temp.Azdot;
+						nextpos = p_info_minor[izNeighMinor[inext]].pos;
 					};
-					if (szPBC[inext] == ROTATE_ME_CLOCKWISE) nextpos = Clockwise*nextpos;
-					if (szPBC[inext] == ROTATE_ME_ANTICLOCKWISE) nextpos = Anticlockwise*nextpos;
-
-					// New definition of endpoint of minor edge:
-
-					f64_vec2 endpt0, endpt1, edge_normal, integ_grad_Az;
-
-					endpt0 = THIRD * (prevpos + info.pos + opppos);
-					endpt1 = THIRD * (nextpos + info.pos + opppos);
-
-					edge_normal.x = endpt1.y - endpt0.y;
-					edge_normal.y = endpt0.x - endpt1.x;
-
-					// ______________________________________________________-
-
-					//	Az_edge = SIXTH * (2.0*ourdata.Az + 2.0*oppAz + prevAz + nextAz);
-					//	Our_integral_grad_Az += Az_edge * edge_normal;
-					//	Our_integral_curl_Az += Az_edge * (endpt1 - endpt0); // looks anticlockwise
-
-					integ_grad_Az.x = 0.5*(
-						(ourAz + nextAz)*(info.pos.y - nextpos.y)
-						+ (prevAz + ourAz)*(prevpos.y - info.pos.y)
-						+ (oppAz + prevAz)*(opppos.y - prevpos.y)
-						+ (nextAz + oppAz)*(nextpos.y - opppos.y)
-						);
-					integ_grad_Az.y = -0.5*( // notice minus
-						(ourAz + nextAz)*(info.pos.x - nextpos.x)
-						+ (prevAz + ourAz)*(prevpos.x - info.pos.x)
-						+ (oppAz + prevAz)*(opppos.x - prevpos.x)
-						+ (nextAz + oppAz)*(nextpos.x - opppos.x)
-						);
-					f64 area_quadrilateral = 0.5*(
-						(info.pos.x + nextpos.x)*(info.pos.y - nextpos.y)
-						+ (prevpos.x + info.pos.x)*(prevpos.y - info.pos.y)
-						+ (opppos.x + prevpos.x)*(opppos.y - prevpos.y)
-						+ (nextpos.x + opppos.x)*(nextpos.y - opppos.y)
-						);
-
-					//f64_vec2 grad_Az = integ_grad_Az / area_quadrilateral;
-					Our_integral_Lap_Az += integ_grad_Az.dot(edge_normal) / area_quadrilateral;
-
-					f64 Az_edge = SIXTH * (2.0*ourAz + 2.0*oppAz + prevAz + nextAz);
-					f64 Azdot_edge = SIXTH * (2.0*ourAzdot + 2.0*oppAzdot + prevAzdot + nextAzdot);
-					Our_integral_grad_Azdot += Azdot_edge * edge_normal;
-					Our_integral_grad_Az += Az_edge * edge_normal;
-					Our_integral_curl_Az += Az_edge * (endpt1 - endpt0);
-					
-					AreaMinor += (0.5*endpt0.x + 0.5*endpt1.x)*edge_normal.x;
-
-					endpt0 = endpt1;
-					
-					prevpos = opppos;
-					prevAz = oppAz;
-					prevAzdot = oppAzdot;
-					
-					opppos = nextpos;
-					oppAz = nextAz;
-					oppAzdot = nextAzdot;
-					
 				};
+				if (szPBC[inext] == ROTATE_ME_CLOCKWISE) nextpos = Clockwise*nextpos;
+				if (szPBC[inext] == ROTATE_ME_ANTICLOCKWISE) nextpos = Anticlockwise*nextpos;
+
+				// New definition of endpoint of minor edge:
+
+				f64_vec2 endpt0, endpt1, edge_normal, integ_grad_Az;
+
+				endpt0 = THIRD * (prevpos + info.pos + opppos);
+				endpt1 = THIRD * (nextpos + info.pos + opppos);
+
+				edge_normal.x = endpt1.y - endpt0.y;
+				edge_normal.y = endpt0.x - endpt1.x;
+
+				// ______________________________________________________-
+
+				//	Az_edge = SIXTH * (2.0*ourdata.Az + 2.0*oppAz + prevAz + nextAz);
+				//	Our_integral_grad_Az += Az_edge * edge_normal;
+				//	Our_integral_curl_Az += Az_edge * (endpt1 - endpt0); // looks anticlockwise
+
+				integ_grad_Az.x = 0.5*(
+					(ourAz + nextAz)*(info.pos.y - nextpos.y)
+					+ (prevAz + ourAz)*(prevpos.y - info.pos.y)
+					+ (oppAz + prevAz)*(opppos.y - prevpos.y)
+					+ (nextAz + oppAz)*(nextpos.y - opppos.y)
+					);
+				integ_grad_Az.y = -0.5*( // notice minus
+					(ourAz + nextAz)*(info.pos.x - nextpos.x)
+					+ (prevAz + ourAz)*(prevpos.x - info.pos.x)
+					+ (oppAz + prevAz)*(opppos.x - prevpos.x)
+					+ (nextAz + oppAz)*(nextpos.x - opppos.x)
+					);
+				f64 area_quadrilateral = 0.5*(
+					(info.pos.x + nextpos.x)*(info.pos.y - nextpos.y)
+					+ (prevpos.x + info.pos.x)*(prevpos.y - info.pos.y)
+					+ (opppos.x + prevpos.x)*(opppos.y - prevpos.y)
+					+ (nextpos.x + opppos.x)*(nextpos.y - opppos.y)
+					);
+
+				//f64_vec2 grad_Az = integ_grad_Az / area_quadrilateral;
+				Our_integral_Lap_Az += integ_grad_Az.dot(edge_normal) / area_quadrilateral;
+
+				f64 Az_edge = SIXTH * (2.0*ourAz + 2.0*oppAz + prevAz + nextAz);
+				f64 Azdot_edge = SIXTH * (2.0*ourAzdot + 2.0*oppAzdot + prevAzdot + nextAzdot);
+				Our_integral_grad_Azdot += Azdot_edge * edge_normal;
+				Our_integral_grad_Az += Az_edge * edge_normal;
+				Our_integral_curl_Az += Az_edge * (endpt1 - endpt0);
+
+				AreaMinor += (0.5*endpt0.x + 0.5*endpt1.x)*edge_normal.x;
+
+				endpt0 = endpt1;
+
+				prevpos = opppos;
+				prevAz = oppAz;
+				prevAzdot = oppAzdot;
+
+				opppos = nextpos;
+				oppAz = nextAz;
+				oppAzdot = nextAzdot;
+
+			};
 
 			p_GradAz[iMinor] = Our_integral_grad_Az / AreaMinor;
 			p_LapAz[iMinor] = Our_integral_Lap_Az / AreaMinor;
@@ -4282,16 +4353,16 @@ __global__ void kernelCreate_pressure_gradT_and_gradA_LapA_CurlA_minor(
 			ROCAzdotduetoAdvection[iMinor] = 0.0;
 		} // non-domain tri
 	}; // was it FRILL
-	
-	// Okay. While we have n_shards in memory we could proceed to overwrite with vxy.
-	// But get running first before using union and checking same.
+
+	   // Okay. While we have n_shards in memory we could proceed to overwrite with vxy.
+	   // But get running first before using union and checking same.
 }
 
-	// . * Go back and sort out non-domain vertex, domain vs non-domain triangle.
-	// ^^ done
-	
-	// . * Do vxy
-	// . * Do neutral variants. n_n T_n, n_n v_n v_n_rel
+// . * Go back and sort out non-domain vertex, domain vs non-domain triangle.
+// ^^ done
+
+// . * Do vxy
+// . * Do neutral variants. n_n T_n, n_n v_n v_n_rel
 
 __global__ void kernelCreate_momflux_minor(
 
@@ -4360,7 +4431,7 @@ __global__ void kernelCreate_momflux_minor(
 	v4 our_v, opp_v, prev_v, next_v;
 	f64_vec2 our_v_overall, prev_v_overall, next_v_overall, opp_v_overall;
 	f64_vec2 opppos, prevpos, nextpos;
-	
+
 	if (threadIdx.x < threadsPerTileMajor) {
 
 		AreaMinor = 0.0;
@@ -4386,7 +4457,7 @@ __global__ void kernelCreate_momflux_minor(
 		our_v_overall = shared_v_overall[threadIdx.x];
 
 		if (info.flag == DOMAIN_VERTEX) {
-			
+
 			short iprev = tri_len - 1;
 			short i = 0;
 			short inext;
@@ -4416,7 +4487,7 @@ __global__ void kernelCreate_momflux_minor(
 			{
 				opp_v = shared_vie[izTri[i] - StartMinor];
 				opp_v_overall = shared_v_overall[izTri[iprev] - StartMinor];
-				opppos = shared_pos[izTri[i] - StartMinor];				
+				opppos = shared_pos[izTri[i] - StartMinor];
 			}
 			else {
 				opp_v = p_vie_minor[izTri[i]];
@@ -4447,7 +4518,8 @@ __global__ void kernelCreate_momflux_minor(
 				iend = tri_len - 2;
 				if (info.flag == OUTERMOST) {
 					endpt0.project_to_radius(projendpt0, FRILL_CENTROID_OUTER_RADIUS_d); // back of cell for Lap purposes
-				} else {
+				}
+				else {
 					endpt0.project_to_radius(projendpt0, FRILL_CENTROID_INNER_RADIUS_d); // back of cell for Lap purposes
 				}
 				edge_normal.x = endpt0.y - projendpt0.y;
@@ -4495,17 +4567,17 @@ __global__ void kernelCreate_momflux_minor(
 				// *********
 				Verify that tri 0 is formed from our vertex, neigh 0 and neigh 1;
 				// *********
-								
+
 				vxy0 = THIRD * (our_v.vxy + prev_v.vxy + opp_v.vxy);
 				vxy1 = THIRD * (our_v.vxy + opp_v.vxy + next_v.vxy);
-				
+
 				vez0 = THIRD * (our_v.vez + opp_v.vez + prev_v.vez);
 				viz0 = THIRD * (our_v.viz + opp_v.viz + prev_v.viz);
-				
+
 				vez1 = THIRD * (our_v.vez + opp_v.vez + next_v.vez);
 				viz1 = THIRD * (our_v.viz + opp_v.viz + next_v.viz);
 
-				f64 relvnormal = 0.5*(vxy0 + vxy1 
+				f64 relvnormal = 0.5*(vxy0 + vxy1
 					- (THIRD * (our_v_overall + next_v_overall + opp_v_overall))
 					- (THIRD * (our_v_overall + prev_v_overall + opp_v_overall))
 					).dot(edge_normal);
@@ -4522,7 +4594,7 @@ __global__ void kernelCreate_momflux_minor(
 				//// Formula:
 				//// dv/dt = (d(Nv)/dt - dN/dt v) / N
 				//// We include the divide by N when we enter the accel routine.
-				
+
 				AreaMinor += (0.5*endpt0.x + 0.5*endpt1.x)*edge_normal.x;
 				endpt0 = endpt1;
 				n0 = n1;
@@ -4536,8 +4608,8 @@ __global__ void kernelCreate_momflux_minor(
 				opp_v_overall = next_v_overall;
 			}; // next i
 
-			
-			// No neutral stuff in this kernel, momrates should be set now:
+
+			   // No neutral stuff in this kernel, momrates should be set now:
 			memcpy(p_MAR_ion + iVertex + BEGINNING_OF_CENTRAL, &(ownrates.ion), sizeof(f64_vec3));
 			memcpy(p_MAR_elec + iVertex + BEGINNING_OF_CENTRAL, &(ownrates.elec), sizeof(f64_vec3));
 		}
@@ -4547,10 +4619,10 @@ __global__ void kernelCreate_momflux_minor(
 	}; // was it domain vertex or Az-only
 	   // This branching is itself a good argument for doing Az in ITS own separate routine with no need for n_shard.
 
-	// __syncthreads(); // end of first vertex part
-	// Do we need syncthreads? Not overwriting any shared data here...
+	   // __syncthreads(); // end of first vertex part
+	   // Do we need syncthreads? Not overwriting any shared data here...
 
-	// now the minor with n_ion part:
+	   // now the minor with n_ion part:
 	info = p_info_minor[iMinor];
 	our_v = shared_vie[threadIdx.x];
 
@@ -4569,7 +4641,8 @@ __global__ void kernelCreate_momflux_minor(
 	f64_vec2 vxy0, vxy1, opp_v_overall;
 
 	if ((info.flag == OUTER_FRILL) || (info.flag == INNER_FRILL)) {
-	} else {
+	}
+	else {
 
 		AreaMinor = 0.0;
 		if ((info.flag == DOMAIN_TRIANGLE) || (info.flag == CROSSING_INS)) {
@@ -4606,7 +4679,7 @@ __global__ void kernelCreate_momflux_minor(
 				prev_v_overall = Anticlockwise*prev_v_overall;
 			}
 
-			
+
 			i = 0;
 			if ((izNeighMinor[i] >= StartMinor) && (izNeighMinor[i] < EndMinor))
 			{
@@ -4790,94 +4863,95 @@ __global__ void kernelCreate_momflux_minor(
 			Check numbering of 0..5 for neighminor: first is edge 0 ? corner 0 ?
 
 #pragma unroll 
-			for (i = 0; i < 6; i++)
-			{
-				inext = i + 1; if (inext > 5) inext = 0;
-				if ((izNeighMinor[inext] >= StartMinor) && (izNeighMinor[inext] < EndMinor))
+				for (i = 0; i < 6; i++)
 				{
-					memcpy(&next_v, &(shared_vie[izNeighMinor[inext] - StartMinor]), sizeof(v4));
-					nextpos = shared_pos[izNeighMinor[inext] - StartMinor];
-					next_v_overall = shared_v_overall[izNeighMinor[inext] - StartMinor];
-				}
-				else {
-					if ((izNeighMinor[inext] >= StartMajor + BEGINNING_OF_CENTRAL) &&
-						(izNeighMinor[inext] < EndMajor + BEGINNING_OF_CENTRAL))
+					inext = i + 1; if (inext > 5) inext = 0;
+					if ((izNeighMinor[inext] >= StartMinor) && (izNeighMinor[inext] < EndMinor))
 					{
-						memcpy(&next_v, &(shared_vie_verts[izNeighMinor[inext] - BEGINNING_OF_CENTRAL - StartMajor]), sizeof(v4));
-						next_v_overall = shared_v_overall_verts[izNeighMinor[inext] - BEGINNING_OF_CENTRAL - StartMajor];
-						nextpos = shared_pos_verts[izNeighMinor[inext] - BEGINNING_OF_CENTRAL - StartMajor];
+						memcpy(&next_v, &(shared_vie[izNeighMinor[inext] - StartMinor]), sizeof(v4));
+						nextpos = shared_pos[izNeighMinor[inext] - StartMinor];
+						next_v_overall = shared_v_overall[izNeighMinor[inext] - StartMinor];
 					}
 					else {
-						nextpos = p_info[izNeighMinor[inext]].pos;
-						memcpy(&next_v, &(p_vie_minor[izNeighMinor[inext]]), sizeof(v4));
-						next_v_overall = p_v_overall_minor[izNeighMinor[inext]];
+						if ((izNeighMinor[inext] >= StartMajor + BEGINNING_OF_CENTRAL) &&
+							(izNeighMinor[inext] < EndMajor + BEGINNING_OF_CENTRAL))
+						{
+							memcpy(&next_v, &(shared_vie_verts[izNeighMinor[inext] - BEGINNING_OF_CENTRAL - StartMajor]), sizeof(v4));
+							next_v_overall = shared_v_overall_verts[izNeighMinor[inext] - BEGINNING_OF_CENTRAL - StartMajor];
+							nextpos = shared_pos_verts[izNeighMinor[inext] - BEGINNING_OF_CENTRAL - StartMajor];
+						}
+						else {
+							nextpos = p_info[izNeighMinor[inext]].pos;
+							memcpy(&next_v, &(p_vie_minor[izNeighMinor[inext]]), sizeof(v4));
+							next_v_overall = p_v_overall_minor[izNeighMinor[inext]];
+						};
 					};
+					if (szPBC[inext] == ROTATE_ME_CLOCKWISE) {
+						nextpos = Clockwise*nextpos;
+						next_v.vxy = Clockwise*next_v.vxy;
+						next_v_overall = Clockwise*next_v_overall;
+					}
+					if (szPBC[inext] == ROTATE_ME_ANTICLOCKWISE) {
+						nextpos = Anticlockwise*nextpos;
+						next_v.vxy = Anticlockwise*next_v.vxy;
+						next_v_overall = Anticlockwise*next_v_overall;
+					}
+
+					// New definition of endpoint of minor edge:
+					f64_vec2 endpt0, endpt1, edge_normal;
+
+					endpt0 = THIRD * (prevpos + info.pos + opppos);
+					endpt1 = THIRD * (nextpos + info.pos + opppos);
+
+					edge_normal.x = endpt1.y - endpt0.y;
+					edge_normal.y = endpt0.x - endpt1.x;
+
+					// ______________________________________________________-
+					n1 = shared_n_shards[threadIdx.x].n[i] + shared_n_shards[threadIdx.x].n[inext] + shared_n_shards[threadIdx.x].n_cent;
+
+					// Assume neighs 0,1 are relevant to border with tri 0 minor.
+					// *********
+					Verify that tri 0 is formed from our vertex, neigh 0 and neigh 1;
+					// *********
+
+					vxy0 = THIRD * (our_v.vxy + prev_v.vxy + opp_v.vxy);
+					vxy1 = THIRD * (our_v.vxy + opp_v.vxy + next_v.vxy);
+
+					vez0 = THIRD * (our_v.vez + opp_v.vez + prev_v.vez);
+					viz0 = THIRD * (our_v.viz + opp_v.viz + prev_v.viz);
+
+					vez1 = THIRD * (our_v.vez + opp_v.vez + next_v.vez);
+					viz1 = THIRD * (our_v.viz + opp_v.viz + next_v.viz);
+
+					f64 relvnormal = 0.5*(vxy0 + vxy1
+						- (THIRD * (our_v_overall + next_v_overall + opp_v_overall))
+						- (THIRD * (our_v_overall + prev_v_overall + opp_v_overall))
+						).dot(edge_normal);
+
+					ownrates_minor.ion -= 0.5*relvnormal*
+						(n0 * (Make3(vxy0 - our_v.vxy, viz0 - our_v.viz))
+							+ n1 * (Make3(vxy1 - our_v.vxy, viz1 - our_v.viz)));
+					ownrates_minor.elec -= 0.5*relvnormal*
+						(n0 * (Make3(vxy0 - our_v.vxy, vez0 - our_v.vez))
+							+ n1 * (Make3(vxy1 - our_v.vxy, vez1 - our_v.vez)));
+
+					endpt0 = endpt1;
+					n0 = n1;
+
+					prevpos = opppos;
+					prev_v = opp_v;
+					prev_v_overall = opp_v_overall;
+
+					opppos = nextpos;
+					opp_v = next_v;
+					opp_v_overall = next_v_overall;
 				};
-				if (szPBC[inext] == ROTATE_ME_CLOCKWISE) {
-					nextpos = Clockwise*nextpos;
-					next_v.vxy = Clockwise*next_v.vxy;
-					next_v_overall = Clockwise*next_v_overall;
-				}
-				if (szPBC[inext] == ROTATE_ME_ANTICLOCKWISE) {
-					nextpos = Anticlockwise*nextpos;
-					next_v.vxy = Anticlockwise*next_v.vxy;
-					next_v_overall = Anticlockwise*next_v_overall;
-				}
-
-				// New definition of endpoint of minor edge:
-				f64_vec2 endpt0, endpt1, edge_normal;
-
-				endpt0 = THIRD * (prevpos + info.pos + opppos);
-				endpt1 = THIRD * (nextpos + info.pos + opppos);
-
-				edge_normal.x = endpt1.y - endpt0.y;
-				edge_normal.y = endpt0.x - endpt1.x;
-
-				// ______________________________________________________-
-				n1 = shared_n_shards[threadIdx.x].n[i] + shared_n_shards[threadIdx.x].n[inext] + shared_n_shards[threadIdx.x].n_cent;
-
-				// Assume neighs 0,1 are relevant to border with tri 0 minor.
-				// *********
-				Verify that tri 0 is formed from our vertex, neigh 0 and neigh 1;
-				// *********
-
-				vxy0 = THIRD * (our_v.vxy + prev_v.vxy + opp_v.vxy);
-				vxy1 = THIRD * (our_v.vxy + opp_v.vxy + next_v.vxy);
-
-				vez0 = THIRD * (our_v.vez + opp_v.vez + prev_v.vez);
-				viz0 = THIRD * (our_v.viz + opp_v.viz + prev_v.viz);
-
-				vez1 = THIRD * (our_v.vez + opp_v.vez + next_v.vez);
-				viz1 = THIRD * (our_v.viz + opp_v.viz + next_v.viz);
-
-				f64 relvnormal = 0.5*(vxy0 + vxy1
-					- (THIRD * (our_v_overall + next_v_overall + opp_v_overall))
-					- (THIRD * (our_v_overall + prev_v_overall + opp_v_overall))
-					).dot(edge_normal);
-
-				ownrates_minor.ion -= 0.5*relvnormal*
-					(n0 * (Make3(vxy0 - our_v.vxy, viz0 - our_v.viz))
-						+ n1 * (Make3(vxy1 - our_v.vxy, viz1 - our_v.viz)));
-				ownrates_minor.elec -= 0.5*relvnormal*
-					(n0 * (Make3(vxy0 - our_v.vxy, vez0 - our_v.vez))
-						+ n1 * (Make3(vxy1 - our_v.vxy, vez1 - our_v.vez)));
-
-				endpt0 = endpt1;
-				n0 = n1;
-
-				prevpos = opppos;
-				prev_v = opp_v;
-				prev_v_overall = opp_v_overall;
-
-				opppos = nextpos;
-				opp_v = next_v;
-				opp_v_overall = next_v_overall;
-			};
 			f64_vec2 overall_v_ours = p_overall_v_minor[iMinor];
-			
+
 			memcpy(&(p_MAR_ion[iMinor]), &(ownrates_minor.ion), sizeof(f64_vec3));
 			memcpy(&(p_MAR_elec[iMinor]), &(ownrates_minor.elec), sizeof(f64_vec3));
-	} else {
+		}
+		else {
 			// Not domain, not crossing_ins, not a frill
 			// ==========================================
 		} // non-domain tri
