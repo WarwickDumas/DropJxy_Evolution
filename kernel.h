@@ -17,7 +17,7 @@ __global__ void kernelAverageOverallVelocitiesTriangles(
 );
 
 
-__global__ void kernelAdvectPositions_CopyTris (
+__global__ void kernelAdvectPositions (
 	f64 h_use,
 	structural * __restrict__ p_info_src,
 	structural * __restrict__ p_info_dest,
@@ -163,19 +163,33 @@ __global__ void kernelPopulateOhmsLaw(
 	bool bFeint);
 
 
-__global__ void kernelUpdateVelocityAndAzdotAndAz(
+__global__ void kernelCalculateVelocityAndAzdot(
 	f64 h_use,
 	f64_vec3 * __restrict__ p_vn0,
 	v4 * __restrict__ p_v0,
 	OhmsCoeffs * __restrict__ p_OhmsCoeffs,
-	AAdot * __restrict__ p_Azdot_update,
+	AAdot * __restrict__ p_AAzdot_intermediate,
+
+	AAdot * __restrict__ p_AAzdot_out,
 	v4 * __restrict__ p_vie_out,
-	f64_vec3 * __restrict__ p_vn_out,
-	f64_vec2 * __restrict__ p_GradAz,
-	f64_vec2 * __restrict__ p_v_overall_minor
+	f64_vec3 * __restrict__ p_vn_out);
+
+__global__ void kernelUpdateAz(
+	f64 const h_use,
+	AAdot * __restrict__ p_AAdot_use,
+	f64 * __restrict__ p_ROCAzduetoAdvection,
+	f64 * __restrict__ p_Az
 );
-
-
+__global__ void kernelPopulateArrayAz(
+	f64 const h_use,
+	AAdot * __restrict__ p_AAdot_use,
+	f64 * __restrict__ p_ROCAzduetoAdvection,
+	f64 * __restrict__ p_Az
+);
+__global__ void kernelPushAzInto_dest(
+	AAdot * __restrict__ p_AAdot,
+	f64 * __restrict__ p_Az
+);
 
 __global__ void kernelAdd(
 	f64 * __restrict__ p_updated,
@@ -307,8 +321,17 @@ __global__ void kernelCreate_momflux_minor(
 
 __global__ void kernelNeutral_pressure_and_momflux(
 	structural * __restrict__ p_info_minor,
+
+	long * __restrict__ p_izTri,
+	char * __restrict__ p_szPBC,
+	long * __restrict__ p_izNeighTriMinor,
+	char * __restrict__ p_szPBCtriminor,
+	LONG3 * __restrict__ p_who_am_I_to_corners,
+	LONG3 * __restrict__ p_tricornerindex,
+
+	T3 * __restrict__ p_T_minor,
 	f64_vec3 * __restrict__ p_v_n,
-	ShardModel * __restrict__ p_n_shards_n,
+	ShardModel * __restrict__ p_n_shards,
 	f64_vec2 * __restrict__ p_v_overall_minor,
 	f64_vec3 * __restrict__ p_MAR_neut
 );

@@ -412,7 +412,7 @@ void cuSyst::PerformCUDA_Advance(const cuSyst * pX_target, const cuSyst * pX_hal
 
 	//	pX_half->ZeroData(); // Is this serving any purpose?
 
-	kernelAdvectPositions_CopyTris << <numTilesMinor, threadsPerTileMinor >> >(
+	kernelAdvectPositions<< <numTilesMinor, threadsPerTileMinor >> >(
 		0.5*TIMESTEP,
 		this->p_info,
 		pX_half->p_info,
@@ -594,6 +594,15 @@ void cuSyst::PerformCUDA_Advance(const cuSyst * pX_target, const cuSyst * pX_hal
 
 	kernelNeutral_pressure_and_momflux << <numTriTiles, threadsPerTileMinor >> >(
 		this->p_info,
+
+		this->p_izTri_vert,
+		this->p_szPBCtri_vert,
+		this->p_izNeigh_TriMinor,
+		this->p_szPBC_triminor,
+		this->p_who_am_I_to_corner,
+		this->p_tri_corner_index,
+
+		this->p_T_minor,
 		this->p_v_n,
 		p_n_shards_n,
 		this->p_v_overall_minor,
@@ -644,7 +653,7 @@ void cuSyst::PerformCUDA_Advance(const cuSyst * pX_target, const cuSyst * pX_hal
 		this->p_v_n,
 		this->p_AAdot,
 		this->p_AreaMinor, // popd?
-
+		
 		p_vn0,
 		p_v0,
 		p_OhmsCoeffs,
@@ -658,8 +667,7 @@ void cuSyst::PerformCUDA_Advance(const cuSyst * pX_target, const cuSyst * pX_hal
 
 	cudaMemcpy(p_Iz0_summands_host, p_Iz0, sizeof(f64)*numTilesMinor, cudaMemcpyDeviceToHost);
 	cudaMemcpy(p_summands_host, p_sigma_Izz, sizeof(f64)*numTilesMinor, cudaMemcpyDeviceToHost);
-
-
+	
 	// Now calculate Ez_strength to achieve Iz_prescribed:
 	Iz_prescribed = GetIzPrescribed(evaltime); // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 	long iTile;
@@ -708,14 +716,14 @@ void cuSyst::PerformCUDA_Advance(const cuSyst * pX_target, const cuSyst * pX_hal
 		);
 	Call(cudaThreadSynchronize(), "cudaTS avg overall v to triangles 22");
 
-	kernelAdvectPositions_CopyTris << <numTilesMinor, threadsPerTileMinor >> >(
+	kernelAdvectPositions << <numTilesMinor, threadsPerTileMinor >> >(
 		TIMESTEP,
 		this->p_info,
 		pX_target->p_info,
 		this->p_v_overall_minor
 		);
 	Call(cudaThreadSynchronize(), "cudaTS AdvectPositions_CopyTris");
-
+	
 	kernelCalculateUpwindDensity_tris << <numTriTiles, threadsPerTileMinor >> >(
 		pX_half->p_info,
 		p_n_shards_n,
@@ -764,7 +772,7 @@ void cuSyst::PerformCUDA_Advance(const cuSyst * pX_target, const cuSyst * pX_hal
 	Call(cudaThreadSynchronize(), "cudaTS CalculateNu pX_half");
 
 	kernelAccumulateDiffusiveHeatRateAndCalcIonisation << <numTilesMajorClever, threadsPerTileMajorClever >> >(
-		0.5*TIMESTEP,
+		TIMESTEP,
 		pX_half->p_info,
 		pX_half->p_izNeigh_vert,
 		pX_half->p_szPBCneigh_vert,
@@ -777,7 +785,7 @@ void cuSyst::PerformCUDA_Advance(const cuSyst * pX_target, const cuSyst * pX_hal
 	// To increase the efficiency we want to make a clever 2nd set of major tiles of size 192. Also try 256, 384.
 
 	kernelAdvanceDensityAndTemperature << <numTilesMajor, threadsPerTileMajor >> >(
-		0.5*TIMESTEP,
+		TIMESTEP,
 		this->p_info + BEGINNING_OF_CENTRAL,
 		this->p_n_major,
 		this->p_T_minor + BEGINNING_OF_CENTRAL,
@@ -858,6 +866,15 @@ void cuSyst::PerformCUDA_Advance(const cuSyst * pX_target, const cuSyst * pX_hal
 
 	kernelNeutral_pressure_and_momflux << <numTriTiles, threadsPerTileMinor >> >(
 		pX_half->p_info,
+
+		pX_half->p_izTri_vert,
+		pX_half->p_szPBCtri_vert,
+		pX_half->p_izNeigh_TriMinor,
+		pX_half->p_szPBC_triminor,
+		pX_half->p_who_am_I_to_corner,
+		pX_half->p_tri_corner_index,
+
+		pX_half->p_T_minor,
 		pX_half->p_v_n,
 		p_n_shards_n,
 		pX_half->p_v_overall_minor,
@@ -1016,7 +1033,7 @@ void cuSyst::PerformCUDA_Advance(const cuSyst * pX_target, const cuSyst * pX_hal
 				Call(cudaThreadSynchronize(), "cudaTS kernelUpdate_v ");
 
 				kernelCreateSeed << <numTilesMinor, threadsPerTileMinor >> > (
-					Az_array,
+					p_Az,
 					this->p_AAdot, // ?????????????????????????????????????????????????????????
 					0.5*SUBSTEP,
 					p_Azdot0, p_gamma, p_LapAz,
@@ -1033,10 +1050,10 @@ void cuSyst::PerformCUDA_Advance(const cuSyst * pX_target, const cuSyst * pX_hal
 				// ?????????????????????????????
 
 				kernelCreateSeed << <numTilesMinor, threadsPerTileMinor >> >(
-					Az_array, pX_targ->p_AAdot,
+					p_Az, pX_target->p_AAdot,
 					0.5*SUBSTEP,
 					p_Azdot0, p_gamma, p_LapAz,
-					Az_array_next);
+					p_AzNext);
 
 				Call(cudaThreadSynchronize(), "cudaTS Get Lap Jacobi 1");
 			};
@@ -1049,7 +1066,8 @@ void cuSyst::PerformCUDA_Advance(const cuSyst * pX_target, const cuSyst * pX_hal
 			long iMinor;
 			f64 beta, L2eps;
 			Triangle * pTri;
-			for (iIteration = 0; iIteration < iterations; iIteration++)
+			int iIteration;
+			for (iIteration = 0; iIteration < 4; iIteration++)
 			{
 				// 1. Create regressor:
 				// Careful with major vs minor + BEGINNING_OF_CENTRAL:
@@ -1058,7 +1076,7 @@ void cuSyst::PerformCUDA_Advance(const cuSyst * pX_target, const cuSyst * pX_hal
 					pX_half->p_info,
 					p_AzNext,
 					pX_half->p_izTri_vert,
-					pX_half->p_izNeigh_triMinor,
+					pX_half->p_izNeigh_TriMinor,
 					pX_half->p_szPBCtri_vert,
 					pX_half->p_szPBC_triminor,
 					p_LapAzNext
@@ -1077,11 +1095,11 @@ void cuSyst::PerformCUDA_Advance(const cuSyst * pX_target, const cuSyst * pX_hal
 
 				kernelGetLap_minor << <numTriTiles, threadsPerTileMinor >> >(
 					pX_half->p_info,
-					Jacobi_x,
+					p_Jacobi_x,
 					pX_half->p_izTri_vert,
 					pX_half->p_izNeigh_TriMinor,
-					pX_half->p_szPBC_vert,
-					pX_half->p_szPBCtriminor,
+					pX_half->p_szPBCtri_vert,
+					pX_half->p_szPBC_triminor,
 					p_LapJacobi
 					);
 				Call(cudaThreadSynchronize(), "cudaTS Get Lap Jacobi 1");
@@ -1107,7 +1125,8 @@ void cuSyst::PerformCUDA_Advance(const cuSyst * pX_target, const cuSyst * pX_hal
 				//};
 				kernelAccumulateSummands <<<numTilesMinor, threadsPerTileMinor>>> (
 					this->p_info,
-					epsilon, Jacobi_x, p_LapJacobi, gamma,
+					SUBSTEP,
+					p_epsilon, p_Jacobi_x, p_LapJacobi, p_gamma,
 					p_sum_eps_deps_by_dbeta,
 					p_sum_depsbydbeta_sq,
 					p_sum_eps_eps);
@@ -1133,7 +1152,7 @@ void cuSyst::PerformCUDA_Advance(const cuSyst * pX_target, const cuSyst * pX_hal
 				printf(" [ %1.4f %1.2E ] ", beta, L2eps);
 
 				kernelAdd <<<numTilesMinor, threadsPerTileMinor>>> (
-					p_AzNext, beta, Jacobi_x);
+					p_AzNext, beta, p_Jacobi_x);
 				//for (iMinor = 0; iMinor < NMINOR; iMinor++)
 				//	Az_array_next[iMinor] += beta * Jacobi_x[iMinor];
 
@@ -1160,11 +1179,11 @@ void cuSyst::PerformCUDA_Advance(const cuSyst * pX_target, const cuSyst * pX_hal
 			cudaMemcpy(p_Az, p_AzNext, sizeof(f64)*NMINOR, cudaMemcpyDeviceToDevice);
 			kernelGetLap_minor << <numTriTiles, threadsPerTileMinor >> >(
 				pX_half->p_info,
-				Az_array,
+				p_Az,
 				pX_half->p_izTri_vert,
 				pX_half->p_izNeigh_TriMinor,
-				pX_half->p_szPBC_verts,
-				pX_half->p_szPBCtriminor,
+				pX_half->p_szPBCtri_vert,
+				pX_half->p_szPBC_triminor,
 				p_LapAz
 				);
 			Call(cudaThreadSynchronize(), "cudaTS GetLap Az JLS 2");
@@ -1188,18 +1207,19 @@ void cuSyst::PerformCUDA_Advance(const cuSyst * pX_target, const cuSyst * pX_hal
 	}
 	else {
 
-		kernel_Populate_Az_Array_advance_Az << <numTilesMinor, threadsPerTileMinor >> >(
+		kernelPopulateArrayAz << <numTilesMinor, threadsPerTileMinor >> >(
 			0.5*SUBSTEP,
 			this->p_AAdot,
-			p_ROCAzduetoAdvection,
-			p_Az,
-			);
+			p_ROCAzduetoAdvection, 
+			p_Az
+			);   // This is where we create the f64 array of Az from a short step using Adot_k
+		// We can now see that having AAdot in one object was counterproductive.
+
 		kernel_ResetFrillsAz << <numTilesMinor, threadsPerTileMinor >> >(
 			this->p_info,
 			p_Az,
-			this->p_indexneigh_tri,
+			this->p_izNeigh_TriMinor
 			);
-
 		// Create_A_from_advance(0.5*SUBSTEP, ROCAzduetoAdvection, Az_array); // from *this
 
 		for (iSubstep = 0; iSubstep < SUBCYCLES; iSubstep++)
@@ -1207,23 +1227,21 @@ void cuSyst::PerformCUDA_Advance(const cuSyst * pX_target, const cuSyst * pX_hal
 			evaltime += 0.5*SUBSTEP;
 			kernelInterpolateVarsAndPositions << <numTilesMinor, threadsPerTileMinor >> >(
 				(evaltime - starttime) / TIMESTEP,
-				this->info,
-				pX_target->info,
+				this->p_info,
+				pX_target->p_info,
 				this->p_n_minor,
 				pX_target->p_n_minor,
 				this->p_T_minor,
 				pX_target->p_T_minor,
 				this->p_B,
 				pX_target->p_B,
-				pX_half->info,
+				pX_half->p_info,
 				pX_half->p_n_minor,
 				pX_half->p_T_minor,
 				pX_half->p_B
 				);
 			Call(cudaThreadSynchronize(), "cudaTS InterpolateVars");
 			// let n,T,x be interpolated on to pX_half. B remains what we populated there.
-
-			// ]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]][[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[
 			// Recalculate areas, or tween them, would make good sense as well.
 
 			// It might be nice to tween the thermal pressure grad(nT) as well. And logical:
@@ -1231,11 +1249,11 @@ void cuSyst::PerformCUDA_Advance(const cuSyst * pX_target, const cuSyst * pX_hal
 			// Have a look how AMR is created.
 			kernelGetLap_minor << <numTriTiles, threadsPerTileMinor >> >(
 				pX_half->p_info,
-				Az_array,
+				p_Az,
 				pX_half->p_izTri_vert,
 				pX_half->p_izNeigh_TriMinor,
-				pX_half->p_szPBC_verts,
-				pX_half->p_szPBCtriminor,
+				pX_half->p_szPBCtri_vert,
+				pX_half->p_szPBC_triminor,
 				p_LapAz
 				);
 			Call(cudaThreadSynchronize(), "cudaTS GetLap Az Leapfrog 1");
@@ -1245,12 +1263,16 @@ void cuSyst::PerformCUDA_Advance(const cuSyst * pX_target, const cuSyst * pX_hal
 			f64 neg_Iz_per_triangle = Iz_prescribed / (f64)numReverseJzTriangles;
 			Set_f64_constant(negative_Iz_per_triangle, &neg_Iz_per_triangle);
 
-			if (iSubstep % 2 == 0) {
+			if (iSubstep == 0) {
+
+				// On the first step we use "this" as src, otherwise pX_targ to pX_targ
+				// Simple plan:
+				// Pop Ohms just populate's Ohms and advances Azdot to an intermediate state
 
 				kernelPopulateOhmsLaw << <numTilesMinor, threadsPerTileMinor >> >(
 					SUBSTEP,// ROCAzdotduetoAdvection, 
 					pX_half->p_info,
-					p_AdditionalMomRates,
+					p_MAR_neut, p_MAR_ion, p_MAR_elec,
 					pX_half->p_B,
 					p_LapAz,
 					p_GradAz,
@@ -1268,44 +1290,12 @@ void cuSyst::PerformCUDA_Advance(const cuSyst * pX_target, const cuSyst * pX_hal
 					p_OhmsCoeffs,
 					pX_half->p_AAdot, // intermediate value ............................
 
-					p_Iz0_block,
-					p_sigma_Izz_block,
+					p_Iz0,
+					p_sigma_Izz,
 					false); // bFeint
-
 				Call(cudaThreadSynchronize(), "cudaTS kernelPopulateOhmsLaw ");
 
-				cudaMemcpy(p_Iz0_summands_host, p_Iz0_block, sizeof(f64)*numTilesMinor, cudaMemcpyDeviceToHost);
-				cudaMemcpy(p_summands_host, p_Sigma_Izz_block, sizeof(f64)*numTilesMinor, cudaMemcpyDeviceToHost);
-				Iz0 = 0.0; Sigma_Izz = 0.0;
-				for (int iBlock = 0; iBlock < numTilesMinor; iBlock++)
-				{
-					Iz0 += p_Iz0_summands_host[iBlock];
-					Sigma_Izz += p_summands_host[iBlock];
-				}
-				EzStrength_ = (Iz_prescribed - Iz0) / Sigma_Izz;
-				Set_f64_constant(EzStrength, EzStrength_);
-
-				// _____________________________________________________________
-
-				kernelUpdateVelocityAndAzdotAndAz << <numTilesMinor, threadsPerTileMinor >> >(
-					SUBSTEP,
-					p_vn0,
-					p_v0,
-					p_OhmsCoeffs,
-					pX_half->p_AAdot,
-
-					pX_target->p_AAdot,
-					pX_target->p_vie,
-					pX_target->p_vn_minor,
-
-					p_GradAz, /// ///////////////////////////////////////////////
-					p_v_overall_minor
-					);
-				Call(cudaThreadSynchronize(), "cudaTS kernelUpdate_v ");
-
-				// what it does to Az? keep track
-			}
-			else {
+			} else {
 
 				kernelPopulateOhmsLaw << <numTilesMinor, threadsPerTileMinor >> >(
 					SUBSTEP,// ROCAzdotduetoAdvection, 
@@ -1315,79 +1305,65 @@ void cuSyst::PerformCUDA_Advance(const cuSyst * pX_target, const cuSyst * pX_hal
 					p_LapAz,
 					p_GradAz,
 					p_GradTe,
-
 					pX_half->p_n_minor,
-					pX_half->p_T_minor, // minor : is it populated?
+					pX_half->p_T_minor, 
+
 					pX_target->p_vie,
 					pX_target->p_v_n,
 					pX_target->p_AAdot, // Note bene
+
 					pX_half->p_AreaMinor, // pop'd????????? interp?
 
 					p_vn0,
 					p_v0,
 					p_OhmsCoeffs,
 					pX_half->p_AAdot, // intermediate value ............................
-									  // .....................................................
+									  
 					p_Iz0,
 					p_sigma_Izz,
 					false); // bFeint
 
 				Call(cudaThreadSynchronize(), "cudaTS kernelPopulateOhmsLaw ");
-
-				cudaMemcpy(p_Iz0_summands_host, p_Iz0, sizeof(f64)*numTilesMinor, cudaMemcpyDeviceToHost);
-				cudaMemcpy(p_summands_host, p_Sigma_Izz, sizeof(f64)*numTilesMinor, cudaMemcpyDeviceToHost);
-				Iz0 = 0.0; Sigma_Izz = 0.0;
-				for (int iBlock = 0; iBlock < numTilesMinor; iBlock++)
-				{
-					Iz0 += p_Iz0_summands_host[iBlock];
-					Sigma_Izz += p_summands_host[iBlock];
-				}
-				EzStrength_ = (Iz_prescribed - Iz0) / Sigma_Izz;
-				Set_f64_constant(Ez_strength, EzStrength_);
-
-				kernelUpdateVelocityAndAzdotAndAz << <numTilesMinor, threadsPerTileMinor >> >(
-					SUBSTEP,
-					p_vn0,
-					p_v0,
-					p_OhmsCoeffs,
-					pX_half->p_AAzdot_update,
-
-					this->p_AAdot,
-					this->p_vie_out,
-					this->p_vn_out,
-
-					p_GradAz, /// ///////////////////////////////////////////////
-					p_v_overall_minor
-					);
-				Call(cudaThreadSynchronize(), "cudaTS kernelUpdate_v ");
-
-				// what it does to Az? keep track
-				// but here we deal in p_Az
 			};
 
-			if (iSubstep < SUBCYCLES - 1) {
-				kernelUpdateAz << <numTilesMinor, threadsPerTileMinor >> >(
-					SUBSTEP,
-					ROCAzduetoAdvection,
-					p_Az);
-
-				kernel_ResetFrillsAz << <numTilesMinor, threadsPerTileMinor >> >(
-					this->p_info,
-					p_Az,
-					this->p_indexneigh_tri,
-					);
+			cudaMemcpy(p_Iz0_summands_host, p_Iz0, sizeof(f64)*numTilesMinor, cudaMemcpyDeviceToHost);
+			cudaMemcpy(p_summands_host, p_sigma_Izz, sizeof(f64)*numTilesMinor, cudaMemcpyDeviceToHost);
+			Iz0 = 0.0; sigma_Izz = 0.0;
+			for (int iBlock = 0; iBlock < numTilesMinor; iBlock++)
+			{
+				Iz0 += p_Iz0_summands_host[iBlock];
+				sigma_Izz += p_summands_host[iBlock];
 			}
-			else {
-				kernelFinalStepAz << <numTilesMinor, threadsPerTileMinor >> >(
-					SUBSTEP*0.5,
-					ROCAzduetoAdvection,
+			f64 EzStrength_ = (Iz_prescribed - Iz0) / sigma_Izz;
+			Set_f64_constant(Ez_strength, EzStrength_);
+			
+			kernelCalculateVelocityAndAzdot << <numTilesMinor, threadsPerTileMinor >> >(
+				SUBSTEP,
+				p_vn0,
+				p_v0,
+				p_OhmsCoeffs,
+				pX_half->p_AAdot,
+
+				pX_target->p_AAdot,
+				pX_target->p_vie,
+				pX_target->p_v_n
+				);
+			Call(cudaThreadSynchronize(), "cudaTS kernelUpdate_v ");
+			
+			kernelUpdateAz << <numTilesMinor, threadsPerTileMinor >> >(
+				(iSubstep == SUBCYCLES-1)?0.5*SUBSTEP:SUBSTEP,
+				pX_target->p_AAdot,
+				ROCAzduetoAdvection,
+				p_Az);
+			kernel_ResetFrillsAz << <numTilesMinor, threadsPerTileMinor >> >(
+				this->p_info,
+				p_Az,
+				this->p_izNeigh_TriMinor,
+				);
+			if (iSubstep == SUBCYCLES-1) {
+				kernelPushAzInto_dest << <numTilesMinor, threadsPerTileMinor >> >(
 					p_Az,
-					pX_target->p_AAdot);
-				kernel_ResetFrillsAz_in_AAdot << <numTilesMinor, threadsPerTileMinor >> >(
-					this->p_info,
-					pX_target->p_AAdot,
-					this->p_indexneigh_tri
-					);
+					pX_target->p_AAdot); 				
 			};
 			evaltime += 0.5*SUBSTEP;
 		};
@@ -1399,15 +1375,17 @@ void cuSyst::PerformCUDA_Advance(const cuSyst * pX_target, const cuSyst * pX_hal
 	//this->AntiAdvectAzAndAdvance(h, pX_half, IntegratedGradAz, pDestMesh); // Might as well subsume this in Accelerate, really
 	//pX_half->AntiAdvectAzAndAdvance(h*0.5, pDestMesh, GradAz, pDestMesh);
 
-	pDestMesh->Wrap();
-	printf("Done step %d from time %1.8E length %1.2E\n\n", runs, evaltime, h);
+	kernelWrapVertices<<<numTilesMinor,threadsPerTileMinor>>>(
+		pX_target->p_info,
+		pX_target->p_vie,
+		pX_target->p_v_n); // B will be recalculated.
+	// Shouldn't this change a ton of flags ......................................
+
+	printf("Done step %d from time %1.8E length %1.2E\n\n", runs, evaltime, TIMESTEP);
 
 	// For graphing Lap Az:
-	for (iMinor = 0; iMinor < NMINOR; iMinor++)
-	{
-		pDestMesh->pData[iMinor].temp.x = LapAzArray[iMinor];
-	};
-
+	cudaMemcpy(temp_array_host, p_LapAz, sizeof(f64)*NMINOR, cudaMemcpyDeviceToHost);
+	
 	cudaEventRecord(stop, 0);
 	cudaEventSynchronize(stop);
 	cudaEventElapsedTime(&elapsedTime, start, stop);
