@@ -73,14 +73,14 @@ struct v4 {
 
 struct nvals {
 	f64 n, n_n;
-	nvals(f64 n_, f64 nn_) {
+	__device__ __host__ nvals(f64 n_, f64 nn_) {
 		n = n_; n_n = nn_;
 	}
-	nvals() {}
 	void __device__ __forceinline__ operator+= (const nvals &nval) {
 		n += nval.n;
 		n_n += nval.n_n;
 	}
+	__device__ __host__ nvals() {}
 };
 nvals __device__ inline operator* (const real hh, const nvals & nval) 
 {
@@ -96,10 +96,10 @@ struct T2 {
 };
 struct T3 {
 	f64 Tn, Ti, Te;
-	T3(f64 Tn_, f64 Ti_, f64 Te_) {
+	__device__ __host__ T3(f64 Tn_, f64 Ti_, f64 Te_) {
 		Tn = Tn_; Ti = Ti_; Te = Te_;
 	}
-	T3(){}
+	__device__ __host__ T3(){}
 	void __device__ __forceinline__ operator+= (const T3 &T) {
 		Tn += T.Tn;
 		Ti += T.Ti;
@@ -273,6 +273,8 @@ void PerformCUDA_Invoke_Populate (
 		);
 
 void PerformCUDA_RunStepsAndReturnSystem(cuSyst * pX_host);
+
+void PerformCUDA_Revoke();
 
 void FreeVideoResources ();
 

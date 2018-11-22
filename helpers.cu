@@ -93,16 +93,16 @@ __device__ __forceinline__ f64_vec3 Clockwise_rotate3(const f64_vec3 arg)
 	return result;
 }
 
-void Estimate_Ion_Neutral_Cross_sections_d(real T, // call with T in electronVolts
+__device__  __forceinline__ void Estimate_Ion_Neutral_Cross_sections_d(real T, // call with T in electronVolts
 	real * p_sigma_in_MT,
 	real * p_sigma_in_visc)
 {
-	if (T > cross_T_vals[9]) {
+	if (T > cross_T_vals_d[9]) {
 		*p_sigma_in_MT = cross_s_vals_MT_ni_d[9];
 		*p_sigma_in_visc = cross_s_vals_viscosity_ni_d[9];
 		return;
 	}
-	if (T < cross_T_vals[0]) {
+	if (T < cross_T_vals_d[0]) {
 		*p_sigma_in_MT = cross_s_vals_MT_ni_d[0];
 		*p_sigma_in_visc = cross_s_vals_viscosity_ni_d[0];
 		return;

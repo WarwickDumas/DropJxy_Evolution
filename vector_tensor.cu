@@ -221,7 +221,7 @@ struct Vector3
 		return x*v.x+y*v.y+z*v.z;
 	}
 
-	Vector2 QUALIFIERS xypart()
+	Vector2 QUALIFIERS xypart() const
 	{
 		Vector2 u;
 		u.x = x; 

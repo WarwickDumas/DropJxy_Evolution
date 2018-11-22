@@ -10,19 +10,15 @@ real const Z = unity ;           // number of charges in ion species
 real const e = 4.8e-10  ;        // charge of electrons (statcoul)
 real const q = 4.8e-10  ;        // ion charge [unsigned]
 //real const m_e = 9.10953e-28;    // electron mass in grams
-real const qovermc = q / (m_e*c);
+real const qovermc = q / (m_e_*c);
 
-real const m_i_ = 3.343583719e-24; // old: 3.67291e-24;    // deuteron mass in grams
-// https://physics.nist.gov/cgi-bin/cuu/Value?md  
-// Proton + neutron would give 3.3475491e-24
+real const m_ion = m_i_;
+real const m_neutral = m_e_ + m_ion;
 
-real const m_ion = m_i;
-real const m_neutral = m_e + m_ion;
-
-real const eoverm  = e/m_e;//5.26920708313162e+17 ;         // e/me, electron statcoul/gram
+real const eoverm  = e/m_e_;//5.26920708313162e+17 ;         // e/me, electron statcoul/gram
 real const qoverM  = q/m_ion;//130686567326725.0     ;        // q/mi, ion statcoul/gram
-real const moverM  = m_e/m_ion;//0.000248019417845795    ;      // electron to ion mass ratio
-real const qoverm  = q/m_e;
+real const moverM  = m_e_/m_ion;//0.000248019417845795    ;      // electron to ion mass ratio
+real const qoverm  = q/m_e_;
 real const over_sqrt_m_e = 33132332783135.3;
 
 real const eovermc = eoverm/c;

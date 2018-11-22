@@ -42,9 +42,10 @@ real const m_n_ = m_neutral_;
 
 real const m_i_over_m_n = m_i_ / m_n_;// 0.999917333695;   // Naughty - #define here yet not for m_e
 real const m_e_over_m_n = m_e_ / m_n_; // 0.0002723738828549;
-real const over_m_e = 1.0 / m_e_;// 1.09775147565242e+27;
-real const over_m_n = 1.0 / m_n_;
-real const over_m_i = 1.0 / m_i_;
+real const over_m_e_ = 1.0 / m_e_;// 1.09775147565242e+27;
+real const over_m_n_ = 1.0 / m_n_;
+real const over_m_i_ = 1.0 / m_i_;
+
 #define TWO_PI_OVER_C 2.09584502195168e-10
 #define M_PI 3.141592653589793
 
@@ -71,8 +72,8 @@ real const FOURPI_OVER_C_ = 4.0*PI/c_;
 real const FOURPIOVERC_ = 4.0*PI/c_;
 real const FOUR_PI_OVER_C_ = FOURPIOVERC_;
 
-// Having done this, it will certainly cause issues when we are
-// messing around with Az.
+real const m_en_ = m_e_ * m_n_ / (m_e_ + m_n_);
+real const m_ei_ = m_e_ * m_i_ / (m_e_ + m_i_);
 
 real const NU_EI_FACTOR_ = 1.0/(3.44e5);
 //real const NU_II_FACTOR = 1.0/(sqrt(2.0)*2.09e7);

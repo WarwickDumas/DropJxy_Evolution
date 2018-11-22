@@ -1868,6 +1868,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			CloseAvi(hAvi[i]);
 
 		//  _controlfp_s(0, cw, _MCW_EM); // Line A
+		PerformCUDA_Revoke();
 
 		PostQuitMessage(0);
 		break;

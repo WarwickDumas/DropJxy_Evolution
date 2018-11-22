@@ -136,7 +136,6 @@ __global__ void kernelAccumulateAdvectiveMassHeatRate(
 
 __global__ void kernelPopulateOhmsLaw(
 	f64 h_use,
-
 	structural * __restrict__ p_info_minor,
 	f64_vec3 * __restrict__ p_MAR_neut,
 	f64_vec3 * __restrict__ p_MAR_ion,
@@ -151,7 +150,8 @@ __global__ void kernelPopulateOhmsLaw(
 	v4 * __restrict__ p_vie_src,
 	f64_vec3 * __restrict__ p_v_n_src,
 	AAdot * __restrict__ p_AAdot_src,
-	f64 * __restrict__ p_AreaMinor,
+	f64 * __restrict__ p_AreaMinor, 
+	f64 * __restrict__ ROCAzdotduetoAdvection,
 
 	f64_vec3 * __restrict__ p_vn0_dest,
 	v4 * __restrict__ p_v0_dest,
@@ -160,7 +160,10 @@ __global__ void kernelPopulateOhmsLaw(
 
 	f64 * __restrict__ p_Iz0,
 	f64 * __restrict__ p_sigma_zz,
-	bool bFeint);
+
+	f64 * __restrict__ p_denom_i,
+	f64 * __restrict__ p_denom_e,
+	bool const bSwitchSave);
 
 
 __global__ void kernelCalculateVelocityAndAzdot(
@@ -169,10 +172,12 @@ __global__ void kernelCalculateVelocityAndAzdot(
 	v4 * __restrict__ p_v0,
 	OhmsCoeffs * __restrict__ p_OhmsCoeffs,
 	AAdot * __restrict__ p_AAzdot_intermediate,
+	nvals * __restrict__ p_n_minor,
 
 	AAdot * __restrict__ p_AAzdot_out,
 	v4 * __restrict__ p_vie_out,
 	f64_vec3 * __restrict__ p_vn_out);
+
 
 __global__ void kernelUpdateAz(
 	f64 const h_use,
@@ -190,11 +195,28 @@ __global__ void kernelPushAzInto_dest(
 	AAdot * __restrict__ p_AAdot,
 	f64 * __restrict__ p_Az
 );
-
+__global__ void kernelPullAzFromSyst(
+	AAdot * __restrict__ p_AAdot,
+	f64 * __restrict__ p_Az
+);
 __global__ void kernelAdd(
 	f64 * __restrict__ p_updated,
 	f64 beta,
 	f64 * __restrict__ p_added
+);
+__global__ void kernelCreateSeedPartOne(
+	f64 const h_use,
+	f64 * __restrict__ p_Az,
+	AAdot * __restrict__ p_AAdot_use,
+	f64 * __restrict__ p_AzNext
+);
+
+__global__ void kernelCreateSeedPartTwo(
+	f64 const h_use,
+	f64 * __restrict__ p_Azdot0,
+	f64 * __restrict__ p_gamma,
+	f64 * __restrict__ p_LapAz,
+	f64 * __restrict__ p_AzNext_update
 );
 
 __global__ void kernelResetFrillsAz(
@@ -281,6 +303,11 @@ __global__ void kernelCreate_pressure_gradT_and_gradA_LapA_CurlA_minor(
 	f64_vec2 * __restrict__ p_GradTe,
 	f64_vec2 * __restrict__ p_GradAz,
 	f64 * __restrict__ p_LapAz,
+
+	f64 * __restrict__ ROCAzduetoAdvection,
+	f64 * __restrict__ ROCAzdotduetoAdvection,
+	f64_vec2 * __restrict__ p_v_overall_minor,
+
 	f64_vec3 * __restrict__ p_B,
 	f64 * __restrict__ p_AreaMinor
 );
@@ -318,6 +345,19 @@ __global__ void kernelCreate_momflux_minor(
 	ShardModel * __restrict__ p_n_shards
 );
 
+__global__ void kernelCreateLinearRelationship(
+	f64 const h_use,
+	structural * __restrict__ p_info,
+	OhmsCoeffs* __restrict__ p_Ohms,
+	v4 * __restrict__ p_v0,
+	f64 * __restrict__ p_Lap_Az_use,
+	nvals * __restrict__ p_n_minor,
+	f64 * __restrict__ p_denom_e,
+	f64 * __restrict__ p_denom_i,
+	AAdot * __restrict__ p_AAdot_intermediate,
+	f64 * __restrict__ p_Azdot0,
+	f64 * __restrict__ p_gamma
+);
 
 __global__ void kernelNeutral_pressure_and_momflux(
 	structural * __restrict__ p_info_minor,
@@ -337,8 +377,17 @@ __global__ void kernelNeutral_pressure_and_momflux(
 );
 
 
+__global__ void kernelWrapTriangles(
+	structural * __restrict__ p_info_minor,
+	v4 * __restrict__ p_vie_minor,
+	f64_vec3 * __restrict__ p_v_n_minor,
+	char * __restrict__ p_was_vertex_rotated);
 
-
+__global__ void kernelWrapVertices(
+	structural * __restrict__ p_info_minor,
+	v4 * __restrict__ p_vie,
+	f64_vec3 * __restrict__ p_v_n,
+	char * __restrict__ p_was_vertex_rotated);
 
 
 // Device-accessible constants not known at compile time:
@@ -378,6 +427,8 @@ m_en, // = m_e * m_n / (m_e + m_n);
 m_ei, // = m_e * m_i / (m_e + m_i);
 
 over_sqrt_m_ion, over_sqrt_m_e, over_sqrt_m_neutral,
+
+over_m_e, over_m_i, over_m_n,
 
 four_pi_over_c_ReverseJz,
 
