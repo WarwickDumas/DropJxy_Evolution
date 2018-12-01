@@ -22,6 +22,7 @@
 #define ID_RUN_SIMULATIONSTEPS          40009
 #define ID_HELP_ABOUT                   40010
 #define ID_RUN_STOP                     40020
+#define ID_RUN_SIMULATIONSTEPS_CPU      40030
 #define ID_DISPLAY_NEUT                 50000
 #define ID_DISPLAY_ION                  50001
 #define ID_DISPLAY_ELECTRON             50002

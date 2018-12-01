@@ -6,10 +6,14 @@
 
 __host__ bool Call(cudaError_t cudaStatus, char str[])
 {
-	if (cudaStatus == cudaSuccess) return false;
-	printf("Error: %s\nReturned %d : %s\n",
-		str, cudaStatus, cudaGetErrorString(cudaStatus));
-	printf("Anykey.\n");	getch();
+	if (cudaStatus == cudaSuccess) {
+		printf("Success: %s \n",str);
+		return false;
+	} else {
+		printf("Error: %s\nReturned %d : %s\n",
+			str, cudaStatus, cudaGetErrorString(cudaStatus));
+		printf("Anykey.\n");	getch();
+	};
 	return true;
 }
 
@@ -277,11 +281,31 @@ void cuSyst::SendToDevice(cuSyst & Xdevice)
 	Call(cudaThreadSynchronize(), "cudaThreadSynchronize cuSyst::SendToHost");
 }
 
+void cuSyst::Output(const char * filename)
+{
+	FILE * fp = fopen(filename, "w");
+	if (fp != 0) {
+
+		long i;
+		for (i = 0; i < NUMVERTICES; i++)
+		{
+			fprintf(fp, "nmajor %d %1.14E %1.14E \n",
+				i, p_n_major[i].n, p_n_major[i].n_n);
+		}
+
+		fclose(fp);
+	}
+	else {
+		printf("file error: cannot open %s ..\n", filename);
+	}
+}
 void cuSyst::PopulateFromTriMesh(TriMesh * pX)
 {
 	// USES pTri->cent
 
 	pX->EnsureAnticlockwiseTriangleCornerSequences_SetupTriMinorNeighboursLists();
+	pX->Average_n_T_to_tris_and_calc_centroids_and_minorpos();
+	
 	// Variables on host are called TriMinorNeighLists and TriMinorPBCLists
 	memcpy(p_izNeigh_TriMinor, pX->TriMinorNeighLists, Ntris * 6 * sizeof(long)); // pointless that we duplicate it but nvm
 	memcpy(p_szPBC_triminor, pX->TriMinorPBCLists, Ntris * 6 * sizeof(char));
@@ -303,7 +327,7 @@ void cuSyst::PopulateFromTriMesh(TriMesh * pX)
 		memcpy(&data, &(pX->pData[iMinor]), sizeof(plasma_data));
 		p_n_minor[iMinor].n = data.n;
 		p_n_minor[iMinor].n_n = data.n_n;
-		if (iMinor > BEGINNING_OF_CENTRAL) {
+		if (iMinor >= BEGINNING_OF_CENTRAL) {
 			p_n_major[iMinor - BEGINNING_OF_CENTRAL].n = data.n;
 			p_n_major[iMinor - BEGINNING_OF_CENTRAL].n_n = data.n_n;
 		}
@@ -359,7 +383,7 @@ void cuSyst::PopulateFromTriMesh(TriMesh * pX)
 			};
 		}
 		memcpy(p_szPBCneigh_vert + iVertex*MAXNEIGH, szPBCneigh, sizeof(char)*MAXNEIGH);
-
+		info.flag = pVertex->flags;
 		info.pos = pVertex->pos;
 		p_info[iVertex + BEGINNING_OF_CENTRAL] = info;
 		++pVertex;
@@ -433,7 +457,10 @@ void cuSyst::PopulateFromTriMesh(TriMesh * pX)
 			}
 		}
 		p_tri_periodic_neigh_flags[iTri] = tri_periodic_neigh_flags;
-
+		info.pos = pTri->cent;
+		info.flag = pTri->u8domain_flag;
+		info.neigh_len = 6;
+		p_info[iTri] = info;
 		++pTri;
 	};
 	
@@ -468,7 +495,7 @@ void cuSyst::PopulateTriMesh(TriMesh * pX)
 	{
 		data.n = p_n_minor[iMinor].n ;
 		data.n_n = p_n_minor[iMinor].n_n ;
-		if (iMinor > BEGINNING_OF_CENTRAL) {
+		if (iMinor >= BEGINNING_OF_CENTRAL) {
 			data.n = p_n_major[iMinor - BEGINNING_OF_CENTRAL].n ;
 			data.n_n = p_n_major[iMinor - BEGINNING_OF_CENTRAL].n_n ;
 		}

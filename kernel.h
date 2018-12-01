@@ -2,6 +2,7 @@
 #include "cuda_struct.h"
 
 __global__ void kernelCalculateOverallVelocitiesVertices(
+	structural * __restrict__ p_info_major,
 	v4 * __restrict__ p_vie_major,
 	f64_vec3 * __restrict__ p_v_n_major,
 	nvals * __restrict__ p_n_major,
@@ -339,6 +340,9 @@ __global__ void kernelCreate_momflux_minor(
 	long * __restrict__ p_izNeighTriMinor,
 	char * __restrict__ p_szPBCtriminor,
 
+	LONG3 * __restrict__ p_who_am_I_to_corners,
+	LONG3 * __restrict__ p_tricornerindex,
+
 	f64_vec3 * __restrict__ p_MAR_neut,
 	f64_vec3 * __restrict__ p_MAR_ion,
 	f64_vec3 * __restrict__ p_MAR_elec,
@@ -379,9 +383,14 @@ __global__ void kernelNeutral_pressure_and_momflux(
 
 __global__ void kernelWrapTriangles(
 	structural * __restrict__ p_info_minor,
+	LONG3 * __restrict__ p_tri_corner_index,
+	char * __restrict__ p_was_vertex_rotated,
+
 	v4 * __restrict__ p_vie_minor,
 	f64_vec3 * __restrict__ p_v_n_minor,
-	char * __restrict__ p_was_vertex_rotated);
+	char * __restrict__ p_triPBClistaffected,
+
+	CHAR4 * __restrict__ p_tri_periodic_corner_flags);
 
 __global__ void kernelWrapVertices(
 	structural * __restrict__ p_info_minor,
@@ -390,67 +399,20 @@ __global__ void kernelWrapVertices(
 	char * __restrict__ p_was_vertex_rotated);
 
 
-// Device-accessible constants not known at compile time:
-
-__constant__ long nBlocks, Nverts, uDataLen_d; // Nverts == numVertices
-
-
-
-__constant__ f64_tens2 Anticlockwise, Clockwise; // use this to do rotation.
-
-__constant__ f64 kB, c, q, m_e, m_ion, m_i, m_n,
-
-eoverm, qoverM, moverM, qovermc, qoverMc,
-
-FOURPI_Q_OVER_C, FOURPI_Q, FOURPI_OVER_C,
-
-one_over_kB, one_over_kB_cubed, kB_to_3halves,
-
-NU_EI_FACTOR, nu_eiBarconst, Nu_ii_Factor,
-
-M_i_over_in,// = m_i / (m_i + m_n);
-
-M_e_over_en,// = m_e / (m_e + m_n);
-
-M_n_over_ni,// = m_n / (m_i + m_n);
-
-M_n_over_ne,// = m_n / (m_e + m_n);
-
-M_en, //= m_e * m_n / ((m_e + m_n)*(m_e + m_n));
-
-M_in, // = m_i * m_n / ((m_i + m_n)*(m_i + m_n));
-
-M_ei, // = m_e * m_i / ((m_e + m_i)*(m_e + m_i));
-
-m_en, // = m_e * m_n / (m_e + m_n);
-
-m_ei, // = m_e * m_i / (m_e + m_i);
-
-over_sqrt_m_ion, over_sqrt_m_e, over_sqrt_m_neutral,
-
-over_m_e, over_m_i, over_m_n,
-
-four_pi_over_c_ReverseJz,
-
-FRILL_CENTROID_OUTER_RADIUS_d, FRILL_CENTROID_INNER_RADIUS_d;
-
-
-
-// some of these we can do #define
-
-#define FOUR_PI 12.566370614359
-
-
-
-__constant__ f64 cross_s_vals_viscosity_ni_d[10], cross_s_vals_viscosity_nn_d[10],
-
-cross_T_vals_d[10], cross_s_vals_MT_ni_d[10];
-
-
-
-__constant__ f64 Ez_strength;
-
-__constant__ f64 negative_Iz_per_triangle; // -Iz_prescribed / (real)(numEndZCurrentTriangles - numStartZCurrentTriangles)
-
-__constant__ long numStartZCurrentTriangles, numEndZCurrentTriangles;
-
+__global__ void kernelReassessTriNeighbourPeriodicFlags_and_populate_PBCIndexneighminor(
+	structural * __restrict__ p_info_minor,
+	LONG3 * __restrict__ p_tri_neigh_index,
+	LONG3 * __restrict__ p_tri_corner_index,
+	char * __restrict__ p_was_vertex_rotated,
+	CHAR4 * __restrict__ p_tri_periodic_corner_flags,
+	CHAR4 * __restrict__ p_tri_periodic_neigh_flags,
+	char * __restrict__ p_szPBC_triminor
+);
+__global__ void kernelReset_szPBCtri_vert(
+	structural * __restrict__ p_info_minor,
+	long * __restrict__ p_izTri_vert,
+	long * __restrict__ p_izNeigh_vert,
+	char * __restrict__ p_szPBCtri_vert,
+	char * __restrict__ p_szPBCneigh_vert,
+	char * __restrict__ p_triPBClistaffected
+);

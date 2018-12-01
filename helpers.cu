@@ -64,31 +64,31 @@ __device__ __forceinline__ f64 Get_lnLambda_d(real n_e,real T_e)
 __device__ __forceinline__ f64_vec2 Anticlock_rotate2(const f64_vec2 arg)
 {
 	f64_vec2 result;
-	result.x = Anticlockwise.xx*arg.x+Anticlockwise.xy*arg.y;
-	result.y = Anticlockwise.yx*arg.x+Anticlockwise.yy*arg.y;
+	result.x = Anticlockwise_d.xx*arg.x+Anticlockwise_d.xy*arg.y;
+	result.y = Anticlockwise_d.yx*arg.x+Anticlockwise_d.yy*arg.y;
 	return result;
 }
 __device__ __forceinline__ f64_vec2 Clockwise_rotate2(const f64_vec2 arg)
 {
 	f64_vec2 result;
-	result.x = Clockwise.xx*arg.x+Clockwise.xy*arg.y;
-	result.y = Clockwise.yx*arg.x+Clockwise.yy*arg.y;
+	result.x = Clockwise_d.xx*arg.x+Clockwise_d.xy*arg.y;
+	result.y = Clockwise_d.yx*arg.x+Clockwise_d.yy*arg.y;
 	return result;
 }
 
 __device__ __forceinline__ f64_vec3 Anticlock_rotate3(const f64_vec3 arg)
 {
 	f64_vec3 result;
-	result.x = Anticlockwise.xx*arg.x+Anticlockwise.xy*arg.y;
-	result.y = Anticlockwise.yx*arg.x+Anticlockwise.yy*arg.y;
+	result.x = Anticlockwise_d.xx*arg.x+Anticlockwise_d.xy*arg.y;
+	result.y = Anticlockwise_d.yx*arg.x+Anticlockwise_d.yy*arg.y;
 	result.z = arg.z;
 	return result;
 }
 __device__ __forceinline__ f64_vec3 Clockwise_rotate3(const f64_vec3 arg)
 {
 	f64_vec3 result;
-	result.x = Clockwise.xx*arg.x+Clockwise.xy*arg.y;
-	result.y = Clockwise.yx*arg.x+Clockwise.yy*arg.y;
+	result.x = Clockwise_d.xx*arg.x+Clockwise_d.xy*arg.y;
+	result.y = Clockwise_d.yx*arg.x+Clockwise_d.yy*arg.y;
 	result.z = arg.z;
 	return result;
 }
@@ -160,7 +160,7 @@ __device__  __forceinline__ void Estimate_Ion_Neutral_Cross_sections_d(real T, /
 	return;
 }
 
-__device__ __forceinline__ f64 Estimate_Neutral_MT_Cross_section(f64 T)
+__device__ __forceinline__ f64 Estimate_Neutral_MT_Cross_section_d(f64 T)
 {
 	// CALL WITH T IN eV
 
@@ -211,7 +211,7 @@ __device__ __forceinline__ f64 Estimate_Neutral_MT_Cross_section(f64 T)
 
 }
 
-__device__ __forceinline__ f64 Estimate_Neutral_Neutral_Viscosity_Cross_section(f64 T) 
+__device__ __forceinline__ f64 Estimate_Neutral_Neutral_Viscosity_Cross_section_d(f64 T) 
 {
 	// call with T in electronVolts
 	

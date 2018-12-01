@@ -13,8 +13,9 @@
 #include "resource.h"
 #include "flags.h"
 #include "FFxtubes.h"
-#include "cppconst.h"
+//#include "cppconst.h"
 #include "cuda_struct.h"
+#include "constant.h"
 
 #include "d3d.h"    
 #include <d3dx9.h> 
@@ -65,14 +66,14 @@ unsigned int cw; // control word for floating point hardware exception hiding
 
 TriMesh * pX, *pXnew;
 TriMesh X1, X2, X3;
-cuSyst cuSyst_host;
+cuSyst cuSyst_host, cuSyst_host2;
 
 D3DXVECTOR3 GlobalEye, GlobalLookat, GlobalPlanEye, GlobalPlanEye2, GlobalPlanLookat,
 GlobalPlanLookat2, GlobalEye2, GlobalLookat2;
 
 IDirect3DSurface9* p_backbuffer_surface;
 
-long steps_remaining, GlobalStepsCounter;
+long steps_remaining, GlobalStepsCounter, steps_remaining_CPU;
 real evaltime, h;
 
 extern real GlobalIzElasticity;
@@ -478,7 +479,7 @@ void RefreshGraphs(TriMesh & X, // only not const because of such as Reset_verte
 			VELOCITY_COLOUR, (real *)(&(X.pData[0].v_n)),
 			false, // no inner mesh display
 			GRAPH_NEUT_V, &X);
-		Graph[3].TickRescaling = 1.0 / kB;
+		Graph[3].TickRescaling = 1.0 / kB_;
 		Graph[3].DrawSurface("Neutral T",
 			DATA_HEIGHT, (real *)(&(X.pData[0].Tn)),
 			SEGUE_COLOUR, (real *)(&(X.pData[0].Tn)),
@@ -491,7 +492,7 @@ void RefreshGraphs(TriMesh & X, // only not const because of such as Reset_verte
 	case SPECIES_ION:
 
 
-		Graph[3].TickRescaling = 1.0 / kB;
+		Graph[3].TickRescaling = 1.0 / kB_;
 		Graph[3].DrawSurface("Ion T",
 			DATA_HEIGHT, (real *)(&(X.pData[0].Ti)),
 			SEGUE_COLOUR, (real *)(&(X.pData[0].Ti)),
@@ -530,7 +531,7 @@ void RefreshGraphs(TriMesh & X, // only not const because of such as Reset_verte
 			VELOCITY_COLOUR, (real *)(&(X.pData[0].vxy)),
 			false, // no inner mesh display
 			GRAPH_ELEC_V, &X);
-		Graph[3].TickRescaling = 1.0 / kB;
+		Graph[3].TickRescaling = 1.0 / kB_;
 		Graph[3].DrawSurface("Elec T",
 			DATA_HEIGHT, (real *)(&(X.pData[0].Te)),
 			SEGUE_COLOUR, (real *)(&(X.pData[0].Te)),
@@ -584,7 +585,7 @@ void RefreshGraphs(TriMesh & X, // only not const because of such as Reset_verte
 		pdata = X.pData + BEGINNING_OF_CENTRAL;
 		for (iVertex = 0; iVertex < NUMVERTICES; iVertex++)
 		{
-			pdata->temp.x = q * pdata->n*(pdata->viz - pdata->vez);
+			pdata->temp.x = q_ * pdata->n*(pdata->viz - pdata->vez);
 			++pdata;
 		};
 
@@ -626,7 +627,7 @@ void RefreshGraphs(TriMesh & X, // only not const because of such as Reset_verte
 		pdata = X.pData + BEGINNING_OF_CENTRAL;
 		for (iVertex = 0; iVertex < NUMVERTICES; iVertex++)
 		{
-			pdata->temp.y = q * pdata->n*(pdata->viz - pdata->vez);
+			pdata->temp.y = q_ * pdata->n*(pdata->viz - pdata->vez);
 			++pdata;
 		};
 		Graph[3].DrawSurface("Jz",
@@ -968,7 +969,7 @@ int main()
 
 	ZeroMemory(Historic_max, 100 * HISTORY * sizeof(float));
 	ZeroMemory(Historic_min, 100 * HISTORY * sizeof(float));
-	GlobalStepsCounter = 0; steps_remaining = 0;
+	GlobalStepsCounter = 0; steps_remaining = 0; steps_remaining_CPU = 0;
 
 	SetConsoleTitle("2D 1/16 annulus DPF simulation");
 	Sleep(40);
@@ -1309,7 +1310,7 @@ Error:
 LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
 	static bool bInvoked_cuSyst = false;
-
+	static long GSCCPU = 0;
 	int iAntiskips;
 	int wmId, wmEvent;
 	int i, j, ctr;
@@ -1321,7 +1322,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 	char buf1000[1024];
 	int attempts;
 	real store_h;
-	char ch;
+	char ch, o;
 	int failed;
 	RECT rect;
 	real TotalArea, TotalCharge;
@@ -1557,9 +1558,22 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 				SetTimer(hWnd, 1, 1, NULL); // 1 millisecond delay
 
 			break;
+
+		case ID_RUN_SIMULATIONSTEPS_CPU:
+
+			GlobalSwitchBox = 0;
+			steps_remaining_CPU = 1;
+			// that will not return with steps_remaining unset.
+
+			if (steps_remaining_CPU > 0)
+				SetTimer(hWnd, 2, 1, NULL); // 1 millisecond delay
+
+			break;
+
 		case ID_RUN_STOP:
 
 			steps_remaining = 0;
+			steps_remaining_CPU = 0;
 			break;
 		case ID_INITIALISE_IONISATIONSTEPS:
 			break;
@@ -1570,15 +1584,19 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 		break;
 
 	case WM_TIMER:
-
+		
+		KillTimer(hWnd, wParam);
+		report_time(0);
 		if (wParam == 1)
 		{
-			KillTimer(hWnd, 1);
-
 			if (bInvoked_cuSyst == false) {
-				cuSyst_host.InvokeHost();
 				bInvoked_cuSyst = true;
+				cuSyst_host.InvokeHost();
 				cuSyst_host.PopulateFromTriMesh(pX);
+				cuSyst_host2.InvokeHost();
+				cuSyst_host2.PopulateFromTriMesh(pX);
+				
+				cuSyst_host.Output("n0.txt");
 
 				PerformCUDA_Invoke_Populate(
 					&cuSyst_host,
@@ -1586,105 +1604,107 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 					pX->InnermostFrillCentroidRadius,
 					pX->OutermostFrillCentroidRadius,
 					pX->numStartZCurrentTriangles,
-					pX->numEndZCurrentTriangles	);
+					pX->numEndZCurrentTriangles);
 			}
 
 			// Run 1 step:
-			if (steps_remaining > 0)
+			printf("evaltime %1.8E\n", evaltime);
+			
+			PerformCUDA_RunStepsAndReturnSystem_Debug(&cuSyst_host, &cuSyst_host2, pX, &X3);
+			cuSyst_host.PopulateTriMesh(pX);
+
+			steps_remaining--;
+			GlobalStepsCounter++;
+
+			printf("Done steps: %d   ||   Remaining this run: %d\n\n", GlobalStepsCounter, steps_remaining);
+		}
+		else {
+			pX->Advance(pXnew, &X3);
+			temp = pX;
+			pX = pXnew;
+			pXnew = temp;
+
+			steps_remaining_CPU--;
+			GSCCPU++;
+			printf("Done steps CPU: %d   ||   Remaining this run: %d\n\n", GSCCPU, steps_remaining_CPU);
+
+			sprintf(buf1000, "autosaveCPU%d.dat", GSCCPU);
+			pX->Save(buf1000);
+			printf("saved as %s\n", buf1000);
+		};
+		printf("%s\n", report_time(1));
+
+		/*	
+		if (GlobalStepsCounter % GRAPHICS_FREQUENCY == 0)
+		{
+			// make video frames:
+			for (i = 0; i < NUMAVI; i++)
 			{
-				failed = 0;
-								
-				printf("evaltime %1.8E\n", evaltime);
-//				for (int iStep = 0; iStep < STEPS_PER_LOOP; iStep++) {
-//					printf("evaltime %1.8E\n", evaltime);
-//					pX->Advance(pXnew, &X3);
-//					temp = pX;
-//					pX = pXnew;
-//					pXnew = temp;
-//				};
-
-				PerformCUDA_RunStepsAndReturnSystem(&cuSyst_host);
-				// For now:
-				cuSyst_host.PopulateTriMesh(pX);
-
-				steps_remaining -= STEPS_PER_LOOP;
-				GlobalStepsCounter += STEPS_PER_LOOP;
-				//evaltime += h;	// this is done during the step
-				{
-					printf("Done steps: %d   ||   Remaining this run: %d\n\n", GlobalStepsCounter, steps_remaining);
-
-					if (GlobalStepsCounter % GRAPHICS_FREQUENCY == 0)
-					{
-						// make video frames:
-						for (i = 0; i < NUMAVI; i++)
-						{
-							RefreshGraphs(*pX, GraphFlags[i]); // sends data to graphs AND renders them
+				RefreshGraphs(*pX, GraphFlags[i]); // sends data to graphs AND renders them
 															   //	::PlanViewGraphs1(*pX);
 
 															   //RefreshGraphs(*pX,GraphFlags[i]); // sends data to graphs AND renders them
-							Direct3D.pd3dDevice->Present(NULL, NULL, NULL, NULL);
+				Direct3D.pd3dDevice->Present(NULL, NULL, NULL, NULL);
 
-							if (DXChk(p_backbuffer_surface->GetDC(&surfdc), 100))
-								MessageBox(NULL, "GetDC failed", "oh dear", MB_OK);
+				if (DXChk(p_backbuffer_surface->GetDC(&surfdc), 100))
+					MessageBox(NULL, "GetDC failed", "oh dear", MB_OK);
 
 							//SelectObject(surfdc,surfbit);
-							BitBlt(dibdc, 0, 0, VIDEO_WIDTH, VIDEO_HEIGHT, surfdc, 0, 0, SRCCOPY);
-							p_backbuffer_surface->ReleaseDC(surfdc);
-							AddAviFrame(hAvi[i], dib);
+				BitBlt(dibdc, 0, 0, VIDEO_WIDTH, VIDEO_HEIGHT, surfdc, 0, 0, SRCCOPY);
+					p_backbuffer_surface->ReleaseDC(surfdc);
+					AddAviFrame(hAvi[i], dib);
 
-						};
+			};
 						sprintf(szFile, "System_%d", GlobalStepsCounter);
 						//			pX->SaveText(szFile);
-					};
+		};*/
 
-					//		RefreshGraphs(*pX,GlobalSpeciesToGraph); // sends data to graphs AND renders them
-					//		Direct3D.pd3dDevice->Present( NULL, NULL, NULL, NULL );
-					printf("%s\n", report_time(1));
-				};
-				if (steps_remaining > 0) {
-					SetTimer(hWnd, 1, DELAY_MILLISECS, NULL);
-					printf("Waiting %d milliseconds to allow user input.\n", DELAY_MILLISECS);
-				}
-				else {
-					printf("Run completed.\n");
-
-					sprintf(buf1000, "autosave%d.dat", GlobalStepsCounter);
-					pX->Save(buf1000);
-					printf("saved as %s\n", buf1000);
-				};
-
-			}
-			else {
-				printf("steps_remaining = 0.\n");
-			};
-
-			if (GlobalStepsCounter % (AVI_FILE_PINCHOFF_FREQUENCY * GRAPHICS_FREQUENCY) == 0)
-			{
-				for (i = 0; i < NUMAVI; i++)
-				{
-					// now have to pinch out avi file and make a new one
-					CloseAvi(hAvi[i]);
-					sprintf(buf1000, "%s%s_%d.avi", FOLDER, szAvi[i], GlobalStepsCounter);
-					hAvi[i] = CreateAvi(buf1000, AVIFRAMEPERIOD, NULL);
-					SetAviVideoCompression(hAvi[i], dib, &opts, false, hWnd);
-				};
-			};
-
-			// Auto-save system:
-			if (GlobalStepsCounter % DATA_SAVE_FREQUENCY == 0)
-			{
-				// now have to save data
-
-				sprintf(buf1000, DATAFILENAME "%d.dat", GlobalStepsCounter);
-				pX->Save(buf1000);
-				// Do regular text save as well: ?
-
-			}
-			else {
-				//	pX->Save(AUTOSAVE_FILENAME);	
-				//	pX->SaveText("autosave");
-			};
+		/*
+		if (GlobalStepsCounter % (AVI_FILE_PINCHOFF_FREQUENCY * GRAPHICS_FREQUENCY) == 0)
+		{
+		for (i = 0; i < NUMAVI; i++)
+		{
+		// now have to pinch out avi file and make a new one
+		CloseAvi(hAvi[i]);
+		sprintf(buf1000, "%s%s_%d.avi", FOLDER, szAvi[i], GlobalStepsCounter);
+		hAvi[i] = CreateAvi(buf1000, AVIFRAMEPERIOD, NULL);
+		SetAviVideoCompression(hAvi[i], dib, &opts, false, hWnd);
+		};
+		};
+		*/
+		RefreshGraphs(*pX,GlobalSpeciesToGraph); // sends data to graphs AND renders them
+		Direct3D.pd3dDevice->Present( NULL, NULL, NULL, NULL );
+		
+		if (steps_remaining > 0) {
+			SetTimer(hWnd, 1, DELAY_MILLISECS, NULL);
+			printf("Waiting %d milliseconds to allow user input.\n", DELAY_MILLISECS);
+		};
+		if (steps_remaining_CPU > 0) {
+			SetTimer(hWnd, 2, DELAY_MILLISECS, NULL);
+			printf("Waiting %d milliseconds to allow user input.\n", DELAY_MILLISECS);
+		};
+		if (wParam == 1) {
+			sprintf(buf1000, "autosaveGPU%d.dat", GlobalStepsCounter);
+		} else {
+			sprintf(buf1000, "autosaveCPU%d.dat", GSCCPU);
 		}
+		pX->Save(buf1000);
+		printf("saved as %s\n", buf1000);
+		printf("save ascii?");
+		
+		do {
+			o = getch();
+		} while ((o != 'y') && (o != 'n'));
+		printf("%c\n", o);
+		if (o == 'y') {
+			pX->SaveText(buf1000);
+			printf("Ascii file saved.\n");
+		}
+		printf("steps_remaining GPU: %d  CPU: %d\n",steps_remaining, steps_remaining_CPU);
+		
+			// Auto-save system:
+		//if (GlobalStepsCounter % DATA_SAVE_FREQUENCY == 0)
+		
 		break;
 
 	case WM_KEYDOWN:
@@ -1869,6 +1889,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
 		//  _controlfp_s(0, cw, _MCW_EM); // Line A
 		PerformCUDA_Revoke();
+
 
 		PostQuitMessage(0);
 		break;

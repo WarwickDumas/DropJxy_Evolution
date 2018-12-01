@@ -56,6 +56,7 @@ struct twoshort {
 
 struct structural {
 	f64_vec2 pos; // Only ever used with flag, therefore put together.
+	// NO: because flag isn't only used with pos. So basically flatpack would have been better in general.
 	short neigh_len;
 	char flag;     // we want to now include "has_periodic"
 	// does that mean flag, has_periodic become char ? 
@@ -257,6 +258,12 @@ public:
 	void PopulateTriMesh(TriMesh * pX);
 
 	void PerformCUDA_Advance(const cuSyst * pX_target, const cuSyst * pX_half);
+
+	void PerformCUDA_Advance_Debug(const cuSyst * pX_target, const cuSyst * pX_half,
+		const cuSyst * p_cuSyst_host, cuSyst * p_cuSyst_compare, TriMesh * pTriMesh, TriMesh * pTriMeshhalf);
+
+	void Output(const char * filename);
+
 	void ZeroData();
 	~cuSyst();
 };
@@ -273,6 +280,7 @@ void PerformCUDA_Invoke_Populate (
 		);
 
 void PerformCUDA_RunStepsAndReturnSystem(cuSyst * pX_host);
+void PerformCUDA_RunStepsAndReturnSystem_Debug(cuSyst * pcuSyst_host, cuSyst * p_cuSyst_compare, TriMesh * pTriMesh, TriMesh * pTriMeshhalf);
 
 void PerformCUDA_Revoke();
 

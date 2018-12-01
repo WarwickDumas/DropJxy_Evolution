@@ -1286,6 +1286,8 @@ public:
 	
 	// For now, get rid of most member functions and keep only those that we know we shall use.
 
+	void CompareSystems();
+
 	// New additions:
 
 	int InitialiseOriginal(int token);

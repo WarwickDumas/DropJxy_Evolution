@@ -5,22 +5,39 @@
 #include "constant.h"
 #include "FFxtubes.h"
 
+#define FOUR_PI 12.5663706143592
+
+
 __global__ void kernelCalculateOverallVelocitiesVertices(
+	structural * __restrict__ p_info_major,
 	v4 * __restrict__ p_vie_major,
 	f64_vec3 * __restrict__ p_v_n_major,
 	nvals * __restrict__ p_n_major,
 	f64_vec2 * __restrict__ p_v_overall_major)
 {
 	long const index = threadIdx.x + blockIdx.x * blockDim.x; // INDEX OF VERTEX
-	v4 const vie = p_vie_major[index];
-	f64_vec3 const v_n = p_v_n_major[index];
-	nvals const n = p_n_major[index];
-	f64_vec2 v_overall;
+	structural const info = p_info_major[index];
+	f64_vec2 v_overall(0.0, 0.0);
 
-	v_overall = (vie.vxy*(m_e + m_i)*n.n +
-		v_n.xypart()*m_n*n.n_n) /
-		((m_e + m_i)*n.n + m_n*n.n_n);
-
+	if (info.flag == DOMAIN_VERTEX) {
+		v4 const vie = p_vie_major[index];
+		f64_vec3 const v_n = p_v_n_major[index];
+		nvals const n = p_n_major[index];
+		
+		v_overall = (vie.vxy*(m_e + m_i)*n.n +
+			v_n.xypart()*m_n*n.n_n) /
+			((m_e + m_i)*n.n + m_n*n.n_n);
+		if (index == 12078) {
+			printf("index %d v_overall %1.10E %1.10E vxy %1.10E %1.10E n %1.10E %1.10E v_n %1.10E %1.10E \n",
+				index, v_overall.x, v_overall.y, vie.vxy.x, vie.vxy.y, n.n, n.n_n, v_n.x, v_n.y);
+			printf("m_e %1.10E m_i %1.10E m_n %1.10E numer %1.10E denom %1.10E billericay %1.10E",
+				m_e, m_i, m_n,
+				(vie.vxy*(m_e + m_i)*n.n +
+					v_n.xypart()*m_n*n.n_n).x,
+					((m_e + m_i)*n.n + m_n*n.n_n),
+				billericay);
+		}
+	};
 	p_v_overall_major[index] = v_overall;
 }
 
@@ -50,7 +67,7 @@ __global__ void kernelAverageOverallVelocitiesTriangles(
 
 	f64_vec2 v(0.0, 0.0);
 
-	if (info.flag == DOMAIN_TRIANGLE) {
+	if ( (info.flag == DOMAIN_TRIANGLE) || (info.flag == CROSSING_INS) ){
 
 		f64_vec2 vcorner;
 		if ((tri_corner_index.i1 >= StartMajor) && (tri_corner_index.i1 < EndMajor))
@@ -60,8 +77,8 @@ __global__ void kernelAverageOverallVelocitiesTriangles(
 		else {
 			vcorner = THIRD*p_overall_v_major[tri_corner_index.i1];
 		};
-		if (tri_corner_per_flag.per0 == ROTATE_ME_CLOCKWISE) vcorner = Clockwise*vcorner;
-		if (tri_corner_per_flag.per0 == ROTATE_ME_ANTICLOCKWISE) vcorner = Anticlockwise*vcorner;
+		if (tri_corner_per_flag.per0 == ROTATE_ME_CLOCKWISE) vcorner = Clockwise_d*vcorner;
+		if (tri_corner_per_flag.per0 == ROTATE_ME_ANTICLOCKWISE) vcorner = Anticlockwise_d*vcorner;
 		v += vcorner;
 
 		if ((tri_corner_index.i2 >= StartMajor) && (tri_corner_index.i2 < EndMajor))
@@ -71,8 +88,8 @@ __global__ void kernelAverageOverallVelocitiesTriangles(
 		else {
 			vcorner = THIRD*p_overall_v_major[tri_corner_index.i2];
 		};
-		if (tri_corner_per_flag.per1 == ROTATE_ME_CLOCKWISE) vcorner = Clockwise*vcorner;
-		if (tri_corner_per_flag.per1 == ROTATE_ME_ANTICLOCKWISE) vcorner = Anticlockwise*vcorner;
+		if (tri_corner_per_flag.per1 == ROTATE_ME_CLOCKWISE) vcorner = Clockwise_d*vcorner;
+		if (tri_corner_per_flag.per1 == ROTATE_ME_ANTICLOCKWISE) vcorner = Anticlockwise_d*vcorner;
 		v += vcorner;
 
 		if ((tri_corner_index.i3 >= StartMajor) && (tri_corner_index.i3 < EndMajor))
@@ -82,15 +99,24 @@ __global__ void kernelAverageOverallVelocitiesTriangles(
 		else {
 			vcorner = THIRD*p_overall_v_major[tri_corner_index.i3];
 		};
-		if (tri_corner_per_flag.per2 == ROTATE_ME_CLOCKWISE) vcorner = Clockwise*vcorner;
-		if (tri_corner_per_flag.per2 == ROTATE_ME_ANTICLOCKWISE) vcorner = Anticlockwise*vcorner;
+		if (tri_corner_per_flag.per2 == ROTATE_ME_CLOCKWISE) vcorner = Clockwise_d*vcorner;
+		if (tri_corner_per_flag.per2 == ROTATE_ME_ANTICLOCKWISE) vcorner = Anticlockwise_d*vcorner;
 		v += vcorner;
-	}
-	else {
 
-		// What else?
+		if (info.flag == CROSSING_INS) {
+			// Position is equal to 1/3 avg, projected to ins.				
+			// So if we are moving 2 points to the right, it only moves 2/3 as much.
 
-	}
+			// Now remove the radial component:
+			f64_vec2 r = info.pos;
+			//rhat = r / r.modulus();
+			//p_v[iMinor] -= rhat.dot(p_v[iMinor])*rhat;
+			v = v - r*(r.dot(v)) / (r.x*r.x + r.y*r.y);
+
+		};
+	} else {
+		// leave it == 0		
+	};
 	p_overall_v_minor[index] = v;
 }
 
@@ -161,8 +187,8 @@ __global__ void kernelAverage_n_T_x_to_tris(
 			n += THIRD*p_n_major[tri_corner_index.i1];
 			T += THIRD*p_T_minor[tri_corner_index.i1 + BEGINNING_OF_CENTRAL];
 		};
-		if (tri_corner_per_flag.per0 == ROTATE_ME_CLOCKWISE) poscorner = Clockwise*poscorner;
-		if (tri_corner_per_flag.per0 == ROTATE_ME_ANTICLOCKWISE) poscorner = Anticlockwise*poscorner;
+		if (tri_corner_per_flag.per0 == ROTATE_ME_CLOCKWISE) poscorner = Clockwise_d*poscorner;
+		if (tri_corner_per_flag.per0 == ROTATE_ME_ANTICLOCKWISE) poscorner = Anticlockwise_d*poscorner;
 		pos += poscorner;
 
 		if ((tri_corner_index.i2 >= StartMajor) && (tri_corner_index.i2 < EndMajor))
@@ -176,8 +202,8 @@ __global__ void kernelAverage_n_T_x_to_tris(
 			n += THIRD*p_n_major[tri_corner_index.i2];
 			T += THIRD*p_T_minor[tri_corner_index.i2 + BEGINNING_OF_CENTRAL];
 		};
-		if (tri_corner_per_flag.per1 == ROTATE_ME_CLOCKWISE) poscorner = Clockwise*poscorner;
-		if (tri_corner_per_flag.per1 == ROTATE_ME_ANTICLOCKWISE) poscorner = Anticlockwise*poscorner;
+		if (tri_corner_per_flag.per1 == ROTATE_ME_CLOCKWISE) poscorner = Clockwise_d*poscorner;
+		if (tri_corner_per_flag.per1 == ROTATE_ME_ANTICLOCKWISE) poscorner = Anticlockwise_d*poscorner;
 		pos += poscorner;
 
 		if ((tri_corner_index.i3 >= StartMajor) && (tri_corner_index.i3 < EndMajor))
@@ -191,9 +217,14 @@ __global__ void kernelAverage_n_T_x_to_tris(
 			n += THIRD*p_n_major[tri_corner_index.i3];
 			T += THIRD*p_T_minor[tri_corner_index.i3 + BEGINNING_OF_CENTRAL];
 		};
-		if (tri_corner_per_flag.per2 == ROTATE_ME_CLOCKWISE) poscorner = Clockwise*poscorner;
-		if (tri_corner_per_flag.per2 == ROTATE_ME_ANTICLOCKWISE) poscorner = Anticlockwise*poscorner;
+		if (tri_corner_per_flag.per2 == ROTATE_ME_CLOCKWISE) poscorner = Clockwise_d*poscorner;
+		if (tri_corner_per_flag.per2 == ROTATE_ME_ANTICLOCKWISE) poscorner = Anticlockwise_d*poscorner;
 		pos += poscorner;
+
+		if (index == 29427) {
+			printf("Domain 29427 n %1.5E %1.5E n3 %1.5E %1.5E \n", n.n, n.n_n,
+				p_n_major[tri_corner_index.i3].n,p_n_major[tri_corner_index.i3]);
+		}
 
 	} else {
 		// What else?
@@ -219,8 +250,8 @@ __global__ void kernelAverage_n_T_x_to_tris(
 					iAbove++;
 				}
 			};
-			if (tri_corner_per_flag.per0 == ROTATE_ME_CLOCKWISE) poscorner = Clockwise*poscorner;
-			if (tri_corner_per_flag.per0 == ROTATE_ME_ANTICLOCKWISE) poscorner = Anticlockwise*poscorner;
+			if (tri_corner_per_flag.per0 == ROTATE_ME_CLOCKWISE) poscorner = Clockwise_d*poscorner;
+			if (tri_corner_per_flag.per0 == ROTATE_ME_ANTICLOCKWISE) poscorner = Anticlockwise_d*poscorner;
 			pos += poscorner;
 
 			if ((tri_corner_index.i2 >= StartMajor) && (tri_corner_index.i2 < EndMajor))
@@ -241,8 +272,8 @@ __global__ void kernelAverage_n_T_x_to_tris(
 					iAbove++;
 				};
 			};
-			if (tri_corner_per_flag.per1 == ROTATE_ME_CLOCKWISE) poscorner = Clockwise*poscorner;
-			if (tri_corner_per_flag.per1 == ROTATE_ME_ANTICLOCKWISE) poscorner = Anticlockwise*poscorner;
+			if (tri_corner_per_flag.per1 == ROTATE_ME_CLOCKWISE) poscorner = Clockwise_d*poscorner;
+			if (tri_corner_per_flag.per1 == ROTATE_ME_ANTICLOCKWISE) poscorner = Anticlockwise_d*poscorner;
 			pos += poscorner;
 
 			if ((tri_corner_index.i3 >= StartMajor) && (tri_corner_index.i3 < EndMajor))
@@ -263,8 +294,8 @@ __global__ void kernelAverage_n_T_x_to_tris(
 					iAbove++;
 				};
 			};
-			if (tri_corner_per_flag.per2 == ROTATE_ME_CLOCKWISE) poscorner = Clockwise*poscorner;
-			if (tri_corner_per_flag.per2 == ROTATE_ME_ANTICLOCKWISE) poscorner = Anticlockwise*poscorner;
+			if (tri_corner_per_flag.per2 == ROTATE_ME_CLOCKWISE) poscorner = Clockwise_d*poscorner;
+			if (tri_corner_per_flag.per2 == ROTATE_ME_ANTICLOCKWISE) poscorner = Anticlockwise_d*poscorner;
 			pos += poscorner;
 
 			f64_vec2 pos2 = pos;
@@ -275,6 +306,12 @@ __global__ void kernelAverage_n_T_x_to_tris(
 			T.Tn *= divide;
 			T.Ti *= divide;
 			T.Te *= divide;
+
+			if (index == 29427) {
+				printf("Crossing ins 29427 n %1.5E %1.5E n3 %1.5E %1.5E \n", n.n, n.n_n,
+					p_n_major[tri_corner_index.i3].n, p_n_major[tri_corner_index.i3]);
+			}
+
 		}
 		else {
 			n.n = 0.0;
@@ -289,8 +326,8 @@ __global__ void kernelAverage_n_T_x_to_tris(
 			else {
 				poscorner = THIRD*p_info[tri_corner_index.i1 + BEGINNING_OF_CENTRAL].pos;
 			};
-			if (tri_corner_per_flag.per0 == ROTATE_ME_CLOCKWISE) poscorner = Clockwise*poscorner;
-			if (tri_corner_per_flag.per0 == ROTATE_ME_ANTICLOCKWISE) poscorner = Anticlockwise*poscorner;
+			if (tri_corner_per_flag.per0 == ROTATE_ME_CLOCKWISE) poscorner = Clockwise_d*poscorner;
+			if (tri_corner_per_flag.per0 == ROTATE_ME_ANTICLOCKWISE) poscorner = Anticlockwise_d*poscorner;
 			pos += poscorner;
 
 			if ((tri_corner_index.i2 >= StartMajor) && (tri_corner_index.i2 < EndMajor))
@@ -299,8 +336,8 @@ __global__ void kernelAverage_n_T_x_to_tris(
 			} else {
 				poscorner = THIRD*p_info[tri_corner_index.i2 + BEGINNING_OF_CENTRAL].pos;
 			};
-			if (tri_corner_per_flag.per1 == ROTATE_ME_CLOCKWISE) poscorner = Clockwise*poscorner;
-			if (tri_corner_per_flag.per1 == ROTATE_ME_ANTICLOCKWISE) poscorner = Anticlockwise*poscorner;
+			if (tri_corner_per_flag.per1 == ROTATE_ME_CLOCKWISE) poscorner = Clockwise_d*poscorner;
+			if (tri_corner_per_flag.per1 == ROTATE_ME_ANTICLOCKWISE) poscorner = Anticlockwise_d*poscorner;
 			pos += poscorner;
 
 			if ((info.flag != INNER_FRILL) && (info.flag != OUTER_FRILL))
@@ -312,8 +349,8 @@ __global__ void kernelAverage_n_T_x_to_tris(
 				else {
 					poscorner = THIRD*p_info[tri_corner_index.i3 + BEGINNING_OF_CENTRAL].pos;
 				};
-				if (tri_corner_per_flag.per2 == ROTATE_ME_CLOCKWISE) poscorner = Clockwise*poscorner;
-				if (tri_corner_per_flag.per2 == ROTATE_ME_ANTICLOCKWISE) poscorner = Anticlockwise*poscorner;
+				if (tri_corner_per_flag.per2 == ROTATE_ME_CLOCKWISE) poscorner = Clockwise_d*poscorner;
+				if (tri_corner_per_flag.per2 == ROTATE_ME_ANTICLOCKWISE) poscorner = Anticlockwise_d*poscorner;
 				pos += poscorner;
 			} else {
 				// FRILL
@@ -325,6 +362,10 @@ __global__ void kernelAverage_n_T_x_to_tris(
 					pos2.project_to_radius(pos, FRILL_CENTROID_OUTER_RADIUS_d);
 				};
 			}
+			if (index == 29427) {
+				printf("Non domain 29427 n %1.5E %1.5E n3 %1.5E %1.5E \n", n.n, n.n_n,
+					p_n_major[tri_corner_index.i3].n, p_n_major[tri_corner_index.i3]);
+			}			
 		};
 		// Outer frills it is thus set to n=0,T=0.
 	};
@@ -412,8 +453,8 @@ __global__ void kernelCreateShardModelOfDensities_And_SetMajorArea(
 			pos0 = p_info_minor[izTri[0]].pos;
 			ndesire0 = p_n_minor[izTri[0]].n;
 		}
-		if (szPBC[0] == ROTATE_ME_CLOCKWISE) pos0 = Clockwise*pos0;
-		if (szPBC[0] == ROTATE_ME_ANTICLOCKWISE) pos0 = Anticlockwise*pos0;
+		if (szPBC[0] == ROTATE_ME_CLOCKWISE) pos0 = Clockwise_d*pos0;
+		if (szPBC[0] == ROTATE_ME_ANTICLOCKWISE) pos0 = Anticlockwise_d*pos0;
 
 		f64 tri_area;
 		f64 N0 = 0.0; f64 coeffcent = 0.0;
@@ -437,8 +478,8 @@ __global__ void kernelCreateShardModelOfDensities_And_SetMajorArea(
 				pos1 = p_info_minor[izTri[inext]].pos;
 				ndesire1 = p_n_minor[izTri[inext]].n;
 			};
-			if (szPBC[inext] == ROTATE_ME_CLOCKWISE) pos1 = Clockwise*pos1;
-			if (szPBC[inext] == ROTATE_ME_ANTICLOCKWISE) pos1 = Anticlockwise*pos1;
+			if (szPBC[inext] == ROTATE_ME_CLOCKWISE) pos1 = Clockwise_d*pos1;
+			if (szPBC[inext] == ROTATE_ME_ANTICLOCKWISE) pos1 = Anticlockwise_d*pos1;
 
 			high_n = max(ndesire1, high_n);
 			low_n = min(ndesire1, low_n);
@@ -610,8 +651,8 @@ __global__ void kernelCreateShardModelOfDensities_And_SetMajorArea(
 			pos0 = p_info_minor[izTri[0]].pos;
 			ndesire0 = p_n_minor[izTri[0]].n_n;
 		}
-		if (szPBC[0] == ROTATE_ME_CLOCKWISE) pos0 = Clockwise*pos0;
-		if (szPBC[0] == ROTATE_ME_ANTICLOCKWISE) pos0 = Anticlockwise*pos0;
+		if (szPBC[0] == ROTATE_ME_CLOCKWISE) pos0 = Clockwise_d*pos0;
+		if (szPBC[0] == ROTATE_ME_ANTICLOCKWISE) pos0 = Anticlockwise_d*pos0;
 
 		N0 = 0.0;
 		//coeffcent = 0.0;
@@ -634,8 +675,8 @@ __global__ void kernelCreateShardModelOfDensities_And_SetMajorArea(
 				pos1 = p_info_minor[izTri[inext]].pos;
 				ndesire1 = p_n_minor[izTri[inext]].n_n;
 			};
-			if (szPBC[inext] == ROTATE_ME_CLOCKWISE) pos1 = Clockwise*pos1;
-			if (szPBC[inext] == ROTATE_ME_ANTICLOCKWISE) pos1 = Anticlockwise*pos1;
+			if (szPBC[inext] == ROTATE_ME_CLOCKWISE) pos1 = Clockwise_d*pos1;
+			if (szPBC[inext] == ROTATE_ME_ANTICLOCKWISE) pos1 = Anticlockwise_d*pos1;
 
 			high_n = max(ndesire1, high_n);
 			low_n = min(ndesire1, low_n);
@@ -954,7 +995,7 @@ __global__ void kernelCalculateNu_eHeartNu_iHeart_nu_nn_visc(
 		nu_in_visc = our_n.n_n * sigma_visc * sqrt(T.Ti / m_ion + T.Tn / m_n);
 		nu_ni_visc = nu_in_visc * (our_n.n / our_n.n_n);
 		//nu_nn_visc:
-		nu.n = our_n.n_n * Estimate_Neutral_Neutral_Viscosity_Cross_section(T.Tn * one_over_kB)
+		nu.n = our_n.n_n * Estimate_Neutral_Neutral_Viscosity_Cross_section_d(T.Tn * one_over_kB)
 			* sqrt(T.Tn / m_n);
 		nu_ii = our_n.n*kB_to_3halves*Get_lnLambda_ion_d(our_n.n, T.Ti) *Nu_ii_Factor /
 			(sqrt_T*T.Ti);
@@ -1687,10 +1728,10 @@ __global__ void kernelCalculateUpwindDensity_tris(
 			nearby_pos = p_info_minor[trineighindex.i1].pos;
 		}
 		if (szPBC_neighs.per0 == ROTATE_ME_CLOCKWISE) {
-			nearby_pos = Clockwise*nearby_pos;
+			nearby_pos = Clockwise_d*nearby_pos;
 		}
 		if (szPBC_neighs.per0 == ROTATE_ME_ANTICLOCKWISE) {
-			nearby_pos = Anticlockwise*nearby_pos;
+			nearby_pos = Anticlockwise_d*nearby_pos;
 		}
 
 		edge_normal0.x = nearby_pos.y - info.pos.y;
@@ -1720,10 +1761,10 @@ __global__ void kernelCalculateUpwindDensity_tris(
 			nearby_pos = p_info_minor[trineighindex.i2].pos;
 		}
 		if (szPBC_neighs.per1 == ROTATE_ME_CLOCKWISE) {
-			nearby_pos = Clockwise*nearby_pos;
+			nearby_pos = Clockwise_d*nearby_pos;
 		}
 		if (szPBC_neighs.per1 == ROTATE_ME_ANTICLOCKWISE) {
-			nearby_pos = Anticlockwise*nearby_pos;
+			nearby_pos = Anticlockwise_d*nearby_pos;
 		}
 		edge_normal1.x = nearby_pos.y - info.pos.y;
 		edge_normal1.y = info.pos.x - nearby_pos.x;
@@ -1744,10 +1785,10 @@ __global__ void kernelCalculateUpwindDensity_tris(
 			nearby_pos = p_info_minor[trineighindex.i3].pos;
 		}
 		if (szPBC_neighs.per2 == ROTATE_ME_CLOCKWISE) {
-			nearby_pos = Clockwise*nearby_pos;
+			nearby_pos = Clockwise_d*nearby_pos;
 		}
 		if (szPBC_neighs.per2 == ROTATE_ME_ANTICLOCKWISE) {
-			nearby_pos = Anticlockwise*nearby_pos;
+			nearby_pos = Anticlockwise_d*nearby_pos;
 		}
 
 		edge_normal2.x = nearby_pos.y - info.pos.y;
@@ -1983,16 +2024,16 @@ __global__ void kernelAccumulateAdvectiveMassHeatRate(
 			Tn_prev = Tuse.Tn;
 		};
 		if (szPBC[i] == ROTATE_ME_CLOCKWISE) {
-			endpt0 = Clockwise*endpt0;
-			vxy_prev = Clockwise*vxy_prev;
-			v_n_prev = Clockwise*v_n_prev;
-			v_overall_prev = Clockwise*v_overall_prev;
+			endpt0 = Clockwise_d*endpt0;
+			vxy_prev = Clockwise_d*vxy_prev;
+			v_n_prev = Clockwise_d*v_n_prev;
+			v_overall_prev = Clockwise_d*v_overall_prev;
 		};
 		if (szPBC[i] == ROTATE_ME_ANTICLOCKWISE) {
-			endpt0 = Anticlockwise*endpt0;
-			vxy_prev = Anticlockwise*vxy_prev;
-			v_n_prev = Anticlockwise*v_n_prev;
-			v_overall_prev = Anticlockwise*v_overall_prev;
+			endpt0 = Anticlockwise_d*endpt0;
+			vxy_prev = Anticlockwise_d*vxy_prev;
+			v_n_prev = Anticlockwise_d*v_n_prev;
+			v_overall_prev = Anticlockwise_d*v_overall_prev;
 		};
 
 		nvals totalmassflux_out;
@@ -2037,16 +2078,16 @@ __global__ void kernelAccumulateAdvectiveMassHeatRate(
 				Tn_next = Tuse.Tn;
 			};
 			if (szPBC[i] == ROTATE_ME_CLOCKWISE) {
-				endpt0 = Clockwise*endpt0;
-				vxy_next = Clockwise*vxy_next;
-				v_n_next = Clockwise*v_n_next;
-				v_overall_next = Clockwise*v_overall_next;
+				endpt0 = Clockwise_d*endpt0;
+				vxy_next = Clockwise_d*vxy_next;
+				v_n_next = Clockwise_d*v_n_next;
+				v_overall_next = Clockwise_d*v_overall_next;
 			};
 			if (szPBC[i] == ROTATE_ME_ANTICLOCKWISE) {
-				endpt0 = Anticlockwise*endpt0;
-				vxy_next = Anticlockwise*vxy_next;
-				v_n_next = Anticlockwise*v_n_next;
-				v_overall_next = Anticlockwise*v_overall_next;
+				endpt0 = Anticlockwise_d*endpt0;
+				vxy_next = Anticlockwise_d*vxy_next;
+				v_n_next = Anticlockwise_d*v_n_next;
+				v_overall_next = Anticlockwise_d*v_overall_next;
 			};
 
 			f64_vec2 edge_normal;
@@ -2869,8 +2910,8 @@ __global__ void kernelGetLap_minor(
 			prevAz = p_Az[izTri[iprev]];
 			prevpos = p_info[izTri[iprev]].pos;
 		}
-		if (szPBC[iprev] == ROTATE_ME_CLOCKWISE) prevpos = Clockwise*prevpos;
-		if (szPBC[iprev] == ROTATE_ME_ANTICLOCKWISE) prevpos = Anticlockwise*prevpos;
+		if (szPBC[iprev] == ROTATE_ME_CLOCKWISE) prevpos = Clockwise_d*prevpos;
+		if (szPBC[iprev] == ROTATE_ME_ANTICLOCKWISE) prevpos = Anticlockwise_d*prevpos;
 
 		short i = 0;
 		if ((izTri[i] >= StartMinor) && (izTri[i] < EndMinor))
@@ -2882,8 +2923,8 @@ __global__ void kernelGetLap_minor(
 			oppAz = p_Az[izTri[i]];
 			opppos = p_info[izTri[i]].pos;
 		}
-		if (szPBC[i] == ROTATE_ME_CLOCKWISE) opppos = Clockwise*opppos;
-		if (szPBC[i] == ROTATE_ME_ANTICLOCKWISE) opppos = Anticlockwise*opppos;
+		if (szPBC[i] == ROTATE_ME_CLOCKWISE) opppos = Clockwise_d*opppos;
+		if (szPBC[i] == ROTATE_ME_ANTICLOCKWISE) opppos = Anticlockwise_d*opppos;
 
 		endpt0 = THIRD * (info.pos + opppos + prevpos);
 
@@ -2917,8 +2958,8 @@ __global__ void kernelGetLap_minor(
 				nextAz = p_Az[izTri[inext]];
 				nextpos = p_info[izTri[inext]].pos;
 			}
-			if (szPBC[inext] == ROTATE_ME_CLOCKWISE) nextpos = Clockwise*nextpos;
-			if (szPBC[inext] == ROTATE_ME_ANTICLOCKWISE) nextpos = Anticlockwise*nextpos;
+			if (szPBC[inext] == ROTATE_ME_CLOCKWISE) nextpos = Clockwise_d*nextpos;
+			if (szPBC[inext] == ROTATE_ME_ANTICLOCKWISE) nextpos = Anticlockwise_d*nextpos;
 
 			endpt1 = THIRD * (nextpos + info.pos + opppos);
 			f64_vec2 edge_normal, integ_grad_Az;
@@ -3031,8 +3072,8 @@ __global__ void kernelGetLap_minor(
 				prevpos = p_info[izNeighMinor[iprev]].pos;
 			};
 		};
-		if (szPBC[iprev] == ROTATE_ME_CLOCKWISE) prevpos = Clockwise*prevpos;
-		if (szPBC[iprev] == ROTATE_ME_ANTICLOCKWISE) prevpos = Anticlockwise*prevpos;
+		if (szPBC[iprev] == ROTATE_ME_CLOCKWISE) prevpos = Clockwise_d*prevpos;
+		if (szPBC[iprev] == ROTATE_ME_ANTICLOCKWISE) prevpos = Anticlockwise_d*prevpos;
 
 		i = 0;
 		if ((izNeighMinor[i] >= StartMinor) && (izNeighMinor[i] < EndMinor))
@@ -3052,8 +3093,8 @@ __global__ void kernelGetLap_minor(
 				opppos = p_info[izNeighMinor[i]].pos;
 			};
 		};
-		if (szPBC[i] == ROTATE_ME_CLOCKWISE) opppos = Clockwise*opppos;
-		if (szPBC[i] == ROTATE_ME_ANTICLOCKWISE) opppos = Anticlockwise*opppos;
+		if (szPBC[i] == ROTATE_ME_CLOCKWISE) opppos = Clockwise_d*opppos;
+		if (szPBC[i] == ROTATE_ME_ANTICLOCKWISE) opppos = Anticlockwise_d*opppos;
 
 #pragma unroll 
 		for (i = 0; i < 6; i++)
@@ -3077,8 +3118,8 @@ __global__ void kernelGetLap_minor(
 					nextpos = p_info[izNeighMinor[inext]].pos;
 				};
 			};
-			if (szPBC[inext] == ROTATE_ME_CLOCKWISE) nextpos = Clockwise*nextpos;
-			if (szPBC[inext] == ROTATE_ME_ANTICLOCKWISE) nextpos = Anticlockwise*nextpos;
+			if (szPBC[inext] == ROTATE_ME_CLOCKWISE) nextpos = Clockwise_d*nextpos;
+			if (szPBC[inext] == ROTATE_ME_ANTICLOCKWISE) nextpos = Anticlockwise_d*nextpos;
 
 			// New definition of endpoint of minor edge:
 			f64_vec2 endpt0, endpt1, edge_normal;
@@ -3186,8 +3227,8 @@ __global__ void kernelGetLapCoeffs(
 		else {
 			prevpos = p_info[izTri[iprev]].pos;
 		}
-		if (szPBC[iprev] == ROTATE_ME_CLOCKWISE) prevpos = Clockwise*prevpos;
-		if (szPBC[iprev] == ROTATE_ME_ANTICLOCKWISE) prevpos = Anticlockwise*prevpos;
+		if (szPBC[iprev] == ROTATE_ME_CLOCKWISE) prevpos = Clockwise_d*prevpos;
+		if (szPBC[iprev] == ROTATE_ME_ANTICLOCKWISE) prevpos = Anticlockwise_d*prevpos;
 
 		short inext, i = 0;
 		if ((izTri[i] >= StartMinor) && (izTri[i] < EndMinor))
@@ -3197,8 +3238,8 @@ __global__ void kernelGetLapCoeffs(
 		else {
 			opppos = p_info[izTri[i]].pos;
 		}
-		if (szPBC[i] == ROTATE_ME_CLOCKWISE) opppos = Clockwise*opppos;
-		if (szPBC[i] == ROTATE_ME_ANTICLOCKWISE) opppos = Anticlockwise*opppos;
+		if (szPBC[i] == ROTATE_ME_CLOCKWISE) opppos = Clockwise_d*opppos;
+		if (szPBC[i] == ROTATE_ME_ANTICLOCKWISE) opppos = Anticlockwise_d*opppos;
 
 		f64_vec2 endpt0 = THIRD * (info.pos + opppos + prevpos);
 		f64_vec2 endpt1, edge_normal;
@@ -3231,8 +3272,8 @@ __global__ void kernelGetLapCoeffs(
 			else {
 				nextpos = p_info[izTri[inext]].pos;
 			}
-			if (szPBC[inext] == ROTATE_ME_CLOCKWISE) nextpos = Clockwise*nextpos;
-			if (szPBC[inext] == ROTATE_ME_ANTICLOCKWISE) nextpos = Anticlockwise*nextpos;
+			if (szPBC[inext] == ROTATE_ME_CLOCKWISE) nextpos = Clockwise_d*nextpos;
+			if (szPBC[inext] == ROTATE_ME_ANTICLOCKWISE) nextpos = Anticlockwise_d*nextpos;
 
 			endpt1 = THIRD * (nextpos + info.pos + opppos);
 
@@ -3332,8 +3373,8 @@ __global__ void kernelGetLapCoeffs(
 				prevpos = p_info[izNeighMinor[iprev]].pos;
 			};
 		};
-		if (szPBC[iprev] == ROTATE_ME_CLOCKWISE) prevpos = Clockwise*prevpos;
-		if (szPBC[iprev] == ROTATE_ME_ANTICLOCKWISE) prevpos = Anticlockwise*prevpos;
+		if (szPBC[iprev] == ROTATE_ME_CLOCKWISE) prevpos = Clockwise_d*prevpos;
+		if (szPBC[iprev] == ROTATE_ME_ANTICLOCKWISE) prevpos = Anticlockwise_d*prevpos;
 
 		i = 0;
 		if ((izNeighMinor[i] >= StartMinor) && (izNeighMinor[i] < EndMinor))
@@ -3350,8 +3391,8 @@ __global__ void kernelGetLapCoeffs(
 				opppos = p_info[izNeighMinor[i]].pos;
 			};
 		};
-		if (szPBC[i] == ROTATE_ME_CLOCKWISE) opppos = Clockwise*opppos;
-		if (szPBC[i] == ROTATE_ME_ANTICLOCKWISE) opppos = Anticlockwise*opppos;
+		if (szPBC[i] == ROTATE_ME_CLOCKWISE) opppos = Clockwise_d*opppos;
+		if (szPBC[i] == ROTATE_ME_ANTICLOCKWISE) opppos = Anticlockwise_d*opppos;
 
 #pragma unroll 
 		for (i = 0; i < 6; i++)
@@ -3372,8 +3413,8 @@ __global__ void kernelGetLapCoeffs(
 					nextpos = p_info[izNeighMinor[inext]].pos;
 				};
 			};
-			if (szPBC[inext] == ROTATE_ME_CLOCKWISE) nextpos = Clockwise*nextpos;
-			if (szPBC[inext] == ROTATE_ME_ANTICLOCKWISE) nextpos = Anticlockwise*nextpos;
+			if (szPBC[inext] == ROTATE_ME_CLOCKWISE) nextpos = Clockwise_d*nextpos;
+			if (szPBC[inext] == ROTATE_ME_ANTICLOCKWISE) nextpos = Anticlockwise_d*nextpos;
 
 			// New definition of endpoint of minor edge:
 			f64_vec2 endpt0, endpt1, edge_normal, integ_grad_Az;
@@ -3635,8 +3676,8 @@ __global__ void kernelCreate_pressure_gradT_and_gradA_LapA_CurlA_minor(
 				prevAzdot = temp.Azdot;
 				prevpos = p_info_minor[izTri[iprev]].pos;
 			}
-			if (szPBC[iprev] == ROTATE_ME_CLOCKWISE) prevpos = Clockwise*prevpos;
-			if (szPBC[iprev] == ROTATE_ME_ANTICLOCKWISE) prevpos = Anticlockwise*prevpos;
+			if (szPBC[iprev] == ROTATE_ME_CLOCKWISE) prevpos = Clockwise_d*prevpos;
+			if (szPBC[iprev] == ROTATE_ME_ANTICLOCKWISE) prevpos = Anticlockwise_d*prevpos;
 
 			short inext, i = 0;
 			if ((izTri[i] >= StartMinor) && (izTri[i] < EndMinor))
@@ -3654,8 +3695,8 @@ __global__ void kernelCreate_pressure_gradT_and_gradA_LapA_CurlA_minor(
 				oppAzdot = temp.Azdot;
 				opppos = p_info_minor[izTri[i]].pos;
 			}
-			if (szPBC[i] == ROTATE_ME_CLOCKWISE) opppos = Clockwise*opppos;
-			if (szPBC[i] == ROTATE_ME_ANTICLOCKWISE) opppos = Anticlockwise*opppos;
+			if (szPBC[i] == ROTATE_ME_CLOCKWISE) opppos = Clockwise_d*opppos;
+			if (szPBC[i] == ROTATE_ME_ANTICLOCKWISE) opppos = Anticlockwise_d*opppos;
 
 			// Think carefully: DOMAIN vertex cases for n,T ...
 
@@ -3697,8 +3738,8 @@ __global__ void kernelCreate_pressure_gradT_and_gradA_LapA_CurlA_minor(
 					nextAzdot = temp.Azdot;
 					nextpos = p_info_minor[izTri[inext]].pos;
 				}
-				if (szPBC[inext] == ROTATE_ME_CLOCKWISE) nextpos = Clockwise*nextpos;
-				if (szPBC[inext] == ROTATE_ME_ANTICLOCKWISE) nextpos = Anticlockwise*nextpos;
+				if (szPBC[inext] == ROTATE_ME_CLOCKWISE) nextpos = Clockwise_d*nextpos;
+				if (szPBC[inext] == ROTATE_ME_ANTICLOCKWISE) nextpos = Anticlockwise_d*nextpos;
 
 				endpt1 = THIRD * (nextpos + info.pos + opppos);
 				edge_normal.x = endpt1.y - endpt0.y;
@@ -3827,8 +3868,8 @@ __global__ void kernelCreate_pressure_gradT_and_gradA_LapA_CurlA_minor(
 				prevAzdot = temp.Azdot;
 				prevpos = p_info_minor[izTri[iprev]].pos;
 			}
-			if (szPBC[iprev] == ROTATE_ME_CLOCKWISE) prevpos = Clockwise*prevpos;
-			if (szPBC[iprev] == ROTATE_ME_ANTICLOCKWISE) prevpos = Anticlockwise*prevpos;
+			if (szPBC[iprev] == ROTATE_ME_CLOCKWISE) prevpos = Clockwise_d*prevpos;
+			if (szPBC[iprev] == ROTATE_ME_ANTICLOCKWISE) prevpos = Anticlockwise_d*prevpos;
 
 			short inext, i = 0;
 			if ((izTri[i] >= StartMinor) && (izTri[i] < EndMinor))
@@ -3843,8 +3884,8 @@ __global__ void kernelCreate_pressure_gradT_and_gradA_LapA_CurlA_minor(
 				oppAzdot = temp.Azdot;
 				opppos = p_info_minor[izTri[i]].pos;
 			}
-			if (szPBC[i] == ROTATE_ME_CLOCKWISE) opppos = Clockwise*opppos;
-			if (szPBC[i] == ROTATE_ME_ANTICLOCKWISE) opppos = Anticlockwise*opppos;
+			if (szPBC[i] == ROTATE_ME_CLOCKWISE) opppos = Clockwise_d*opppos;
+			if (szPBC[i] == ROTATE_ME_ANTICLOCKWISE) opppos = Anticlockwise_d*opppos;
 
 			// Think carefully: DOMAIN vertex cases for n,T ...
 
@@ -3884,8 +3925,8 @@ __global__ void kernelCreate_pressure_gradT_and_gradA_LapA_CurlA_minor(
 					nextAzdot = temp.Azdot;
 					nextpos = p_info_minor[izTri[inext]].pos;
 				}
-				if (szPBC[inext] == ROTATE_ME_CLOCKWISE) nextpos = Clockwise*nextpos;
-				if (szPBC[inext] == ROTATE_ME_ANTICLOCKWISE) nextpos = Anticlockwise*nextpos;
+				if (szPBC[inext] == ROTATE_ME_CLOCKWISE) nextpos = Clockwise_d*nextpos;
+				if (szPBC[inext] == ROTATE_ME_ANTICLOCKWISE) nextpos = Anticlockwise_d*nextpos;
 
 				endpt1 = THIRD * (nextpos + info.pos + opppos);
 				edge_normal.x = endpt1.y - endpt0.y;
@@ -4056,8 +4097,8 @@ __global__ void kernelCreate_pressure_gradT_and_gradA_LapA_CurlA_minor(
 					prevpos = p_info_minor[izNeighMinor[iprev]].pos;
 				};
 			};
-			if (szPBC[iprev] == ROTATE_ME_CLOCKWISE) prevpos = Clockwise*prevpos;
-			if (szPBC[iprev] == ROTATE_ME_ANTICLOCKWISE) prevpos = Anticlockwise*prevpos;
+			if (szPBC[iprev] == ROTATE_ME_CLOCKWISE) prevpos = Clockwise_d*prevpos;
+			if (szPBC[iprev] == ROTATE_ME_ANTICLOCKWISE) prevpos = Anticlockwise_d*prevpos;
 
 			i = 0;
 			if ((izNeighMinor[i] >= StartMinor) && (izNeighMinor[i] < EndMinor))
@@ -4085,8 +4126,8 @@ __global__ void kernelCreate_pressure_gradT_and_gradA_LapA_CurlA_minor(
 					opppos = p_info_minor[izNeighMinor[i]].pos;
 				};
 			};
-			if (szPBC[i] == ROTATE_ME_CLOCKWISE) opppos = Clockwise*opppos;
-			if (szPBC[i] == ROTATE_ME_ANTICLOCKWISE) opppos = Anticlockwise*opppos;
+			if (szPBC[i] == ROTATE_ME_CLOCKWISE) opppos = Clockwise_d*opppos;
+			if (szPBC[i] == ROTATE_ME_ANTICLOCKWISE) opppos = Anticlockwise_d*opppos;
 
 			long who_am_I_to_corners[3];
 			memcpy(who_am_I_to_corners, &(p_who_am_I_to_corners[iMinor]), sizeof(long) * 3);
@@ -4290,8 +4331,8 @@ __global__ void kernelCreate_pressure_gradT_and_gradA_LapA_CurlA_minor(
 						nextpos = p_info_minor[izNeighMinor[inext]].pos;
 					};
 				};
-				if (szPBC[inext] == ROTATE_ME_CLOCKWISE) nextpos = Clockwise*nextpos;
-				if (szPBC[inext] == ROTATE_ME_ANTICLOCKWISE) nextpos = Anticlockwise*nextpos;
+				if (szPBC[inext] == ROTATE_ME_CLOCKWISE) nextpos = Clockwise_d*nextpos;
+				if (szPBC[inext] == ROTATE_ME_ANTICLOCKWISE) nextpos = Anticlockwise_d*nextpos;
 
 				// New definition of endpoint of minor edge:
 				f64_vec2 endpt0, endpt1, edge_normal, integ_grad_Az;
@@ -4409,8 +4450,8 @@ __global__ void kernelCreate_pressure_gradT_and_gradA_LapA_CurlA_minor(
 					prevpos = p_info_minor[izNeighMinor[iprev]].pos;
 				};
 			};
-			if (szPBC[iprev] == ROTATE_ME_CLOCKWISE) prevpos = Clockwise*prevpos;
-			if (szPBC[iprev] == ROTATE_ME_ANTICLOCKWISE) prevpos = Anticlockwise*prevpos;
+			if (szPBC[iprev] == ROTATE_ME_CLOCKWISE) prevpos = Clockwise_d*prevpos;
+			if (szPBC[iprev] == ROTATE_ME_ANTICLOCKWISE) prevpos = Anticlockwise_d*prevpos;
 
 			i = 0;
 			if ((izNeighMinor[i] >= StartMinor) && (izNeighMinor[i] < EndMinor))
@@ -4434,8 +4475,8 @@ __global__ void kernelCreate_pressure_gradT_and_gradA_LapA_CurlA_minor(
 					opppos = p_info_minor[izNeighMinor[i]].pos;
 				};
 			};
-			if (szPBC[i] == ROTATE_ME_CLOCKWISE) opppos = Clockwise*opppos;
-			if (szPBC[i] == ROTATE_ME_ANTICLOCKWISE) opppos = Anticlockwise*opppos;
+			if (szPBC[i] == ROTATE_ME_CLOCKWISE) opppos = Clockwise_d*opppos;
+			if (szPBC[i] == ROTATE_ME_ANTICLOCKWISE) opppos = Anticlockwise_d*opppos;
 
 
 #pragma unroll 
@@ -4464,8 +4505,8 @@ __global__ void kernelCreate_pressure_gradT_and_gradA_LapA_CurlA_minor(
 						nextpos = p_info_minor[izNeighMinor[inext]].pos;
 					};
 				};
-				if (szPBC[inext] == ROTATE_ME_CLOCKWISE) nextpos = Clockwise*nextpos;
-				if (szPBC[inext] == ROTATE_ME_ANTICLOCKWISE) nextpos = Anticlockwise*nextpos;
+				if (szPBC[inext] == ROTATE_ME_CLOCKWISE) nextpos = Clockwise_d*nextpos;
+				if (szPBC[inext] == ROTATE_ME_ANTICLOCKWISE) nextpos = Anticlockwise_d*nextpos;
 
 				// New definition of endpoint of minor edge:
 
@@ -4654,14 +4695,14 @@ __global__ void kernelCreate_momflux_minor(
 				prevpos = p_info_minor[izTri[iprev]].pos;
 			}
 			if (szPBC[iprev] == ROTATE_ME_CLOCKWISE) {
-				prevpos = Clockwise*prevpos;
-				prev_v.vxy = Clockwise*prev_v.vxy;
-				prev_v_overall = Clockwise*prev_v_overall;
+				prevpos = Clockwise_d*prevpos;
+				prev_v.vxy = Clockwise_d*prev_v.vxy;
+				prev_v_overall = Clockwise_d*prev_v_overall;
 			}
 			if (szPBC[iprev] == ROTATE_ME_ANTICLOCKWISE) {
-				prevpos = Anticlockwise*prevpos;
-				prev_v.vxy = Anticlockwise*prev_v.vxy;
-				prev_v_overall = Anticlockwise*prev_v_overall;
+				prevpos = Anticlockwise_d*prevpos;
+				prev_v.vxy = Anticlockwise_d*prev_v.vxy;
+				prev_v_overall = Anticlockwise_d*prev_v_overall;
 			}
 
 			if ((izTri[i] >= StartMinor) && (izTri[i] < EndMinor))
@@ -4676,14 +4717,14 @@ __global__ void kernelCreate_momflux_minor(
 				opppos = p_info_minor[izTri[i]].pos;
 			}
 			if (szPBC[i] == ROTATE_ME_CLOCKWISE) {
-				opppos = Clockwise*opppos;
-				opp_v.vxy = Clockwise*opp_v.vxy;
-				opp_v_overall = Clockwise*opp_v_overall;
+				opppos = Clockwise_d*opppos;
+				opp_v.vxy = Clockwise_d*opp_v.vxy;
+				opp_v_overall = Clockwise_d*opp_v_overall;
 			}
 			if (szPBC[i] == ROTATE_ME_ANTICLOCKWISE) {
-				opppos = Anticlockwise*opppos;
-				opp_v.vxy = Anticlockwise*opp_v.vxy;
-				opp_v_overall = Anticlockwise*opp_v_overall;
+				opppos = Anticlockwise_d*opppos;
+				opp_v.vxy = Anticlockwise_d*opp_v.vxy;
+				opp_v_overall = Anticlockwise_d*opp_v_overall;
 			}
 
 			// Think carefully: DOMAIN vertex cases for n,T ...
@@ -4723,14 +4764,14 @@ __global__ void kernelCreate_momflux_minor(
 					nextpos = p_info_minor[izTri[inext]].pos;
 				}
 				if (szPBC[inext] == ROTATE_ME_CLOCKWISE) {
-					nextpos = Clockwise*nextpos;
-					next_v.vxy = Clockwise*next_v.vxy;
-					next_v_overall = Clockwise*next_v_overall;
+					nextpos = Clockwise_d*nextpos;
+					next_v.vxy = Clockwise_d*next_v.vxy;
+					next_v_overall = Clockwise_d*next_v_overall;
 				}
 				if (szPBC[inext] == ROTATE_ME_ANTICLOCKWISE) {
-					nextpos = Anticlockwise*nextpos;
-					next_v.vxy = Anticlockwise*next_v.vxy;
-					next_v_overall = Anticlockwise*next_v_overall;
+					nextpos = Anticlockwise_d*nextpos;
+					next_v.vxy = Anticlockwise_d*next_v.vxy;
+					next_v_overall = Anticlockwise_d*next_v_overall;
 				}
 
 				f64_vec2 endpt1 = THIRD * (nextpos + info.pos + opppos);
@@ -4848,14 +4889,14 @@ __global__ void kernelCreate_momflux_minor(
 				};
 			};
 			if (szPBC[iprev] == ROTATE_ME_CLOCKWISE) {
-				prevpos = Clockwise*prevpos;
-				prev_v.vxy = Clockwise*prev_v.vxy;
-				prev_v_overall = Clockwise*prev_v_overall;
+				prevpos = Clockwise_d*prevpos;
+				prev_v.vxy = Clockwise_d*prev_v.vxy;
+				prev_v_overall = Clockwise_d*prev_v_overall;
 			}
 			if (szPBC[iprev] == ROTATE_ME_ANTICLOCKWISE) {
-				prevpos = Anticlockwise*prevpos;
-				prev_v.vxy = Anticlockwise*prev_v.vxy;
-				prev_v_overall = Anticlockwise*prev_v_overall;
+				prevpos = Anticlockwise_d*prevpos;
+				prev_v.vxy = Anticlockwise_d*prev_v.vxy;
+				prev_v_overall = Anticlockwise_d*prev_v_overall;
 			}
 
 
@@ -4881,14 +4922,14 @@ __global__ void kernelCreate_momflux_minor(
 				};
 			};
 			if (szPBC[i] == ROTATE_ME_CLOCKWISE) {
-				opppos = Clockwise*opppos;
-				opp_v.vxy = Clockwise*opp_v.vxy;
-				opp_v_overall = Clockwise*opp_v_overall;
+				opppos = Clockwise_d*opppos;
+				opp_v.vxy = Clockwise_d*opp_v.vxy;
+				opp_v_overall = Clockwise_d*opp_v_overall;
 			}
 			if (szPBC[i] == ROTATE_ME_ANTICLOCKWISE) {
-				opppos = Anticlockwise*opppos;
-				opp_v.vxy = Anticlockwise*opp_v.vxy;
-				opp_v_overall = Anticlockwise*opp_v_overall;
+				opppos = Anticlockwise_d*opppos;
+				opp_v.vxy = Anticlockwise_d*opp_v.vxy;
+				opp_v_overall = Anticlockwise_d*opp_v_overall;
 			}
 
 			long who_am_I_to_corners[3];
@@ -5064,14 +5105,14 @@ __global__ void kernelCreate_momflux_minor(
 					};
 				};
 				if (szPBC[inext] == ROTATE_ME_CLOCKWISE) {
-					nextpos = Clockwise*nextpos;
-					next_v.vxy = Clockwise*next_v.vxy;
-					next_v_overall = Clockwise*next_v_overall;
+					nextpos = Clockwise_d*nextpos;
+					next_v.vxy = Clockwise_d*next_v.vxy;
+					next_v_overall = Clockwise_d*next_v_overall;
 				}
 				if (szPBC[inext] == ROTATE_ME_ANTICLOCKWISE) {
-					nextpos = Anticlockwise*nextpos;
-					next_v.vxy = Anticlockwise*next_v.vxy;
-					next_v_overall = Anticlockwise*next_v_overall;
+					nextpos = Anticlockwise_d*nextpos;
+					next_v.vxy = Anticlockwise_d*next_v.vxy;
+					next_v_overall = Anticlockwise_d*next_v_overall;
 				}
 
 				// New definition of endpoint of minor edge:
@@ -5242,14 +5283,14 @@ __global__ void kernelNeutral_pressure_and_momflux(
 				prevpos = p_info_minor[izTri[iprev]].pos;
 			}
 			if (szPBC[iprev] == ROTATE_ME_CLOCKWISE) {
-				prevpos = Clockwise*prevpos;
+				prevpos = Clockwise_d*prevpos;
 				prev_v = Clockwise_rotate3(prev_v);
-				prev_v_overall = Clockwise*prev_v_overall;
+				prev_v_overall = Clockwise_d*prev_v_overall;
 			}
 			if (szPBC[iprev] == ROTATE_ME_ANTICLOCKWISE) {
-				prevpos = Anticlockwise*prevpos;
+				prevpos = Anticlockwise_d*prevpos;
 				prev_v = Anticlock_rotate3(prev_v);
-				prev_v_overall = Anticlockwise*prev_v_overall;
+				prev_v_overall = Anticlockwise_d*prev_v_overall;
 			}
 			
 			if ((izTri[i] >= StartMinor) && (izTri[i] < EndMinor))
@@ -5266,14 +5307,14 @@ __global__ void kernelNeutral_pressure_and_momflux(
 				opppos = p_info_minor[izTri[i]].pos;
 			};
 			if (szPBC[i] == ROTATE_ME_CLOCKWISE) {
-				opppos = Clockwise*opppos;
+				opppos = Clockwise_d*opppos;
 				opp_v = Clockwise_rotate3(opp_v);
-				opp_v_overall = Clockwise*opp_v_overall;
+				opp_v_overall = Clockwise_d*opp_v_overall;
 			}
 			if (szPBC[i] == ROTATE_ME_ANTICLOCKWISE) {
-				opppos = Anticlockwise*opppos;
+				opppos = Anticlockwise_d*opppos;
 				opp_v = Anticlock_rotate3(opp_v);
-				opp_v_overall = Anticlockwise*opp_v_overall;
+				opp_v_overall = Anticlockwise_d*opp_v_overall;
 			}
 
 			// Think carefully: DOMAIN vertex cases for n,T ...
@@ -5316,14 +5357,14 @@ __global__ void kernelNeutral_pressure_and_momflux(
 					nextpos = p_info_minor[izTri[inext]].pos;
 				}
 				if (szPBC[inext] == ROTATE_ME_CLOCKWISE) {
-					nextpos = Clockwise*nextpos;
+					nextpos = Clockwise_d*nextpos;
 					next_v = Clockwise_rotate3(next_v);
-					next_v_overall = Clockwise*next_v_overall;
+					next_v_overall = Clockwise_d*next_v_overall;
 				}
 				if (szPBC[inext] == ROTATE_ME_ANTICLOCKWISE) {
-					nextpos = Anticlockwise*nextpos;
+					nextpos = Anticlockwise_d*nextpos;
 					next_v = Anticlock_rotate3(next_v);
-					next_v_overall = Anticlockwise*next_v_overall;
+					next_v_overall = Anticlockwise_d*next_v_overall;
 				}
 
 				f64_vec2 endpt1 = THIRD * (nextpos + info.pos + opppos);
@@ -5423,14 +5464,14 @@ __global__ void kernelNeutral_pressure_and_momflux(
 				};
 			};
 			if (szPBC[iprev] == ROTATE_ME_CLOCKWISE) {
-				prevpos = Clockwise*prevpos;
+				prevpos = Clockwise_d*prevpos;
 				prev_v = Clockwise_rotate3(prev_v);
-				prev_v_overall = Clockwise*prev_v_overall;
+				prev_v_overall = Clockwise_d*prev_v_overall;
 			};
 			if (szPBC[iprev] == ROTATE_ME_ANTICLOCKWISE) {
-				prevpos = Anticlockwise*prevpos;
+				prevpos = Anticlockwise_d*prevpos;
 				prev_v = Anticlock_rotate3(prev_v);
-				prev_v_overall = Anticlockwise*prev_v_overall;
+				prev_v_overall = Anticlockwise_d*prev_v_overall;
 			};
 			
 			i = 0;
@@ -5458,14 +5499,14 @@ __global__ void kernelNeutral_pressure_and_momflux(
 				};
 			};
 			if (szPBC[i] == ROTATE_ME_CLOCKWISE) {
-				opppos = Clockwise*opppos;
+				opppos = Clockwise_d*opppos;
 				opp_v = Clockwise_rotate3(opp_v);
-				opp_v_overall = Clockwise*opp_v_overall;
+				opp_v_overall = Clockwise_d*opp_v_overall;
 			}
 			if (szPBC[i] == ROTATE_ME_ANTICLOCKWISE) {
-				opppos = Anticlockwise*opppos;
+				opppos = Anticlockwise_d*opppos;
 				opp_v = Anticlock_rotate3(opp_v);
-				opp_v_overall = Anticlockwise*opp_v_overall;
+				opp_v_overall = Anticlockwise_d*opp_v_overall;
 			}
 
 			long who_am_I_to_corners[3];
@@ -5640,14 +5681,14 @@ __global__ void kernelNeutral_pressure_and_momflux(
 					};
 				};
 				if (szPBC[inext] == ROTATE_ME_CLOCKWISE) {
-					nextpos = Clockwise*nextpos;
+					nextpos = Clockwise_d*nextpos;
 					next_v = Clockwise_rotate3(next_v);
-					next_v_overall = Clockwise*next_v_overall;
+					next_v_overall = Clockwise_d*next_v_overall;
 				}
 				if (szPBC[inext] == ROTATE_ME_ANTICLOCKWISE) {
-					nextpos = Anticlockwise*nextpos;
+					nextpos = Anticlockwise_d*nextpos;
 					next_v = Anticlock_rotate3(next_v);
-					next_v_overall = Anticlockwise*next_v_overall;
+					next_v_overall = Anticlockwise_d*next_v_overall;
 				}
 
 				// New definition of endpoint of minor edge:
@@ -5734,10 +5775,10 @@ __global__ void kernelWrapVertices(
 	// I SEE NOW that I am borrowing long const from CPU which is only a backdoor.
 
 	if (info.pos.x*(1.0 - 1.0e-13) > info.pos.y*GRADIENT_X_PER_Y) {
-		info.pos = Anticlockwise*info.pos;
+		info.pos = Anticlockwise_d*info.pos;
 
 		v4 vie = p_vie[iVertex + BEGINNING_OF_CENTRAL];
-		vie.vxy = Anticlockwise*vie.vxy;
+		vie.vxy = Anticlockwise_d*vie.vxy;
 		f64_vec3 v_n = p_v_n[iVertex + BEGINNING_OF_CENTRAL];
 		v_n = Anticlock_rotate3(v_n);
 		p_vie[iVertex + BEGINNING_OF_CENTRAL] = vie;
@@ -5747,21 +5788,18 @@ __global__ void kernelWrapVertices(
 		// Now let's worry about rotating variables in all the triangles that become periodic.
 		// Did we do that before in cpp file? Yes.
 	
-		// Beware of operating on same triangle with different threads here.
-
-		// We probably need to set a flag and launch later.
-		// Just set to a value that says 'tri could be modified periodic status'.
-		
-		// We still didn't need mesh info in cuSyst.
-
+		// We probably need to set a flag on tris modified and launch later.
 		// Violating gather-not-scatter. Save a char instead.
+
+		// Also: reassess PBC lists for vertex.
+		
 		p_was_vertex_rotated[iVertex] = ROTATE_ME_ANTICLOCKWISE;
 	};
 	if (info.pos.x*(1.0 - 1.0e-13) < -info.pos.y*GRADIENT_X_PER_Y) {
 
-		info.pos = Clockwise*info.pos;
+		info.pos = Clockwise_d*info.pos;
 		v4 vie = p_vie[iVertex + BEGINNING_OF_CENTRAL];
-		vie.vxy = Clockwise*vie.vxy;
+		vie.vxy = Clockwise_d*vie.vxy;
 		f64_vec3 v_n = p_v_n[iVertex + BEGINNING_OF_CENTRAL];
 		v_n = Clockwise_rotate3(v_n);
 
@@ -5774,17 +5812,295 @@ __global__ void kernelWrapVertices(
 
 __global__ void kernelWrapTriangles(
 	structural * __restrict__ p_info_minor,
+	LONG3 * __restrict__ p_tri_corner_index, 
+	char * __restrict__ p_was_vertex_rotated,
+
 	v4 * __restrict__ p_vie_minor,
 	f64_vec3 * __restrict__ p_v_n_minor,
-	char * __restrict__ p_was_vertex_rotated
+	char * __restrict__ p_triPBClistaffected,
+	CHAR4 * __restrict__ p_tri_periodic_corner_flags
 ) {
 	long iTri = blockDim.x*blockIdx.x + threadIdx.x;
-	structural info = p_info_minor[iTri];
+	structural info_tri = p_info_minor[iTri];
+
+	LONG3 cornerindex = p_tri_corner_index[iTri];
+
+	// Inefficient, no shared mem used:
+	char flag0 = p_was_vertex_rotated[cornerindex.i1];
+	char flag1 = p_was_vertex_rotated[cornerindex.i2];
+	char flag2 = p_was_vertex_rotated[cornerindex.i3];
+
+	if ((flag0 == 0) && (flag1 == 0) && (flag2 == 0))
+	{
+		// typical case: do nothing
+	} else {
+
+		// okay... it is near the PBC edge, because a vertex wrapped.
+
+		// if all vertices are on left or right, it's not a periodic triangle.
+		// We need to distinguish what happened: if on one side all the vertices are newly crossed over,
+		// then it didn't used to be periodic but now it is. If that is the left side, we need to rotate tri data.
+		// If all are now on right, we can rotate tri data to the right. It used to be periodic, guaranteed.
+
+		structural info[3];
+		info[0] = p_info_minor[BEGINNING_OF_CENTRAL + cornerindex.i1];
+		info[1] = p_info_minor[BEGINNING_OF_CENTRAL + cornerindex.i2];
+		info[2] = p_info_minor[BEGINNING_OF_CENTRAL + cornerindex.i3];
+
+		if ((info[0].pos.x > 0.0) && (info[1].pos.x > 0.0) && (info[2].pos.x > 0.0))
+		{
+			p_vie_minor[iTri].vxy = Clockwise_d*p_vie_minor[iTri].vxy;
+			info_tri.pos = Clockwise_d*info_tri.pos;
+			p_v_n_minor[iTri] = Clockwise_rotate3(p_v_n_minor[iTri]);
+
+			// Inform all corners that a triangle got wrapped:
+			p_triPBClistaffected[cornerindex.i1] = 1;
+			p_triPBClistaffected[cornerindex.i2] = 1;
+			p_triPBClistaffected[cornerindex.i3] = 1;
+		};
+		if (((info[0].pos.x > 0.0) || (flag0 == ROTATE_ME_ANTICLOCKWISE))
+			&&
+			((info[1].pos.x > 0.0) || (flag1 == ROTATE_ME_ANTICLOCKWISE))
+			&&
+			((info[2].pos.x > 0.0) || (flag2 == ROTATE_ME_ANTICLOCKWISE))) 
+		{
+			p_vie_minor[iTri].vxy = Anticlockwise_d*p_vie_minor[iTri].vxy;
+			info_tri.pos = Anticlockwise_d*info_tri.pos;
+			p_v_n_minor[iTri] = Anticlock_rotate3(p_v_n_minor[iTri]);
+
+			// Inform all corners that a triangle got wrapped:
+			p_triPBClistaffected[cornerindex.i1] = 1;
+			p_triPBClistaffected[cornerindex.i2] = 1;
+			p_triPBClistaffected[cornerindex.i3] = 1;
+
+			// Tell tri neighbours as well?
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+		}
+
+		p_info_minor[iTri] = info_tri;
+
+		// Now reassess periodic for corners:
+		CHAR4 tri_per_corner_flags;
+		memset(&tri_per_corner_flags, 0, sizeof(CHAR4));
+		tri_per_corner_flags.flag = info_tri.flag;
+		if (((info[0].pos.x > 0.0) && (info[1].pos.x > 0.0) && (info[2].pos.x > 0.0))
+			||
+			((info[0].pos.x < 0.0) && (info[1].pos.x < 0.0) && (info[2].pos.x < 0.0)))
+		{
+			// 0 is fine
+		} else {
+			if (info[0].pos.x > 0.0) tri_per_corner_flags.per0 = ROTATE_ME_ANTICLOCKWISE;
+			if (info[1].pos.x > 0.0) tri_per_corner_flags.per1 = ROTATE_ME_ANTICLOCKWISE;
+			if (info[2].pos.x > 0.0) tri_per_corner_flags.per2 = ROTATE_ME_ANTICLOCKWISE;
+		}
+		
+		p_tri_periodic_corner_flags[iTri] = tri_per_corner_flags;
+
+		// Now reassess periodic complexion of neighbours.
+		// We cannot do it until tri rotations are all completed? If we go by tri cent. 
+		// Non-periodic tri: assess whether neighbour is periodic, if so then we are looking across iff we are on right. And so on.
+	};
 }
 
-// .. Compare with previous CUDA code to do the alloc & transfer to video memory.
-// .. Set up all the constants we want on device. Check through kernels in sequence of calls.
-// .. We probably didn't yet fill in feint accel. That should be pretty quick.
-// .. Check every line.
-// .. 
+// This HAS TO APPLY FOR ALL NEIGHBOURS OF AFFECTED TRIS: !! !!!!! ! ! !! ! ! ! !
+// !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+__global__ void kernelReassessTriNeighbourPeriodicFlags_and_populate_PBCIndexneighminor(
+	structural * __restrict__ p_info_minor,
+	LONG3 * __restrict__ p_tri_neigh_index,
+	LONG3 * __restrict__ p_tri_corner_index,
+	char * __restrict__ p_was_vertex_rotated,
+	CHAR4 * __restrict__ p_tri_periodic_corner_flags,
+	CHAR4 * __restrict__ p_tri_periodic_neigh_flags,
+	char * __restrict__ p_szPBC_triminor
+	)
+{
+	CHAR4 tri_periodic_neigh_flags;
+
+	long const iTri = blockDim.x*blockIdx.x + threadIdx.x;
+	LONG3 cornerindex = p_tri_corner_index[iTri];
+
+	// Inefficient, no shared mem used:
+	char flag0 = p_was_vertex_rotated[cornerindex.i1];
+	char flag1 = p_was_vertex_rotated[cornerindex.i2];
+	char flag2 = p_was_vertex_rotated[cornerindex.i3];
+
+	if ((flag0 == 0) && (flag1 == 0) && (flag2 == 0))
+	{
+		// typical case: do nothing
+
+
+
+		// We should be actually resetting it if we are a neigh of a wrapped tri or a wrapped tri
+
+
+		// We still want to repopulate indexPBCminor even if only a corner wrapped.
+
+		
+		// THINK ABOUT THAT !!!
+
+	}
+	else {
+
+
+		structural info = p_info_minor[iTri];
+
+		LONG3 tri_neigh_index = p_tri_neigh_index[iTri];
+
+		memset(&tri_periodic_neigh_flags, 0, sizeof(CHAR4));
+		tri_periodic_neigh_flags.flag = info.flag;
+
+		if (info.pos.x > 0.0) {
+
+			CHAR4 test = p_tri_periodic_corner_flags[tri_neigh_index.i1];
+			if ((test.per0 != 0) || (test.per1 != 0) || (test.per2 != 0))
+				tri_periodic_neigh_flags.per0 = ROTATE_ME_CLOCKWISE;
+
+			test = p_tri_periodic_corner_flags[tri_neigh_index.i2];
+			if ((test.per0 != 0) || (test.per1 != 0) || (test.per2 != 0))
+				tri_periodic_neigh_flags.per1 = ROTATE_ME_CLOCKWISE;
+
+			test = p_tri_periodic_corner_flags[tri_neigh_index.i3];
+			if ((test.per0 != 0) || (test.per1 != 0) || (test.per2 != 0))
+				tri_periodic_neigh_flags.per2 = ROTATE_ME_CLOCKWISE;
+		}
+		else {
+			// if we are NOT periodic but on left, neighs are not rotated rel to us.
+			// If we ARE periodic but neigh is not and neigh cent > 0.0 then it is rotated.
+
+			CHAR4 ours = p_tri_periodic_corner_flags[iTri];
+			if ((ours.per0 != 0) && (ours.per1 != 0) && (ours.per2 != 0)) // ours IS periodic
+			{
+
+				structural info0 = p_info_minor[tri_neigh_index.i1];
+				structural info1 = p_info_minor[tri_neigh_index.i2];
+				structural info2 = p_info_minor[tri_neigh_index.i3];
+
+				if (info0.pos.x > 0.0) tri_periodic_neigh_flags.per0 = ROTATE_ME_ANTICLOCKWISE;
+				if (info1.pos.x > 0.0) tri_periodic_neigh_flags.per1 = ROTATE_ME_ANTICLOCKWISE;
+				if (info2.pos.x > 0.0) tri_periodic_neigh_flags.per2 = ROTATE_ME_ANTICLOCKWISE;
+
+				//	if ((pTri->neighbours[1]->periodic == 0) && (pTri->neighbours[1]->cent.x > 0.0))
+					//	tri_periodic_neigh_flags.per1 = ROTATE_ME_ANTICLOCKWISE;			
+			};
+		};
+
+		p_tri_periodic_neigh_flags[iTri] = tri_periodic_neigh_flags;
+
+		// Set indexneigh periodic list for this tri:
+		CHAR4 tri_periodic_corner_flags = p_tri_periodic_corner_flags[iTri];
+		char szPBC_triminor[6];
+		szPBC_triminor[0] = tri_periodic_corner_flags.per0;
+		szPBC_triminor[1] = tri_periodic_neigh_flags.per2;
+		szPBC_triminor[2] = tri_periodic_corner_flags.per1;
+		szPBC_triminor[3] = tri_periodic_neigh_flags.per0;
+		szPBC_triminor[4] = tri_periodic_corner_flags.per2;
+		szPBC_triminor[5] = tri_periodic_neigh_flags.per1;
+		memcpy(p_szPBC_triminor + 6 * iTri, szPBC_triminor, sizeof(char) * 6);
+
+	}; // was a corner wrapped
+
+	// needs to be OR A NEIGH WRAPPED.
+	// gather not scatter for that?
+}
+
+__global__ void kernelReset_szPBCtri_vert(
+	structural * __restrict__ p_info_minor,
+	long * __restrict__ p_izTri_vert,
+	long * __restrict__ p_izNeigh_vert,
+	char * __restrict__ p_szPBCtri_vert, 
+	char * __restrict__ p_szPBCneigh_vert,
+	char * __restrict__ p_triPBClistaffected
+)
+{
+	long const iVertex = blockDim.x*blockIdx.x + threadIdx.x;
+
+	char szPBCtri[MAXNEIGH];
+
+	structural info = p_info_minor[BEGINNING_OF_CENTRAL + iVertex];
+	if (p_triPBClistaffected[iVertex] != 0) {
+		long izTri[MAXNEIGH];
+		short i;
+		// Now reassess PBC lists for tris 
+		memcpy(izTri, p_izTri_vert + MAXNEIGH*iVertex, sizeof(long)*MAXNEIGH);
+		structural infotri;
+		if (info.pos.x > 0.0) {
+#pragma unroll MAXNEIGH
+			for (i = 0; i < info.neigh_len; i++)
+			{
+				infotri = p_info_minor[izTri[i]];
+				szPBCtri[i] = 0;
+				if (infotri.pos.x < 0.0) szPBCtri[i] = ROTATE_ME_CLOCKWISE;
+			};
+		} else {
+#pragma unroll MAXNEIGH
+			for (i = 0; i < info.neigh_len; i++)
+			{
+				infotri = p_info_minor[izTri[i]];
+				szPBCtri[i] = 0;
+				if (infotri.pos.x > 0.0) szPBCtri[i] = ROTATE_ME_ANTICLOCKWISE;
+			};
+		};
+		memcpy(p_szPBCtri_vert + MAXNEIGH*iVertex, szPBCtri, sizeof(char)*MAXNEIGH);
+	} else {
+		memcpy(szPBCtri, p_szPBCtri_vert + MAXNEIGH*iVertex, sizeof(char)*MAXNEIGH);
+	}
+	// Now check all neighbours to see if one wrapped:
+	// too difficult
+	// Just re-do them all IFF there is a periodic tri found in its list 
+	// Otherwise do a memset to 0.
+	short i;
+	char sum = 0;
+#pragma unroll MAXNEIGH
+	for (i = 0; i < info.neigh_len; i++)
+		sum += szPBCtri[i];
+	if (sum == 0) {
+		memset(p_szPBCneigh_vert + iVertex*MAXNEIGH, 0, sizeof(char)*MAXNEIGH);
+	} else {
+		char szPBCneigh[MAXNEIGH];
+		long izNeigh[MAXNEIGH];
+		structural infoneigh;
+
+		// For those that have per tris, we go through and test for per neighs.
+		memcpy(izNeigh, p_izNeigh_vert + MAXNEIGH*iVertex, sizeof(long)*MAXNEIGH);
+		if (info.pos.x > 0.0) {
+#pragma unroll MAXNEIGH
+			for (i = 0; i < info.neigh_len; i++)
+			{
+				infoneigh = p_info_minor[izNeigh[i] + BEGINNING_OF_CENTRAL];
+				szPBCneigh[i] = 0;
+				if (infoneigh.pos.x < 0.0) szPBCneigh[i] = ROTATE_ME_CLOCKWISE;
+			};
+		} else {
+#pragma unroll MAXNEIGH
+			for (i = 0; i < info.neigh_len; i++)
+			{
+				infoneigh = p_info_minor[izNeigh[i] + BEGINNING_OF_CENTRAL];
+				szPBCneigh[i] = 0;
+				if (infoneigh.pos.x > 0.0) szPBCneigh[i] = ROTATE_ME_ANTICLOCKWISE;
+			};
+		};
+		memcpy(p_szPBCneigh_vert + MAXNEIGH*iVertex, szPBCneigh, sizeof(char)*MAXNEIGH);
+	};
+	
+	// Possibly could also argue that if triPBClistaffected == 0 then as it had no wrapping
+	// triangle it cannot have a wrapping neighbour. Have to visualise to be sure.
+}
+
+
+// What a bugger it all is!
+// Add test for 0 wrapping vertices to cut out all this running.
 

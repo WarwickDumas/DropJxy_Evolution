@@ -1524,6 +1524,9 @@ void TriMesh::Average_n_T_to_tris_and_calc_centroids_and_minorpos()
 	Triangle * pTri = T;
 	for (iTri = 0; iTri < NUMTRIANGLES; iTri++)
 	{
+		if (iTri == 29427) {
+			iTri = iTri;
+		}
 		memcpy(&data0, pData + (pTri->cornerptr[0] - X) + BEGINNING_OF_CENTRAL, sizeof(plasma_data));
 		memcpy(&data1, pData + (pTri->cornerptr[1] - X) + BEGINNING_OF_CENTRAL, sizeof(plasma_data));
 		memcpy(&data2, pData + (pTri->cornerptr[2] - X) + BEGINNING_OF_CENTRAL, sizeof(plasma_data));
@@ -1560,6 +1563,7 @@ void TriMesh::Average_n_T_to_tris_and_calc_centroids_and_minorpos()
 		};
 		pTri->RecalculateCentroid(InnermostFrillCentroidRadius,OutermostFrillCentroidRadius);
 		tridata.pos = pTri->cent;
+
 
 		memcpy(pData + iTri, &tridata, sizeof(plasma_data));
 

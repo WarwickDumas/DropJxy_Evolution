@@ -1,6 +1,7 @@
 
 #ifndef cppconst_h
 #define cppconst_h
+ftyryrt
 
 real const sC = 2997924580.0;    // Coulomb to statCoulomb
 real const kB = 1.60217646e-12;  // erg per eV
