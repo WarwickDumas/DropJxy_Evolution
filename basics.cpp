@@ -965,7 +965,14 @@ Vector2 Triangle::RecalculateCentroid()
 	if (u8domain_flag == CROSSING_INS)
 	{
 		// Modify the centre to be the centre of the intersection of insulator
-		GetCentreOfIntersectionWithInsulator(cent);
+
+		if (SWITCH_TO_CENTRE_OF_INTERSECTION_WITH_INSULATOR_FOR_TRI_CENTROID_CPU)
+		{
+			GetCentreOfIntersectionWithInsulator(cent);
+		} else {
+			Vector2 cent2 = cent;
+			cent2.project_to_radius(cent, DEVICE_RADIUS_INSULATOR_OUTER);
+		}
 	}
 	if (u8domain_flag == OUTER_FRILL) {
 		Vector2 temp = 0.5*(u[0] + u[1]); // ? compare to GPU
@@ -985,8 +992,15 @@ Vector2 Triangle::RecalculateCentroid(real InnermostFrillCentroidRadius,real Out
 
 	if (u8domain_flag == CROSSING_INS)
 	{
-		// Modify the centre to be the centre of the intersection of insulator
-		GetCentreOfIntersectionWithInsulator(cent);
+		if (SWITCH_TO_CENTRE_OF_INTERSECTION_WITH_INSULATOR_FOR_TRI_CENTROID_CPU)
+		{
+			// Modify the centre to be the centre of the intersection of insulator
+			GetCentreOfIntersectionWithInsulator(cent);
+		}
+		else {
+			Vector2 cent2 = cent;
+			cent2.project_to_radius(cent, DEVICE_RADIUS_INSULATOR_OUTER);
+		}
 	}
 	if (u8domain_flag == OUTER_FRILL) {
 		Vector2 temp = 0.5*(u[0]+u[1]); // ? compare to GPU

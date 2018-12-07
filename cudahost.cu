@@ -124,6 +124,93 @@ size_t uFree, uTotal;
 extern real evaltime;
 
 int Compare_f64_vec2(f64_vec2 * p1, f64_vec2 * p2, long N);
+int Compare_n_shards(ShardModel * p1, ShardModel * p2, const cuSyst * p_cuSyst_host)
+{
+
+	f64 maxdiff = 0.0;
+	f64 mindiff = 0.0;
+	f64 maxreldiff = 0.0;
+	long iMin = -1;
+	long iMax = -1;
+	long iMaxRel = -1; 
+	long i;
+	for (i = 0; i < NUMVERTICES; i++)
+	{
+		f64 diff = (p1[i].n_cent - p2[i].n_cent);
+		if (diff > maxdiff) { maxdiff = diff; iMax = i; }
+		if (diff < mindiff) { mindiff = diff; iMin = i; }
+		if (p1[i].n_cent != 0.0) {
+			f64 reldiff = fabs(diff / p1[i].n_cent);
+			if (reldiff > maxreldiff) {
+				maxreldiff = reldiff;
+				iMaxRel = i;
+			}
+		};
+	};
+	if (iMax != -1) {
+		printf(" Max  cent diff: %1.3E at %d : %1.12E %1.12E \n",
+			maxdiff, iMax, p1[iMax].n_cent, p2[iMax].n_cent);
+	}
+	else {
+		printf(" Max diff == zero \n");
+	};
+	if (iMin != -1) {
+		printf(" Min diff: %1.3E at %d : %1.12E %1.12E \n",
+			mindiff, iMin, p1[iMin].n_cent, p2[iMin].n_cent);
+	}
+	else {
+		printf(" Min diff == zero \n");
+	};
+	if (iMaxRel != -1) {
+		printf(" Max rel diff %1.3E at %d : %1.12E %1.12E \n",
+			maxreldiff, iMaxRel, p1[iMaxRel].n_cent, p2[iMaxRel].n_cent);
+	}
+	else {
+		printf(" Max rel diff == zero \n");
+	}
+
+	maxdiff = 0.0;
+	mindiff = 0.0;
+	maxreldiff = 0.0;
+	iMin = -1;
+	iMax = -1;
+	iMaxRel = -1;
+	f64 diff;
+	int j; f64 diff_;
+	for (i = 0; i < NUMVERTICES; i++)
+	{
+		diff = 0.0;
+		short neigh_len = p_cuSyst_host->p_info[i + BEGINNING_OF_CENTRAL].neigh_len;
+		for (j = 0; j < neigh_len; j++)
+		{
+			diff_ = fabs(p1[i].n[j] - p2[i].n[j]);
+			if (diff_ > diff) diff = diff_;
+		}
+		if (diff > maxdiff) { maxdiff = diff; iMax = i; }
+		if (diff < mindiff) { mindiff = diff; iMin = i; }
+		if (p1[i].n_cent != 0.0) {
+			f64 reldiff = fabs(diff / p1[i].n_cent);
+			if (reldiff > maxreldiff) {
+				maxreldiff = reldiff;
+				iMaxRel = i;
+			}
+		};
+	};
+	if (iMax != -1) {
+		printf(" Max fabs [--] diff: %1.4E at %d ; n_cent = %1.10E \n",
+			maxdiff, iMax,p1[iMax].n_cent);
+	} else {
+		printf(" Max diff == zero \n");
+	};
+
+	if (iMaxRel != -1) {
+		printf(" Max rel diff %1.4E at %d ; n_cent =  %1.12E %1.12E \n",
+			maxreldiff, iMaxRel, p1[iMaxRel].n_cent, p2[iMaxRel].n_cent);
+	} else {
+		printf(" Max rel diff == zero \n");
+	};
+	return 0;
+}
 
 int Compare_f64(f64 * p1, f64 * p2, long N)
 {
@@ -549,8 +636,8 @@ void PerformCUDA_Invoke_Populate(
 	CallMAC(cudaMalloc((void **)&p_Iz0_summands, numTilesMinor * sizeof(f64)));
 	CallMAC(cudaMalloc((void **)&p_Iz0_initial, numTilesMinor * sizeof(f64)));
 
-	p_temphost1 = (f64 *)malloc(numTilesMinor * sizeof(f64));
-	p_temphost2 = (f64 *)malloc(numTilesMinor * sizeof(f64));
+	p_temphost1 = (f64 *)malloc(NMINOR * sizeof(f64)); // changed for debugging
+	p_temphost2 = (f64 *)malloc(NMINOR * sizeof(f64)); // changed for debugging
 	p_temphost3 = (f64 *)malloc(numTilesMinor * sizeof(f64));
 	p_temphost4 = (f64 *)malloc(numTilesMinor * sizeof(f64));
 	p_temphost5 = (f64 *)malloc(numTilesMinor * sizeof(f64));
@@ -756,16 +843,17 @@ void cuSyst::PerformCUDA_Advance_Debug(const cuSyst * pX_target, const cuSyst * 
 	// --------------------------------------------
 	cudaMemcpy(p_cuSyst_host->p_v_overall_minor, this->p_v_overall_minor, sizeof(f64_vec2)*NMINOR, cudaMemcpyDeviceToHost);
 	Compare_f64_vec2(p_cuSyst_host->p_v_overall_minor, p_v, NMINOR);
-	// Var 1 comes out as NaN at 23018.
+	// Var 1 comes out as NaN at 23018.????
+	// Now we think it's below????
 
-
+	/*
 	FILE * debugfile = fopen("v.txt", "w");
 	for (long i = 0; i < NMINOR; i++)
 	{
 		fprintf(debugfile, "v %1.14E %1.14E \n", p_cuSyst_host->p_v_overall_minor[i].x,
 			p_cuSyst_host->p_v_overall_minor[i].y);
 	}
-	fclose(debugfile);
+	fclose(debugfile);*/
 
 	kernelAdvectPositions << <numTilesMinor, threadsPerTileMinor >> >(
 		0.5*TIMESTEP,
@@ -779,7 +867,7 @@ void cuSyst::PerformCUDA_Advance_Debug(const cuSyst * pX_target, const cuSyst * 
 	memset(pTriMeshhalf->pData, 0, sizeof(plasma_data)*NMINOR);
 	pTriMesh->AdvectPositions_CopyTris(0.5*TIMESTEP, pTriMeshhalf, p_v);
 	
-	p_cuSyst_compare->PopulateFromTriMesh(pTriMeshhalf);
+	p_cuSyst_compare->PopulateFromTriMesh(pTriMeshhalf); // Calls Average_n_T_to tris on pTriMeshhalf; needs vertex pos in pData set up before it tries determining n in CROSSING_INS
 
 	cudaMemcpy(p_cuSyst_host->p_info, pX_half->p_info, NMINOR * sizeof(structural), cudaMemcpyDeviceToHost);
 	Compare_structural(p_cuSyst_host->p_info, p_cuSyst_compare->p_info, NMINOR);
@@ -800,11 +888,11 @@ void cuSyst::PerformCUDA_Advance_Debug(const cuSyst * pX_target, const cuSyst * 
 	
 	pTriMesh->Average_n_T_to_tris_and_calc_centroids_and_minorpos(); // call before CreateShardModel 
 	p_cuSyst_compare->PopulateFromTriMesh(pTriMesh);
-	// CHECK THAT WE ALSO BOTHERED TO TRANSFER TRI n,T data
 	
 	cudaMemcpy(p_cuSyst_host->p_n_minor, this->p_n_minor, NMINOR * sizeof(nvals), cudaMemcpyDeviceToHost);
 	Compare_nvals(p_cuSyst_host->p_n_minor, p_cuSyst_compare->p_n_minor, NMINOR);
-	printf("compared nvals.\n");
+	printf("compared nvals.\n"); // 23018 : p1 = NaN.
+
 
 	cudaMemcpy(p_cuSyst_host->p_T_minor, this->p_T_minor, NMINOR * sizeof(nvals), cudaMemcpyDeviceToHost);
 	Compare_T3(p_cuSyst_host->p_T_minor, p_cuSyst_compare->p_T_minor, NMINOR);
@@ -813,13 +901,20 @@ void cuSyst::PerformCUDA_Advance_Debug(const cuSyst * pX_target, const cuSyst * 
 	cudaMemcpy(p_cuSyst_host->p_info, this->p_info, NMINOR * sizeof(structural), cudaMemcpyDeviceToHost);
 	Compare_structural(p_cuSyst_host->p_info, p_cuSyst_compare->p_info, NMINOR);
 	printf("compared structural info.\n");
-
-	printf("end");
-	while (1) getch();
+	
 	//=================================================================================================
 
+	pTriMesh->CreateShardModelOfDensities_And_SetMajorArea();// sets n_shards_n, n_shards, Tri_n_n_lists, Tri_n_lists
 
-	kernelCreateShardModelOfDensities_And_SetMajorArea << <numTilesMajor, threadsPerTileMajor >> >(
+	for (long i = 0; i < NUMVERTICES; i++)
+	{
+		p_temphost1[i] = n_shards[i].n_cent;
+	}
+	cudaMemcpy(p_temp1, p_temphost1, sizeof(f64)*NUMVERTICES, cudaMemcpyHostToDevice);
+
+	printf("got to here.\n");
+
+	kernelCreateShardModelOfDensities_And_SetMajorArea_Debug << <numTilesMajor, threadsPerTileMajor >> >(
 		this->p_info,
 		this->p_n_minor,
 		this->p_izTri_vert,
@@ -828,10 +923,38 @@ void cuSyst::PerformCUDA_Advance_Debug(const cuSyst * pX_target, const cuSyst * 
 		p_n_shards_n,
 		//p_Tri_n_lists,
 		//p_Tri_n_n_lists,
-		this->p_AreaMajor
+		this->p_AreaMajor,
+		p_temp1 // compare to the CPU n_cent and if different do a bunch of intermediate output.
 		);// sets n_shards_n, n_shards, Tri_n_n_lists, Tri_n_lists
 	Call(cudaThreadSynchronize(), "cudaTS CreateShardModels");
 
+
+	
+	ShardModel * shardtemp = (ShardModel *)malloc(sizeof(ShardModel)*NUMVERTICES);
+	//cudaMemcpy(shardtemp, p_n_shards_n, sizeof(ShardModel)*NUMVERTICES, cudaMemcpyDeviceToHost);
+	// Compare shard models:
+	//printf("Compare n_shards_n:\n");
+	//Compare_n_shards(shardtemp, n_shards_n, p_cuSyst_host); // ShardModel*NUMVERTICES
+	
+	cudaMemcpy(shardtemp, p_n_shards, sizeof(ShardModel)*NUMVERTICES, cudaMemcpyDeviceToHost);
+	printf("Compare n_shards:\n");
+	Compare_n_shards(shardtemp, n_shards, p_cuSyst_host); // ShardModel*NUMVERTICES
+
+
+	/*FILE * fp_joke = fopen("whatajoke2.txt", "a");
+	fprintf(fp_joke, "CPUcent GPUcent \n\n");
+	for (long iVertex = 0; iVertex < NUMVERTICES; iVertex++)
+	{
+		fprintf(fp_joke, "%1.14E %1.14E \n", n_shards[iVertex].n_cent, shardtemp[iVertex].n_cent);
+	}
+	fclose(fp_joke);*/
+	// Do a couple goes of this, see what happening.
+
+	free(shardtemp);
+	// Major area? Compare .... but it's set as pVertex->AreaCell so do manually here.
+	
+	//====================================================
+		
 	kernelInferMinorDensitiesFromShardModel << <numTilesMinor, threadsPerTileMinor >> >(
 		this->p_info,
 		this->p_n_minor,
@@ -840,6 +963,23 @@ void cuSyst::PerformCUDA_Advance_Debug(const cuSyst * pX_target, const cuSyst * 
 		this->p_tri_corner_index,
 		this->p_who_am_I_to_corner);
 	Call(cudaThreadSynchronize(), "cudaTS InferMinorDensities");
+
+	pTriMesh->InferMinorDensitiesFromShardModel();
+	
+	// Something in the following has corrupted the n data, which is correct going into it.
+	// pX->Average_n_T_to_tris_and_calc_centroids_and_minorpos();
+
+	// It is certainly curious that the avg is the same as the shard reading for 2 of the corners.
+	// 29730
+
+	p_cuSyst_compare->PopulateFromTriMesh(pTriMesh);
+	cudaMemcpy(p_cuSyst_host->p_n_minor, this->p_n_minor, sizeof(f64)*NMINOR, cudaMemcpyDeviceToHost);
+	Compare_nvals(p_cuSyst_host->p_n_minor, p_cuSyst_compare->p_n_minor, NUMVERTICES*2);
+	// left comes out correct, right does not.
+
+	printf("end");
+	while (1) getch();
+
 
 	kernelCalculateUpwindDensity_tris << <numTriTiles, threadsPerTileMinor >> >(
 		this->p_info,
@@ -854,6 +994,12 @@ void cuSyst::PerformCUDA_Advance_Debug(const cuSyst * pX_target, const cuSyst * 
 		this->p_tri_periodic_neigh_flags,
 		this->p_n_upwind_minor);
 	Call(cudaThreadSynchronize(), "cudaTS CalculateUpwindDensity_tris");
+
+	// Will need to do likewise on CPU - hope it still works.
+
+
+
+
 
 	cudaMemset(p_Integrated_div_v_overall, 0, sizeof(f64)*NUMVERTICES);
 	cudaMemset(p_Div_v_neut, 0, sizeof(f64)*NUMVERTICES);

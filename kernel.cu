@@ -7,6 +7,7 @@
 
 #define FOUR_PI 12.5663706143592
 
+#define CHOSEN 18398
 
 __global__ void kernelCalculateOverallVelocitiesVertices(
 	structural * __restrict__ p_info_major,
@@ -178,51 +179,51 @@ __global__ void kernelAverage_n_T_x_to_tris(
 		f64_vec2 poscorner;
 		if ((tri_corner_index.i1 >= StartMajor) && (tri_corner_index.i1 < EndMajor))
 		{
-			poscorner = THIRD*shared_pos[tri_corner_index.i1 - StartMajor];
+			poscorner = shared_pos[tri_corner_index.i1 - StartMajor];
 			n += THIRD*shared_n[tri_corner_index.i1 - StartMajor];
 			T += THIRD*shared_T[tri_corner_index.i1 - StartMajor];
 		}
 		else {
-			poscorner = THIRD*p_info[tri_corner_index.i1 + BEGINNING_OF_CENTRAL].pos;
+			poscorner = p_info[tri_corner_index.i1 + BEGINNING_OF_CENTRAL].pos;
 			n += THIRD*p_n_major[tri_corner_index.i1];
 			T += THIRD*p_T_minor[tri_corner_index.i1 + BEGINNING_OF_CENTRAL];
 		};
 		if (tri_corner_per_flag.per0 == ROTATE_ME_CLOCKWISE) poscorner = Clockwise_d*poscorner;
 		if (tri_corner_per_flag.per0 == ROTATE_ME_ANTICLOCKWISE) poscorner = Anticlockwise_d*poscorner;
-		pos += poscorner;
+		pos += THIRD*poscorner;
 
 		if ((tri_corner_index.i2 >= StartMajor) && (tri_corner_index.i2 < EndMajor))
 		{
-			poscorner = THIRD*shared_pos[tri_corner_index.i2 - StartMajor];
+			poscorner = shared_pos[tri_corner_index.i2 - StartMajor];
 			n += THIRD*shared_n[tri_corner_index.i2 - StartMajor];
 			T += THIRD*shared_T[tri_corner_index.i2 - StartMajor];
 		}
 		else {
-			poscorner = THIRD*p_info[tri_corner_index.i2 + BEGINNING_OF_CENTRAL].pos;
+			poscorner = p_info[tri_corner_index.i2 + BEGINNING_OF_CENTRAL].pos;
 			n += THIRD*p_n_major[tri_corner_index.i2];
 			T += THIRD*p_T_minor[tri_corner_index.i2 + BEGINNING_OF_CENTRAL];
 		};
 		if (tri_corner_per_flag.per1 == ROTATE_ME_CLOCKWISE) poscorner = Clockwise_d*poscorner;
 		if (tri_corner_per_flag.per1 == ROTATE_ME_ANTICLOCKWISE) poscorner = Anticlockwise_d*poscorner;
-		pos += poscorner;
+		pos += THIRD*poscorner;
 
 		if ((tri_corner_index.i3 >= StartMajor) && (tri_corner_index.i3 < EndMajor))
 		{
-			poscorner = THIRD*shared_pos[tri_corner_index.i3 - StartMajor];
+			poscorner = shared_pos[tri_corner_index.i3 - StartMajor];
 			n += THIRD*shared_n[tri_corner_index.i3 - StartMajor];
 			T += THIRD*shared_T[tri_corner_index.i3 - StartMajor];
 		}
 		else {
-			poscorner = THIRD*p_info[tri_corner_index.i3 + BEGINNING_OF_CENTRAL].pos;
+			poscorner = p_info[tri_corner_index.i3 + BEGINNING_OF_CENTRAL].pos;
 			n += THIRD*p_n_major[tri_corner_index.i3];
 			T += THIRD*p_T_minor[tri_corner_index.i3 + BEGINNING_OF_CENTRAL];
 		};
 		if (tri_corner_per_flag.per2 == ROTATE_ME_CLOCKWISE) poscorner = Clockwise_d*poscorner;
 		if (tri_corner_per_flag.per2 == ROTATE_ME_ANTICLOCKWISE) poscorner = Anticlockwise_d*poscorner;
-		pos += poscorner;
+		pos += THIRD*poscorner;
 
-		if (index == 29427) {
-			printf("Domain 29427 n %1.5E %1.5E n3 %1.5E %1.5E \n", n.n, n.n_n,
+		if (index == 23018) {
+			printf("Domain 23018 n %1.5E %1.5E n3 %1.5E %1.5E \n", n.n, n.n_n,
 				p_n_major[tri_corner_index.i3].n,p_n_major[tri_corner_index.i3]);
 		}
 
@@ -234,7 +235,7 @@ __global__ void kernelAverage_n_T_x_to_tris(
 			f64_vec2 poscorner;
 			if ((tri_corner_index.i1 >= StartMajor) && (tri_corner_index.i1 < EndMajor))
 			{
-				poscorner = THIRD*shared_pos[tri_corner_index.i1 - StartMajor];
+				poscorner = shared_pos[tri_corner_index.i1 - StartMajor];
 				if (poscorner.dot(poscorner) > DEVICE_RADIUS_INSULATOR_OUTER*DEVICE_RADIUS_INSULATOR_OUTER)
 				{
 					n += shared_n[tri_corner_index.i1 - StartMajor];
@@ -242,7 +243,7 @@ __global__ void kernelAverage_n_T_x_to_tris(
 					iAbove++;
 				};
 			} else {
-				poscorner = THIRD*p_info[tri_corner_index.i1 + BEGINNING_OF_CENTRAL].pos;
+				poscorner = p_info[tri_corner_index.i1 + BEGINNING_OF_CENTRAL].pos;
 				if (poscorner.dot(poscorner) > DEVICE_RADIUS_INSULATOR_OUTER*DEVICE_RADIUS_INSULATOR_OUTER)
 				{
 					n += p_n_major[tri_corner_index.i1];
@@ -252,11 +253,12 @@ __global__ void kernelAverage_n_T_x_to_tris(
 			};
 			if (tri_corner_per_flag.per0 == ROTATE_ME_CLOCKWISE) poscorner = Clockwise_d*poscorner;
 			if (tri_corner_per_flag.per0 == ROTATE_ME_ANTICLOCKWISE) poscorner = Anticlockwise_d*poscorner;
-			pos += poscorner;
+			pos += THIRD*poscorner;
+			//if (index == 23018) printf("poscorner %1.12E %1.12E n %1.12E\n", poscorner.x, poscorner.y,n.n);
 
 			if ((tri_corner_index.i2 >= StartMajor) && (tri_corner_index.i2 < EndMajor))
 			{
-				poscorner = THIRD*shared_pos[tri_corner_index.i2 - StartMajor];
+				poscorner = shared_pos[tri_corner_index.i2 - StartMajor];
 				if (poscorner.dot(poscorner) > DEVICE_RADIUS_INSULATOR_OUTER*DEVICE_RADIUS_INSULATOR_OUTER)
 				{
 					n += shared_n[tri_corner_index.i2 - StartMajor];
@@ -264,7 +266,7 @@ __global__ void kernelAverage_n_T_x_to_tris(
 					iAbove++;
 				};
 			} else {
-				poscorner = THIRD*p_info[tri_corner_index.i2 + BEGINNING_OF_CENTRAL].pos;
+				poscorner = p_info[tri_corner_index.i2 + BEGINNING_OF_CENTRAL].pos;
 				if (poscorner.dot(poscorner) > DEVICE_RADIUS_INSULATOR_OUTER*DEVICE_RADIUS_INSULATOR_OUTER)
 				{
 					n += p_n_major[tri_corner_index.i2];
@@ -274,11 +276,11 @@ __global__ void kernelAverage_n_T_x_to_tris(
 			};
 			if (tri_corner_per_flag.per1 == ROTATE_ME_CLOCKWISE) poscorner = Clockwise_d*poscorner;
 			if (tri_corner_per_flag.per1 == ROTATE_ME_ANTICLOCKWISE) poscorner = Anticlockwise_d*poscorner;
-			pos += poscorner;
-
+			pos += THIRD*poscorner;
+			
 			if ((tri_corner_index.i3 >= StartMajor) && (tri_corner_index.i3 < EndMajor))
 			{
-				poscorner = THIRD*shared_pos[tri_corner_index.i3 - StartMajor];
+				poscorner = shared_pos[tri_corner_index.i3 - StartMajor];
 				if (poscorner.dot(poscorner) > DEVICE_RADIUS_INSULATOR_OUTER*DEVICE_RADIUS_INSULATOR_OUTER)
 				{
 					n += shared_n[tri_corner_index.i3 - StartMajor];
@@ -286,7 +288,7 @@ __global__ void kernelAverage_n_T_x_to_tris(
 					iAbove++;
 				};
 			} else {
-				poscorner = THIRD*p_info[tri_corner_index.i3 + BEGINNING_OF_CENTRAL].pos;
+				poscorner = p_info[tri_corner_index.i3 + BEGINNING_OF_CENTRAL].pos;
 				if (poscorner.dot(poscorner) > DEVICE_RADIUS_INSULATOR_OUTER*DEVICE_RADIUS_INSULATOR_OUTER)
 				{
 					n += p_n_major[tri_corner_index.i3];
@@ -296,7 +298,8 @@ __global__ void kernelAverage_n_T_x_to_tris(
 			};
 			if (tri_corner_per_flag.per2 == ROTATE_ME_CLOCKWISE) poscorner = Clockwise_d*poscorner;
 			if (tri_corner_per_flag.per2 == ROTATE_ME_ANTICLOCKWISE) poscorner = Anticlockwise_d*poscorner;
-			pos += poscorner;
+			pos += THIRD*poscorner;
+			//if (index == 23018) printf("i3 %d poscorner %1.12E %1.12E n %1.12E \n", tricornerindex.i3, poscorner.x, poscorner.y,n.n);
 
 			f64_vec2 pos2 = pos;
 			pos2.project_to_radius(pos,DEVICE_RADIUS_INSULATOR_OUTER);
@@ -307,9 +310,10 @@ __global__ void kernelAverage_n_T_x_to_tris(
 			T.Ti *= divide;
 			T.Te *= divide;
 
-			if (index == 29427) {
-				printf("Crossing ins 29427 n %1.5E %1.5E n3 %1.5E %1.5E \n", n.n, n.n_n,
-					p_n_major[tri_corner_index.i3].n, p_n_major[tri_corner_index.i3]);
+			if (index == 23018) {
+				printf("Crossing INs 23018 n %1.5E %1.5E n3 %1.5E %1.5E divide %1.5E iAbove %d\n", n.n, n.n_n,
+					p_n_major[tri_corner_index.i3].n, p_n_major[tri_corner_index.i3].n_n,
+					divide, iAbove);
 			}
 
 		}
@@ -362,8 +366,8 @@ __global__ void kernelAverage_n_T_x_to_tris(
 					pos2.project_to_radius(pos, FRILL_CENTROID_OUTER_RADIUS_d);
 				};
 			}
-			if (index == 29427) {
-				printf("Non domain 29427 n %1.5E %1.5E n3 %1.5E %1.5E \n", n.n, n.n_n,
+			if (index == 23018) {
+				printf("Non domain 23018 n %1.5E %1.5E n3 %1.5E %1.5E \n", n.n, n.n_n,
 					p_n_major[tri_corner_index.i3].n, p_n_major[tri_corner_index.i3]);
 			}			
 		};
@@ -442,8 +446,11 @@ __global__ void kernelCreateShardModelOfDensities_And_SetMajorArea(
 		f64_vec2 pos0, pos1;
 
 		memcpy(izTri, p_izTri_vert + MAXNEIGH_d*iVertex, sizeof(long)*MAXNEIGH_d);
+		memcpy(szPBC, p_szPBCtri_vert + MAXNEIGH_d*iVertex, sizeof(char)*MAXNEIGH_d);
 
 		f64 n_avg = p_n_minor[BEGINNING_OF_CENTRAL + iVertex].n;
+		// WHY IS IT minor NOT major ?????????????????????????
+		// ??????????????????????????????????????
 
 		if ((izTri[0] >= StartMinor) && (izTri[0] < EndMinor)) {
 			pos0 = shared_pos[izTri[0] - StartMinor];
@@ -468,6 +475,8 @@ __global__ void kernelCreateShardModelOfDensities_And_SetMajorArea(
 		{
 			// Temporary setting:
 			n_.n[i] = ndesire0;
+			
+			if (iVertex == CHOSEN) printf("CHOSEN : ndesire %1.14E \n",ndesire0);
 
 			inext = i + 1; if (inext == info.neigh_len) inext = 0;
 			if ((izTri[inext] >= StartMinor) && (izTri[inext] < EndMinor)) {
@@ -504,22 +513,29 @@ __global__ void kernelCreateShardModelOfDensities_And_SetMajorArea(
 		// repeatedly. We have to reload n lots of times.
 		// This is not the typical case.
 
+		
 		if ((n_avg > high_n) || (n_avg < low_n)) {
 #pragma unroll MAXNEIGH
 			for (i = 0; i < info.neigh_len; i++)
 				n_.n[i] = n_avg;
 			n_.n_cent = n_avg;
 
-		}
-		else {
+
+			if (iVertex == CHOSEN) printf("CHOSEN : Switch1 n_avg %1.12E \n",n_avg);
+
+		} else {
 			real n_C_need = (n_avg*AreaMajor - N0) / coeffcent;
 
 			if ((n_C_need > low_n) && (n_C_need < high_n)) {
 				n_.n_cent = n_C_need;
 
+
+				if (iVertex == CHOSEN) printf("CHOSEN : Switch2 n_C_need %1.12E low_n %1.12E high_n %1.12E\n", n_C_need,low_n,high_n);
+
 			}
 			else {
 				// The laborious case.
+				if (iVertex == CHOSEN) printf("Laborious case...\n");
 
 				bool fixed[MAXNEIGH];
 				memset(fixed, 0, sizeof(bool) * MAXNEIGH);
@@ -531,6 +547,8 @@ __global__ void kernelCreateShardModelOfDensities_And_SetMajorArea(
 					// the mass is low. So for those less than some n_acceptable,
 					// let them attain n_desire, and fix n_C = low_n.
 					// Then we'll see how high we can go with n_acceptable.
+
+					if (iVertex == CHOSEN) printf("(n_C_need < low_n)\n");
 
 					n_C = low_n;
 					n_acceptable = (n_avg*AreaMajor - coeffcent*n_C) / (AreaMajor - THIRD*AreaMajor);
@@ -558,6 +576,210 @@ __global__ void kernelCreateShardModelOfDensities_And_SetMajorArea(
 								}
 								else {
 									ndesire = p_n_minor[izTri[i]].n;
+								};
+								
+								if (iVertex == CHOSEN) printf("CHOSEN : ndesire %1.14E n_acceptable %1.14E\n", ndesire,n_acceptable);
+								
+								if (ndesire < n_acceptable) { // yes, use ndesire[i] ...
+									fixed[i] = true;
+									n_.n[i] = ndesire;
+									N_attained += n_.n[i] * coeff[i];
+									found = true;
+								}
+								else {
+									coeffremain += coeff[i];
+								};
+							}
+							else {
+								N_attained += n_.n[i] * coeff[i];
+							};
+						};
+						// It can happen that eventually ALL are found
+						// to be < n_acceptable due to FP error.
+						// On next pass found will be false.
+						if ((found != 0) && (coeffremain > 0.0)) {
+							n_acceptable = (n_avg*AreaMajor - N_attained) / coeffremain;
+							// The value to which we have to set the remaining
+							// n values.
+						};
+						if (iVertex == CHOSEN) printf("---\n");
+					} while (found != 0);
+
+				} else {
+					n_C = high_n;
+					n_acceptable = (n_avg*AreaMajor - coeffcent*n_C) / (AreaMajor - THIRD*AreaMajor);
+					bool found = 0;
+					do {
+						found = 0;
+						f64 coeffremain = 0.0;
+						f64 N_attained = coeffcent*high_n;
+						for (i = 0; i < info.neigh_len; i++)
+						{
+							if (fixed[i] == 0) {
+								// Go collect ndesire[i]:
+
+								f64 ndesire;
+								if ((izTri[i] >= StartMinor) && (izTri[i] < EndMinor))
+								{
+									ndesire = shared_n[izTri[i] - StartMinor].n;
+								} else {
+									ndesire = p_n_minor[izTri[i]].n;
+								};
+								
+
+								if (iVertex == CHOSEN) printf("CHOSEN : ndesire %1.14E n_acceptable %1.14E\n", ndesire, n_acceptable);
+
+
+								if (ndesire > n_acceptable) {
+									// yes, use ndesire[i] ...
+									fixed[i] = true;
+									n_.n[i] = ndesire;
+									N_attained += n_.n[i] * coeff[i];
+									found = true;
+								} else {
+									coeffremain += coeff[i];
+								};
+							} else {
+								N_attained += n_.n[i] * coeff[i];
+							};
+						};
+						if ((found != 0) && (coeffremain > 0.0)) {
+							n_acceptable = (n_avg*AreaMajor - N_attained) / coeffremain;
+						};
+
+						if (iVertex == CHOSEN) printf("@@@ \n");
+						
+					} while (found != 0);
+				};
+				// Now we should set the remaining values to n_acceptable
+				// which is less than ndesire[i] in all those cases.
+				for (i = 0; i < info.neigh_len; i++)
+				{
+					if (fixed[i] == 0) n_.n[i] = n_acceptable;
+				};
+				n_.n_cent = n_C;
+
+				if (iVertex == CHOSEN) {
+					for (i = 0; i < info.neigh_len; i++)
+					{
+						printf("GPU: n %1.14E\n", n_.n[i]);
+					}
+					printf("GPU : n_cent %1.14E \n", n_.n_cent);
+				};
+				
+			};
+		};
+
+		memcpy(&(p_n_shards[iVertex]), &n_, sizeof(ShardModel));
+
+		// Now start again: neutrals
+
+		n_avg = p_n_minor[BEGINNING_OF_CENTRAL + iVertex].n_n;
+
+		if ((izTri[0] >= StartMinor) && (izTri[0] < EndMinor)) {
+			pos0 = shared_pos[izTri[0] - StartMinor];
+			ndesire0 = shared_n[izTri[0] - StartMinor].n_n;
+		} else {
+			pos0 = p_info_minor[izTri[0]].pos;
+			ndesire0 = p_n_minor[izTri[0]].n_n;
+		}
+		if (szPBC[0] == ROTATE_ME_CLOCKWISE) pos0 = Clockwise_d*pos0;
+		if (szPBC[0] == ROTATE_ME_ANTICLOCKWISE) pos0 = Anticlockwise_d*pos0;
+
+		N0 = 0.0;
+		//coeffcent = 0.0;
+		//memset(coeff, 0, sizeof(f64)*MAXNEIGH_d); // keep em
+		high_n = ndesire0;
+		low_n = ndesire0;
+
+#pragma unroll MAXNEIGH
+		for (i = 0; i < info.neigh_len; i++)
+		{
+			// Temporary setting:
+			n_.n[i] = ndesire0;
+
+			inext = i + 1; if (inext == info.neigh_len) inext = 0;
+			if ((izTri[inext] >= StartMinor) && (izTri[inext] < EndMinor)) {
+				pos1 = shared_pos[izTri[inext] - StartMinor];
+				ndesire1 = shared_n[izTri[inext] - StartMinor].n_n;
+			} else {
+				pos1 = p_info_minor[izTri[inext]].pos;
+				ndesire1 = p_n_minor[izTri[inext]].n_n;
+			};
+			if (szPBC[inext] == ROTATE_ME_CLOCKWISE) pos1 = Clockwise_d*pos1;
+			if (szPBC[inext] == ROTATE_ME_ANTICLOCKWISE) pos1 = Anticlockwise_d*pos1;
+
+			high_n = max(ndesire1, high_n);
+			low_n = min(ndesire1, low_n);
+
+			tri_area = fabs(0.5*
+				((pos0.x + pos1.x) * (pos1.y - pos0.y)
+					+ (info.pos.x + pos1.x) * (info.pos.y - pos1.y)
+					+ (info.pos.x + pos0.x) * (pos0.y - info.pos.y)));
+
+			N0 += tri_area*THIRD*(ndesire0 + ndesire1); // Could consider moving it into loop above.
+
+			pos0 = pos1;
+			ndesire0 = ndesire1;
+		};
+		// . If n_avg > n_max_corners then set all to n_avg.
+		// . If n_min < n_needed < n_max then set n_cent = n_needed
+
+		// Otherwise, we now have coeff array populated and will go round
+		// repeatedly. We have to reload n lots of times.
+		// This is not the typical case.
+
+		if ((n_avg > high_n) || (n_avg < low_n)) {
+#pragma unroll MAXNEIGH
+			for (i = 0; i < info.neigh_len; i++)
+				n_.n[i] = n_avg;
+			n_.n_cent = n_avg;
+		} else {
+			real n_C_need = (n_avg*AreaMajor - N0) / coeffcent;
+
+			if ((n_C_need > low_n) && (n_C_need < high_n)) {
+				n_.n_cent = n_C_need; // accept desired values
+
+			} else {
+				// The laborious case.
+
+				bool fixed[MAXNEIGH];
+				memset(fixed, 0, sizeof(bool) * MAXNEIGH);
+				// cannot fit even this alongside the rest we have in L1.
+				// Can we make szPBC go out of scope by here?
+
+				f64 n_C, n_acceptable;
+				if (n_C_need < low_n) {
+					// the mass is low. So for those less than some n_acceptable,
+					// let them attain n_desire, and fix n_C = low_n.
+					// Then we'll see how high we can go with n_acceptable.
+
+					n_C = low_n;
+					n_acceptable = (n_avg*AreaMajor - coeffcent*n_C) / (AreaMajor - THIRD*AreaMajor);
+					// area-THIRD*area = sum of other coeffs, and of course
+					// coeffcent = THIRD*area
+					// n_acceptable > N/area since N=area*n_avg > area*low_n.
+
+					// We accept things that are less than this 'max average', and
+					// let that increase the threshold; go again until
+					// the time we do not find any new lower items ;		
+					bool found = 0;
+					do {
+						found = 0;
+						f64 coeffremain = 0.0;
+						f64 N_attained = coeffcent*low_n;
+						for (i = 0; i < info.neigh_len; i++)
+						{
+							if (fixed[i] == 0) {
+								// Go collect ndesire[i]:
+
+								f64 ndesire;
+								if ((izTri[i] >= StartMinor) && (izTri[i] < EndMinor))
+								{
+									ndesire = shared_n[izTri[i] - StartMinor].n_n;
+								}
+								else {
+									ndesire = p_n_minor[izTri[i]].n_n;
 								};
 								if (ndesire < n_acceptable) { // yes, use ndesire[i] ...
 									fixed[i] = true;
@@ -600,10 +822,10 @@ __global__ void kernelCreateShardModelOfDensities_And_SetMajorArea(
 								f64 ndesire;
 								if ((izTri[i] >= StartMinor) && (izTri[i] < EndMinor))
 								{
-									ndesire = shared_n[izTri[i] - StartMinor].n;
+									ndesire = shared_n[izTri[i] - StartMinor].n_n;
 								}
 								else {
-									ndesire = p_n_minor[izTri[i]].n;
+									ndesire = p_n_minor[izTri[i]].n_n;
 								};
 								if (ndesire > n_acceptable) {
 									// yes, use ndesire[i] ...
@@ -637,6 +859,374 @@ __global__ void kernelCreateShardModelOfDensities_And_SetMajorArea(
 			};
 		};
 
+		memcpy(&(p_n_n_shards[iVertex]), &n_, sizeof(ShardModel));
+
+		// Now done both species.
+
+	} else { // NOT DOMAIN_VERTEX
+		memset(&(p_n_shards[iVertex]), 0, sizeof(ShardModel));
+		memset(&(p_n_n_shards[iVertex]), 0, sizeof(ShardModel));
+	};
+
+	// NexT:  tri_n_lists.
+
+	// Think I am not using this passing mechanism for n_shards information.
+
+	/*
+	for (i = 0; i < cp.numCoords; i++)
+	{
+	// for 2 triangles each corner:
+
+	// first check which number corner this vertex is
+	// make sure we enter them in order that goes anticlockwise for the
+	// Then we need to make izMinorNeigh match this somehow
+
+	// Let's say izMinorNeigh goes [across corner 0, across edge 2, corner 1, edge 0, corner 2, edge 1]
+	// We want 0,1 to be the values corresp corner 0.
+
+	// shard value 0 is in tri 0. We look at each pair of shard values in turn to interpolate.
+
+	inext = i + 1; if (inext == cp.numCoords) inext = 0;
+
+	interpolated_n = THIRD * (n_shards[iVertex].n[i] + n_shards[iVertex].n[inext] + n_shards[iVertex].n_cent);
+	interpolated_n_n = THIRD * (n_shards_n[iVertex].n[i] + n_shards_n[iVertex].n[inext] + n_shards_n[iVertex].n_cent);
+	// contribute to tris i and inext:
+	o1 = (T + izTri[i])->GetCornerIndex(X + iVertex);
+	o2 = (T + izTri[inext])->GetCornerIndex(X + iVertex);
+
+	// Now careful which one's which:
+
+	// inext sees this point as more anticlockwise.
+
+	Tri_n_lists[izTri[inext]][o2 * 2 + 1] = interpolated_n;
+	Tri_n_lists[izTri[i]][o1 * 2] = interpolated_n;
+
+	Tri_n_n_lists[izTri[inext]][o2 * 2 + 1] = interpolated_n_n;
+	Tri_n_n_lists[izTri[i]][o1 * 2] = interpolated_n_n;
+	};*/
+
+}
+
+__global__ void kernelCreateShardModelOfDensities_And_SetMajorArea_Debug(
+	structural * __restrict__ p_info_minor,
+	nvals * __restrict__ p_n_minor,
+
+	long * __restrict__ p_izTri_vert,
+	char * __restrict__ p_szPBCtri_vert,
+	ShardModel * __restrict__ p_n_shards,
+	ShardModel * __restrict__ p_n_n_shards,
+	//	long * __restrict__ Tri_n_lists,
+	//	long * __restrict__ Tri_n_n_lists	,
+	f64 * __restrict__ p_AreaMajor,
+	f64 * __restrict__ p_CPU_n_cent )// sets n_shards_n, n_shards, Tri_n_n_lists, Tri_n_lists
+{
+	// called for major tile
+	// Interpolation to Tri_n_lists, Tri_n_n_lists is not yet implemented. But this would be output.
+
+	// Inputs:
+	// n, pTri->cent,  izTri,  pTri->periodic, pVertex->pos
+
+	// Outputs:
+	// pVertex->AreaCell
+	// n_shards[iVertex]
+	// Tri_n_n_lists[izTri[i]][o1 * 2] <--- 0 if not set by domain vertex
+
+	// CALL AVERAGE OF n TO TRIANGLES - WANT QUADRATIC AVERAGE - BEFORE WE BEGIN
+	// MUST ALSO POPULATE pVertex->AreaCell with major cell area
+
+	__shared__ f64_vec2 shared_pos[threadsPerTileMinor];
+	__shared__ nvals shared_n[threadsPerTileMinor];
+
+	// Here 4 doubles/minor. In 16*1024, 4 double*8 bytes*512 minor. 256 major. 
+	// Choosing to store n_n while doing n which is not necessary.
+
+	ShardModel n_; // to be populated
+	int iNeigh, tri_len;
+	f64 N_n, N, interpolated_n, interpolated_n_n;
+	long i, inext, o1, o2;
+
+	int storeWhich;
+	f64 store_coeffcent, store_n_desire, store_n_avg, store_AreaMajor, store_N0;
+	
+	//memset(Tri_n_n_lists, 0, sizeof(f64)*NUMTRIANGLES * 6);
+	//memset(Tri_n_lists, 0, sizeof(f64)*NUMTRIANGLES * 6);
+
+	// We can afford to stick 6-8 doubles in shared. 8 vars*8 bytes*256 threads = 16*1024.
+	{
+		structural info2[2];
+		memcpy(info2, p_info_minor + blockIdx.x*threadsPerTileMinor + 2 * threadIdx.x, sizeof(structural) * 2);
+		shared_pos[2 * threadIdx.x] = info2[0].pos;
+		shared_pos[2 * threadIdx.x + 1] = info2[1].pos;
+		memcpy(&(shared_n[2 * threadIdx.x]), p_n_minor + blockIdx.x*threadsPerTileMinor + 2 * threadIdx.x, sizeof(nvals) * 2);
+	}
+	long const StartMinor = blockIdx.x*threadsPerTileMinor; // vertex index
+	long const EndMinor = StartMinor + threadsPerTileMinor;
+
+	__syncthreads();
+
+	// To fit in Tri_n_n_lists stuff we should first let coeff[] go out of scope.
+	long const iVertex = threadIdx.x + blockIdx.x * blockDim.x; // INDEX OF VERTEX
+	structural info = p_info_minor[BEGINNING_OF_CENTRAL + iVertex];
+
+	if (info.flag == DOMAIN_VERTEX) {
+
+		long izTri[MAXNEIGH];
+		char szPBC[MAXNEIGH];
+		f64 coeff[MAXNEIGH];   // total 21*12 = 252 bytes. 256 max for 192 threads.
+		f64 ndesire0, ndesire1;
+		f64_vec2 pos0, pos1;
+
+		f64_vec2 store_pos[MAXNEIGH]; // this will significantly reduce the number of threads that can run. How many in major tile?
+		
+		memcpy(izTri, p_izTri_vert + MAXNEIGH_d*iVertex, sizeof(long)*MAXNEIGH_d);
+		memcpy(szPBC, p_szPBCtri_vert + MAXNEIGH_d*iVertex, sizeof(char)*MAXNEIGH_d);
+
+		f64 n_avg = p_n_minor[BEGINNING_OF_CENTRAL + iVertex].n;
+		// WHY IS IT minor NOT major ?????????????????????????
+		// ??????????????????????????????????????
+
+		if ((izTri[0] >= StartMinor) && (izTri[0] < EndMinor)) {
+			pos0 = shared_pos[izTri[0] - StartMinor];
+			ndesire0 = shared_n[izTri[0] - StartMinor].n;
+		} else {
+			pos0 = p_info_minor[izTri[0]].pos;
+			ndesire0 = p_n_minor[izTri[0]].n;
+		}
+		if (szPBC[0] == ROTATE_ME_CLOCKWISE) pos0 = Clockwise_d*pos0;
+		if (szPBC[0] == ROTATE_ME_ANTICLOCKWISE) pos0 = Anticlockwise_d*pos0;
+
+		f64 tri_area;
+		f64 N0 = 0.0; 
+		f64 coeffcent = 0.0;
+		f64 AreaMajor = 0.0;
+		f64 high_n = ndesire0;
+		f64 low_n = ndesire0;
+		short i;
+		memset(coeff, 0, sizeof(f64)*MAXNEIGH_d);
+
+#pragma unroll MAXNEIGH
+		for (i = 0; i < info.neigh_len; i++)
+		{
+			// Temporary setting:
+			n_.n[i] = ndesire0;
+
+			//if (iVertex == CHOSEN) printf("CHOSEN : ndesire %1.14E \n", ndesire0);
+
+			inext = i + 1; if (inext == info.neigh_len) inext = 0;
+			if ((izTri[inext] >= StartMinor) && (izTri[inext] < EndMinor)) {
+				pos1 = shared_pos[izTri[inext] - StartMinor];
+				ndesire1 = shared_n[izTri[inext] - StartMinor].n;
+			}
+			else {
+				pos1 = p_info_minor[izTri[inext]].pos;
+				ndesire1 = p_n_minor[izTri[inext]].n;
+			};
+			if (szPBC[inext] == ROTATE_ME_CLOCKWISE) pos1 = Clockwise_d*pos1;
+			if (szPBC[inext] == ROTATE_ME_ANTICLOCKWISE) pos1 = Anticlockwise_d*pos1;
+
+			high_n = max(ndesire1, high_n);
+			low_n = min(ndesire1, low_n);
+
+			tri_area = fabs(0.5*
+				((pos0.x + pos1.x) * (pos1.y - pos0.y)
+					+ (info.pos.x + pos1.x) * (info.pos.y - pos1.y)
+					+ (info.pos.x + pos0.x) * (pos0.y - info.pos.y)));
+
+			store_pos[i] = pos0;
+
+			N0 += tri_area*THIRD*(ndesire0 + ndesire1);
+			coeff[i] += tri_area*THIRD;
+			coeff[inext] += tri_area*THIRD;
+			coeffcent += tri_area*THIRD;
+			AreaMajor += tri_area;
+			pos0 = pos1;
+			ndesire0 = ndesire1;
+		};
+		// . If n_avg > n_max_corners then set all to n_avg.
+		// . If n_min < n_needed < n_max then set n_cent = n_needed
+
+		// Otherwise, we now have coeff array populated and will go round
+		// repeatedly. We have to reload n lots of times.
+		// This is not the typical case.
+
+		store_coeffcent = coeffcent;
+
+		if ((n_avg > high_n) || (n_avg < low_n)) {
+#pragma unroll MAXNEIGH
+			for (i = 0; i < info.neigh_len; i++)
+				n_.n[i] = n_avg;
+			n_.n_cent = n_avg;
+
+			storeWhich = 0;
+			//if (iVertex == CHOSEN) printf("CHOSEN : Switch1 n_avg %1.12E \n", n_avg);
+
+		}
+		else {
+			real n_C_need = (n_avg*AreaMajor - N0) / coeffcent;
+
+			store_n_avg = n_avg;
+			store_AreaMajor = AreaMajor;
+			store_N0 = N0;
+						
+			if ((n_C_need > low_n) && (n_C_need < high_n)) {
+				n_.n_cent = n_C_need;
+
+				storeWhich = 1;
+				//if (iVertex == CHOSEN) printf("CHOSEN : Switch2 n_C_need %1.12E low_n %1.12E high_n %1.12E\n", n_C_need, low_n, high_n);
+			}
+			else {
+				// The laborious case.
+				//if (iVertex == CHOSEN) printf("Laborious case...\n");
+				storeWhich = 2;
+
+				bool fixed[MAXNEIGH];
+				memset(fixed, 0, sizeof(bool) * MAXNEIGH);
+				// cannot fit even this alongside the rest we have in L1.
+				// Can we make szPBC go out of scope by here?
+
+				f64 n_C, n_acceptable;
+				if (n_C_need < low_n) {
+					// the mass is low. So for those less than some n_acceptable,
+					// let them attain n_desire, and fix n_C = low_n.
+					// Then we'll see how high we can go with n_acceptable.
+
+					//if (iVertex == CHOSEN) printf("(n_C_need < low_n)\n");
+					storeWhich = 3;
+
+					n_C = low_n;
+					n_acceptable = (n_avg*AreaMajor - coeffcent*n_C) / (AreaMajor - THIRD*AreaMajor);
+					// area-THIRD*area = sum of other coeffs, and of course
+					// coeffcent = THIRD*area
+					// n_acceptable > N/area since N=area*n_avg > area*low_n.
+
+					// We accept things that are less than this 'max average', and
+					// let that increase the threshold; go again until
+					// the time we do not find any new lower items ;	
+					bool found = 0;
+					do {
+						found = 0;
+						f64 coeffremain = 0.0;
+						f64 N_attained = coeffcent*low_n;
+						for (i = 0; i < info.neigh_len; i++)
+						{
+							if (fixed[i] == 0) {
+								// Go collect ndesire[i]:
+
+								f64 ndesire;
+								if ((izTri[i] >= StartMinor) && (izTri[i] < EndMinor))
+								{
+									ndesire = shared_n[izTri[i] - StartMinor].n;
+								}
+								else {
+									ndesire = p_n_minor[izTri[i]].n;
+								};
+
+								//if (iVertex == CHOSEN) printf("CHOSEN : ndesire %1.14E n_acceptable %1.14E\n", ndesire, n_acceptable);
+								
+								if (ndesire < n_acceptable) { // yes, use ndesire[i] ...
+									fixed[i] = true;
+									n_.n[i] = ndesire;
+									N_attained += n_.n[i] * coeff[i];
+									found = true;
+								}
+								else {
+									coeffremain += coeff[i];
+								};
+							}
+							else {
+								N_attained += n_.n[i] * coeff[i];
+							};
+						};
+						// It can happen that eventually ALL are found
+						// to be < n_acceptable due to FP error.
+						// On next pass found will be false.
+						if ((found != 0) && (coeffremain > 0.0)) {
+							n_acceptable = (n_avg*AreaMajor - N_attained) / coeffremain;
+							// The value to which we have to set the remaining
+							// n values.
+						};
+						//if (iVertex == CHOSEN) printf("---\n");
+					} while (found != 0);
+
+				}
+				else {
+					storeWhich = 4;
+					n_C = high_n;
+					n_acceptable = (n_avg*AreaMajor - coeffcent*n_C) / (AreaMajor - THIRD*AreaMajor);
+					bool found = 0;
+					do {
+						found = 0;
+						f64 coeffremain = 0.0;
+						f64 N_attained = coeffcent*high_n;
+						for (i = 0; i < info.neigh_len; i++)
+						{
+							if (fixed[i] == 0) {
+								// Go collect ndesire[i]:
+
+								f64 ndesire;
+								if ((izTri[i] >= StartMinor) && (izTri[i] < EndMinor))
+								{
+									ndesire = shared_n[izTri[i] - StartMinor].n;
+								}
+								else {
+									ndesire = p_n_minor[izTri[i]].n;
+								};
+
+
+								//if (iVertex == CHOSEN) printf("CHOSEN : ndesire %1.14E n_acceptable %1.14E\n", ndesire, n_acceptable);
+
+
+								if (ndesire > n_acceptable) {
+									// yes, use ndesire[i] ...
+									fixed[i] = true;
+									n_.n[i] = ndesire;
+									N_attained += n_.n[i] * coeff[i];
+									found = true;
+								}
+								else {
+									coeffremain += coeff[i];
+								};
+							}
+							else {
+								N_attained += n_.n[i] * coeff[i];
+							};
+						};
+						if ((found != 0) && (coeffremain > 0.0)) {
+							n_acceptable = (n_avg*AreaMajor - N_attained) / coeffremain;
+						};
+
+						//if (iVertex == CHOSEN) printf("@@@ \n");
+
+					} while (found != 0);
+				};
+				// Now we should set the remaining values to n_acceptable
+				// which is less than ndesire[i] in all those cases.
+				for (i = 0; i < info.neigh_len; i++)
+				{
+					if (fixed[i] == 0) n_.n[i] = n_acceptable;
+				};
+				n_.n_cent = n_C;
+			};
+		};
+
+		// Calculate rel difference from CPU:
+		f64 CPU_ncent = p_CPU_n_cent[iVertex];
+		f64 diff = fabs(CPU_ncent - n_.n_cent);
+		if (diff / n_.n_cent > 0.001) {
+			printf("iVertex %d CPUcent %1.14E ours %1.14E \n",
+				iVertex, CPU_ncent, n_.n_cent);
+			for (i = 0; i < info.neigh_len; i++)
+				printf("%d GPU: n %1.14E coeff %1.14E pos %1.14E %1.14E\n", iVertex, n_.n[i], coeff[i],store_pos[i].x,store_pos[i].y);
+			printf("%d: \nstore_coeffcent %1.14E storeWhich %d\n"
+				" store_n_avg %1.14E store_AreaMajor %1.14E  store_N0 %1.14E \n===========\n", 
+				iVertex,
+				store_coeffcent, storeWhich,
+				store_n_avg,store_AreaMajor,store_N0);
+		}
+		//if (n_.n_cent == CHOSEN) {			
+			//printf("GPU : n_cent %1.14E \n", n_.n_cent);
+		//};
+
 		memcpy(&(p_n_shards[iVertex]), &n_, sizeof(ShardModel));
 
 		// Now start again: neutrals
@@ -646,8 +1236,7 @@ __global__ void kernelCreateShardModelOfDensities_And_SetMajorArea(
 		if ((izTri[0] >= StartMinor) && (izTri[0] < EndMinor)) {
 			pos0 = shared_pos[izTri[0] - StartMinor];
 			ndesire0 = shared_n[izTri[0] - StartMinor].n_n;
-		}
-		else {
+		} else {
 			pos0 = p_info_minor[izTri[0]].pos;
 			ndesire0 = p_n_minor[izTri[0]].n_n;
 		}
@@ -703,7 +1292,6 @@ __global__ void kernelCreateShardModelOfDensities_And_SetMajorArea(
 			for (i = 0; i < info.neigh_len; i++)
 				n_.n[i] = n_avg;
 			n_.n_cent = n_avg;
-
 		}
 		else {
 			real n_C_need = (n_avg*AreaMajor - N0) / coeffcent;
@@ -836,7 +1424,7 @@ __global__ void kernelCreateShardModelOfDensities_And_SetMajorArea(
 		// Now done both species.
 
 	}
-	else { // DOMAIN_VERTEX
+	else { // NOT DOMAIN_VERTEX
 		memset(&(p_n_shards[iVertex]), 0, sizeof(ShardModel));
 		memset(&(p_n_n_shards[iVertex]), 0, sizeof(ShardModel));
 	};
@@ -879,7 +1467,6 @@ __global__ void kernelCreateShardModelOfDensities_And_SetMajorArea(
 	};*/
 
 }
-
 __global__ void kernelInferMinorDensitiesFromShardModel(
 	structural * __restrict__ p_info,
 	nvals * __restrict__ p_n_minor,
@@ -906,8 +1493,8 @@ __global__ void kernelInferMinorDensitiesFromShardModel(
 			result.n = 0.0;
 			result.n_n = 0.0;
 			if (info.flag == OUTERMOST) {
-				result.n = 1.0e18;
-				result.n_n = 1.0e12;
+				result.n_n = 1.0e18;
+				result.n = 1.0e12;
 			};
 			p_n_minor[index] = result;
 		}
@@ -925,6 +1512,14 @@ __global__ void kernelInferMinorDensitiesFromShardModel(
 					+ p_n_shards_n[tri_corner_index.i2].n[who_am_I_to_corner.i2]
 					+ p_n_shards_n[tri_corner_index.i3].n[who_am_I_to_corner.i3]);
 			p_n_minor[index] = result;
+
+			if (index == 29730) {
+				printf("29730: %1.14E %1.14E %1.14E \n",
+					p_n_shards[tri_corner_index.i1].n[who_am_I_to_corner.i1],
+					p_n_shards[tri_corner_index.i2].n[who_am_I_to_corner.i2],
+					p_n_shards[tri_corner_index.i3].n[who_am_I_to_corner.i3]
+				);
+			}
 		} else {
 			if (info.flag == CROSSING_INS) {
 				LONG3 tri_corner_index = p_tri_corner_index[index];
@@ -955,6 +1550,8 @@ __global__ void kernelInferMinorDensitiesFromShardModel(
 				result.n /= (f64)numabove;
 				result.n_n /= (f64)numabove;
 				p_n_minor[index] = result;
+			} else {
+				memset(&(p_n_minor[index]), 0, sizeof(nvals));
 			}
 		}
 	}

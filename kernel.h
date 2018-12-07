@@ -35,6 +35,19 @@ __global__ void kernelAverage_n_T_x_to_tris  (
 	);
 
 
+__global__ void kernelCreateShardModelOfDensities_And_SetMajorArea_Debug(
+	structural * __restrict__ p_info_minor,
+	nvals * __restrict__ p_n_minor,
+
+	long * __restrict__ p_izTri_vert,
+	char * __restrict__ p_szPBCtri_vert,
+	ShardModel * __restrict__ p_n_shards,
+	ShardModel * __restrict__ p_n_n_shards,
+	//	long * __restrict__ Tri_n_lists,
+	//	long * __restrict__ Tri_n_n_lists	,
+	f64 * __restrict__ p_AreaMajor,
+	f64 * __restrict__ p_CPU_n_cent);
+
 __global__ void kernelCreateShardModelOfDensities_And_SetMajorArea(
 	structural * __restrict__ p_info_minor,
 	nvals * __restrict__ p_n_minor,

@@ -8,6 +8,7 @@
 #define VERT1 14631
 #define VERT2 14645
 // these should explain something we hope.
+#define CHOSEN 18398
 
 extern HWND hWnd;
 
@@ -1068,11 +1069,24 @@ void TriMesh::InferMinorDensitiesFromShardModel()
 				if (pTri->u8domain_flag == DOMAIN_TRIANGLE) {
 					ptridata->n += THIRD * n_shards[iVertex].n[i];
 					ptridata->n_n += THIRD * n_shards_n[iVertex].n[i];
-				}
-				else {
+					
+				} else {
 					if (pTri->u8domain_flag == CROSSING_INS) {
-						ptridata->n += 0.5*n_shards[iVertex].n[i];
-						ptridata->n_n += 0.5*n_shards_n[iVertex].n[i];
+						int iAbove = 0;
+						f64_vec2 pos0 = pTri->cornerptr[0]->pos;
+						f64_vec2 pos1 = pTri->cornerptr[1]->pos;
+						f64_vec2 pos2 = pTri->cornerptr[2]->pos;
+						
+						if (pos0.x*pos0.x + pos0.y*pos0.y > DEVICE_RADIUS_INSULATOR_OUTER*DEVICE_RADIUS_INSULATOR_OUTER)
+							iAbove++;
+						if (pos1.x*pos1.x + pos1.y*pos1.y > DEVICE_RADIUS_INSULATOR_OUTER*DEVICE_RADIUS_INSULATOR_OUTER)
+							iAbove++;
+						if (pos2.x*pos2.x + pos2.y*pos2.y > DEVICE_RADIUS_INSULATOR_OUTER*DEVICE_RADIUS_INSULATOR_OUTER)
+							iAbove++;
+						
+						ptridata->n += n_shards[iVertex].n[i]/(f64)iAbove;
+						ptridata->n_n += n_shards_n[iVertex].n[i]/(f64)iAbove;
+						
 					}
 				}
 
@@ -1082,9 +1096,13 @@ void TriMesh::InferMinorDensitiesFromShardModel()
 		//pdata->n = n_shards[iVertex].n_cent;
 		//pdata->n_n = n_shards_n[iVertex].n_cent;
 
+		// ^^ in GPU case we did set this.
+
 		++pVertex;
 		++pdata;
 	};	
+
+
 }
 /*void TriMesh::Infer_velocity_from_mass_and_momentum(ShardModel n_shards_n[NUMVERTICES],
 	ShardModel n_shards[NUMVERTICES])
@@ -1521,6 +1539,14 @@ void TriMesh::Average_n_T_to_tris_and_calc_centroids_and_minorpos()
 	f64 n0, n1, n2;
 	plasma_data data0, data1, data2, tridata;
 
+	Vertex * pVertex = X;
+	plasma_data * pdata = pData + BEGINNING_OF_CENTRAL;
+	for (long iMinor = BEGINNING_OF_CENTRAL; iMinor < NMINOR; iMinor++)
+	{
+		pdata->pos = pVertex->pos;
+		++pVertex;
+		++pdata;
+	};
 	Triangle * pTri = T;
 	for (iTri = 0; iTri < NUMTRIANGLES; iTri++)
 	{
@@ -1546,13 +1572,42 @@ void TriMesh::Average_n_T_to_tris_and_calc_centroids_and_minorpos()
 			// Insulator tris:
 			if (pTri->u8domain_flag == CROSSING_INS)
 			{
-				tridata.n = 0.5*(n0 + n1 + n2);
-				tridata.n_n = 0.5 * (data0.n_n + data1.n_n + data2.n_n);
-				tridata.Te = 0.5 * (data0.Te + data1.Te + data2.Te);
-				tridata.Ti = 0.5 * (data0.Ti + data1.Ti + data2.Ti);
-				tridata.Tn = 0.5 * (data0.Tn + data1.Tn + data2.Tn);
+				int iAbove = 0;
+				tridata.n = 0.0; tridata.n_n = 0.0; tridata.Te = 0.0;
+				tridata.Ti = 0.0; tridata.Tn = 0.0;
+
+				if (data0.pos.x*data0.pos.x + data0.pos.y*data0.pos.y >
+					DEVICE_RADIUS_INSULATOR_OUTER*DEVICE_RADIUS_INSULATOR_OUTER)
+				{
+					iAbove++;
+					tridata.n += n0; tridata.n_n += data0.n_n;
+					tridata.Tn += data0.Tn; tridata.Ti += data0.Ti; tridata.Te += data0.Te;
+				}
+				if (data1.pos.x*data1.pos.x + data1.pos.y*data1.pos.y >
+					DEVICE_RADIUS_INSULATOR_OUTER*DEVICE_RADIUS_INSULATOR_OUTER)
+				{
+					iAbove++;
+					tridata.n += n1; tridata.n_n += data1.n_n;
+					tridata.Tn += data1.Tn; tridata.Ti += data1.Ti; tridata.Te += data1.Te;
+				}
+				if (data2.pos.x*data2.pos.x + data2.pos.y*data2.pos.y >
+					DEVICE_RADIUS_INSULATOR_OUTER*DEVICE_RADIUS_INSULATOR_OUTER)
+				{
+					iAbove++;
+					tridata.n += n2; tridata.n_n += data2.n_n;
+					tridata.Tn += data2.Tn; tridata.Ti += data2.Ti; tridata.Te += data2.Te;
+				}
+				f64 divide = 1.0 / (f64)iAbove;
+				tridata.n *= divide;
+				tridata.n_n *= divide;
+				tridata.Te *= divide;
+				tridata.Ti *= divide;
+				tridata.Tn *= divide;
 
 				// WE ASSUME n = T = 0 in ins, do we manage to maintain this?
+
+				// Evidently not. *****************  **************  **************
+
 			} else {
 				tridata.n = 0.0;
 				tridata.n_n = 0.0;
@@ -1563,22 +1618,13 @@ void TriMesh::Average_n_T_to_tris_and_calc_centroids_and_minorpos()
 		};
 		pTri->RecalculateCentroid(InnermostFrillCentroidRadius,OutermostFrillCentroidRadius);
 		tridata.pos = pTri->cent;
-
-
+		
 		memcpy(pData + iTri, &tridata, sizeof(plasma_data));
 
 		if (tridata.Te < 0.0) {
 			iTri = iTri;
 		}
 		++pTri;
-	};
-	Vertex * pVertex = X;
-	plasma_data * pdata = pData + BEGINNING_OF_CENTRAL;
-	for (long iMinor = iTri; iMinor < NMINOR; iMinor++)
-	{
-		pdata->pos = pVertex->pos;
-		++pVertex;
-		++pdata;
 	};
 }
 
@@ -1970,12 +2016,24 @@ void TriMesh::CreateShardModelOfDensities_And_SetMajorArea()
 			{
 				ndesire_n[iNeigh] = pData[izTri[iNeigh]].n_n; // insert apparent triangle average
 				ndesire[iNeigh] = pData[izTri[iNeigh]].n;
+				if (iVertex == CHOSEN) printf("CPU CHOSEN %d ndesire %1.14E \n", iNeigh, ndesire[iNeigh]);
 			};
 			N_n = pData[BEGINNING_OF_CENTRAL + iVertex].n_n*pVertex->AreaCell;
 			N = pData[BEGINNING_OF_CENTRAL + iVertex].n*pVertex->AreaCell;
 
+			if (iVertex == CHOSEN) {
+				iVertex = iVertex;
+			}
 			n_shards_n[iVertex].n_cent = cp.minmod(n_shards_n[iVertex].n, ndesire_n, N_n, pVertex->pos);
 			n_shards[iVertex].n_cent = cp.minmod(n_shards[iVertex].n, ndesire, N, pVertex->pos);
+
+			if (iVertex == CHOSEN) {
+				printf("Conclusions:\n");
+
+				for (iNeigh = 0; iNeigh < tri_len; iNeigh++)
+					printf("CPU : %1.14E\n", n_shards[iVertex].n[iNeigh]);
+				printf("CPU n_cent = %1.14E\n", n_shards[iVertex].n_cent);
+			};
 
 			for (i = 0; i < cp.numCoords; i++)
 			{

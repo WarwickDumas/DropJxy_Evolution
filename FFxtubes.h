@@ -43,6 +43,7 @@ bool const bScrewPinch = false;
 // 12*32768*5 = 2MB .. just to keep things in perspective.
 // We should keep the number down just to reduce fetch size.
 // Let's keep it real. nvT is best for our fetches and therefore is best.
+#define SWITCH_TO_CENTRE_OF_INTERSECTION_WITH_INSULATOR_FOR_TRI_CENTROID_CPU 0
 
 long const numTriTiles = 288; // note that there are also centrals
 long const numTilesMajor = 288;
