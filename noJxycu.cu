@@ -1592,6 +1592,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			if (bInvoked_cuSyst == false) {
 				bInvoked_cuSyst = true;
 				cuSyst_host.InvokeHost();
+
+				pX->EnsureAnticlockwiseTriangleCornerSequences_SetupTriMinorNeighboursLists();
+				pX->Average_n_T_to_tris_and_calc_centroids_and_minorpos();
 				cuSyst_host.PopulateFromTriMesh(pX);
 				cuSyst_host2.InvokeHost();
 				cuSyst_host2.PopulateFromTriMesh(pX);

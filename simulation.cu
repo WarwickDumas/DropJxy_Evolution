@@ -8,7 +8,7 @@
 #define VERT1 14631
 #define VERT2 14645
 // these should explain something we hope.
-#define CHOSEN 18398
+#define CHOSEN 11582
 
 extern HWND hWnd;
 
@@ -46,23 +46,23 @@ f64 inline GetEzShape__(f64 r) {
 //	f64 nT_e[MAXNEIGH];
 //}; // 48 doubles
 
+
 three_vec3 AdditionalMomRates[NMINOR];
 f64_vec2 GradAz[NMINOR];
-f64_vec2 GradTeArray[NMINOR]; 
+f64_vec2 GradTeArray[NMINOR];
 f64 LapAzArray[NMINOR];
 f64_vec2 p_v[NMINOR];
 NTrates NTadditionrates[NUMVERTICES];
 f64 p_div_v_neut[NUMVERTICES];
-f64 p_div_v[NUMVERTICES]; 
+f64 p_div_v[NUMVERTICES];
 f64 Integrated_Div_v_overall[NUMVERTICES];
 f64 ROCAzdotduetoAdvection[NMINOR];
 f64 ROCAzduetoAdvection[NMINOR];
 f64 Az_array[NMINOR], Az_array_next[NMINOR];
 
 ShardModel n_shards[NUMVERTICES], n_shards_n[NUMVERTICES];
-f64 Tri_n_n_lists[NMINOR][6];  
+f64 Tri_n_n_lists[NMINOR][6];
 f64 Tri_n_lists[NMINOR][6];
-
 
 // footprint of static? (MAXNEIGH*2+5 = 33 say)*NVERT + (15*NMINOR) = say 2500000 doubles = 20 000 000 bytes
 
@@ -1030,6 +1030,149 @@ void TriMesh::EnsureAnticlockwiseTriangleCornerSequences()
 
 }
 
+
+void TriMesh::CalcUpwindDensity_on_tris(f64 * p_n_upwind, f64 * p_nn_upwind, f64_vec2 * p_v_overall_tris)
+{
+	long iTri, iVertex;
+	Triangle * pTri = T;
+	plasma_data data;
+	long izTri[MAXNEIGH];
+	Vertex * pVertex;
+	short tri_len;
+	f64 n0, n1, n2, nn0, nn1, nn2, dot0, dot1, dot2;
+	f64_vec2 edge_normal0, edge_normal1, edge_normal2;
+	nvals n_upwind;
+
+	for (iTri = 0; iTri < NUMTRIANGLES; iTri++)
+	{
+		if ((pTri->u8domain_flag == DOMAIN_TRIANGLE) || (pTri->u8domain_flag == CROSSING_INS))
+		{
+			memcpy(&data, &(pData[iTri]), sizeof(plasma_data));
+
+			iVertex = pTri->cornerptr[0] - X;
+			pVertex = pTri->cornerptr[0];
+			tri_len = pVertex->GetTriIndexArray(izTri);
+			int i = 0;
+			while (izTri[i] != iTri) i++;
+			n0 = n_shards[iVertex].n[i];
+			nn0 = n_shards_n[iVertex].n[i];
+
+			iVertex = pTri->cornerptr[1] - X;
+			pVertex = pTri->cornerptr[1];
+			tri_len = pVertex->GetTriIndexArray(izTri);
+			i = 0;
+			while (izTri[i] != iTri) i++;
+			n1 = n_shards[iVertex].n[i];
+			nn1 = n_shards_n[iVertex].n[i];
+
+			iVertex = pTri->cornerptr[2] - X;
+			pVertex = pTri->cornerptr[2];
+			tri_len = pVertex->GetTriIndexArray(izTri);
+			i = 0;
+			while (izTri[i] != iTri) i++;
+			n2 = n_shards[iVertex].n[i];
+			nn2 = n_shards_n[iVertex].n[i];
+
+			f64_vec2 relv = data.vxy - p_v_overall_tris[iTri];
+
+			// Get contiguous neighbour cent:
+			f64_vec2 pos0 = pData[pTri->neighbours[0] - T].pos;
+			if (pTri->periodic == 0) {
+				if ((pTri->neighbours[0]->periodic != 0) && (data.pos.x > 0.0))
+					pos0 = Clockwise*pos0;
+			} else {
+				if ((pTri->neighbours[0]->periodic == 0) && (pos0.x > 0.0))
+					pos0 = Anticlockwise*pos0;
+			}
+
+			f64_vec2 pos1 = pData[pTri->neighbours[1] - T].pos;
+			if (pTri->periodic == 0) {
+				if ((pTri->neighbours[1]->periodic != 0) && (data.pos.x > 0.0))
+					pos1 = Clockwise*pos1;
+			} else {
+				if ((pTri->neighbours[1]->periodic == 0) && (pos1.x > 0.0))
+					pos1 = Anticlockwise*pos1;
+			}
+
+			f64_vec2 pos2 = pData[pTri->neighbours[2] - T].pos;
+			if (pTri->periodic == 0) {
+				if ((pTri->neighbours[2]->periodic != 0) && (data.pos.x > 0.0))
+					pos2 = Clockwise*pos2;
+			} else {
+				if ((pTri->neighbours[2]->periodic == 0) && (pos2.x > 0.0))
+					pos2 = Anticlockwise*pos2;
+			}
+
+			edge_normal0.x = pos0.y - data.pos.y;
+			edge_normal0.y = data.pos.x - pos0.x;
+			edge_normal1.x = pos1.y - data.pos.y;
+			edge_normal1.y = data.pos.x - pos1.x;
+			edge_normal2.x = pos2.y - data.pos.y;
+			edge_normal2.y = data.pos.x - pos2.x;
+
+			dot0 = relv.dot(edge_normal0);
+			dot1 = relv.dot(edge_normal1);
+			dot2 = relv.dot(edge_normal2);
+
+	//		if (iTri == CHOSEN) printf("%d CPU: n0 %1.14E n1 %1.14E n2 %1.14E \n"
+	//			"dot0 %1.14E dot1 %1.14E dot2 %1.14E \n"
+	//			"relv %1.14E %1.14E \n"
+	//			"edge_normal0 %1.14E %1.14E \n",
+	//			CHOSEN, n0, n1, n2, dot0, dot1, dot2, relv.x, relv.y, edge_normal0.x, edge_normal0.y);
+
+			f64 numerator = 0.0;
+			if (dot0 + dot1 + dot2 == 0.0) {
+				n_upwind.n = THIRD*(n0 + n1 + n2);
+				n_upwind.n_n = THIRD*(nn0 + nn1 + nn2);
+	//			if (iTri == CHOSEN) printf("Got to here. CPU. n = %1.14E \n", n_upwind.n);
+			}
+			else {
+				n_upwind.n = 0.0;
+				n_upwind.n_n = 0.0;
+				if (dot0 > 0.0) {
+					n_upwind.n += dot0*n2;
+					n_upwind.n_n += dot0*nn2;
+				} else {
+					dot0 = -dot0;
+					n_upwind.n += dot0*n1;
+					n_upwind.n_n += dot0*nn1;
+				};
+				if (dot1 > 0.0) {
+					n_upwind.n += dot1*n0;
+					n_upwind.n_n += dot1*nn0;
+				} else {
+					dot1 = -dot1;
+					n_upwind.n += dot1*n2;
+					n_upwind.n_n += dot1*nn2;
+				};
+				if (dot2 > 0.0) {
+					n_upwind.n += dot2*n1;
+					n_upwind.n_n += dot2*nn1;
+				} else {
+					dot2 = -dot2;
+					n_upwind.n += dot2*n0;
+					n_upwind.n_n += dot2*nn0;
+				};
+				n_upwind.n /= (dot0 + dot1 + dot2);
+				n_upwind.n_n /= (dot0 + dot1 + dot2);
+		//		if (iTri == CHOSEN) printf("Here. CPU. denom = %1.14E n = %1.14E \n",
+		//			dot0 + dot1 + dot2, n_upwind.n);
+
+			}
+			p_n_upwind[iTri] = n_upwind.n;
+			p_nn_upwind[iTri] = n_upwind.n_n;
+
+
+		} else {
+			p_n_upwind[iTri] = 0.0;
+			p_nn_upwind[iTri] = 0.0;
+		};
+		++pTri;
+	};
+
+}
+
+
 void TriMesh::InferMinorDensitiesFromShardModel()
 {
 	// Inputs:
@@ -1919,6 +2062,12 @@ void TriMesh::AccumulateDiffusiveHeatRateAndCalcIonisation(f64 h_use, NTrates NT
 			ourrates.N += ionise_rate;
 			ourrates.Nn += -ionise_rate;
 
+			if (iVertex == CHOSEN) {
+				printf("CPU iVertex %d : ourrates.N %1.14E ionise_rate %1.14E \n"
+					"hnS %1.14E AreaMajor %1.14E TeV %1.14E \n",
+					iVertex, ourrates.N, ionise_rate, hnS, AreaMajor, TeV);
+			}
+
 			// Let nR be the recombining amount, R is the proportion.
 
 			f64 Ttothe5point5 = sqrtT * TeV * TeV*TeV * TeV*TeV;
@@ -1928,6 +2077,12 @@ void TriMesh::AccumulateDiffusiveHeatRateAndCalcIonisation(f64 h_use, NTrates NT
 			f64 recomb_rate = AreaMajor * ourdata.n * hR / h_use; // could reasonably again take hR/(1+hR) for n_k+1
 			ourrates.N -= recomb_rate;
 			ourrates.Nn += recomb_rate;
+
+			if (iVertex == CHOSEN) {
+				printf("CPU iVertex %d : ourrates.N %1.14E recomb_rate %1.14E \n"
+					"Ttothe5point5 %1.14E hR %1.14E \n", iVertex,
+					ourrates.N, recomb_rate, Ttothe5point5, hR);
+			};
 
 			ourrates.NeTe += -TWOTHIRDS * 13.6*kB_*ourrates.N + 0.5*ourdata.Tn*ionise_rate;
 			ourrates.NiTi += 0.5*ourdata.Tn*ionise_rate;

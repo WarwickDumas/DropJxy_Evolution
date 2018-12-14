@@ -303,9 +303,6 @@ void cuSyst::PopulateFromTriMesh(TriMesh * pX)
 {
 	// USES pTri->cent
 
-	pX->EnsureAnticlockwiseTriangleCornerSequences_SetupTriMinorNeighboursLists();
-	pX->Average_n_T_to_tris_and_calc_centroids_and_minorpos();
-	
 	// Variables on host are called TriMinorNeighLists and TriMinorPBCLists
 	memcpy(p_izNeigh_TriMinor, pX->TriMinorNeighLists, Ntris * 6 * sizeof(long)); // pointless that we duplicate it but nvm
 	memcpy(p_szPBC_triminor, pX->TriMinorPBCLists, Ntris * 6 * sizeof(char));

@@ -7,7 +7,7 @@
 
 #define FOUR_PI 12.5663706143592
 
-#define CHOSEN 18398
+#define CHOSEN 11582
 
 __global__ void kernelCalculateOverallVelocitiesVertices(
 	structural * __restrict__ p_info_major,
@@ -513,6 +513,7 @@ __global__ void kernelCreateShardModelOfDensities_And_SetMajorArea(
 		// repeatedly. We have to reload n lots of times.
 		// This is not the typical case.
 
+		p_AreaMajor[iVertex] = AreaMajor;
 		
 		if ((n_avg > high_n) || (n_avg < low_n)) {
 #pragma unroll MAXNEIGH
@@ -659,14 +660,14 @@ __global__ void kernelCreateShardModelOfDensities_And_SetMajorArea(
 				};
 				n_.n_cent = n_C;
 
-				if (iVertex == CHOSEN) {
+			/*	if (iVertex == CHOSEN) {
 					for (i = 0; i < info.neigh_len; i++)
 					{
 						printf("GPU: n %1.14E\n", n_.n[i]);
 					}
 					printf("GPU : n_cent %1.14E \n", n_.n_cent);
 				};
-				
+			*/	
 			};
 		};
 
@@ -866,6 +867,8 @@ __global__ void kernelCreateShardModelOfDensities_And_SetMajorArea(
 	} else { // NOT DOMAIN_VERTEX
 		memset(&(p_n_shards[iVertex]), 0, sizeof(ShardModel));
 		memset(&(p_n_n_shards[iVertex]), 0, sizeof(ShardModel));
+
+		p_AreaMajor[iVertex] = 0.0; // NOTE BENE
 	};
 
 	// NexT:  tri_n_lists.
@@ -1045,6 +1048,7 @@ __global__ void kernelCreateShardModelOfDensities_And_SetMajorArea_Debug(
 		// . If n_avg > n_max_corners then set all to n_avg.
 		// . If n_min < n_needed < n_max then set n_cent = n_needed
 
+		p_AreaMajor[iVertex] = AreaMajor;
 		// Otherwise, we now have coeff array populated and will go round
 		// repeatedly. We have to reload n lots of times.
 		// This is not the typical case.
@@ -1427,7 +1431,14 @@ __global__ void kernelCreateShardModelOfDensities_And_SetMajorArea_Debug(
 	else { // NOT DOMAIN_VERTEX
 		memset(&(p_n_shards[iVertex]), 0, sizeof(ShardModel));
 		memset(&(p_n_n_shards[iVertex]), 0, sizeof(ShardModel));
+
+		p_AreaMajor[iVertex] = 0.0; // NOTE BENE
+
 	};
+
+
+	
+
 
 	// NexT:  tri_n_lists.
 
@@ -1558,7 +1569,7 @@ __global__ void kernelInferMinorDensitiesFromShardModel(
 }
 
 __global__ void kernelCalculateNu_eHeartNu_iHeart_nu_nn_visc(
-	structural * __restrict__ p_info,
+	structural * __restrict__ p_info_major,
 	nvals * __restrict__ p_n,
 	T3 * __restrict__ p_T,
 	species3 * __restrict__ p_nu
@@ -1571,7 +1582,7 @@ __global__ void kernelCalculateNu_eHeartNu_iHeart_nu_nn_visc(
 	f64 nu_in_visc, nu_ni_visc, nu_ii;
 	nvals our_n;
 	long const index = threadIdx.x + blockIdx.x * blockDim.x; // INDEX OF VERTEX
-	structural info = p_info[index];
+	structural info = p_info_major[index];
 	if (info.flag == DOMAIN_VERTEX) {
 
 		our_n = p_n[index]; // never used again once we have kappa
@@ -1613,7 +1624,7 @@ __global__ void kernelCalculateNu_eHeartNu_iHeart_nu_nn_visc(
 
 __global__ void kernelAccumulateDiffusiveHeatRateAndCalcIonisation(
 	f64 const h_use,
-	structural * __restrict__ p_info_sharing,
+	structural * __restrict__ p_info_major,
 	long * __restrict__ pIndexNeigh,
 	char * __restrict__ pPBCNeigh,
 
@@ -1622,7 +1633,8 @@ __global__ void kernelAccumulateDiffusiveHeatRateAndCalcIonisation(
 	f64_vec3 * __restrict__ p_B_major,
 	species3 * __restrict__ p_nu_major,
 
-	NTrates * __restrict__ NTadditionrates)
+	NTrates * __restrict__ NTadditionrates,
+	f64 * __restrict__ p_AreaMajor)
 {
 	// Inputs:
 	// We work from major values of T,n,B
@@ -1631,21 +1643,22 @@ __global__ void kernelAccumulateDiffusiveHeatRateAndCalcIonisation(
 	// Aim 16 doubles in shared.
 	// 12 long indices counts for 6.
 
-	__shared__ f64_vec2 shared_pos[threadsPerTileMajor]; // 2
-	__shared__ T3 shared_T[threadsPerTileMajor];      // +3
-	__shared__ species3 shared_n_over_nu[threadsPerTileMajor];   // +3
+	__shared__ f64_vec2 shared_pos[threadsPerTileMajorClever]; // 2
+	__shared__ T3 shared_T[threadsPerTileMajorClever];      // +3
+	__shared__ species3 shared_n_over_nu[threadsPerTileMajorClever];   // +3
 																 // saves a lot of work to compute the relevant nu once for each vertex not 6 or 12 times.
-	__shared__ f64_vec2 shared_B[threadsPerTileMajor]; // +2
+	__shared__ f64_vec2 shared_B[threadsPerTileMajorClever]; // +2
 													   // B is smooth. Unfortunately we have not fitted in Bz here.
 													   // In order to do that perhaps rewrite so that variables are overwritten in shared.
 													   // We do not need all T and nu in shared at the same time.
 													   // This way is easier for NOW.
-	__shared__ f64 shared_nu_iHeart[threadsPerTileMajor];
-	__shared__ f64 shared_nu_eHeart[threadsPerTileMajor];
+	__shared__ f64 shared_nu_iHeart[threadsPerTileMajorClever];
+	__shared__ f64 shared_nu_eHeart[threadsPerTileMajorClever];
 
 	// Balance of shared vs L1: 16 doubles vs 5 doubles per thread at 384 threads/SM.
-	__shared__ long Indexneigh[MAXNEIGH_d*threadsPerTileMajor]; // assume 48 bytes
-	char PBCneigh[MAXNEIGH_d*threadsPerTileMajor]; // 12 bytes each from L1. Have 42 per thread at 384 threads.
+	__shared__ long Indexneigh[MAXNEIGH_d*threadsPerTileMajorClever]; // assume 48 bytes
+
+	char PBCneigh[MAXNEIGH_d*threadsPerTileMajorClever]; // 12 bytes each from L1. Have 42 per thread at 384 threads.
 												   // Note that limiting to 16 doubles actually allows 384 threads in 48K. 128K/(384*8) = 42 f64 registers/thread.
 												   // We managed this way: 2+3+3+2+2+6+1.5 [well, 12 bytes really] = 19.5
 												   // 48K/(18*8) = 341 threads. Aim 320 = 2x180? Sadly not room for 384.
@@ -1659,7 +1672,7 @@ __global__ void kernelAccumulateDiffusiveHeatRateAndCalcIonisation(
 
 	long const StartMajor = blockIdx.x*blockDim.x;
 	long const EndMajor = StartMajor + blockDim.x;
-	long const index = threadIdx.x + blockIdx.x * blockDim.x; // INDEX OF VERTEX
+	long const iVertex = threadIdx.x + blockIdx.x * blockDim.x; // INDEX OF VERTEX
 
 	T3 our_T; // know own. Can remove & use shared value if register pressure too great?
 
@@ -1669,7 +1682,7 @@ __global__ void kernelAccumulateDiffusiveHeatRateAndCalcIonisation(
 			  // For now without any overwriting, we can do all in 1 pass through neighbours
 			  // 4. Ionisation too!
 
-	structural info = p_info_sharing[index];
+	structural info = p_info_major[iVertex];
 	shared_pos[threadIdx.x] = info.pos;
 	species3 our_nu;
 	nvals our_n;
@@ -1677,15 +1690,15 @@ __global__ void kernelAccumulateDiffusiveHeatRateAndCalcIonisation(
 
 	if (info.flag == DOMAIN_VERTEX) {
 
-		our_n = p_n_major[index]; // never used again once we have kappa
-		our_nu = p_nu_major[index];
-		our_T = p_T_major[index]; // CAREFUL: Pass vertex array if we use vertex index
+		our_n = p_n_major[iVertex]; // never used again once we have kappa
+		our_nu = p_nu_major[iVertex];
+		our_T = p_T_major[iVertex]; // CAREFUL: Pass vertex array if we use vertex iVertex
 		shared_n_over_nu[threadIdx.x].e = our_n.n / our_nu.e;
 		shared_n_over_nu[threadIdx.x].i = our_n.n / our_nu.i;
 		shared_n_over_nu[threadIdx.x].n = our_n.n_n / our_nu.n;
 		shared_nu_iHeart[threadIdx.x] = our_nu.i;
 		shared_nu_eHeart[threadIdx.x] = our_nu.e;
-		shared_B[threadIdx.x] = p_B_major[index].xypart();
+		shared_B[threadIdx.x] = p_B_major[iVertex].xypart();
 		shared_T[threadIdx.x] = our_T;
 
 	}
@@ -1725,7 +1738,7 @@ __global__ void kernelAccumulateDiffusiveHeatRateAndCalcIonisation(
 	f64 nu_eHeart, nu_iHeart;
 
 	// Need this, we are adding on to existing d/dt N,NT :
-	memcpy(&ourrates, NTadditionrates + index, sizeof(NTrates));
+	memcpy(&ourrates, NTadditionrates + iVertex, sizeof(NTrates));
 
 	if ((info.flag == INNERMOST) || (info.flag == OUTERMOST))
 	{
@@ -1734,13 +1747,14 @@ __global__ void kernelAccumulateDiffusiveHeatRateAndCalcIonisation(
 	else {
 		if (info.flag == DOMAIN_VERTEX) {
 			// The idea of not sending blocks full of non-domain vertices is another idea. Fiddly with indices.
-
+			
 			memcpy(Indexneigh + MAXNEIGH_d*threadIdx.x,
-				pIndexNeigh + MAXNEIGH_d*index,
+				pIndexNeigh + MAXNEIGH_d*iVertex,
 				MAXNEIGH_d * sizeof(long));
 			memcpy(PBCneigh,
-				pPBCNeigh + MAXNEIGH_d*index,
+				pPBCNeigh + MAXNEIGH_d*iVertex,
 				MAXNEIGH_d * sizeof(char));
+			
 
 			indexneigh = Indexneigh[MAXNEIGH_d*threadIdx.x + info.neigh_len - 1];
 			if ((indexneigh >= StartMajor) && (indexneigh < EndMajor))
@@ -1750,7 +1764,7 @@ __global__ void kernelAccumulateDiffusiveHeatRateAndCalcIonisation(
 				//	B_clock = shared_B[indexneigh - StartMajor];
 			}
 			else {
-				structural info2 = p_info_sharing[indexneigh];
+				structural info2 = p_info_major[indexneigh];
 				pos_clock = info2.pos;
 				T_clock = p_T_major[indexneigh];
 				//	B_clock = p_B[indexneigh];
@@ -1774,7 +1788,7 @@ __global__ void kernelAccumulateDiffusiveHeatRateAndCalcIonisation(
 				T_out = shared_T[indexneigh - StartMajor];
 			}
 			else {
-				structural info2 = p_info_sharing[indexneigh];
+				structural info2 = p_info_major[indexneigh];
 				pos_out = info2.pos;
 				T_out = p_T_major[indexneigh];
 			};
@@ -1799,8 +1813,8 @@ __global__ void kernelAccumulateDiffusiveHeatRateAndCalcIonisation(
 					//		B_anti = shared_B[indexneigh - StartMajor];
 				}
 				else {
-					structural info2 = p_info_sharing[indexneigh];
-					pos_out = info2.pos;
+					structural info2 = p_info_major[indexneigh];
+					pos_anti = info2.pos;
 					T_anti = p_T_major[indexneigh];
 					//		B_anti = p_B[indexneigh];
 				};
@@ -1821,9 +1835,22 @@ __global__ void kernelAccumulateDiffusiveHeatRateAndCalcIonisation(
 				edge_normal.x = THIRD*(pos_anti.y - pos_clock.y);
 				edge_normal.y = THIRD*(pos_clock.x - pos_anti.x);
 
-				AreaMajor += 0.5*edge_normal.x*THIRD*(pos_anti.x + pos_clock.x
-					+ info.pos.x + info.pos.x + pos_out.x + pos_out.x);
+			//	AreaMajor += 0.5*edge_normal.x*THIRD*(pos_anti.x + pos_clock.x
+			//		+ info.pos.x + info.pos.x + pos_out.x + pos_out.x);
+
+				// Why this fails: insulator triangle has centre projected to ins.
+
+				// What are we doing about looking into insulator for dT/dt?
+
 				//tridata1.pos.x + tridata2.pos.x);
+//				if (iVertex == CHOSEN) {
+	//				printf("%d AreaMajor %1.14E contrib %1.8E \n"
+		//				"pos_anti %1.9E %1.9E pos_out %1.9E %1.9E pos_clock %1.9E %1.9E\n", iVertex,
+			//			AreaMajor,
+//						0.5*edge_normal.x*THIRD*(pos_anti.x + pos_clock.x
+	//						+ info.pos.x + info.pos.x + pos_out.x + pos_out.x),
+		//				pos_anti.x, pos_anti.y, pos_out.x, pos_out.y, pos_clock.x, pos_clock.y);
+			//	}
 
 				Area_quadrilateral = 0.5*(
 					(info.pos.x + pos_anti.x)*(info.pos.y - pos_anti.y)
@@ -1866,6 +1893,12 @@ __global__ void kernelAccumulateDiffusiveHeatRateAndCalcIonisation(
 							+ shared_n_over_nu[threadIdx.x].i)
 						*(0.5*(T_out.Ti + our_T.Ti)) * over_m_i;
 
+					if (iVertex == CHOSEN){
+						printf("%d kappa vals shared n/nu %1.10E %1.10E Ti %1.10E", iVertex,
+							shared_n_over_nu[indexneigh - StartMajor].i,
+								shared_n_over_nu[threadIdx.x].i,
+							(T_out.Ti + our_T.Ti));
+					}
 					kappa_neut = NEUTRAL_KAPPA_FACTOR * 0.5*(shared_n_over_nu[indexneigh - StartMajor].n
 						+ shared_n_over_nu[threadIdx.x].n)
 						*(0.5*(T_out.Tn + our_T.Tn)) * over_m_n;
@@ -1890,6 +1923,10 @@ __global__ void kernelAccumulateDiffusiveHeatRateAndCalcIonisation(
 						*0.5*(T_out.Ti + our_T.Ti)*over_m_i;
 					kappa_neut = NEUTRAL_KAPPA_FACTOR * 0.5*(n_out.n_n / nu_out.n + shared_n_over_nu[threadIdx.x].n)
 						*0.5*(T_out.Tn + our_T.Tn)*over_m_n;
+
+					if (iVertex == CHOSEN) printf("iVertex %d kappa_par vals n %1.10E nu_out %1.10E shared %1.10E T %1.10E\n",
+						iVertex, n_out.n, nu_out.i, shared_n_over_nu[threadIdx.x].i,
+						0.5*(T_out.Ti + our_T.Ti));
 
 					nu_eHeart = 0.5*(our_nu.e + nu_out.e);
 					nu_iHeart = 0.5*(our_nu.i + nu_out.i);
@@ -1947,6 +1984,25 @@ __global__ void kernelAccumulateDiffusiveHeatRateAndCalcIonisation(
 						))
 					/ (nu_iHeart * nu_iHeart + omega.dot(omega));
 
+				if (iVertex == CHOSEN) {
+					printf("NiTi %d : %1.8E kappa_par %1.8E edge_nor %1.8E %1.8E\n"
+						"omega %1.8E %1.8E %1.8E nu_iHeart %1.8E grad_T %1.8E %1.8E\n",
+						iVertex,
+						TWOTHIRDS * kappa_parallel_i *(
+							edge_normal.x*(
+							(nu_iHeart*nu_iHeart + omega.x*omega.x)*grad_T.x +
+								(omega.x*omega.y + nu_iHeart * omega.z)*grad_T.y
+								)
+							+ edge_normal.y*(
+							(omega.x*omega.y - nu_iHeart * omega.z)*grad_T.x +
+								(omega.y*omega.y + nu_iHeart * nu_iHeart)*grad_T.y
+								))
+						/ (nu_iHeart * nu_iHeart + omega.dot(omega)),
+						kappa_parallel_i, edge_normal.x, edge_normal.y,
+						omega.x, omega.y, omega.z, nu_iHeart, grad_T.x, grad_T.y
+						);
+				}
+
 				// Neutral:
 
 				grad_T.x = 0.5*(
@@ -1970,6 +2026,8 @@ __global__ void kernelAccumulateDiffusiveHeatRateAndCalcIonisation(
 				T_clock = T_out;
 				T_out = T_anti;
 			};
+			
+			AreaMajor = p_AreaMajor[iVertex];
 
 			// now add IONISATION:
 
@@ -1986,6 +2044,11 @@ __global__ void kernelAccumulateDiffusiveHeatRateAndCalcIonisation(
 			ourrates.N += ionise_rate;
 			ourrates.Nn += -ionise_rate;
 
+			if (iVertex == CHOSEN) {
+				printf("GPU iVertex %d : ourrates.N %1.14E ionise_rate %1.14E \n"
+					"hnS %1.14E AreaMajor %1.14E TeV %1.14E \n",
+					iVertex, ourrates.N, ionise_rate, hnS, AreaMajor, TeV);
+			}
 			// Let nR be the recombining amount, R is the proportion.
 
 			f64 Ttothe5point5 = sqrtT * TeV * TeV*TeV * TeV*TeV;
@@ -2000,7 +2063,12 @@ __global__ void kernelAccumulateDiffusiveHeatRateAndCalcIonisation(
 			ourrates.NiTi += 0.5*shared_T[threadIdx.x].Tn*ionise_rate;
 			ourrates.NnTn += (shared_T[threadIdx.x].Te + shared_T[threadIdx.x].Ti)*recomb_rate;
 
-			memcpy(NTadditionrates + index, &ourrates, sizeof(NTrates));
+			if (iVertex == CHOSEN) {
+				printf("GPU iVertex %d NiTi : ionisation %1.14E total %1.13E \n\n",
+					iVertex, 0.5*shared_T[threadIdx.x].Tn*ionise_rate, ourrates.NiTi);
+			};
+
+			memcpy(NTadditionrates + iVertex, &ourrates, sizeof(NTrates));
 
 		}
 		else {
@@ -2316,6 +2384,12 @@ __global__ void kernelCalculateUpwindDensity_tris(
 		v_overall = p_overall_v_minor[iTri];
 		f64_vec2 relv = p_vie_minor[iTri].vxy - v_overall;
 
+
+	//	if (iTri == CHOSEN) printf("%d GPU: n0 %1.14E n1 %1.14E n2 %1.14E \n"
+	//		"relv GPU %1.14E %1.14E \n",
+	//		CHOSEN, n0, n1, n2, relv.x, relv.y);
+
+
 		trineighindex = p_trineighindex[iTri];
 		f64_vec2 nearby_pos;
 		if ((trineighindex.i1 >= StartMinor) && (trineighindex.i1 < EndMinor)) {
@@ -2342,6 +2416,12 @@ __global__ void kernelCalculateUpwindDensity_tris(
 		f64 numerator = 0.0;
 		f64 dot1, dot2;
 		f64 dot0 = relv.dot(edge_normal0);
+		
+
+//		if (iTri == CHOSEN) printf("GPU: edge_normal0 %1.14E %1.14E dot0 %1.14E \n",
+	//									edge_normal0.x,edge_normal0.y,dot0);
+
+		
 		if (dot0 > 0.0) // v faces anticlockwise
 		{
 			numerator += dot0*n2;
@@ -2367,6 +2447,11 @@ __global__ void kernelCalculateUpwindDensity_tris(
 		edge_normal1.y = info.pos.x - nearby_pos.x;
 
 		dot1 = relv.dot(edge_normal1);
+		
+		
+		//if (iTri == CHOSEN) printf("GPU: edge_normal1 %1.14E %1.14E dot1 %1.14E \n",
+		//	edge_normal1.x, edge_normal1.y, dot1);
+
 		if (dot1 > 0.0)
 		{
 			numerator += dot1*n0;
@@ -2392,19 +2477,27 @@ __global__ void kernelCalculateUpwindDensity_tris(
 		edge_normal2.y = info.pos.x - nearby_pos.x;
 
 		dot2 = relv.dot(edge_normal2);
+
+
+		//if (iTri == CHOSEN) printf("GPU: edge_normal2 %1.14E %1.14E dot2 %1.14E \n",
+		//	edge_normal2.x, edge_normal2.y, dot2);
+
+
 		if (dot2 > 0.0)
 		{
 			numerator += dot2*n1;
-		}
-		else {
+		} else {
 			dot2 = -dot2;
 			numerator += dot2*n0;
 		}
 
 		if (dot0 + dot1 + dot2 == 0.0) {
 			result.n = THIRD*(n0 + n1 + n2);
+		//	if (iTri == CHOSEN) printf("Got to here. GPU. n = %1.14E \n", result.n);
 		} else {
 			result.n = numerator / (dot0 + dot1 + dot2);
+		//	if (iTri == CHOSEN) printf("Here. GPU. denom = %1.14E n = %1.14E \n",
+		//		dot0 + dot1 + dot2, result.n);
 		};
 		// Argument against fabs in favour of squared weights?
 
@@ -2418,7 +2511,8 @@ __global__ void kernelCalculateUpwindDensity_tris(
 
 	if (threadIdx.x < threadsPerTileMajor)
 	{
-		memcpy(&(shared_shards[threadIdx.x].n), &(p_n_shard_n_major[threadsPerTileMajor*blockIdx.x + threadIdx.x].n),
+		memcpy(&(shared_shards[threadIdx.x].n), 
+			&(p_n_shard_n_major[threadsPerTileMajor*blockIdx.x + threadIdx.x].n),
 			sizeof(f64)*MAXNEIGH);
 		// efficiency vs memcpy? We only need 12 here, not the centre.
 	}
@@ -2439,16 +2533,14 @@ __global__ void kernelCalculateUpwindDensity_tris(
 		if ((tricornerindex.i2 >= StartMajor) && (tricornerindex.i2 < EndMajor))
 		{
 			n1 = shared_shards[tricornerindex.i2 - StartMajor].n[who_am_I.i2];
-		}
-		else {
+		} else {
 			n1 = p_n_shard_n_major[tricornerindex.i2].n[who_am_I.i2];
 			// at least it's 1 bus journey this way instead of 2 to fetch n_shards.
 		}
 		if ((tricornerindex.i3 >= StartMajor) && (tricornerindex.i3 < EndMajor))
 		{
 			n2 = shared_shards[tricornerindex.i3 - StartMajor].n[who_am_I.i3];
-		}
-		else {
+		} else {
 			n2 = p_n_shard_n_major[tricornerindex.i3].n[who_am_I.i3];
 			// at least it's 1 bus journey this way instead of 2 to fetch n_shards.
 		}
@@ -2461,8 +2553,7 @@ __global__ void kernelCalculateUpwindDensity_tris(
 		if (dot0 > 0.0) // v faces anticlockwise
 		{
 			numerator += dot0*n2;
-		}
-		else {
+		} else {
 			dot0 = -dot0;
 			numerator += dot0*n1;
 		}
@@ -2471,8 +2562,7 @@ __global__ void kernelCalculateUpwindDensity_tris(
 		if (dot1 > 0.0)
 		{
 			numerator += dot1*n0;
-		}
-		else {
+		} else {
 			dot1 = -dot1;
 			numerator += dot1*n2;
 		}
