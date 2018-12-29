@@ -87,17 +87,18 @@ __global__ void kernelAccumulateDiffusiveHeatRateAndCalcIonisation(
 	f64_vec3 * __restrict__ p_B_major,
 	species3 * __restrict__ p_nu_major,
 
-	NTrates * __restrict__ NTadditionrate);
+	NTrates * __restrict__ NTadditionrate,
+	f64 * __restrict__ p_AreaMajor);
 
 __global__ void kernelAdvanceDensityAndTemperature(
 	f64 h_use,
 	structural * __restrict__ p_info_major,
-	nvals * __restrict__ p_n_major,
-	T3 * __restrict__ p_T_major,
+	nvals * p_n_major,
+	T3 * p_T_major,
 	NTrates * __restrict__ NTadditionrates,
 
-	nvals * __restrict__ p_n_use,
-	T3 * __restrict__ p_T_use,
+	nvals * p_n_use,
+	T3 * p_T_use,
 	v4 * __restrict__ p_vie_use,
 	f64_vec3 * __restrict__ p_v_n_use,
 

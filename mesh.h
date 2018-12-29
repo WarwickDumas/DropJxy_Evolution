@@ -1286,6 +1286,8 @@ public:
 	
 	// For now, get rid of most member functions and keep only those that we know we shall use.
 
+	void CalcUpwindDensity_on_tris(f64 * p_n_upwind, f64 * p_nn_upwind, f64_vec2 * p_v_overall_tris);
+
 	void CompareSystems();
 
 	// New additions:
@@ -1455,6 +1457,7 @@ public:
 	void CalculateIonisationRates(NTrates NTadditionrates[NUMVERTICES]);
 
 	void AccumulateDiffusiveHeatRateAndCalcIonisation(f64 h_use, NTrates NTadditionrates[NUMVERTICES]);
+	void AccumulateDiffusiveHeatRateAndCalcIonisationOld(f64 h_use, NTrates NTadditionrates[NUMVERTICES]);
 
 	void CreateShardModelOfDensities_And_SetMajorArea();
 

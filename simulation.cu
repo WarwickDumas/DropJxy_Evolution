@@ -8,7 +8,7 @@
 #define VERT1 14631
 #define VERT2 14645
 // these should explain something we hope.
-#define CHOSEN 18398
+#define CHOSEN 13429
 
 extern HWND hWnd;
 
@@ -46,23 +46,23 @@ f64 inline GetEzShape__(f64 r) {
 //	f64 nT_e[MAXNEIGH];
 //}; // 48 doubles
 
+
 three_vec3 AdditionalMomRates[NMINOR];
 f64_vec2 GradAz[NMINOR];
-f64_vec2 GradTeArray[NMINOR]; 
+f64_vec2 GradTeArray[NMINOR];
 f64 LapAzArray[NMINOR];
 f64_vec2 p_v[NMINOR];
 NTrates NTadditionrates[NUMVERTICES];
 f64 p_div_v_neut[NUMVERTICES];
-f64 p_div_v[NUMVERTICES]; 
+f64 p_div_v[NUMVERTICES];
 f64 Integrated_Div_v_overall[NUMVERTICES];
 f64 ROCAzdotduetoAdvection[NMINOR];
 f64 ROCAzduetoAdvection[NMINOR];
 f64 Az_array[NMINOR], Az_array_next[NMINOR];
 
 ShardModel n_shards[NUMVERTICES], n_shards_n[NUMVERTICES];
-f64 Tri_n_n_lists[NMINOR][6];  
+f64 Tri_n_n_lists[NMINOR][6];
 f64 Tri_n_lists[NMINOR][6];
-
 
 // footprint of static? (MAXNEIGH*2+5 = 33 say)*NVERT + (15*NMINOR) = say 2500000 doubles = 20 000 000 bytes
 
@@ -1030,6 +1030,149 @@ void TriMesh::EnsureAnticlockwiseTriangleCornerSequences()
 
 }
 
+
+void TriMesh::CalcUpwindDensity_on_tris(f64 * p_n_upwind, f64 * p_nn_upwind, f64_vec2 * p_v_overall_tris)
+{
+	long iTri, iVertex;
+	Triangle * pTri = T;
+	plasma_data data;
+	long izTri[MAXNEIGH];
+	Vertex * pVertex;
+	short tri_len;
+	f64 n0, n1, n2, nn0, nn1, nn2, dot0, dot1, dot2;
+	f64_vec2 edge_normal0, edge_normal1, edge_normal2;
+	nvals n_upwind;
+
+	for (iTri = 0; iTri < NUMTRIANGLES; iTri++)
+	{
+		if ((pTri->u8domain_flag == DOMAIN_TRIANGLE) || (pTri->u8domain_flag == CROSSING_INS))
+		{
+			memcpy(&data, &(pData[iTri]), sizeof(plasma_data));
+
+			iVertex = pTri->cornerptr[0] - X;
+			pVertex = pTri->cornerptr[0];
+			tri_len = pVertex->GetTriIndexArray(izTri);
+			int i = 0;
+			while (izTri[i] != iTri) i++;
+			n0 = n_shards[iVertex].n[i];
+			nn0 = n_shards_n[iVertex].n[i];
+
+			iVertex = pTri->cornerptr[1] - X;
+			pVertex = pTri->cornerptr[1];
+			tri_len = pVertex->GetTriIndexArray(izTri);
+			i = 0;
+			while (izTri[i] != iTri) i++;
+			n1 = n_shards[iVertex].n[i];
+			nn1 = n_shards_n[iVertex].n[i];
+
+			iVertex = pTri->cornerptr[2] - X;
+			pVertex = pTri->cornerptr[2];
+			tri_len = pVertex->GetTriIndexArray(izTri);
+			i = 0;
+			while (izTri[i] != iTri) i++;
+			n2 = n_shards[iVertex].n[i];
+			nn2 = n_shards_n[iVertex].n[i];
+
+			f64_vec2 relv = data.vxy - p_v_overall_tris[iTri];
+
+			// Get contiguous neighbour cent:
+			f64_vec2 pos0 = pData[pTri->neighbours[0] - T].pos;
+			if (pTri->periodic == 0) {
+				if ((pTri->neighbours[0]->periodic != 0) && (data.pos.x > 0.0))
+					pos0 = Clockwise*pos0;
+			} else {
+				if ((pTri->neighbours[0]->periodic == 0) && (pos0.x > 0.0))
+					pos0 = Anticlockwise*pos0;
+			}
+
+			f64_vec2 pos1 = pData[pTri->neighbours[1] - T].pos;
+			if (pTri->periodic == 0) {
+				if ((pTri->neighbours[1]->periodic != 0) && (data.pos.x > 0.0))
+					pos1 = Clockwise*pos1;
+			} else {
+				if ((pTri->neighbours[1]->periodic == 0) && (pos1.x > 0.0))
+					pos1 = Anticlockwise*pos1;
+			}
+
+			f64_vec2 pos2 = pData[pTri->neighbours[2] - T].pos;
+			if (pTri->periodic == 0) {
+				if ((pTri->neighbours[2]->periodic != 0) && (data.pos.x > 0.0))
+					pos2 = Clockwise*pos2;
+			} else {
+				if ((pTri->neighbours[2]->periodic == 0) && (pos2.x > 0.0))
+					pos2 = Anticlockwise*pos2;
+			}
+
+			edge_normal0.x = pos0.y - data.pos.y;
+			edge_normal0.y = data.pos.x - pos0.x;
+			edge_normal1.x = pos1.y - data.pos.y;
+			edge_normal1.y = data.pos.x - pos1.x;
+			edge_normal2.x = pos2.y - data.pos.y;
+			edge_normal2.y = data.pos.x - pos2.x;
+
+			dot0 = relv.dot(edge_normal0);
+			dot1 = relv.dot(edge_normal1);
+			dot2 = relv.dot(edge_normal2);
+
+	//		if (iTri == CHOSEN) printf("%d CPU: n0 %1.14E n1 %1.14E n2 %1.14E \n"
+	//			"dot0 %1.14E dot1 %1.14E dot2 %1.14E \n"
+	//			"relv %1.14E %1.14E \n"
+	//			"edge_normal0 %1.14E %1.14E \n",
+	//			CHOSEN, n0, n1, n2, dot0, dot1, dot2, relv.x, relv.y, edge_normal0.x, edge_normal0.y);
+
+			f64 numerator = 0.0;
+			if (dot0 + dot1 + dot2 == 0.0) {
+				n_upwind.n = THIRD*(n0 + n1 + n2);
+				n_upwind.n_n = THIRD*(nn0 + nn1 + nn2);
+	//			if (iTri == CHOSEN) printf("Got to here. CPU. n = %1.14E \n", n_upwind.n);
+			}
+			else {
+				n_upwind.n = 0.0;
+				n_upwind.n_n = 0.0;
+				if (dot0 > 0.0) {
+					n_upwind.n += dot0*n2;
+					n_upwind.n_n += dot0*nn2;
+				} else {
+					dot0 = -dot0;
+					n_upwind.n += dot0*n1;
+					n_upwind.n_n += dot0*nn1;
+				};
+				if (dot1 > 0.0) {
+					n_upwind.n += dot1*n0;
+					n_upwind.n_n += dot1*nn0;
+				} else {
+					dot1 = -dot1;
+					n_upwind.n += dot1*n2;
+					n_upwind.n_n += dot1*nn2;
+				};
+				if (dot2 > 0.0) {
+					n_upwind.n += dot2*n1;
+					n_upwind.n_n += dot2*nn1;
+				} else {
+					dot2 = -dot2;
+					n_upwind.n += dot2*n0;
+					n_upwind.n_n += dot2*nn0;
+				};
+				n_upwind.n /= (dot0 + dot1 + dot2);
+				n_upwind.n_n /= (dot0 + dot1 + dot2);
+		//		if (iTri == CHOSEN) printf("Here. CPU. denom = %1.14E n = %1.14E \n",
+		//			dot0 + dot1 + dot2, n_upwind.n);
+
+			}
+			p_n_upwind[iTri] = n_upwind.n;
+			p_nn_upwind[iTri] = n_upwind.n_n;
+
+
+		} else {
+			p_n_upwind[iTri] = 0.0;
+			p_nn_upwind[iTri] = 0.0;
+		};
+		++pTri;
+	};
+
+}
+
+
 void TriMesh::InferMinorDensitiesFromShardModel()
 {
 	// Inputs:
@@ -1331,7 +1474,7 @@ void TriMesh::AdvanceDensityAndTemperature(f64 h_use, TriMesh * pHalfMesh, NTrat
 				lnLambda = Get_lnLambda(usedata.n, usedata.Te);
 
 				s_in_MT = Estimate_Ion_Neutral_MT_Cross_section(usedata.Ti*one_over_kB);
-				Estimate_Ion_Neutral_Cross_sections(usedata.Te, // call with T in electronVolts
+				Estimate_Ion_Neutral_Cross_sections(usedata.Te*one_over_kB, // call with T in electronVolts
 					&s_en_MT,
 					&s_en_visc);
 				//s_en_MT = Estimate_Ion_Neutral_MT_Cross_section(usedata.Te*one_over_kB);
@@ -1340,6 +1483,8 @@ void TriMesh::AdvanceDensityAndTemperature(f64 h_use, TriMesh * pHalfMesh, NTrat
 				nu_ne_MT = s_en_MT * usedata.n * electron_thermal; // have to multiply by n_e for nu_ne_MT
 				nu_ni_MT = s_in_MT * usedata.n * ionneut_thermal;
 				nu_en_MT = s_en_MT * usedata.n_n*electron_thermal;
+				if (iVertex == CHOSEN) printf("CPU nu_en_MT components %1.8E %1.8E %1.8E\n",
+					s_en_MT, usedata.n_n, electron_thermal);
 				nu_in_MT = s_in_MT * usedata.n_n*ionneut_thermal;
 
 				nu_ei = nu_eiBarconst_ * kB_to_3halves*usedata.n*lnLambda / 
@@ -1408,6 +1553,17 @@ void TriMesh::AdvanceDensityAndTemperature(f64 h_use, TriMesh * pHalfMesh, NTrat
 			newdata.NnTn = NT.x;
 			newdata.NiTi = NT.y;
 			newdata.NeTe = NT.z;
+			
+			if (iVertex == CHOSEN) {
+				printf("@@@@@@@@@@@@@@@@@@\n");
+				printf("CPU LHS | \n %1.9E %1.9E %1.9E |\n %1.9E %1.9E %1.9E |  \n %1.9E %1.9E %1.9E | \n",
+					LHS.xx, LHS.xy, LHS.xz, LHS.yx, LHS.yy, LHS.yz, LHS.zx, LHS.zy, LHS.zz);
+				printf("CPU inverted | RHS \n %1.9E %1.9E %1.9E | %1.9E \n %1.9E %1.9E %1.9E | %1.9E \n %1.9E %1.9E %1.9E | %1.9E \n",
+					inverted.xx, inverted.xy, inverted.xz, RHS.x, inverted.yx, inverted.yy, inverted.yz, RHS.y, inverted.zx, inverted.zy, inverted.zz, RHS.z);
+				printf("CPU %d : NeTe %1.10E \n", CHOSEN, newdata.NeTe);
+				printf("CPU nu_en_MT %1.10E\n", nu_en_MT);
+				printf("@@@@@@@@@@@@@@@@@@\n");
+			};
 			// Multiply all by "factor" regardless of how it turns out.
 
 			// Whether we are being sensible at such small timesteps
@@ -1629,6 +1785,432 @@ void TriMesh::Average_n_T_to_tris_and_calc_centroids_and_minorpos()
 }
 
 void TriMesh::AccumulateDiffusiveHeatRateAndCalcIonisation(f64 h_use, NTrates NTadditionrates[NUMVERTICES])
+{
+	// Inputs:
+	// 
+
+	// Outputs:
+	// NTadditionrates augmented
+
+	// Do tri input just to get it running, because we do not have stored the PB list for neighs.
+	// But that is insane, so we will want to change this.
+
+	// It will make much more of a headache on GPU.
+	// The other option is to combine it with the advective mass & heat rates which already use minor info.
+	static real const kB_to_3halves = sqrt(kB_)*kB_;
+	static real const one_over_kB = 1.0 / kB_;
+	static real const over_sqrt_m_e_ = 1.0 / sqrt(m_e_);
+
+	Vertex * pVertex = X;
+	long iVertex;
+	long izNeigh[MAXNEIGH];
+	long izTri[MAXNEIGH];
+	char szPBCtri[MAXNEIGH];
+	long neigh_len, tri_len;
+	plasma_data tridata1, tridata2, neighdata, ourdata, prevdata, nextdata;
+	int i, iprev;
+	NTrates ourrates, yourrates;
+	f64 AreaMajor;
+	f64_vec2 prev_overall_v, here_overall_v, vxy, edge_normal, motion_edge;
+	f64_vec3 v_n;
+	f64 massflux, heatflux;
+	f64 nu_eHeart1, nu_eHeart2, nu_eiBar, nu_in_visc, nu_ni_visc, nu_nn_visc1, nu_ii,
+		nu_iHeart1, nu_iHeart2, nu_nn_visc2, nu_iHeart, nu_nn_visc,
+		Area_quadrilateral, kappa_parallel, nu_eHeart;
+	f64_vec2 integrated_grad_Te, integrated_grad_Ti, integrated_grad_Tn, gradTe, gradTi, gradTn,
+		kappa_grad_T;
+	f64_vec3 omega;
+	Tensor2 kappa;
+	int inext;
+	static real const SQRT2 = sqrt(2.0);
+
+	for (iVertex = 0; iVertex < NUMVERTICES; iVertex++)
+	{
+		if (pVertex->flags == DOMAIN_VERTEX)
+		{
+			AreaMajor = 0.0;
+
+			memcpy(&ourdata, pData + iVertex + BEGINNING_OF_CENTRAL, sizeof(plasma_data));
+			memcpy(&ourrates, NTadditionrates + iVertex, sizeof(NTrates));
+
+			f64 TeV, sigma_MT, sigma_visc, sqrt_T, nu_en_visc;
+
+			TeV = ourdata.Te * one_over_kB;
+			Estimate_Ion_Neutral_Cross_sections(TeV, &sigma_MT, &sigma_visc);
+			sqrt_T = sqrt(ourdata.Te);
+			nu_en_visc = ourdata.n_n * sigma_visc*sqrt_T * over_sqrt_m_e_;
+			nu_eiBar = nu_eiBarconst_ * kB_to_3halves*ourdata.n*Get_lnLambda(ourdata.n, ourdata.Te) / (ourdata.Te*sqrt_T);
+			nu_eHeart1 = (nu_en_visc + 1.87*nu_eiBar);
+
+			TeV = ourdata.Ti*one_over_kB;
+			Estimate_Ion_Neutral_Cross_sections(TeV, &sigma_MT, &sigma_visc); // could easily save one call
+			sqrt_T = sqrt(ourdata.Ti); // again not that hard to save one call
+			nu_in_visc = ourdata.n_n * sigma_visc*sqrt(ourdata.Ti / m_i_ + ourdata.Tn / m_n_);
+			nu_ni_visc = nu_in_visc * (ourdata.n / ourdata.n_n);
+			nu_nn_visc1 = ourdata.n_n * Estimate_Neutral_Neutral_Viscosity_Cross_section(ourdata.Tn / kB_)
+				* sqrt(ourdata.Tn / m_n_);
+			nu_ii = ourdata.n*kB_to_3halves*Get_lnLambda_ion(ourdata.n, ourdata.Ti)*Nu_ii_Factor_ / (sqrt_T*ourdata.Ti);
+			nu_iHeart1 = 0.75*nu_in_visc + 0.8*nu_ii - 0.25*(nu_in_visc*nu_ni_visc) / (3.0*nu_ni_visc + nu_nn_visc1);
+
+			if (iVertex == CHOSEN) printf("CPU nu_i components %1.12E %1.12E %1.12E %1.12E n %1.10E n_n %1.10E Ti %1.10E \n"
+				"sigma_visc %1.12E Ti %1.10E Tn %1.10E sqrt %1.10E\n",
+				nu_in_visc, nu_ii, nu_ni_visc, nu_nn_visc1,
+				ourdata.n, ourdata.n_n, ourdata.Ti,
+				sigma_visc, ourdata.Ti, ourdata.Tn, sqrt(ourdata.Ti / m_i_ + ourdata.Tn / m_n_));
+
+			// That's for our own.
+
+
+			// The idea is simply to look at each edge. We take n from shard model on the upwind side. T is averaged, 
+			// for now do simple average instead of honeycomb. 
+			// v comes from the two triangles.
+
+			neigh_len = pVertex->GetNeighIndexArray(izNeigh);
+			tri_len = pVertex->GetTriIndexArray(izTri);
+			// and as usual we assume tri 0 has neigh 0 on the clockwise side of it.
+	//		memcpy(szPBCtri, MajorTriPBC[iVertex], sizeof(char)*MAXNEIGH);
+
+	//		memcpy(&tridata1, pData + izTri[tri_len - 1], sizeof(plasma_data));
+			iprev = neigh_len - 1;
+	//		if (szPBCtri[iprev] == ROTATE_ME_CLOCKWISE) {
+	//			tridata1.B = Clockwise3 * tridata1.B; // what we use from minors
+	//			tridata1.pos = Clockwise * tridata1.pos;
+	//		};
+	//		if (szPBCtri[iprev] == ROTATE_ME_ANTICLOCKWISE) {
+	//			tridata1.B = Anticlockwise3 * tridata1.B;
+	//			tridata1.pos = Anticlockwise * tridata1.pos;
+	//		};
+
+	
+	// Get T x3:
+			memcpy(&prevdata, pData + BEGINNING_OF_CENTRAL + izNeigh[iprev], sizeof(plasma_data));
+			memcpy(&neighdata, pData + izNeigh[0] + BEGINNING_OF_CENTRAL, sizeof(plasma_data));
+
+			if ((pX->T + izTri[iprev])->periodic == 0) {
+				// do nothing: neighbour must be contiguous
+			}
+			else {
+				if ((prevdata.pos.x > 0.0) && (ourdata.pos.x < 0.0))
+				{
+					//szPBCneigh[i] = ROTATE_ME_ANTICLOCKWISE;
+					prevdata.B = Anticlockwise3*prevdata.B;
+					prevdata.pos = Anticlockwise*prevdata.pos;
+				}
+				if ((prevdata.pos.x < 0.0) && (ourdata.pos.x > 0.0))
+				{
+					prevdata.B = Clockwise3*prevdata.B;
+					prevdata.pos = Clockwise*prevdata.pos;
+				}
+			};
+			if (prevdata.Te == 0.0) {
+				prevdata.Te = 0.5*(ourdata.Te + neighdata.Te);
+				prevdata.Ti = 0.5*(ourdata.Ti + neighdata.Ti);
+				prevdata.Tn = 0.5*(ourdata.Tn + neighdata.Tn);
+			}
+			
+			if ((pX->T + izTri[0])->periodic == 0) {
+				// do nothing: neighbour must be contiguous
+			}
+			else {
+				if ((neighdata.pos.x > 0.0) && (ourdata.pos.x < 0.0))
+				{
+					//szPBCneigh[i] = ROTATE_ME_ANTICLOCKWISE;
+					neighdata.B = Anticlockwise3*neighdata.B;
+					neighdata.pos = Anticlockwise*neighdata.pos;
+				}
+				if ((neighdata.pos.x < 0.0) && (ourdata.pos.x > 0.0))
+				{
+					neighdata.B = Clockwise3*neighdata.B;
+					neighdata.pos = Clockwise*neighdata.pos;
+				}
+			};
+
+
+			// If we are doing this, we don't really need to load from tridata as well
+			// We could get B, n and pos from neighbours.
+			// It is guaranteed that pos is the average.
+
+			// ^^ no it is not, in an INS_CROSSING tri. What did I do on GPU?
+
+			// what is the name of the PB array for neighbours?
+			// It seems we do not store it. ?? DASH IT
+						 
+			// nu depends log-linearly on n so why are we averaging n, we could
+			// just average nu???
+			// OK this was a stupid way round??
+			// We actually use: nu_eHeart, nu_iHeart, nu_nn_visc. Is that correct?
+			// B is mostly smooth and flattish.
+
+			for (i = 0; i < neigh_len; i++)
+			{
+				// First get nu for neighdata:
+
+				if (neighdata.pos.x*neighdata.pos.x+ neighdata.pos.y*neighdata.pos.y <
+					DEVICE_RADIUS_INSULATOR_OUTER*DEVICE_RADIUS_INSULATOR_OUTER) {
+					nu_eHeart2 = 0.0;
+					nu_iHeart2 = 0.0;
+					nu_nn_visc2 = 0.0;
+					// And we will not do traffic
+				} else {
+					TeV = neighdata.Te * one_over_kB;
+					Estimate_Ion_Neutral_Cross_sections(TeV, &sigma_MT, &sigma_visc);
+					sqrt_T = sqrt(neighdata.Te);
+					nu_en_visc = neighdata.n_n * sigma_visc*sqrt_T * over_sqrt_m_e_;
+					nu_eiBar = nu_eiBarconst_ * kB_to_3halves*neighdata.n*Get_lnLambda(neighdata.n, neighdata.Te) / (neighdata.Te*sqrt_T);
+					nu_eHeart2 = (nu_en_visc + 1.87*nu_eiBar);
+
+					TeV = neighdata.Ti*one_over_kB;
+					Estimate_Ion_Neutral_Cross_sections(TeV, &sigma_MT, &sigma_visc); // could easily save one call
+					sqrt_T = sqrt(neighdata.Ti); // again not that hard to save one call
+					nu_in_visc = neighdata.n_n * sigma_visc*sqrt(neighdata.Ti / m_i_ + neighdata.Tn / m_n_);
+					nu_ni_visc = nu_in_visc * (neighdata.n / neighdata.n_n);
+					nu_nn_visc2 = neighdata.n_n * Estimate_Neutral_Neutral_Viscosity_Cross_section(neighdata.Tn / kB_)
+						* sqrt(neighdata.Tn / m_n_);
+					nu_ii = neighdata.n*kB_to_3halves*Get_lnLambda_ion(neighdata.n, neighdata.Ti) *Nu_ii_Factor_ / (sqrt_T*neighdata.Ti);
+
+					nu_iHeart2 = 0.75*nu_in_visc + 0.8*nu_ii - 0.25*(nu_in_visc*nu_ni_visc) / (3.0*nu_ni_visc + nu_nn_visc2);
+				};
+				//
+
+				inext = i + 1; if (inext == neigh_len) inext = 0;
+				//memcpy(&tridata2, pData + izTri[i], sizeof(plasma_data));
+				memcpy(&nextdata, pData + izNeigh[inext] + BEGINNING_OF_CENTRAL, sizeof(plasma_data));
+				
+				if ((pX->T + izTri[inext])->periodic == 0) {
+					// do nothing: neighbour must be contiguous
+				}
+				else {
+					if ((nextdata.pos.x > 0.0) && (ourdata.pos.x < 0.0))
+					{
+						//szPBCnext[i] = ROTATE_ME_ANTICLOCKWISE;
+						nextdata.B = Anticlockwise3*nextdata.B;
+						nextdata.pos = Anticlockwise*nextdata.pos;
+					}
+					if ((nextdata.pos.x < 0.0) && (ourdata.pos.x > 0.0))
+					{
+						nextdata.B = Clockwise3*nextdata.B;
+						nextdata.pos = Clockwise*nextdata.pos;
+					}
+				};
+				// Handle case that nextdata is inside ins:
+				if (nextdata.Te == 0.0)
+				{
+					nextdata.Te = 0.5*(ourdata.Te + neighdata.Te);
+					nextdata.Ti = 0.5*(ourdata.Ti + neighdata.Ti);
+					nextdata.Tn = 0.5*(ourdata.Tn + neighdata.Tn);
+				};
+				
+				edge_normal.x = THIRD*(nextdata.pos.y - prevdata.pos.y);
+				edge_normal.y = THIRD*(prevdata.pos.x - nextdata.pos.x); // nextdata = pos_anti
+
+				// Living with the fact that we did not match the triangle centre if it's CROSSING_INS
+
+				AreaMajor += 0.5*edge_normal.x*THIRD*(prevdata.pos.x + 2.0*ourdata.pos.x + 2.0*neighdata.pos.x + nextdata.pos.x); // NOT TO BE USED - match GPU
+
+				// Get grad T on quadrilateral:
+				// Might as well load NEIGHBOUR T for these gradients.
+
+				integrated_grad_Te.x = 0.5*(
+					(ourdata.Te + nextdata.Te)*(ourdata.pos.y - nextdata.pos.y)
+					+ (prevdata.Te + ourdata.Te)*(prevdata.pos.y - ourdata.pos.y)
+					+ (neighdata.Te + prevdata.Te)*(neighdata.pos.y - prevdata.pos.y)
+					+ (nextdata.Te + neighdata.Te)*(nextdata.pos.y - neighdata.pos.y)
+					);
+				integrated_grad_Te.y = -0.5*( // notice minus
+					(ourdata.Te + nextdata.Te)*(ourdata.pos.x - nextdata.pos.x)
+					+ (prevdata.Te + ourdata.Te)*(prevdata.pos.x - ourdata.pos.x)
+					+ (neighdata.Te + prevdata.Te)*(neighdata.pos.x - prevdata.pos.x)
+					+ (nextdata.Te + neighdata.Te)*(nextdata.pos.x - neighdata.pos.x)
+					);
+
+				integrated_grad_Ti.x = 0.5*(
+					(ourdata.Ti + nextdata.Ti)*(ourdata.pos.y - nextdata.pos.y)
+					+ (prevdata.Ti + ourdata.Ti)*(prevdata.pos.y - ourdata.pos.y)
+					+ (neighdata.Ti + prevdata.Ti)*(neighdata.pos.y - prevdata.pos.y)
+					+ (nextdata.Ti + neighdata.Ti)*(nextdata.pos.y - neighdata.pos.y)
+					);
+				integrated_grad_Ti.y = -0.5*( // notice minus
+					(ourdata.Ti + nextdata.Ti)*(ourdata.pos.x - nextdata.pos.x)
+					+ (prevdata.Ti + ourdata.Ti)*(prevdata.pos.x - ourdata.pos.x)
+					+ (neighdata.Ti + prevdata.Ti)*(neighdata.pos.x - prevdata.pos.x)
+					+ (nextdata.Ti + neighdata.Ti)*(nextdata.pos.x - neighdata.pos.x)
+					);
+				integrated_grad_Tn.x = 0.5*(
+					(ourdata.Tn + nextdata.Tn)*(ourdata.pos.y - nextdata.pos.y)
+					+ (prevdata.Tn + ourdata.Tn)*(prevdata.pos.y - ourdata.pos.y)
+					+ (neighdata.Tn + prevdata.Tn)*(neighdata.pos.y - prevdata.pos.y)
+					+ (nextdata.Tn + neighdata.Tn)*(nextdata.pos.y - neighdata.pos.y)
+					);
+				integrated_grad_Tn.y = -0.5*( // notice minus
+					(ourdata.Tn + nextdata.Tn)*(ourdata.pos.x - nextdata.pos.x)
+					+ (prevdata.Tn + ourdata.Tn)*(prevdata.pos.x - ourdata.pos.x)
+					+ (neighdata.Tn + prevdata.Tn)*(neighdata.pos.x - prevdata.pos.x)
+					+ (nextdata.Tn + neighdata.Tn)*(nextdata.pos.x - neighdata.pos.x)
+					);
+				Area_quadrilateral = 0.5*(
+					(ourdata.pos.x + nextdata.pos.x)*(ourdata.pos.y - nextdata.pos.y)
+					+ (prevdata.pos.x + ourdata.pos.x)*(prevdata.pos.y - ourdata.pos.y)
+					+ (neighdata.pos.x + prevdata.pos.x)*(neighdata.pos.y - prevdata.pos.y)
+					+ (nextdata.pos.x + neighdata.pos.x)*(nextdata.pos.y - neighdata.pos.y)
+					);
+
+				gradTe = integrated_grad_Te / Area_quadrilateral;
+				gradTi = integrated_grad_Ti / Area_quadrilateral;
+				gradTn = integrated_grad_Tn / Area_quadrilateral;
+
+				// =================
+				// Electrons:
+
+				// nu_eHeart:
+				// n WILL BE CANCELLED from kappa_parallel and basically from kappa until omega ~ nu
+				// We can perfectly easily use n,T,B from the major data;
+				// and thus avoid loading from minors.
+				// We only did not do already because need to make PB char list !!!
+
+				// Notice that n divides through as we have nu beneath.
+				// So we'd rather average kappa_parallel than average n in its numerator.
+
+				if (nu_eHeart2 != 0.0) {
+					kappa_parallel = 2.5*
+						0.5*(ourdata.n / nu_eHeart1 + neighdata.n / nu_eHeart2)
+						* 0.5*(ourdata.Te + neighdata.Te)
+						* over_m_e_;
+				} else {
+					kappa_parallel = 0.0;
+				};
+				nu_eHeart = 0.5*(nu_eHeart1 + nu_eHeart2);
+
+				omega = eovermc_ * 0.5*(ourdata.B + neighdata.B);
+				f64 omega_sq = omega.dot(omega);
+				kappa.xx = kappa_parallel * (nu_eHeart*nu_eHeart + omega.x*omega.x) / (nu_eHeart * nu_eHeart + omega_sq);
+				kappa.xy = kappa_parallel * (omega.x*omega.y - nu_eHeart *omega.z) / (nu_eHeart * nu_eHeart + omega_sq);
+				kappa.yx = kappa_parallel * (omega.x*omega.y + nu_eHeart * omega.z) / (nu_eHeart * nu_eHeart + omega_sq);
+				kappa.yy = kappa_parallel * (omega.y*omega.y + nu_eHeart * nu_eHeart) / (nu_eHeart * nu_eHeart + omega_sq);
+
+				kappa_grad_T.x = kappa.xx*gradTe.x + kappa.xy*gradTe.y;
+				kappa_grad_T.y = kappa.yx*gradTe.x + kappa.yy*gradTe.y;
+
+				// if the outward gradient of T is positive, inwardheatflux is positive.
+				ourrates.NeTe += TWOTHIRDS * kappa_grad_T.dot(edge_normal);
+
+				// ------------------------------------------------------------------------
+				// Ion:
+
+				if (nu_iHeart2 != 0.0) {
+					kappa_parallel = (20.0 / 9.0)*
+						0.5*(ourdata.n / nu_iHeart1 + neighdata.n / nu_iHeart2)
+						* 0.5*(ourdata.Ti + neighdata.Ti)
+						/ m_ion_;
+				} else {
+					kappa_parallel = 0.0;
+				};
+
+				nu_iHeart = 0.5*(nu_iHeart1 + nu_iHeart2);
+				omega = qoverMc_ * 0.5*(ourdata.B + neighdata.B);
+
+				// We could arrange to just store nu_iHeart as we go around.
+
+				kappa.xx = kappa_parallel * (nu_iHeart*nu_iHeart + omega.x*omega.x) / (nu_iHeart * nu_iHeart + omega_sq);
+				kappa.xy = kappa_parallel * (omega.x*omega.y + nu_iHeart * omega.z) / (nu_iHeart * nu_iHeart + omega_sq);
+				kappa.yx = kappa_parallel * (omega.x*omega.y - nu_iHeart * omega.z) / (nu_iHeart * nu_iHeart + omega_sq);
+				kappa.yy = kappa_parallel * (omega.y*omega.y + nu_iHeart * nu_iHeart) / (nu_iHeart * nu_iHeart + omega_sq);
+
+				kappa_grad_T.x = kappa.xx*gradTi.x + kappa.xy*gradTi.y;
+				kappa_grad_T.y = kappa.yx*gradTi.x + kappa.yy*gradTi.y;
+
+				ourrates.NiTi += TWOTHIRDS * kappa_grad_T.dot(edge_normal);
+
+				if (iVertex == CHOSEN) {
+					printf("CPU %d : %d NiTicontrib %1.9E kappa_par %1.9E nu %1.12E omega %1.9E %1.9E %1.9E "
+						"gradTi %1.10E %1.10E edge_normal %1.9E %1.9E\nOWN nu: %1.12E nu_iHeart2 %1.12E\n",
+						CHOSEN,izNeigh[i], TWOTHIRDS * kappa_grad_T.dot(edge_normal),
+						kappa_parallel, nu_iHeart, omega.x, omega.y, omega.z,
+						gradTi.x, gradTi.y,edge_normal.x,edge_normal.y,
+						nu_iHeart1,nu_iHeart2);
+				}
+
+				// ----------------------------------------------------------------------
+				// Neutral:
+
+				// HERE IS WHERE IT'S A POINT OF SOME DOUBT: 10 or far less?
+				if (nu_nn_visc2 != 0.0) {
+					kappa_parallel = 10.0*0.5*
+						(ourdata.n_n / nu_nn_visc1 + neighdata.n_n / nu_nn_visc2)
+						* 0.5*(ourdata.Tn + neighdata.Tn)
+						* over_m_n_;
+				} else {
+					kappa_parallel = 0.0;
+				};
+				kappa_grad_T.x = kappa_parallel * gradTn.x;
+				kappa_grad_T.y = kappa_parallel * gradTn.y;
+
+				ourrates.NnTn += TWOTHIRDS * kappa_grad_T.dot(edge_normal);
+
+				// increments:
+				memcpy(&prevdata, &neighdata, sizeof(plasma_data)); // ditto
+				memcpy(&neighdata, &nextdata, sizeof(plasma_data)); // ditto
+
+				iprev = i;
+			};
+
+			// now add IONISATION:
+
+			TeV = ourdata.Te / kB_;
+			f64 sqrtT = sqrt(TeV);
+
+			f64 temp = 1.0e-5*exp(-13.6 / TeV) / (13.6*(6.0*13.6 + TeV));
+			// Let h n n_n S be the ionising amount,
+			// h n S is the proportion of neutrals! Make sure we do not run out!
+			f64 hnS = (h_use*ourdata.n*TeV*temp) /
+				(sqrtT + h_use * ourdata.n_n*ourdata.n*temp*SIXTH*13.6);
+			f64 ionise_rate = AreaMajor * ourdata.n_n*hnS / (h_use*(1 + hnS));
+			// ionise_amt / h
+
+			ourrates.N += ionise_rate;
+			ourrates.Nn += -ionise_rate;
+
+			if (iVertex == CHOSEN) {
+				printf("CPU iVertex %d : ourrates.N %1.14E ionise_rate %1.14E \n"
+					"hnS %1.14E AreaMajor %1.14E TeV %1.14E \n",
+					iVertex, ourrates.N, ionise_rate, hnS, AreaMajor, TeV);
+			}
+
+			// Let nR be the recombining amount, R is the proportion.
+
+			AreaMajor = pVertex->AreaCell; // to match GPU
+
+
+			f64 Ttothe5point5 = sqrtT * TeV * TeV*TeV * TeV*TeV;
+			f64 hR = h_use * (ourdata.n * ourdata.n*8.75e-27*TeV) /
+				(Ttothe5point5 + h_use * 2.25*TWOTHIRDS*13.6*ourdata.n*ourdata.n*8.75e-27);
+
+			f64 recomb_rate = AreaMajor * ourdata.n * hR / h_use; // could reasonably again take hR/(1+hR) for n_k+1
+			ourrates.N -= recomb_rate;
+			ourrates.Nn += recomb_rate;
+
+			if (iVertex == CHOSEN) {
+				printf("CPU iVertex %d : ourrates.N %1.14E recomb_rate %1.14E \n"
+					"Ttothe5point5 %1.14E hR %1.14E \n", iVertex,
+					ourrates.N, recomb_rate, Ttothe5point5, hR);
+			};
+
+			ourrates.NeTe += -TWOTHIRDS * 13.6*kB_*ourrates.N + 0.5*ourdata.Tn*ionise_rate;
+			ourrates.NiTi += 0.5*ourdata.Tn*ionise_rate;
+			ourrates.NnTn += (ourdata.Te + ourdata.Ti)*recomb_rate;
+
+			memcpy(NTadditionrates + iVertex, &ourrates, sizeof(NTrates));
+
+		}
+		else {
+			// Not DOMAIN_VERTEX
+			// Ignore flux into edge of outermost vertex I guess.
+
+		}
+		++pVertex;
+	};
+}
+
+void TriMesh::AccumulateDiffusiveHeatRateAndCalcIonisationOld(f64 h_use, NTrates NTadditionrates[NUMVERTICES])
 {
 	// Inputs:
 	// 
@@ -1919,6 +2501,12 @@ void TriMesh::AccumulateDiffusiveHeatRateAndCalcIonisation(f64 h_use, NTrates NT
 			ourrates.N += ionise_rate;
 			ourrates.Nn += -ionise_rate;
 
+			if (iVertex == CHOSEN) {
+				printf("CPU iVertex %d : ourrates.N %1.14E ionise_rate %1.14E \n"
+					"hnS %1.14E AreaMajor %1.14E TeV %1.14E \n",
+					iVertex, ourrates.N, ionise_rate, hnS, AreaMajor, TeV);
+			}
+
 			// Let nR be the recombining amount, R is the proportion.
 
 			f64 Ttothe5point5 = sqrtT * TeV * TeV*TeV * TeV*TeV;
@@ -1928,6 +2516,12 @@ void TriMesh::AccumulateDiffusiveHeatRateAndCalcIonisation(f64 h_use, NTrates NT
 			f64 recomb_rate = AreaMajor * ourdata.n * hR / h_use; // could reasonably again take hR/(1+hR) for n_k+1
 			ourrates.N -= recomb_rate;
 			ourrates.Nn += recomb_rate;
+
+			if (iVertex == CHOSEN) {
+				printf("CPU iVertex %d : ourrates.N %1.14E recomb_rate %1.14E \n"
+					"Ttothe5point5 %1.14E hR %1.14E \n", iVertex,
+					ourrates.N, recomb_rate, Ttothe5point5, hR);
+			};
 
 			ourrates.NeTe += -TWOTHIRDS * 13.6*kB_*ourrates.N + 0.5*ourdata.Tn*ionise_rate;
 			ourrates.NiTi += 0.5*ourdata.Tn*ionise_rate;
@@ -2654,6 +3248,10 @@ void TriMesh::Create_momflux_integral_grad_nT_and_gradA_LapA_CurlA_on_minors(
 				prevdata.pos = Anticlockwise * prevdata.pos;
 			}
 		};
+		if (iVertex == 73841 - BEGINNING_OF_CENTRAL) {
+			printf("CPU: prevdata.pos %1.9E %1.9E szPBC[iprev] %d \n",
+				prevdata.pos.x, prevdata.pos.y, (int)szPBC[iprev]);
+		}
 
 	//	if (iVertex == 11588) {
 	//		printf("izTri[len-1] %d  prevdata.v_n.y %1.8E \n", izTri[tri_len-1], prevdata.v_n.y);
@@ -2873,6 +3471,8 @@ void TriMesh::Create_momflux_integral_grad_nT_and_gradA_LapA_CurlA_on_minors(
 				Our_integral_Lap_Az += grad_Az.dot(edge_normal);
 			
 				AreaMinor += (0.5*endpt0.x + 0.5*endpt1.x)*edge_normal.x;
+
+
 				// I daresay if we wanted to get really confused we could proceed
 				// by expanding the dot product into integ_grad and inserting expressions
 				// for edge_normal, rearrange to get some kind of havoc.
@@ -3037,6 +3637,13 @@ void TriMesh::Create_momflux_integral_grad_nT_and_gradA_LapA_CurlA_on_minors(
 				edge_normal.x = endpt0.y - projendpt0.y;
 				edge_normal.y = projendpt0.x - endpt0.x;
 				AreaMinor += (0.5*projendpt0.x + 0.5*endpt0.x)*edge_normal.x;
+
+				if (iMinor == 73841) {
+					printf("AreaMinor PROJECT %d : %1.10E Contrib %1.10E edge_nml %1.9E endpt.x %1.9E %1.9E\n",
+						73841, AreaMinor, (0.5*endpt0.x + 0.5*projendpt0.x)*edge_normal.x,
+						edge_normal.x, endpt0.x, projendpt0.x);
+				}
+
 				//				
 				//				memcpy(&prevdata, pData + izTri[0], sizeof(plasma_data));
 				//				if (szPBC[0] != 0) {
@@ -3103,6 +3710,11 @@ void TriMesh::Create_momflux_integral_grad_nT_and_gradA_LapA_CurlA_on_minors(
 				Our_integral_Lap_Az += grad_Az.dot(edge_normal);
 				AreaMinor += (0.5*endpt0.x + 0.5*endpt1.x)*edge_normal.x;
 
+				if (iMinor == 73841) {
+					printf("AreaMinor %d : %1.10E Contrib %1.10E edge_nml %1.9E endpt01.x %1.9E %1.9E\n",
+						73841, AreaMinor, (0.5*endpt0.x + 0.5*endpt1.x)*edge_normal.x,
+						edge_normal.x, endpt0.x, endpt1.x);
+				}
 #ifdef LAPFILE
 				if ((iMinor == index[0]) ||
 					(iMinor == index[1]) ||
@@ -3156,9 +3768,22 @@ void TriMesh::Create_momflux_integral_grad_nT_and_gradA_LapA_CurlA_on_minors(
 				edge_normal.y = endpt1.x - projendpt1.x;
 				AreaMinor += (0.5*projendpt1.x + 0.5*endpt1.x)*edge_normal.x;
 
+				if (iMinor == 73841) {
+					printf("AreaMinor PROJECT2 %d : %1.10E Contrib %1.10E edge_nml %1.9E endpt11.x %1.9E %1.9E\n",
+						73841, AreaMinor, (0.5*endpt1.x + 0.5*projendpt1.x)*edge_normal.x,
+						edge_normal.x, endpt1.x, projendpt1.x);
+				}
+
 				edge_normal.x = projendpt0.y - projendpt1.y;
 				edge_normal.y = projendpt1.x - projendpt0.x;
 				AreaMinor += (0.5*projendpt1.x + 0.5*projendpt0.x)*edge_normal.x;
+
+				if (iMinor == 73841) {
+					printf("AreaMinor PROJECT3 %d : %1.10E Contrib %1.10E edge_nml %1.9E projendpt10.x %1.9E %1.9E\n",
+						73841, AreaMinor, (0.5*projendpt1.x + 0.5*projendpt0.x)*edge_normal.x,
+						edge_normal.x, projendpt1.x, projendpt0.x);
+				}
+
 				// line between out-projected points
 			};
 						
