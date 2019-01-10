@@ -53,7 +53,7 @@ long const numTilesMinor = 432; // 432 = 288+144
 								// numTriTiles == numTilesMajor because the two sets are bijective.
 								// Then we also have to assign central minors to tiles, twice the size of the major tiles...
 
-long const threadsPerTileMinor = 256;
+long const threadsPerTileMinor = 256; // PopOhmsLaw ASSUMES THIS IS A POWER OF 2 !!!
 long const threadsPerTileMajor = 128; // see about it - usually we take info from minor.
 
 long const threadsPerTileMajorClever = 256;

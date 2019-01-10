@@ -37,6 +37,7 @@ __global__ void kernelAverage_n_T_x_to_tris  (
 
 __global__ void kernelCreateShardModelOfDensities_And_SetMajorArea_Debug(
 	structural * __restrict__ p_info_minor,
+	nvals * __restrict__ p_n_major,
 	nvals * __restrict__ p_n_minor,
 
 	long * __restrict__ p_izTri_vert,
@@ -50,6 +51,7 @@ __global__ void kernelCreateShardModelOfDensities_And_SetMajorArea_Debug(
 
 __global__ void kernelCreateShardModelOfDensities_And_SetMajorArea(
 	structural * __restrict__ p_info_minor,
+	nvals * __restrict__ p_n_major,
 	nvals * __restrict__ p_n_minor,
 
 	long * __restrict__ p_izTri_vert,
@@ -93,12 +95,12 @@ __global__ void kernelAccumulateDiffusiveHeatRateAndCalcIonisation(
 __global__ void kernelAdvanceDensityAndTemperature(
 	f64 h_use,
 	structural * __restrict__ p_info_major,
-	nvals * __restrict__ p_n_major,
-	T3 * __restrict__ p_T_major,
+	nvals * p_n_major,
+	T3 * p_T_major,
 	NTrates * __restrict__ NTadditionrates,
 
-	nvals * __restrict__ p_n_use,
-	T3 * __restrict__ p_T_use,
+	nvals * p_n_use,
+	T3 * p_T_use,
 	v4 * __restrict__ p_vie_use,
 	f64_vec3 * __restrict__ p_v_n_use,
 

@@ -78,7 +78,7 @@ real const m_ei_ = m_e_ * m_i_ / (m_e_ + m_i_);
 real const NU_EI_FACTOR_ = 1.0/(3.44e5);
 //real const NU_II_FACTOR = 1.0/(sqrt(2.0)*2.09e7);
 // sqrt in .h file == bad
-real const Nu_ii_Factor_ = 3.38329e-8;
+real const Nu_ii_Factor_ = 3.415974788e-8;
 
 real const nu_eiBarconst_ = //(4.0/3.0)*sqrt(2.0*PI/m_e)*q*q*q*q;
 		// don't know in what units but it IS exactly what we already had - see Formulary

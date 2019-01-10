@@ -94,8 +94,7 @@ f64 * p_summands_host, *p_Iz0_summands_host, *p_Iz0_initial_host;
 __device__ f64 * p_temp1, *p_temp2, *p_temp3, *p_temp4, *p_denom_i, *p_denom_e;
 f64 * p_temphost1, *p_temphost2, *p_temphost3, *p_temphost4, *p_temphost5, *p_temphost6;
 f64_vec2 * p_GradTe_host, *p_GradAz_host;
-f64_vec3 * p_B_host, *p_MAR_ion_host, *p_MAR_elec_host, *p_MAR_ion_compare, *p_MAR_elec_compare,
-*p_MAR_neut_host,*p_MAR_neut_compare;
+f64_vec3 * p_B_host, *p_MAR_ion_host, *p_MAR_elec_host, *p_MAR_ion_compare, *p_MAR_elec_compare;
 __device__ nn *p_nn_ionrec_minor;
 __device__ OhmsCoeffs * p_OhmsCoeffs;
 __device__ f64 * p_Iz0, *p_sigma_Izz;
@@ -730,8 +729,6 @@ void PerformCUDA_Invoke_Populate(
 	p_MAR_ion_compare = (f64_vec3 *)malloc(NMINOR * sizeof(f64_vec3));
 	p_MAR_elec_host = (f64_vec3 *)malloc(NMINOR * sizeof(f64_vec3));
 	p_MAR_elec_compare = (f64_vec3 *)malloc(NMINOR * sizeof(f64_vec3));
-	p_MAR_neut_host = (f64_vec3 *)malloc(NMINOR * sizeof(f64_vec3));
-	p_MAR_neut_compare = (f64_vec3 *)malloc(NMINOR * sizeof(f64_vec3));
 
 	p_temphost1 = (f64 *)malloc(NMINOR * sizeof(f64)); // changed for debugging
 	p_temphost2 = (f64 *)malloc(NMINOR * sizeof(f64)); // changed for debugging
@@ -1017,7 +1014,6 @@ void cuSyst::PerformCUDA_Advance_Debug(const cuSyst * pX_target, const cuSyst * 
 
 	kernelCreateShardModelOfDensities_And_SetMajorArea_Debug << <numTilesMajor, threadsPerTileMajor >> >(
 		this->p_info,
-		this->p_n_major,
 		this->p_n_minor,
 		this->p_izTri_vert,
 		this->p_szPBCtri_vert,
@@ -1052,6 +1048,7 @@ void cuSyst::PerformCUDA_Advance_Debug(const cuSyst * pX_target, const cuSyst * 
 	fclose(fp_joke);*/
 	// Do a couple goes of this, see what happening.
 
+	free(shardtemp);
 	// Major area? Compare .... but it's set as pVertex->AreaCell so do manually here.
 	
 	//====================================================
@@ -1194,15 +1191,11 @@ void cuSyst::PerformCUDA_Advance_Debug(const cuSyst * pX_target, const cuSyst * 
 
 
 
-
-
-
-
-
-
-
-
-	// !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+	p_cuSyst_compare->PopulateFromTriMesh(pTriMesh);
+	cudaMemcpy(p_cuSyst_host->p_T_minor, this->p_T_minor, NMINOR * sizeof(nvals), cudaMemcpyDeviceToHost);
+	Compare_T3(p_cuSyst_host->p_T_minor, p_cuSyst_compare->p_T_minor, NMINOR);
+	printf("compared T ABBB.\n");
+	// COMES OUT EQUAL
 
 	// =============================================================================
 
@@ -1224,9 +1217,22 @@ void cuSyst::PerformCUDA_Advance_Debug(const cuSyst * pX_target, const cuSyst * 
 		pX_half->p_T_minor + BEGINNING_OF_CENTRAL
 		);
 	Call(cudaThreadSynchronize(), "cudaTS Advance_n_and_T");
-		
+
+	p_cuSyst_compare->PopulateFromTriMesh(pTriMesh);
+	cudaMemcpy(p_cuSyst_host->p_T_minor, this->p_T_minor, NMINOR * sizeof(nvals), cudaMemcpyDeviceToHost);
+	Compare_T3(p_cuSyst_host->p_T_minor, p_cuSyst_compare->p_T_minor, NMINOR);
+	printf("compared T AABB.\n");
+	
 	pTriMesh->AdvanceDensityAndTemperature(0.5*TIMESTEP, pTriMeshhalf, NTadditionrates);
 	
+	p_cuSyst_compare->PopulateFromTriMesh(pTriMesh);
+	cudaMemcpy(p_cuSyst_host->p_T_minor, this->p_T_minor, NMINOR * sizeof(nvals), cudaMemcpyDeviceToHost);
+	Compare_T3(p_cuSyst_host->p_T_minor, p_cuSyst_compare->p_T_minor, NMINOR);
+	printf("compared T AAAB.\n");
+	// NO DIFFERENCE FOUND
+
+	getch();
+
 	// compare n,T:
 //	p_cuSyst_compare->PopulateFromTriMesh(pTriMeshhalf);
 //	cudaMemcpy(p_cuSyst_host->p_n_major, pX_half->p_n_major, sizeof(nvals)*NUMVERTICES, cudaMemcpyDeviceToHost);
@@ -1244,26 +1250,35 @@ void cuSyst::PerformCUDA_Advance_Debug(const cuSyst * pX_target, const cuSyst * 
 		); // call before CreateShardModel 
 	Call(cudaThreadSynchronize(), "cudaTS average nTx 2");
 
+	// Compare the results of ^^ this procedure...
+
+	p_cuSyst_compare->PopulateFromTriMesh(pTriMesh);
+	cudaMemcpy(p_cuSyst_host->p_T_minor, this->p_T_minor, NMINOR * sizeof(nvals), cudaMemcpyDeviceToHost);
+	Compare_T3(p_cuSyst_host->p_T_minor, p_cuSyst_compare->p_T_minor, NMINOR);
+	printf("compared T AAA0.\n");
+	// NO DIFFERENCE FOUND - - very confusing this
+
 	pTriMeshhalf->Average_n_T_to_tris_and_calc_centroids_and_minorpos();
 	p_cuSyst_compare->PopulateFromTriMesh(pTriMeshhalf);
+
 	cudaMemcpy(p_cuSyst_host->p_n_minor, pX_half->p_n_minor, sizeof(nvals)*NMINOR, cudaMemcpyDeviceToHost);
 	Compare_nvals(p_cuSyst_host->p_n_minor, p_cuSyst_compare->p_n_minor, NMINOR);
 	cudaMemcpy(p_cuSyst_host->p_T_minor, pX_half->p_T_minor, sizeof(T3)*NMINOR, cudaMemcpyDeviceToHost);
-	printf("pTriMeshhalf comparison:\n");
 	Compare_T3(p_cuSyst_host->p_T_minor, p_cuSyst_compare->p_T_minor, NMINOR);
+	// NO DIFFERENCE FOUND for pX_half
+	
+	p_cuSyst_compare->PopulateFromTriMesh(pTriMesh);
+	cudaMemcpy(p_cuSyst_host->p_T_minor, this->p_T_minor, NMINOR * sizeof(nvals), cudaMemcpyDeviceToHost);
+	Compare_T3(p_cuSyst_host->p_T_minor, p_cuSyst_compare->p_T_minor, NMINOR);
+	printf("compared T AAAA.\n");
+	// DIFFERENCE FOUND at e.g. 87150
+
+	while (1) getch();
 
 	// +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 	// We are going to want to introduce 2nd degree approx to get n,T desired on tris.
 	// Now let's set up the accel move to half-time which will provide us input of v to the full n,T move.
 	// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-	
-	printf("this, pTriMesh comparison:\n");
-	p_cuSyst_compare->PopulateFromTriMesh(pTriMesh);
-	cudaMemcpy(p_cuSyst_host->p_T_minor, this->p_T_minor, NMINOR * sizeof(T3), cudaMemcpyDeviceToHost);
-	Compare_T3(p_cuSyst_host->p_T_minor, p_cuSyst_compare->p_T_minor, NMINOR);
-	printf("compared T (this, pTriMesh).\n");
-	printf("p_cuSyst_host->p_T_minor[23187] %1.9E p_cuSyst_compare->p_T_minor[23187] %1.9E \n",
-		p_cuSyst_host->p_T_minor[23187].Te, p_cuSyst_compare->p_T_minor[23187].Te);
 
 	// For now went for "advective change in v" where we divide d/dt Nv by N_derivsyst
 	cudaMemset(p_MAR_neut, 0, sizeof(f64_vec3)*NMINOR);
@@ -1320,6 +1335,56 @@ void cuSyst::PerformCUDA_Advance_Debug(const cuSyst * pX_target, const cuSyst * 
 		);
 	Call(cudaThreadSynchronize(), "cudaTS kernelCreate_momflux_minor");
 
+	p_cuSyst_compare->PopulateFromTriMesh(pTriMesh);
+	cudaMemcpy(p_cuSyst_host->p_T_minor, this->p_T_minor, NMINOR * sizeof(nvals), cudaMemcpyDeviceToHost);
+	Compare_T3(p_cuSyst_host->p_T_minor, p_cuSyst_compare->p_T_minor, NMINOR);
+	printf("compared T.\n");
+
+	getch();
+	memset(AdditionalMomRates, 0, sizeof(three_vec3)*NMINOR); // what a mess!
+	pTriMesh->Create_momflux_integral_grad_nT_and_gradA_LapA_CurlA_on_minors(p_v, AdditionalMomRates);
+	
+	// Now we are looking to compare p_MAR_ion and p_MAR_elec, gradAz, gradTe, curlAz
+	cudaMemcpy(p_temphost2, this->p_AreaMinor, sizeof(f64)*NMINOR, cudaMemcpyDeviceToHost);
+	Compare_f64(p_temphost2, pTriMesh->AreaMinorArray, NMINOR);
+	printf("any key\n"); getch();
+
+	printf("Grad Te:\n");
+	cudaMemcpy(p_GradTe_host, p_GradTe, sizeof(f64_vec2)*NMINOR, cudaMemcpyDeviceToHost);
+	Compare_f64_vec2(p_GradTe_host, GradTeArray, NMINOR);
+
+	printf("any key\n"); getch();
+
+	cudaMemcpy(p_GradAz_host, p_GradAz, sizeof(f64_vec2)*NMINOR, cudaMemcpyDeviceToHost);
+	Compare_f64_vec2(p_GradAz_host, GradAz, NMINOR);
+
+	printf("any key\n"); getch();
+
+	printf("B:\n");
+	cudaMemcpy(p_B_host, this->p_B, sizeof(f64_vec3)*NMINOR, cudaMemcpyDeviceToHost);
+	Compare_f64_vec3(p_B_host, p_cuSyst_compare->p_B, NMINOR);
+
+	printf("any key\n"); getch();
+
+	cudaMemcpy(p_MAR_ion_host, p_MAR_ion, sizeof(f64_vec3)*NMINOR, cudaMemcpyDeviceToHost);
+	cudaMemcpy(p_MAR_elec_host, p_MAR_elec, sizeof(f64_vec3)*NMINOR, cudaMemcpyDeviceToHost);
+	
+	// unparcel AdditionalMomRates:
+	for (int qqq = 0; qqq < NMINOR; qqq++)
+	{
+		p_MAR_ion_compare[qqq] = AdditionalMomRates[qqq].ion;
+		p_MAR_elec_compare[qqq] = AdditionalMomRates[qqq].elec;
+	}
+
+	printf("MAR_ion:\n");
+	Compare_f64_vec3(p_MAR_ion_host, p_MAR_ion_compare, NMINOR);
+	printf("MAR_elec:\n");
+	Compare_f64_vec3(p_MAR_elec_host, p_MAR_elec_compare, NMINOR);
+
+
+	printf("\nend\n");
+	while (1) getch();
+
 	kernelNeutral_pressure_and_momflux << <numTriTiles, threadsPerTileMinor >> >(
 		this->p_info,
 
@@ -1338,64 +1403,13 @@ void cuSyst::PerformCUDA_Advance_Debug(const cuSyst * pX_target, const cuSyst * 
 		);
 	Call(cudaThreadSynchronize(), "cudaTS kernelNeutral_pressure_and_momflux");
 
-	memset(AdditionalMomRates, 0, sizeof(three_vec3)*NMINOR); // what a mess!
-	pTriMesh->Create_momflux_integral_grad_nT_and_gradA_LapA_CurlA_on_minors(p_v, AdditionalMomRates);
-
-	p_cuSyst_compare->PopulateFromTriMesh(pTriMesh);
-	cudaMemcpy(p_cuSyst_host->p_T_minor, this->p_T_minor, NMINOR * sizeof(T3), cudaMemcpyDeviceToHost);
-	Compare_T3(p_cuSyst_host->p_T_minor, p_cuSyst_compare->p_T_minor, NMINOR);
-	printf("compared T (this, pTriMesh).\n");
-
-	// Now we are looking to compare p_MAR_ion and p_MAR_elec, gradAz, gradTe, curlAz
-	cudaMemcpy(p_temphost2, this->p_AreaMinor, sizeof(f64)*NMINOR, cudaMemcpyDeviceToHost);
-	Compare_f64(p_temphost2, pTriMesh->AreaMinorArray, NMINOR);
-
-	printf("Grad Te:\n");
-	cudaMemcpy(p_GradTe_host, p_GradTe, sizeof(f64_vec2)*NMINOR, cudaMemcpyDeviceToHost);
-	Compare_f64_vec2(p_GradTe_host, GradTeArray, NMINOR);
-
-	cudaMemcpy(p_GradAz_host, p_GradAz, sizeof(f64_vec2)*NMINOR, cudaMemcpyDeviceToHost);
-	Compare_f64_vec2(p_GradAz_host, GradAz, NMINOR);
-
-	printf("B:\n");
-	cudaMemcpy(p_B_host, this->p_B, sizeof(f64_vec3)*NMINOR, cudaMemcpyDeviceToHost);
-	Compare_f64_vec3(p_B_host, p_cuSyst_compare->p_B, NMINOR);
-
-	// unparcel AdditionalMomRates:
-	for (int qqq = 0; qqq < NMINOR; qqq++)
-	{
-		p_MAR_ion_compare[qqq] = AdditionalMomRates[qqq].ion;
-		p_MAR_elec_compare[qqq] = AdditionalMomRates[qqq].elec;
-		p_MAR_neut_compare[qqq] = AdditionalMomRates[qqq].neut;
-	};
-
-	cudaMemcpy(p_MAR_ion_host, p_MAR_ion, sizeof(f64_vec3)*NMINOR, cudaMemcpyDeviceToHost);
-	cudaMemcpy(p_MAR_elec_host, p_MAR_elec, sizeof(f64_vec3)*NMINOR, cudaMemcpyDeviceToHost);
-	cudaMemcpy(p_MAR_neut_host, p_MAR_neut, sizeof(f64_vec3)*NMINOR, cudaMemcpyDeviceToHost);
-
-	printf("MAR_ion:\n");
-	Compare_f64_vec3(p_MAR_ion_host, p_MAR_ion_compare, NMINOR);
-	printf("MAR_elec:\n");
-	Compare_f64_vec3(p_MAR_elec_host, p_MAR_elec_compare, NMINOR);
-	printf("MAR_neut:\n");
-	Compare_f64_vec3(p_MAR_neut_host, p_MAR_neut_compare, NMINOR);
-	printf("MAR_elec[88000].x %1.12E %1.12E \n", p_MAR_elec_host[88000].x, p_MAR_elec_compare[88000].x);
+	// =============================================================================
 
 	//////////////////////////////////////////////////////////////////////////
 	// Even more shards!:
 
-
-	pTriMeshhalf->CreateShardModelOfDensities_And_SetMajorArea();// sets n_shards_n, n_shards, Tri_n_n_lists, Tri_n_lists
-
-	for (long i = 0; i < NUMVERTICES; i++)
-	{
-		p_temphost1[i] = n_shards[i].n_cent;
-	}
-	cudaMemcpy(p_temp1, p_temphost1, sizeof(f64)*NUMVERTICES, cudaMemcpyHostToDevice);
-
-	kernelCreateShardModelOfDensities_And_SetMajorArea_Debug << <numTilesMajor, threadsPerTileMajor >> > (
+	kernelCreateShardModelOfDensities_And_SetMajorArea << <numTilesMajor, threadsPerTileMajor >> > (
 		pX_half->p_info,
-		pX_half->p_n_major, // So, we sent the vertex portion of this but I think it comes through as 0.
 		pX_half->p_n_minor,
 		pX_half->p_izTri_vert,
 		pX_half->p_szPBCtri_vert, // could be more intelligent way than storing and copying 3x
@@ -1403,14 +1417,8 @@ void cuSyst::PerformCUDA_Advance_Debug(const cuSyst * pX_target, const cuSyst * 
 		p_n_shards_n,
 		//		p_Tri_n_lists,
 		//	p_Tri_n_n_lists,
-		pX_half->p_AreaMajor,
-		p_temp1);
+		pX_half->p_AreaMajor);
 	Call(cudaThreadSynchronize(), "cudaTS CreateShardModel pX_half");
-	
-	cudaMemcpy(shardtemp, p_n_shards, sizeof(ShardModel)*NUMVERTICES, cudaMemcpyDeviceToHost);
-	printf("Compare n_shards:\n");
-	Compare_n_shards(shardtemp, n_shards, p_cuSyst_host); // ShardModel*NUMVERTICES
-
 
 	kernelInferMinorDensitiesFromShardModel << <numTilesMinor, threadsPerTileMinor >> >(
 		pX_half->p_info,
@@ -1420,14 +1428,6 @@ void cuSyst::PerformCUDA_Advance_Debug(const cuSyst * pX_target, const cuSyst * 
 		pX_half->p_tri_corner_index,
 		pX_half->p_who_am_I_to_corner);// (At the moment just repopulating tri minor n.)
 	Call(cudaThreadSynchronize(), "cudaTS InferMinorDensities pX_half");
-
-
-	pTriMeshhalf->InferMinorDensitiesFromShardModel();
-	p_cuSyst_compare->PopulateFromTriMesh(pTriMeshhalf);
-	cudaMemcpy(p_cuSyst_host->p_n_minor, pX_half->p_n_minor, sizeof(nvals)*NMINOR, cudaMemcpyDeviceToHost);
-	Compare_nvals(p_cuSyst_host->p_n_minor, p_cuSyst_compare->p_n_minor, NUMVERTICES * 2);
-	
-	printf("\n\n");
 
 	Iz_prescribed = GetIzPrescribed(evaltime + 0.5*TIMESTEP); // because we are setting pX_half->v
 
@@ -1469,10 +1469,7 @@ void cuSyst::PerformCUDA_Advance_Debug(const cuSyst * pX_target, const cuSyst * 
 	cudaMemcpy(p_summands_host, p_sigma_Izz, sizeof(f64)*numTilesMinor, cudaMemcpyDeviceToHost);
 
 	// Now calculate Ez_strength to achieve Iz_prescribed:
-	Iz_prescribed = GetIzPrescribed(evaltime + 0.5*TIMESTEP); 
-		// LOOK AT THIS CHANGE RIGHT HERE
-		// NOT YET REPLICATED IN PerformCUDA_Advance
-	// Don't know which was right.
+	Iz_prescribed = GetIzPrescribed(evaltime); // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 	long iTile;
 	f64 Iz0 = 0.0;
 	f64 sigma_Izz = 0.0;
@@ -1480,17 +1477,9 @@ void cuSyst::PerformCUDA_Advance_Debug(const cuSyst * pX_target, const cuSyst * 
 	{
 		Iz0 += p_Iz0_summands_host[iTile];
 		sigma_Izz += p_summands_host[iTile];
-
-		printf("%d : %1.6E %1.6E |   ", iTile, p_Iz0_summands_host[iTile],
-			p_summands_host[iTile]);
 	};
 	f64 Ez_strength_ = (Iz_prescribed - Iz0) / sigma_Izz;
 	Set_f64_constant(Ez_strength, Ez_strength_);
-
-	printf("GPU: Iz_prescribed %1.14E Iz0 %1.14E sigma_Izz %1.14E \n",
-		Iz_prescribed, Iz0, sigma_Izz);
-
-	printf("Ez_strength (GPU) %1.14E \n", Ez_strength_);
 
 	// Update velocities and Azdot:
 	kernelCalculateVelocityAndAzdot << <numTilesMinor, threadsPerTileMinor >> >(
@@ -1506,16 +1495,6 @@ void cuSyst::PerformCUDA_Advance_Debug(const cuSyst * pX_target, const cuSyst * 
 		pX_half->p_v_n
 		);
 	Call(cudaThreadSynchronize(), "cudaTS AccelerateUpdate 1");
-
-	// Get suitable v to use for resistive heating:
-	pTriMesh->Accelerate2018(0.5*TIMESTEP, pTriMesh, pTriMeshhalf, 
-		evaltime + 0.5*TIMESTEP, false); // current is attained at end of step
-	
-	// Compare v after acceleration
-	
-	printf("end\n");
-	while (1) getch();
-
 
 	// ))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
 	// 
@@ -1727,7 +1706,6 @@ void cuSyst::PerformCUDA_Advance_Debug(const cuSyst * pX_target, const cuSyst * 
 
 	kernelCreateShardModelOfDensities_And_SetMajorArea << <numTilesMajor, threadsPerTileMajor >> >(
 		pX_target->p_info,
-		pX_target->p_n_major,
 		pX_target->p_n_minor,
 		pX_target->p_izTri_vert,
 		pX_target->p_szPBCtri_vert, // could be more intelligent way than storing and copying 3x
@@ -2181,7 +2159,7 @@ void cuSyst::PerformCUDA_Advance_Debug(const cuSyst * pX_target, const cuSyst * 
 				p_GradTe,
 
 				pX_half->p_n_minor,
-				pX_half->p_T_minor,
+				pX_half->p_T_minor, // minor : is it populated?
 				(iSubstep == 0) ? this->p_vie : pX_target->p_vie,
 				(iSubstep == 0) ? this->p_v_n : pX_target->p_v_n,
 				(iSubstep == 0) ? this->p_AAdot : pX_target->p_AAdot,
@@ -2308,9 +2286,6 @@ void cuSyst::PerformCUDA_Advance_Debug(const cuSyst * pX_target, const cuSyst * 
 	printf("Elapsed time : %f ms\n", elapsedTime);
 
 	runs++;
-
-	free(shardtemp);
-
 }
 
 void cuSyst::PerformCUDA_Advance(const cuSyst * pX_target, const cuSyst * pX_half)
@@ -2366,7 +2341,6 @@ void cuSyst::PerformCUDA_Advance(const cuSyst * pX_target, const cuSyst * pX_hal
 
 	kernelCreateShardModelOfDensities_And_SetMajorArea << <numTilesMajor, threadsPerTileMajor >> >(
 		this->p_info,
-		this->p_n_major,
 		this->p_n_minor,
 		this->p_izTri_vert,
 		this->p_szPBCtri_vert,
@@ -2562,7 +2536,6 @@ void cuSyst::PerformCUDA_Advance(const cuSyst * pX_target, const cuSyst * pX_hal
 
 	kernelCreateShardModelOfDensities_And_SetMajorArea << <numTilesMajor, threadsPerTileMajor >> > (
 		pX_half->p_info,
-		pX_half->p_n_major,
 		pX_half->p_n_minor,
 		pX_half->p_izTri_vert,
 		pX_half->p_szPBCtri_vert, // could be more intelligent way than storing and copying 3x
@@ -2859,7 +2832,6 @@ void cuSyst::PerformCUDA_Advance(const cuSyst * pX_target, const cuSyst * pX_hal
 
 	kernelCreateShardModelOfDensities_And_SetMajorArea << <numTilesMajor, threadsPerTileMajor >> >(
 		pX_target->p_info,
-		pX_target->p_n_major,
 		pX_target->p_n_minor,
 		pX_target->p_izTri_vert,
 		pX_target->p_szPBCtri_vert, // could be more intelligent way than storing and copying 3x
@@ -3496,10 +3468,8 @@ void PerformCUDA_Revoke()
 	free(p_B_host);
 	free(p_MAR_ion_host);
 	free(p_MAR_elec_host);
-	free(p_MAR_neut_host);
 	free(p_MAR_ion_compare);
 	free(p_MAR_elec_compare);
-	free(p_MAR_neut_compare);
 }
 
 #include "kernel.cu"

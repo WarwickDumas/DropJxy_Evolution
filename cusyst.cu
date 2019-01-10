@@ -347,7 +347,7 @@ void cuSyst::PopulateFromTriMesh(TriMesh * pX)
 	pVertex = pX->X;
 	long izTri[MAXNEIGH],izNeigh[MAXNEIGH];
 	char szPBCtri[MAXNEIGH], szPBCneigh[MAXNEIGH];
-	long tri_len;
+	short tri_len, neigh_len;
 	long iVertex;
 	short i;
 	structural info;
@@ -358,9 +358,11 @@ void cuSyst::PopulateFromTriMesh(TriMesh * pX)
 		memset(izTri+tri_len, 0, sizeof(long)*(MAXNEIGH-tri_len));
 		memcpy(p_izTri_vert + iVertex*MAXNEIGH, izTri, sizeof(long)*MAXNEIGH);
 
-		tri_len = pVertex->GetNeighIndexArray(izNeigh);
-		memset(izNeigh + tri_len, 0, sizeof(long)*(MAXNEIGH - tri_len));
+		neigh_len = pVertex->GetNeighIndexArray(izNeigh);
+		memset(izNeigh + neigh_len, 0, sizeof(long)*(MAXNEIGH - neigh_len));
 		memcpy(p_izNeigh_vert + iVertex*MAXNEIGH,izNeigh, sizeof(long)*MAXNEIGH);
+		
+		// For INNERMOST, tri_len != neigh_len. 5 tris inc frills, 4 neighs.
 		
 		// PB lists:
 		memset(szPBCtri + tri_len, 0, sizeof(char)*(MAXNEIGH - tri_len));
@@ -368,10 +370,11 @@ void cuSyst::PopulateFromTriMesh(TriMesh * pX)
 		memcpy(p_szPBCtri_vert + iVertex*MAXNEIGH, szPBCtri, sizeof(char)*MAXNEIGH);
 		
 		memset(szPBCneigh, 0, sizeof(char)*MAXNEIGH);
-		for (i = 0; i < tri_len; i++)
+		for (i = 0; i < neigh_len; i++)
 		{
 			if ((pX->T + izTri[i])->periodic == 0) {
 				// do nothing: neighbour must be contiguous
+				// tris >= neighs
 			} else {
 				if (((pX->X + izNeigh[i])->pos.x > 0.0) && (pVertex->pos.x < 0.0))
 					szPBCneigh[i] = ROTATE_ME_ANTICLOCKWISE;

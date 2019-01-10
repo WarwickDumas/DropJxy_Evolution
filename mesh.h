@@ -1457,6 +1457,7 @@ public:
 	void CalculateIonisationRates(NTrates NTadditionrates[NUMVERTICES]);
 
 	void AccumulateDiffusiveHeatRateAndCalcIonisation(f64 h_use, NTrates NTadditionrates[NUMVERTICES]);
+	void AccumulateDiffusiveHeatRateAndCalcIonisationOld(f64 h_use, NTrates NTadditionrates[NUMVERTICES]);
 
 	void CreateShardModelOfDensities_And_SetMajorArea();
 
