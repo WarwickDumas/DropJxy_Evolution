@@ -180,7 +180,9 @@ __global__ void kernelPopulateOhmsLaw(
 
 	f64 * __restrict__ p_denom_i,
 	f64 * __restrict__ p_denom_e,
-	bool const bSwitchSave);
+	bool const bSwitchSave,
+	bool const bUse_dest_n_for_Iz,
+	nvals * __restrict__ p_n_dest_minor);
 
 
 __global__ void kernelCalculateVelocityAndAzdot(

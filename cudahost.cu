@@ -862,7 +862,8 @@ void PerformCUDA_RunStepsAndReturnSystem(cuSyst * pX_host)
 	// It's then up to the caller to populate TriMesh from pX_host.
 }
 
-void PerformCUDA_RunStepsAndReturnSystem_Debug(cuSyst * pcuSyst_host, cuSyst * p_cuSyst_compare, TriMesh * pTriMesh, TriMesh * pTriMeshhalf)
+void PerformCUDA_RunStepsAndReturnSystem_Debug(cuSyst * pcuSyst_host, cuSyst * p_cuSyst_compare, TriMesh * pTriMesh, TriMesh * pTriMeshhalf,
+	TriMesh * pDestMesh)
 {
 	cuSyst * pX1, *pX2, *pX_half, *pXtemp;
 	pX1 = &cuSyst1;
@@ -875,7 +876,7 @@ void PerformCUDA_RunStepsAndReturnSystem_Debug(cuSyst * pcuSyst_host, cuSyst * p
 
 	for (iSubstep = 0; iSubstep < 10; iSubstep++)
 	{
-		pX1->PerformCUDA_Advance_Debug(pX2, pX_half, pcuSyst_host, p_cuSyst_compare, pTriMesh, pTriMeshhalf);
+		pX1->PerformCUDA_Advance_Debug(pX2, pX_half, pcuSyst_host, p_cuSyst_compare, pTriMesh, pTriMeshhalf, pDestMesh);
 		// keep sending TriMesh pX to p_cuSyst_compare
 
 		pXtemp = pX1;
@@ -890,7 +891,8 @@ void PerformCUDA_RunStepsAndReturnSystem_Debug(cuSyst * pcuSyst_host, cuSyst * p
 }
 
 void cuSyst::PerformCUDA_Advance_Debug(const cuSyst * pX_target, const cuSyst * pX_half,
-	const cuSyst * p_cuSyst_host, cuSyst * p_cuSyst_compare, TriMesh * pTriMesh, TriMesh * pTriMeshhalf)
+	const cuSyst * p_cuSyst_host, cuSyst * p_cuSyst_compare, TriMesh * pTriMesh, TriMesh * pTriMeshhalf,
+	TriMesh * pDestMesh)
 {
 	long iMinor, iSubstep;
 	f64 Iz_prescribed;
@@ -913,6 +915,11 @@ void cuSyst::PerformCUDA_Advance_Debug(const cuSyst * pX_target, const cuSyst * 
 	cudaMemcpy(&value, f64address, sizeof(f64), cudaMemcpyDeviceToHost);
 	printf("billericay = %1.10E \n", value);
 
+
+#define USE_N_MAJOR_FOR_VERTEX 
+	// and simple average for tris; shards only for upwind density on tris.
+
+
 	// inauspicious start: overall v has to be split into 2 routines
 	kernelCalculateOverallVelocitiesVertices << <numTilesMajor, threadsPerTileMajor >> > (
 		this->p_info + BEGINNING_OF_CENTRAL,
@@ -922,8 +929,7 @@ void cuSyst::PerformCUDA_Advance_Debug(const cuSyst * pX_target, const cuSyst * 
 		this->p_v_overall_minor + BEGINNING_OF_CENTRAL
 		);
 	Call(cudaThreadSynchronize(), "cudaTS calculate overall velocities");
-
-
+	
 
 	kernelAverageOverallVelocitiesTriangles << <numTriTiles, threadsPerTileMinor >> > (
 		this->p_v_overall_minor + BEGINNING_OF_CENTRAL,
@@ -982,6 +988,10 @@ void cuSyst::PerformCUDA_Advance_Debug(const cuSyst * pX_target, const cuSyst * 
 		this->p_tri_periodic_corner_flags
 		); // call before CreateShardModel 
 	Call(cudaThreadSynchronize(), "cudaTS average nTx");
+	cudaMemcpy(this->p_n_minor + BEGINNING_OF_CENTRAL,
+		this->p_n_major, sizeof(nvals)*NUMVERTICES, cudaMemcpyDeviceToDevice);
+
+	// Will want a better approx here.
 
 	// --------------------------------------------
 
@@ -1029,9 +1039,7 @@ void cuSyst::PerformCUDA_Advance_Debug(const cuSyst * pX_target, const cuSyst * 
 		p_temp1 // compare to the CPU n_cent and if different do a bunch of intermediate output.
 		);// sets n_shards_n, n_shards, Tri_n_n_lists, Tri_n_lists
 	Call(cudaThreadSynchronize(), "cudaTS CreateShardModels");
-
-
-	
+		
 	ShardModel * shardtemp = (ShardModel *)malloc(sizeof(ShardModel)*NUMVERTICES);
 	//cudaMemcpy(shardtemp, p_n_shards_n, sizeof(ShardModel)*NUMVERTICES, cudaMemcpyDeviceToHost);
 	// Compare shard models:
@@ -1042,20 +1050,10 @@ void cuSyst::PerformCUDA_Advance_Debug(const cuSyst * pX_target, const cuSyst * 
 	printf("Compare n_shards:\n");
 	Compare_n_shards(shardtemp, n_shards, p_cuSyst_host); // ShardModel*NUMVERTICES
 
-
-	/*FILE * fp_joke = fopen("whatajoke2.txt", "a");
-	fprintf(fp_joke, "CPUcent GPUcent \n\n");
-	for (long iVertex = 0; iVertex < NUMVERTICES; iVertex++)
-	{
-		fprintf(fp_joke, "%1.14E %1.14E \n", n_shards[iVertex].n_cent, shardtemp[iVertex].n_cent);
-	}
-	fclose(fp_joke);*/
-	// Do a couple goes of this, see what happening.
-
-	// Major area? Compare .... but it's set as pVertex->AreaCell so do manually here.
-	
 	//====================================================
-		
+	
+#ifndef USE_N_MAJOR_FOR_VERTEX
+
 	kernelInferMinorDensitiesFromShardModel << <numTilesMinor, threadsPerTileMinor >> >(
 		this->p_info,
 		this->p_n_minor,
@@ -1083,6 +1081,7 @@ void cuSyst::PerformCUDA_Advance_Debug(const cuSyst * pX_target, const cuSyst * 
 	// Now remember that we used n_shard.n_cent as n_minor on GPU.
 	// Important to keep track of this distinction and the logic with n_major.
 	// ########################################################################################
+#endif
 
 	kernelCalculateUpwindDensity_tris << <numTriTiles, threadsPerTileMinor >> >(
 		this->p_info,
@@ -1185,16 +1184,7 @@ void cuSyst::PerformCUDA_Advance_Debug(const cuSyst * pX_target, const cuSyst * 
 
 	// !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
-
-
-
-
-
-
-
-
-
-
+	
 
 
 
@@ -1243,6 +1233,12 @@ void cuSyst::PerformCUDA_Advance_Debug(const cuSyst * pX_target, const cuSyst * 
 		pX_half->p_tri_periodic_corner_flags
 		); // call before CreateShardModel 
 	Call(cudaThreadSynchronize(), "cudaTS average nTx 2");
+
+	// Fill in n_minor = n_major as we are not using shards to give minor densities this time. :
+	cudaMemcpy(pX_half->p_n_minor + BEGINNING_OF_CENTRAL,
+		pX_half->p_n_major, sizeof(nvals)*NUMVERTICES, cudaMemcpyDeviceToDevice);
+	
+
 
 	pTriMeshhalf->Average_n_T_to_tris_and_calc_centroids_and_minorpos();
 	p_cuSyst_compare->PopulateFromTriMesh(pTriMeshhalf);
@@ -1316,7 +1312,7 @@ void cuSyst::PerformCUDA_Advance_Debug(const cuSyst * pX_target, const cuSyst * 
 
 		p_MAR_neut, p_MAR_ion, p_MAR_elec,
 		
-		p_n_shards
+		p_n_shards   // this is so that we can do momentum advection?
 		);
 	Call(cudaThreadSynchronize(), "cudaTS kernelCreate_momflux_minor");
 
@@ -1332,7 +1328,7 @@ void cuSyst::PerformCUDA_Advance_Debug(const cuSyst * pX_target, const cuSyst * 
 
 		this->p_T_minor,
 		this->p_v_n,
-		p_n_shards_n,
+		p_n_shards_n,   // Now hang on, why did this appear? momentum advection?
 		this->p_v_overall_minor,
 		p_MAR_neut
 		);
@@ -1382,9 +1378,8 @@ void cuSyst::PerformCUDA_Advance_Debug(const cuSyst * pX_target, const cuSyst * 
 	printf("MAR_elec[88000].x %1.12E %1.12E \n", p_MAR_elec_host[88000].x, p_MAR_elec_compare[88000].x);
 
 	//////////////////////////////////////////////////////////////////////////
-	// Even more shards!:
-
-
+	// Even more shards!: we will be getting advection rate for main step
+	
 	pTriMeshhalf->CreateShardModelOfDensities_And_SetMajorArea();// sets n_shards_n, n_shards, Tri_n_n_lists, Tri_n_lists
 
 	for (long i = 0; i < NUMVERTICES; i++)
@@ -1412,6 +1407,8 @@ void cuSyst::PerformCUDA_Advance_Debug(const cuSyst * pX_target, const cuSyst * 
 	Compare_n_shards(shardtemp, n_shards, p_cuSyst_host); // ShardModel*NUMVERTICES
 
 
+#ifndef USE_N_MAJOR_FOR_VERTEX
+
 	kernelInferMinorDensitiesFromShardModel << <numTilesMinor, threadsPerTileMinor >> >(
 		pX_half->p_info,
 		pX_half->p_n_minor,
@@ -1420,20 +1417,22 @@ void cuSyst::PerformCUDA_Advance_Debug(const cuSyst * pX_target, const cuSyst * 
 		pX_half->p_tri_corner_index,
 		pX_half->p_who_am_I_to_corner);// (At the moment just repopulating tri minor n.)
 	Call(cudaThreadSynchronize(), "cudaTS InferMinorDensities pX_half");
+	
+	pTriMeshhalf->InferMinorDensitiesFromShardModel();	
+#endif
 
-
-	pTriMeshhalf->InferMinorDensitiesFromShardModel();
 	p_cuSyst_compare->PopulateFromTriMesh(pTriMeshhalf);
 	cudaMemcpy(p_cuSyst_host->p_n_minor, pX_half->p_n_minor, sizeof(nvals)*NMINOR, cudaMemcpyDeviceToHost);
 	Compare_nvals(p_cuSyst_host->p_n_minor, p_cuSyst_compare->p_n_minor, NUMVERTICES * 2);
-	
-	printf("\n\n");
+
+	printf("\n\n\n");
 
 	Iz_prescribed = GetIzPrescribed(evaltime + 0.5*TIMESTEP); // because we are setting pX_half->v
 
 	f64 neg_Iz_per_triangle = Iz_prescribed / (f64)numReverseJzTriangles;
 	Set_f64_constant(negative_Iz_per_triangle, neg_Iz_per_triangle);
-	// Get suitable v to use for resistive heating:
+	
+	// Get suitable v to use for resistive heating on main step:
 	kernelPopulateOhmsLaw << <numTilesMinor, threadsPerTileMinor >> >(
 		0.5*TIMESTEP,
 
@@ -1445,6 +1444,7 @@ void cuSyst::PerformCUDA_Advance_Debug(const cuSyst * pX_target, const cuSyst * 
 		p_GradTe,
 
 		this->p_n_minor,
+
 		this->p_T_minor, // minor : is it populated?
 		this->p_vie,
 		this->p_v_n,
@@ -1461,7 +1461,10 @@ void cuSyst::PerformCUDA_Advance_Debug(const cuSyst * pX_target, const cuSyst * 
 		p_sigma_Izz,
 		p_denom_i,
 		p_denom_e,
-		false);
+		false,
+		true,
+		pX_half->p_n_minor
+		);
 
 	Call(cudaThreadSynchronize(), "cudaTS AccelerateOhms 1");
 
@@ -1469,11 +1472,17 @@ void cuSyst::PerformCUDA_Advance_Debug(const cuSyst * pX_target, const cuSyst * 
 	cudaMemcpy(p_summands_host, p_sigma_Izz, sizeof(f64)*numTilesMinor, cudaMemcpyDeviceToHost);
 
 	// Now calculate Ez_strength to achieve Iz_prescribed:
-	Iz_prescribed = GetIzPrescribed(evaltime + 0.5*TIMESTEP); 
+	Iz_prescribed = GetIzPrescribed(evaltime); 
 		// LOOK AT THIS CHANGE RIGHT HERE
 		// NOT YET REPLICATED IN PerformCUDA_Advance
 	// Don't know which was right.
 	long iTile;
+
+	memset(sigma_tiles, 0, sizeof(f64)*numTilesMinor);
+	// Get suitable v to use for resistive heating:
+	pTriMesh->Accelerate2018(0.5*TIMESTEP, pTriMesh, pTriMeshhalf,
+		evaltime, false, true); // current is attained at start of step [ ie Iz == 0 on 1st step ]
+	
 	f64 Iz0 = 0.0;
 	f64 sigma_Izz = 0.0;
 	for (iTile = 0; iTile < numTilesMinor; iTile++)
@@ -1481,9 +1490,10 @@ void cuSyst::PerformCUDA_Advance_Debug(const cuSyst * pX_target, const cuSyst * 
 		Iz0 += p_Iz0_summands_host[iTile];
 		sigma_Izz += p_summands_host[iTile];
 
-		printf("%d : %1.6E %1.6E |   ", iTile, p_Iz0_summands_host[iTile],
-			p_summands_host[iTile]);
+	//	printf("%d: %1.12E %1.12E | %1.12E  diff %1.4E\n ", iTile, p_Iz0_summands_host[iTile],
+	//		p_summands_host[iTile], sigma_tiles[iTile], p_summands_host[iTile] - sigma_tiles[iTile]);
 	};
+
 	f64 Ez_strength_ = (Iz_prescribed - Iz0) / sigma_Izz;
 	Set_f64_constant(Ez_strength, Ez_strength_);
 
@@ -1507,16 +1517,22 @@ void cuSyst::PerformCUDA_Advance_Debug(const cuSyst * pX_target, const cuSyst * 
 		);
 	Call(cudaThreadSynchronize(), "cudaTS AccelerateUpdate 1");
 
-	// Get suitable v to use for resistive heating:
-	pTriMesh->Accelerate2018(0.5*TIMESTEP, pTriMesh, pTriMeshhalf, 
-		evaltime + 0.5*TIMESTEP, false); // current is attained at end of step
-	
 	// Compare v after acceleration
-	
-	printf("end\n");
-	while (1) getch();
-
-
+	printf("Compare v_e: \n");
+	cudaMemcpy(p_cuSyst_host->p_vie, pX_half->p_vie, sizeof(v4)*NMINOR, cudaMemcpyDeviceToHost);
+	f64_vec3 *ve_host = (f64_vec3 *)malloc(sizeof(f64_vec3)*NMINOR);
+	f64_vec3 *ve_compare = (f64_vec3 *)malloc(sizeof(f64_vec3)*NMINOR);
+	for (long i = 0; i < NMINOR; i++)
+	{
+		ve_compare[i].x = pTriMeshhalf->pData[i].vxy.x;
+		ve_compare[i].y = pTriMeshhalf->pData[i].vxy.y;
+		ve_compare[i].z = pTriMeshhalf->pData[i].vez;
+		ve_host[i].x = p_cuSyst_host->p_vie[i].vxy.x;
+		ve_host[i].y = p_cuSyst_host->p_vie[i].vxy.y;
+		ve_host[i].z = p_cuSyst_host->p_vie[i].vez;
+	}
+	Compare_f64_vec3(ve_host, ve_compare, NMINOR);
+	printf("\n");
 	// ))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
 	// 
 	// Now do the n,T,x advance to pDestmesh:
@@ -1543,9 +1559,23 @@ void cuSyst::PerformCUDA_Advance_Debug(const cuSyst * pX_target, const cuSyst * 
 		TIMESTEP,
 		this->p_info,
 		pX_target->p_info,
-		this->p_v_overall_minor
+		pX_half->p_v_overall_minor // WHY WE WERE NOT USING FROM pX_half?
 		);
 	Call(cudaThreadSynchronize(), "cudaTS AdvectPositions_CopyTris");
+	
+	pTriMeshhalf->CalculateOverallVelocities(p_v); // vertices first, then average to tris
+	memset(pDestMesh->pData, 0, sizeof(plasma_data)*NMINOR);
+	pTriMesh->AdvectPositions_CopyTris(TIMESTEP, pDestMesh, p_v);
+
+	printf("\nCompare v overall:\n");
+	cudaMemcpy(p_cuSyst_compare->p_v_overall_minor, pX_half->p_v_overall_minor, sizeof(f64_vec2)*NMINOR, cudaMemcpyDeviceToHost);
+	Compare_f64_vec2(p_cuSyst_compare->p_v_overall_minor, p_v, NMINOR);
+
+	free(ve_host);
+	free(ve_compare);
+
+// ==========
+	printf("Upwind density calc: \n");
 
 	kernelCalculateUpwindDensity_tris << <numTriTiles, threadsPerTileMinor >> >(
 		pX_half->p_info,
@@ -1560,6 +1590,22 @@ void cuSyst::PerformCUDA_Advance_Debug(const cuSyst * pX_target, const cuSyst * 
 		pX_half->p_tri_periodic_neigh_flags,
 		pX_half->p_n_upwind_minor);
 	Call(cudaThreadSynchronize(), "cudaTS CalculateUpwindDensity_tris pX_half");
+
+	pTriMeshhalf->CalcUpwindDensity_on_tris(p_temphost1, p_temphost2, p_v);
+		//f64 * p_n_upwind, f64 * p_nn_upwind, f64_vec2 * p_v_overall_tris)
+	
+	for (long i = 0; i < NUMTRIANGLES; i++)
+	{
+		p_cuSyst_compare->p_n_upwind_minor[i].n = p_temphost1[i];
+		p_cuSyst_compare->p_n_upwind_minor[i].n_n = p_temphost2[i];
+	};
+	cudaMemcpy(p_cuSyst_host->p_n_upwind_minor, pX_half->p_n_upwind_minor, sizeof(nvals)*NMINOR, cudaMemcpyDeviceToHost);
+	Compare_nvals(p_cuSyst_host->p_n_upwind_minor, p_cuSyst_compare->p_n_upwind_minor, NUMVERTICES * 2);
+
+
+	printf("end\n");
+	while (1) getch();
+
 
 	cudaMemset(p_Integrated_div_v_overall, 0, sizeof(f64)*NUMVERTICES);
 	cudaMemset(p_Div_v_neut, 0, sizeof(f64)*NUMVERTICES);
@@ -1586,6 +1632,24 @@ void cuSyst::PerformCUDA_Advance_Debug(const cuSyst * pX_target, const cuSyst * 
 		p_Div_v_neut,
 		p_Integrated_div_v_overall);
 	Call(cudaThreadSynchronize(), "cudaTS AccumulateAdvectiveMassHeatRate pX_half");
+
+
+	memset(p_div_v_neut, 0, sizeof(f64)*NUMVERTICES);
+	memset(p_div_v, 0, sizeof(f64)*NUMVERTICES);
+	memset(NTadditionrates, 0, sizeof(NTrates)*NUMVERTICES);
+
+	// Make this use upward density instead of just referring to shards: 
+	pTriMeshhalf->AccumulateAdvectiveMassHeatRate(p_v, NTadditionrates);
+
+	cudaMemcpy(p_NT_addition_rates, NT_addition_rates_d, sizeof(NTrates)*NUMVERTICES, cudaMemcpyDeviceToHost);
+
+	Compare_NTrates(p_NT_addition_rates, NTadditionrates);
+
+
+
+	printf("end\n");
+	while (1) getch();
+
 
 	kernelCalculateNu_eHeartNu_iHeart_nu_nn_visc << <numTilesMajorClever, threadsPerTileMajorClever >> >(
 		pX_half->p_info + BEGINNING_OF_CENTRAL,
@@ -1640,6 +1704,10 @@ void cuSyst::PerformCUDA_Advance_Debug(const cuSyst * pX_target, const cuSyst * 
 		pX_target->p_tri_periodic_corner_flags
 		); // call before CreateShardModel 
 	Call(cudaThreadSynchronize(), "cudaTS average nTx 233");
+
+	// Copy major n to minor n:
+	cudaMemcpy(pX_target->p_n_minor + BEGINNING_OF_CENTRAL,
+		pX_target->p_n_major, sizeof(nvals)*NUMVERTICES, cudaMemcpyDeviceToDevice);
 
 	// Now set up inputs such as AMR with advective momflux and aTP, and B
 	// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -1725,6 +1793,8 @@ void cuSyst::PerformCUDA_Advance_Debug(const cuSyst * pX_target, const cuSyst * 
 	//////////////////////////////////////////////////////////////////////////
 	// Even more shards!:
 
+#ifndef USE_N_MAJOR_FOR_VERTEX
+
 	kernelCreateShardModelOfDensities_And_SetMajorArea << <numTilesMajor, threadsPerTileMajor >> >(
 		pX_target->p_info,
 		pX_target->p_n_major,
@@ -1746,6 +1816,10 @@ void cuSyst::PerformCUDA_Advance_Debug(const cuSyst * pX_target, const cuSyst * 
 		pX_target->p_tri_corner_index,
 		pX_target->p_who_am_I_to_corner);// (At the moment just repopulating tri minor n.)
 	Call(cudaThreadSynchronize(), "cudaTS InferMinorDensities pX_target");
+
+	// We'd then need to call calc to set n_minor verts to n_shards.n_cent
+
+#endif
 
 	f64 starttime = evaltime;
 
@@ -1844,7 +1918,10 @@ void cuSyst::PerformCUDA_Advance_Debug(const cuSyst * pX_target, const cuSyst * 
 				p_sigma_Izz,
 				p_denom_i,
 				p_denom_e,
-				true);
+				true,
+				(iSubstep == SUBCYCLES-1),
+				pX_target->p_n_minor
+				);
 
 			Call(cudaThreadSynchronize(), "cudaTS kernelPopulateOhmsLaw ");
 
@@ -2064,7 +2141,10 @@ void cuSyst::PerformCUDA_Advance_Debug(const cuSyst * pX_target, const cuSyst * 
 				p_sigma_Izz,
 				p_denom_i,
 				p_denom_e,
-				false); // bFeint ---- SHOULD THIS BE TRUE?
+				false,
+				(iSubstep == SUBCYCLES-1),
+				pX_target->p_n_minor
+				);
 
 						// Might as well recalculate Ez_strength again :
 						// Iz already set for t+SUBSTEP.
@@ -2197,7 +2277,9 @@ void cuSyst::PerformCUDA_Advance_Debug(const cuSyst * pX_target, const cuSyst * 
 				p_sigma_Izz,
 				p_denom_i,
 				p_denom_e,
-				false); // bFeint
+				false,
+				(iSubstep == SUBCYCLES-1), // if not, use pX_half->p_n_minor for Iz -- roughly right but wrong
+				pX_target->p_n_minor); 
 			Call(cudaThreadSynchronize(), "cudaTS kernelPopulateOhmsLaw ");
 
 			cudaMemcpy(p_Iz0_summands_host, p_Iz0, sizeof(f64)*numTilesMinor, cudaMemcpyDeviceToHost);
@@ -2363,6 +2445,8 @@ void cuSyst::PerformCUDA_Advance(const cuSyst * pX_target, const cuSyst * pX_hal
 		this->p_tri_periodic_corner_flags
 		); // call before CreateShardModel 
 	Call(cudaThreadSynchronize(), "cudaTS average nTx");
+	cudaMemcpy(this->p_n_minor + BEGINNING_OF_CENTRAL,
+		this->p_n_major, sizeof(nvals)*NUMVERTICES, cudaMemcpyDeviceToDevice);
 
 	kernelCreateShardModelOfDensities_And_SetMajorArea << <numTilesMajor, threadsPerTileMajor >> >(
 		this->p_info,
@@ -2476,6 +2560,8 @@ void cuSyst::PerformCUDA_Advance(const cuSyst * pX_target, const cuSyst * pX_hal
 		pX_half->p_tri_periodic_corner_flags
 		); // call before CreateShardModel 
 	Call(cudaThreadSynchronize(), "cudaTS average nTx 2");
+	cudaMemcpy(pX_half->p_n_minor + BEGINNING_OF_CENTRAL,
+		pX_half->p_n_major, sizeof(nvals)*NUMVERTICES, cudaMemcpyDeviceToDevice);
 
 	// +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 	// We are going to want to introduce 2nd degree approx to get n,T desired on tris.
@@ -2588,6 +2674,7 @@ void cuSyst::PerformCUDA_Advance(const cuSyst * pX_target, const cuSyst * pX_hal
 	Set_f64_constant(negative_Iz_per_triangle, neg_Iz_per_triangle);
 	// Get suitable v to use for resistive heating:
 	kernelPopulateOhmsLaw<<<numTilesMinor, threadsPerTileMinor>>>(
+				
 		0.5*TIMESTEP,
 
 		this->p_info,
@@ -2614,7 +2701,10 @@ void cuSyst::PerformCUDA_Advance(const cuSyst * pX_target, const cuSyst * pX_hal
 		p_sigma_Izz,
 		p_denom_i,
 		p_denom_e,
-		false); 
+		false,
+		true, // use this for Iz:
+		pX_half->p_n_minor
+		); 
 
 	Call(cudaThreadSynchronize(), "cudaTS AccelerateOhms 1");
 
@@ -2772,6 +2862,8 @@ void cuSyst::PerformCUDA_Advance(const cuSyst * pX_target, const cuSyst * pX_hal
 		pX_target->p_tri_periodic_corner_flags
 		); // call before CreateShardModel 
 	Call(cudaThreadSynchronize(), "cudaTS average nTx 233");
+	cudaMemcpy(pX_target->p_n_minor + BEGINNING_OF_CENTRAL,
+		pX_target->p_n_major, sizeof(nvals)*NUMVERTICES, cudaMemcpyDeviceToDevice);
 
 	// Now set up inputs such as AMR with advective momflux and aTP, and B
 	// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -2976,7 +3068,9 @@ void cuSyst::PerformCUDA_Advance(const cuSyst * pX_target, const cuSyst * pX_hal
 					p_sigma_Izz,
 					p_denom_i,
 					p_denom_e,
-					true);
+					true,
+					(iSubstep == SUBCYCLES-1)?true:false,
+					pX_target->p_n_minor);
 				
 				Call(cudaThreadSynchronize(), "cudaTS kernelPopulateOhmsLaw ");
 
@@ -3196,7 +3290,9 @@ void cuSyst::PerformCUDA_Advance(const cuSyst * pX_target, const cuSyst * pX_hal
 				p_sigma_Izz,
 				p_denom_i,
 				p_denom_e,
-				false); // bFeint ---- SHOULD THIS BE TRUE?
+				false,
+				(iSubstep == SUBCYCLES-1)?true:false,
+				pX_target->p_n_minor); 
 			
 			// Might as well recalculate Ez_strength again :
 			// Iz already set for t+SUBSTEP.
@@ -3328,7 +3424,10 @@ void cuSyst::PerformCUDA_Advance(const cuSyst * pX_target, const cuSyst * pX_hal
 				p_sigma_Izz,
 				p_denom_i,
 				p_denom_e,
-				false); // bFeint
+				false,
+				(iSubstep < SUBCYCLES-1)?false:true,
+				pX_target->p_n_minor
+				); // bFeint
 			Call(cudaThreadSynchronize(), "cudaTS kernelPopulateOhmsLaw ");
 						
 			cudaMemcpy(p_Iz0_summands_host, p_Iz0, sizeof(f64)*numTilesMinor, cudaMemcpyDeviceToHost);

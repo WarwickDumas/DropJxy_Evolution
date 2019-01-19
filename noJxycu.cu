@@ -1613,8 +1613,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			// Run 1 step:
 			printf("evaltime %1.8E\n", evaltime);
 			
-			PerformCUDA_RunStepsAndReturnSystem_Debug(&cuSyst_host, &cuSyst_host2, pX, &X3);
-			cuSyst_host.PopulateTriMesh(pX);
+			PerformCUDA_RunStepsAndReturnSystem_Debug(&cuSyst_host, &cuSyst_host2, pX, &X3, pXnew);
+			cuSyst_host.PopulateTriMesh(pX); // ?
 
 			steps_remaining--;
 			GlobalStepsCounter++;

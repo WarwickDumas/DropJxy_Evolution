@@ -7,7 +7,7 @@
 
 #define FOUR_PI 12.5663706143592
 
-#define CHOSEN 88000
+#define CHOSEN 30039
 
 __global__ void kernelCalculateOverallVelocitiesVertices(
 	structural * __restrict__ p_info_major,
@@ -1035,6 +1035,9 @@ __global__ void kernelCreateShardModelOfDensities_And_SetMajorArea_Debug(
 
 			store_pos[i] = pos0;
 
+			if (iVertex == CHOSEN - BEGINNING_OF_CENTRAL) printf("%d: %1.14E %1.14E\n",
+				i, ndesire0, ndesire1);
+
 			N0 += tri_area*THIRD*(ndesire0 + ndesire1);
 			coeff[i] += tri_area*THIRD;
 			coeff[inext] += tri_area*THIRD;
@@ -1060,7 +1063,7 @@ __global__ void kernelCreateShardModelOfDensities_And_SetMajorArea_Debug(
 			n_.n_cent = n_avg;
 
 			storeWhich = 0;
-			if (iVertex == CHOSEN) printf("CHOSEN : Switch1 n_avg %1.12E \n", n_avg);
+			if (iVertex == CHOSEN - BEGINNING_OF_CENTRAL) printf("CHOSEN : Switch1 n_avg %1.12E \n", n_avg);
 
 		}
 		else {
@@ -1074,7 +1077,7 @@ __global__ void kernelCreateShardModelOfDensities_And_SetMajorArea_Debug(
 				n_.n_cent = n_C_need;
 
 				storeWhich = 1;
-				if (iVertex == CHOSEN) printf("CHOSEN : Switch2 n_C_need %1.12E low_n %1.12E high_n %1.12E\n", n_C_need, low_n, high_n);
+				if (iVertex == CHOSEN - BEGINNING_OF_CENTRAL) printf("CHOSEN : Switch2 n_C_need %1.12E low_n %1.12E high_n %1.12E\n", n_C_need, low_n, high_n);
 			}
 			else {
 				// The laborious case.
@@ -1123,7 +1126,7 @@ __global__ void kernelCreateShardModelOfDensities_And_SetMajorArea_Debug(
 									ndesire = p_n_minor[izTri[i]].n;
 								};
 
-								if (iVertex == CHOSEN) printf("CHOSEN : ndesire %1.14E n_acceptable %1.14E\n", ndesire, n_acceptable);
+								if (iVertex == CHOSEN - BEGINNING_OF_CENTRAL) printf("CHOSEN : ndesire %1.14E n_acceptable %1.14E\n", ndesire, n_acceptable);
 								
 								if (ndesire < n_acceptable) { // yes, use ndesire[i] ...
 									fixed[i] = true;
@@ -1147,7 +1150,7 @@ __global__ void kernelCreateShardModelOfDensities_And_SetMajorArea_Debug(
 							// The value to which we have to set the remaining
 							// n values.
 						};
-						if (iVertex == CHOSEN) printf("---\n");
+						if (iVertex == CHOSEN - BEGINNING_OF_CENTRAL) printf("---\n");
 					} while (found != 0);
 
 				}
@@ -1197,7 +1200,7 @@ __global__ void kernelCreateShardModelOfDensities_And_SetMajorArea_Debug(
 							n_acceptable = (n_avg*AreaMajor - N_attained) / coeffremain;
 						};
 
-						if (iVertex == CHOSEN) printf("@@@ \n");
+						if (iVertex == CHOSEN - BEGINNING_OF_CENTRAL) printf("@@@ \n");
 
 					} while (found != 0);
 				};
@@ -1497,8 +1500,7 @@ __global__ void kernelInferMinorDensitiesFromShardModel(
 			result.n = p_n_shards[index - BEGINNING_OF_CENTRAL].n_cent;
 			result.n_n = p_n_shards_n[index - BEGINNING_OF_CENTRAL].n_cent;
 			p_n_minor[index] = result;
-		}
-		else {
+		} else {
 			// Outermost vertex?
 			result.n = 0.0;
 			result.n_n = 0.0;
@@ -1508,8 +1510,7 @@ __global__ void kernelInferMinorDensitiesFromShardModel(
 			};
 			p_n_minor[index] = result;
 		}
-	}
-	else {
+	} else {
 		if (info.flag == DOMAIN_TRIANGLE) {
 			LONG3 tri_corner_index = p_tri_corner_index[index];
 			LONG3 who_am_I_to_corner = p_who_am_I_to_corner[index];
@@ -2513,9 +2514,9 @@ __global__ void kernelCalculateUpwindDensity_tris(
 		f64_vec2 relv = p_vie_minor[iTri].vxy - v_overall;
 
 
-	//	if (iTri == CHOSEN) printf("%d GPU: n0 %1.14E n1 %1.14E n2 %1.14E \n"
-	//		"relv GPU %1.14E %1.14E \n",
-	//		CHOSEN, n0, n1, n2, relv.x, relv.y);
+		if (iTri == CHOSEN) printf("%d GPU: n0 %1.14E n1 %1.14E n2 %1.14E \n"
+			"relv GPU %1.14E %1.14E \n",
+			CHOSEN, n0, n1, n2, relv.x, relv.y);
 
 
 		trineighindex = p_trineighindex[iTri];
@@ -2532,6 +2533,9 @@ __global__ void kernelCalculateUpwindDensity_tris(
 		if (szPBC_neighs.per0 == ROTATE_ME_ANTICLOCKWISE) {
 			nearby_pos = Anticlockwise_d*nearby_pos;
 		}
+		// Slightly puzzled why we don't just take difference of 2 corners of our triangle.
+		// Why dealing with tri positions instead of vertex positions? Because tri positions
+		// are the corners of the major cell.
 
 		edge_normal0.x = nearby_pos.y - info.pos.y;
 		edge_normal0.y = info.pos.x - nearby_pos.x;
@@ -2546,8 +2550,8 @@ __global__ void kernelCalculateUpwindDensity_tris(
 		f64 dot0 = relv.dot(edge_normal0);
 		
 
-//		if (iTri == CHOSEN) printf("GPU: edge_normal0 %1.14E %1.14E dot0 %1.14E \n",
-	//									edge_normal0.x,edge_normal0.y,dot0);
+		if (iTri == CHOSEN) printf("GPU %d: edge_normal0 %1.14E %1.14E dot0 %1.14E \n",
+										CHOSEN, edge_normal0.x,edge_normal0.y,dot0);
 
 		
 		if (dot0 > 0.0) // v faces anticlockwise
@@ -2573,12 +2577,11 @@ __global__ void kernelCalculateUpwindDensity_tris(
 		}
 		edge_normal1.x = nearby_pos.y - info.pos.y;
 		edge_normal1.y = info.pos.x - nearby_pos.x;
-
+		
 		dot1 = relv.dot(edge_normal1);
-		
-		
-		//if (iTri == CHOSEN) printf("GPU: edge_normal1 %1.14E %1.14E dot1 %1.14E \n",
-		//	edge_normal1.x, edge_normal1.y, dot1);
+				
+		if (iTri == CHOSEN) printf("GPU: edge_normal1 %1.14E %1.14E dot1 %1.14E \n",
+			edge_normal1.x, edge_normal1.y, dot1);
 
 		if (dot1 > 0.0)
 		{
@@ -2586,6 +2589,7 @@ __global__ void kernelCalculateUpwindDensity_tris(
 		} else {
 			dot1 = -dot1;
 			numerator += dot1*n2;
+
 		}
 
 		if ((trineighindex.i3 >= StartMinor) && (trineighindex.i3 < EndMinor)) {
@@ -2605,12 +2609,10 @@ __global__ void kernelCalculateUpwindDensity_tris(
 		edge_normal2.y = info.pos.x - nearby_pos.x;
 
 		dot2 = relv.dot(edge_normal2);
-
-
-		//if (iTri == CHOSEN) printf("GPU: edge_normal2 %1.14E %1.14E dot2 %1.14E \n",
-		//	edge_normal2.x, edge_normal2.y, dot2);
-
-
+		
+		if (iTri == CHOSEN) printf("GPU: edge_normal2 %1.14E %1.14E dot2 %1.14E \n",
+			edge_normal2.x, edge_normal2.y, dot2);
+		
 		if (dot2 > 0.0)
 		{
 			numerator += dot2*n1;
@@ -2619,13 +2621,14 @@ __global__ void kernelCalculateUpwindDensity_tris(
 			numerator += dot2*n0;
 		}
 
+		// Already did fabs so can do just this test without squaring:
 		if (dot0 + dot1 + dot2 == 0.0) {
 			result.n = THIRD*(n0 + n1 + n2);
-		//	if (iTri == CHOSEN) printf("Got to here. GPU. n = %1.14E \n", result.n);
+			if (iTri == CHOSEN) printf("Got to here. GPU. n = %1.14E \n", result.n);
 		} else {
 			result.n = numerator / (dot0 + dot1 + dot2);
-		//	if (iTri == CHOSEN) printf("Here. GPU. denom = %1.14E n = %1.14E \n",
-		//		dot0 + dot1 + dot2, result.n);
+			if (iTri == CHOSEN) printf("Here. GPU. denom = %1.14E n = %1.14E \n",
+				dot0 + dot1 + dot2, result.n);
 		};
 		// Argument against fabs in favour of squared weights?
 
@@ -3073,7 +3076,9 @@ __global__ void kernelPopulateOhmsLaw(
 	
 	f64 * __restrict__ p_denom_i,
 	f64 * __restrict__ p_denom_e,
-	bool const bSwitchSave) // for turning on save of these denom_ quantities
+	bool const bSwitchSave,
+	bool const bUse_dest_n_for_Iz,
+	nvals * __restrict__ p_n_dest_minor) // for turning on save of these denom_ quantities
 {
 	// Don't forget we can use 16KB shared memory to save a bit of overspill:
 	// (16*1024)/(512*8) = 4 doubles only for 512 threads. 128K total register space per SM we think.
@@ -3162,7 +3167,7 @@ __global__ void kernelPopulateOhmsLaw(
 
 		vn0.x += -0.5*h_use*(M_e_over_en)*(cross_section_times_thermal_en*n_use.n)*(v_n_src.x - vie_k.vxy.x)
 			- 0.5*h_use*(M_i_over_in)*(cross_section_times_thermal_in*n_use.n)*(v_n_src.x - vie_k.vxy.x);
-		vn0.x += -0.5*h_use*(M_e_over_en)*(cross_section_times_thermal_en*n_use.n)*(v_n_src.y - vie_k.vxy.y)
+		vn0.y += -0.5*h_use*(M_e_over_en)*(cross_section_times_thermal_en*n_use.n)*(v_n_src.y - vie_k.vxy.y)
 			- 0.5*h_use*(M_i_over_in)*(cross_section_times_thermal_in*n_use.n)*(v_n_src.y - vie_k.vxy.y);
 		vn0.z += -0.5*h_use*(M_e_over_en)*(cross_section_times_thermal_en*n_use.n)*(v_n_src.z - vie_k.vez)
 			- 0.5*h_use*(M_i_over_in)*(cross_section_times_thermal_in*n_use.n)*(v_n_src.z - vie_k.viz);
@@ -3305,16 +3310,47 @@ __global__ void kernelPopulateOhmsLaw(
 		ohm.sigma_i_zz *= EzShape;
 		ohm.sigma_e_zz *= EzShape;
 
+		// Think maybe we should get rid of most of this routine out of the subcycle.
+		// Rate of acceleration over timestep due to resistance, pressure, thermal force etc could be stored.
+		// Saving off some eqn data isn't so bad when we probably overflow registers and L1 here anyway.
+		// All we need is to know that we update sigma
+		// We can do addition of 
 		// ==============================================================================================
 
 		p_v0_dest[iMinor] = v0;
 		p_OhmsCoeffs_dest[iMinor] = ohm;
 		p_vn0_dest[iMinor] = vn0;
 
-		Iz[threadIdx.x] = q*AreaMinor*n_use.n*(v0.viz - v0.vez);
-		sigma_zz[threadIdx.x] = q*AreaMinor*n_use.n*(ohm.sigma_i_zz - ohm.sigma_e_zz);
-		// Totally need to be skipping the load of an extra n.
+		if (bUse_dest_n_for_Iz) {
+			f64 ndest = p_n_dest_minor[iMinor].n;
+			Iz[threadIdx.x] = q*AreaMinor*ndest*(v0.viz - v0.vez);
+			sigma_zz[threadIdx.x] = q*AreaMinor*ndest*(ohm.sigma_i_zz - ohm.sigma_e_zz);
 
+			if (iMinor == CHOSEN) {
+				printf( "ndest %1.12E sigma_zz/Area %1.12E AreaMinor %1.12E\n\n",
+					ndest, q*ndest*(ohm.sigma_i_zz - ohm.sigma_e_zz), AreaMinor);
+			}
+
+		} else {
+			// On intermediate substeps, the interpolated n that applies halfway through the substep is a reasonable choice...
+			Iz[threadIdx.x] = q*AreaMinor*n_use.n*(v0.viz - v0.vez);
+			sigma_zz[threadIdx.x] = q*AreaMinor*n_use.n*(ohm.sigma_i_zz - ohm.sigma_e_zz);
+			// I'm sure we can do better on this. But we also might prefer to excise a lot of this calc from the subcycle.
+			if (iMinor == CHOSEN) {
+				printf("n_use.n %1.12E sigma_zz/Area %1.12E AreaMinor %1.12E\n\n",
+					n_use.n, q*n_use.n*(ohm.sigma_i_zz - ohm.sigma_e_zz), AreaMinor);
+			}
+
+		}
+		
+		// Totally need to be skipping the load of an extra n.
+		// ^^ old remark.
+		// But it's too messy never loading it. t_half means changing all the
+		// Iz formula to involve v_k. Don't want that.
+
+
+	//	if (blockIdx.x == 340) printf("%d: %1.14E %1.14E \n",
+		//	iMinor, q*n_use.n*(ohm.sigma_i_zz - ohm.sigma_e_zz), sigma_zz[threadIdx.x]);
 
 		// On iPass == 0, we need to do the accumulate.
 		//	p_Azdot_intermediate[iMinor] = Azdot_k
@@ -3328,11 +3364,9 @@ __global__ void kernelPopulateOhmsLaw(
 
 		if (iMinor == CHOSEN) {
 			printf("GPU %d: Iz[threadIdx.x] %1.10E  sigma_zz[threadIdx.x] %1.10E \n"
-				"ohm.sigma_i_zz %1.10E Azdot_intermediate %1.10E \n"
-				"n_use.n %1.12E sigma_zz/Area %1.12E AreaMinor %1.12E\n\n",
+				"ohm.sigma_i_zz %1.10E Azdot_intermediate %1.10E \n\n",
 				CHOSEN, Iz[threadIdx.x], sigma_zz[threadIdx.x],
-				ohm.sigma_i_zz, p_AAdot_intermediate[iMinor].Azdot,
-				n_use.n, q*n_use.n*(ohm.sigma_i_zz - ohm.sigma_e_zz),AreaMinor);
+				ohm.sigma_i_zz, p_AAdot_intermediate[iMinor].Azdot);
 		}
 
 		//data_1.Azdot = data_k.Azdot

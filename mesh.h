@@ -1487,7 +1487,8 @@ public:
 		//ShardModel n_shards[NUMVERTICES],
 		three_vec3 AdditionRateNv[NMINOR]);
 	
-	void Accelerate2018(f64 h_use, TriMesh * pUseMesh, TriMesh * pDestMesh, f64 evaltime_use, bool bFeint);
+	void Accelerate2018(f64 h_use, TriMesh * pUseMesh, TriMesh * pDestMesh, f64 evaltime_plus, bool bFeint,
+		bool bUse_n_dest_for_Iz);
 		//three_vec3 AdditionRateNv[NMINOR], 
 		//f64_vec2 IntegratedGradAz[NMINOR], f64 IntegratedLapAz[NMINOR]);
 
