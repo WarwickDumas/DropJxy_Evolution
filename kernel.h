@@ -180,6 +180,10 @@ __global__ void kernelPopulateOhmsLaw(
 
 	f64 * __restrict__ p_denom_i,
 	f64 * __restrict__ p_denom_e,
+
+	f64 * __restrict__ p_effect_of_viz0_on_vez0,
+	f64 * __restrict__ p_beta_ie_z,
+
 	bool const bSwitchSave,
 	bool const bUse_dest_n_for_Iz,
 	nvals * __restrict__ p_n_dest_minor);
@@ -376,6 +380,8 @@ __global__ void kernelCreateLinearRelationship(
 	nvals * __restrict__ p_n_minor,
 	f64 * __restrict__ p_denom_e,
 	f64 * __restrict__ p_denom_i,
+	f64 * __restrict__ p_coeff_of_vez_upon_viz, 
+	f64 * __restrict__ p_beta_ie_z,
 	AAdot * __restrict__ p_AAdot_intermediate,
 	f64 * __restrict__ p_Azdot0,
 	f64 * __restrict__ p_gamma

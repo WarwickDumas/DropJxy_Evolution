@@ -8,7 +8,7 @@
 #define VERT1 14639
 #define VERT2 14645
 // these should explain something we hope.
-#define CHOSEN 88210
+#define CHOSEN 36500
 
 extern HWND hWnd;
 
@@ -16,6 +16,8 @@ f64 sigma_tiles[1024];
 
 const int TriFiles[12] = { 29414, 29413, 29412, 29108, 29109, 29110,
 						29442, 29441, 29440, 29136, 29137, 29138 };
+
+const int Chosens[7] = { 25454, 86529, 25453, 86381, 25455, 86530, 25750 };
 
 f64 LapCoeffself[NMINOR];
 f64 LapCoefftri[NUMTRIANGLES][6];
@@ -494,14 +496,10 @@ void TriMesh::Advance(TriMesh * pDestMesh, TriMesh * pHalfMesh)
 	long iMinor, iSubstep;
 	// pre-run: 
 
-
-
+	
 	// NOTE: For GPU we actually changed things so that we do not use shards except for
 	// advection rates.
-
-
-
-
+		
 
 	// These should be done every time we alter trimesh to change what is a neighbour of what:
 	// EnsureAnticlockwiseTriangleCornerSequences_SetupTriMinorNeighboursLists();
@@ -543,62 +541,57 @@ void TriMesh::Advance(TriMesh * pDestMesh, TriMesh * pHalfMesh)
 	memset(p_div_v_neut, 0, sizeof(f64)*NUMVERTICES);
 	memset(p_div_v, 0, sizeof(f64)*NUMVERTICES);	
 	memset(NTadditionrates, 0, sizeof(NTrates)*NUMVERTICES);
-	this->AccumulateAdvectiveMassHeatRateOld( p_v, NTadditionrates);	
-	this->AccumulateDiffusiveHeatRateAndCalcIonisation(0.5*h,NTadditionrates); // Wants minor n,T and B
-	this->AdvanceDensityAndTemperature(0.5*h, this, pHalfMesh, NTadditionrates);// p_div_v_neut, p_div_v);
-	
-	pHalfMesh->Average_n_T_to_tris_and_calc_centroids_and_minorpos(); 
-	// +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-	// We are going to want to introduce 2nd degree approx to get n,T desired on tris.
+	memset(AdditionalMomRates, 0, sizeof(three_vec3)*NMINOR);
 
-	// Now let's set up the accel move to half-time which will provide us input of v to the full n,T move.
-	// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	this->AccumulateAdvectiveMassHeatRateOld(p_v, NTadditionrates);
 
 	// For now went for "advective change in v" where we divide d/dt Nv by N_derivsyst
-	memset(AdditionalMomRates, 0, sizeof(three_vec3)*NMINOR); // what a mess!
-	this->Create_momflux_integral_grad_nT_and_gradA_LapA_CurlA_on_minors( p_v, AdditionalMomRates);
+	this->Create_momflux_integral_grad_nT_and_gradA_LapA_CurlA_on_minors(p_v, AdditionalMomRates);
 	this->Add_ViscousMomentumFluxRates(AdditionalMomRates); // should also add to NTadditionrates.
+	this->AccumulateDiffusiveHeatRateAndCalcIonisation(0.5*h,NTadditionrates); // Wants minor n,T and B
 	
+	this->AdvanceDensityAndTemperature(0.5*h, this, pHalfMesh, NTadditionrates);// p_div_v_neut, p_div_v);
+	pHalfMesh->Average_n_T_to_tris_and_calc_centroids_and_minorpos(); 
+	// +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+	// We are going to want to introduce 2nd degree approx to get n,T desired on tris.
+	// Now let's set up the accel move to half-time which will provide us input of v to the full n,T move.
+	// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+		
 	pHalfMesh->CreateShardModelOfDensities_And_SetMajorArea();
 #ifndef USE_N_MAJOR
 	pHalfMesh->InferMinorDensitiesFromShardModel(); // (At the moment just repopulating tri minor n.)
 #endif
 
 	// Get suitable v to use for resistive heating:
-	this->Accelerate2018(0.5*h, this, pHalfMesh, evaltime + 0.5*h, false, 
-		true
-		); 
+	this->Accelerate2018(0.5*h, this, pHalfMesh, evaltime + 0.5*h, false, true); 
 	// current is attained at end of step
 
 	// Now do the n,T,x advance to pDestmesh:
 	// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
 	pHalfMesh->CalculateOverallVelocities(p_v); // vertices first, then average to tris
 	memset(pDestMesh->pData, 0, sizeof(plasma_data)*NMINOR);
 	AdvectPositions_CopyTris(h, pDestMesh, p_v);
 	
-	// WHY WAS THIS NOT pHalfMesh :
-
 	memset(p_div_v_neut, 0, sizeof(f64)*NUMVERTICES);
 	memset(p_div_v, 0, sizeof(f64)*NUMVERTICES);
 	memset(NTadditionrates, 0, sizeof(NTrates)*NUMVERTICES);
 	pHalfMesh->AccumulateAdvectiveMassHeatRateOld(p_v, NTadditionrates);
-	pHalfMesh->AccumulateDiffusiveHeatRateAndCalcIonisation(h, NTadditionrates); // Wants minor n,T and B
 
-	// So where do we calculate resistive heating??
+	memset(AdditionalMomRates, 0, sizeof(three_vec3)*NMINOR);
+	this->AntiAdvectAzAndAdvance(0.5*h, this, GradAz, pHalfMesh);
+	pHalfMesh->Create_momflux_integral_grad_nT_and_gradA_LapA_CurlA_on_minors(p_v, AdditionalMomRates);
+
+	pHalfMesh->Add_ViscousMomentumFluxRates(AdditionalMomRates);
+	// Where is B populated? on pHalfMesh
+
+	
+	pHalfMesh->AccumulateDiffusiveHeatRateAndCalcIonisation(h, NTadditionrates); // Wants minor n,T and B
+	// Problem: tries to use pHalfMesh->B which has not been populated.
+	// Discovered an error on CPU.
 
 	AdvanceDensityAndTemperature(h, pHalfMesh, pDestMesh, NTadditionrates);
 	pDestMesh->Average_n_T_to_tris_and_calc_centroids_and_minorpos(); // UPGRADE TO 2ND DEGREE
 	
-	// Now set up inputs such as AMR with advective momflux and aTP, and B
-	// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-	
-	memset(AdditionalMomRates, 0, sizeof(three_vec3)*NMINOR); 
-	this->AntiAdvectAzAndAdvance(0.5*h, this, GradAz, pHalfMesh);
-	pHalfMesh->Create_momflux_integral_grad_nT_and_gradA_LapA_CurlA_on_minors(p_v, AdditionalMomRates);
-	pHalfMesh->Add_ViscousMomentumFluxRates(AdditionalMomRates);
-	// Where is B populated? on pHalfMesh
-
 #ifndef USE_N_MAJOR
 	pDestMesh->CreateShardModelOfDensities_And_SetMajorArea();
 	pDestMesh->InferMinorDensitiesFromShardModel();
@@ -648,7 +641,7 @@ void TriMesh::Advance(TriMesh * pDestMesh, TriMesh * pHalfMesh)
 			// Seed:
 				for (iMinor = 0; iMinor < NMINOR; iMinor++)
 					Az_array_next[iMinor] = Az_array[iMinor] + 0.5*SUBSTEP*this->pData[iMinor].Azdot + 0.5*SUBSTEP * Azdot0[iMinor] + 0.5*SUBSTEP * gamma[iMinor] * LapAzArray[iMinor];
-				JLS_for_Az_bwdstep(4, SUBSTEP); // populate Az_array with k+1 values
+				pHalfMesh->JLS_for_Az_bwdstep(4, SUBSTEP); // populate Az_array with k+1 values
 				memcpy(Az_array, Az_array_next, sizeof(f64)*NMINOR);
 				pHalfMesh->GetLap(Az_array, LapAzArray);
 				this->Accelerate2018(SUBSTEP, pHalfMesh, pDestMesh, evaltime + 0.5*SUBSTEP, false,
@@ -661,7 +654,9 @@ void TriMesh::Advance(TriMesh * pDestMesh, TriMesh * pHalfMesh)
 					(iSubstep == SUBCYCLES-1)
 					);
 				Az_array_next[iMinor] = Az_array[iMinor] + 0.5*SUBSTEP*pDestMesh->pData[iMinor].Azdot + 0.5*SUBSTEP * Azdot0[iMinor] + 0.5*SUBSTEP * gamma[iMinor] * LapAzArray[iMinor];
-				JLS_for_Az_bwdstep(4, SUBSTEP); // populate Az_array with k+1 values
+				
+				pHalfMesh->JLS_for_Az_bwdstep(4, SUBSTEP); // populate Az_array with k+1 values
+				
 				memcpy(Az_array, Az_array_next, sizeof(f64)*NMINOR);
 				pHalfMesh->GetLap(Az_array, LapAzArray);
 				pDestMesh->Accelerate2018(SUBSTEP, pHalfMesh, pDestMesh, evaltime + 0.5*SUBSTEP, false,
@@ -915,7 +910,7 @@ void TriMesh::JLS_for_Az_bwdstep(int iterations, f64 h_use)
 		};
 		beta = -sum_eps_deps_by_dbeta / sum_depsbydbeta_sq;
 		L2eps = sqrt(sum_eps_eps / (real)NMINOR);
-		printf(" [ %1.4f %1.2E ] ", beta, L2eps);
+		printf(" CPU[ beta %1.14E L2eps %1.14E ] ", beta, L2eps);
 
 		/*
 		FILE * fp = fopen("regress.txt", "a");
@@ -1548,6 +1543,13 @@ void TriMesh::AdvanceDensityAndTemperature(f64 h_use,
 			newdata.NiTi = ourdata.n*pVertex->AreaCell*ourdata.Ti*factor + h_use * AdditionNT.NiTi;
 			newdata.NeTe = ourdata.n*pVertex->AreaCell*ourdata.Te*factor + h_use * AdditionNT.NeTe;  // 
 
+			if (iVertex == CHOSEN) {
+				printf("CPU h AdditionNT.NeTe %1.14E\n",
+					h_use * AdditionNT.NeTe);
+				printf("CPU %d inc factor: NnTn %1.14E NeTe %1.14E \n", CHOSEN, newdata.NnTn, newdata.NeTe);
+				printf("n %1.14E Area %1.14E Te_k %1.14E factor %1.14E \n",
+					ourdata.n, pVertex->AreaCell, ourdata.Te, factor);					
+			}
 			// We have initial NT
 			// We have addition amount for NT
 			// We have factor that applies
@@ -1605,7 +1607,17 @@ void TriMesh::AdvanceDensityAndTemperature(f64 h_use,
 				(usedata.v_n.x - usedata.vxy.x)*(usedata.v_n.x - usedata.vxy.x)
 				+ (usedata.v_n.y - usedata.vxy.y)*(usedata.v_n.y - usedata.vxy.y)
 				+ (usedata.v_n.z - usedata.viz)*(usedata.v_n.z - usedata.viz)));
-			
+			if (iVertex == CHOSEN) {
+				printf("CPU %d : NnTn %1.14E NeTe %1.14E \n", CHOSEN, newdata.NnTn, newdata.NeTe);
+				printf("e-n %1.14E e-i %1.14E \n",
+					h_use*(pVertex->AreaCell*TWOTHIRDS*nu_en_MT*m_en_*(
+					(usedata.v_n.x - usedata.vxy.x)*(usedata.v_n.x - usedata.vxy.x)
+						+ (usedata.v_n.y - usedata.vxy.y)*(usedata.v_n.y - usedata.vxy.y)
+						+ (usedata.v_n.z - usedata.vez)*(usedata.v_n.z - usedata.vez))),
+					h_use*(pVertex->AreaCell*TWOTHIRDS*nu_ei*m_ei_*
+					(usedata.vez - usedata.viz)*(usedata.vez - usedata.viz))
+				);
+			}
 
 			f64_tens3 tens3, LHS, inverted;
 			f64_vec3 RHS, NT;
@@ -1646,14 +1658,12 @@ void TriMesh::AdvanceDensityAndTemperature(f64 h_use,
 			newdata.NeTe = NT.z;
 			
 			if (iVertex == CHOSEN) {
-				printf("@@@@@@@@@@@@@@@@@@\n");
-				printf("CPU LHS | \n %1.9E %1.9E %1.9E |\n %1.9E %1.9E %1.9E |  \n %1.9E %1.9E %1.9E | \n",
+				printf("CPU LHS | \n %1.14E %1.14E %1.14E |\n %1.14E %1.14E %1.14E |  \n %1.14E %1.14E %1.14E | \n",
 					LHS.xx, LHS.xy, LHS.xz, LHS.yx, LHS.yy, LHS.yz, LHS.zx, LHS.zy, LHS.zz);
-				printf("CPU inverted | RHS \n %1.9E %1.9E %1.9E | %1.9E \n %1.9E %1.9E %1.9E | %1.9E \n %1.9E %1.9E %1.9E | %1.9E \n",
+				printf("CPU inverted | RHS \n %1.14E %1.14E %1.14E | %1.14E \n %1.14E %1.14E %1.14E | %1.14E \n %1.14E %1.14E %1.14E | %1.14E \n",
 					inverted.xx, inverted.xy, inverted.xz, RHS.x, inverted.yx, inverted.yy, inverted.yz, RHS.y, inverted.zx, inverted.zy, inverted.zz, RHS.z);
-				printf("CPU %d : NeTe %1.10E \n", CHOSEN, newdata.NeTe);
-				printf("CPU nu_en_MT %1.10E\n", nu_en_MT);
-				printf("@@@@@@@@@@@@@@@@@@\n");
+				printf("CPU %d : NnTn %1.14E  NeTe %1.14E \n", CHOSEN, newdata.NnTn, newdata.NeTe);
+				printf("CPU nu_en_MT %1.14E\n", nu_en_MT);
 			};
 			// Multiply all by "factor" regardless of how it turns out.
 
@@ -1663,6 +1673,10 @@ void TriMesh::AdvanceDensityAndTemperature(f64 h_use,
 			data.Tn = newdata.NnTn* factor_neut / newdata.Nn;
 			data.Ti = newdata.NiTi* factor / newdata.N;
 			data.Te = newdata.NeTe* factor / newdata.N;
+
+			if (iVertex == CHOSEN)
+				printf("CPU %d : Te %1.14E factor %1.14E newdata.N %1.14E\n",
+					CHOSEN, data.Te, factor, newdata.N);
 
 			if (data.Te < 0.0) {
 				iVertex = iVertex;
@@ -2178,12 +2192,20 @@ void TriMesh::AccumulateDiffusiveHeatRateAndCalcIonisation(f64 h_use, NTrates NT
 						0.5*(ourdata.n / nu_eHeart1 + neighdata.n / nu_eHeart2)
 						* 0.5*(ourdata.Te + neighdata.Te)
 						* over_m_e_;
+
+					if (iVertex == CHOSEN) printf("kappa_par_e %1.14E nu_eHeart %1.14E %1.14E n %1.14E %1.14E Te %1.14E %1.14E \n",
+						kappa_parallel, nu_eHeart1, nu_eHeart2, ourdata.n, neighdata.n, ourdata.Te, neighdata.Te);
+
 				} else {
 					kappa_parallel = 0.0;
 				};
 				nu_eHeart = 0.5*(nu_eHeart1 + nu_eHeart2);
 
 				omega = eovermc_ * 0.5*(ourdata.B + neighdata.B);
+				if (iVertex == CHOSEN) 
+					printf("CPU our B %1.10E %1.10E %1.10E neighB %1.10E %1.10E %1.10E\n",
+						ourdata.B.x, ourdata.B.y, ourdata.B.z, neighdata.B.x, neighdata.B.y, neighdata.B.z);
+
 				f64 omega_sq = omega.dot(omega);
 				kappa.xx = kappa_parallel * (nu_eHeart*nu_eHeart + omega.x*omega.x) / (nu_eHeart * nu_eHeart + omega_sq);
 				kappa.xy = kappa_parallel * (omega.x*omega.y - nu_eHeart *omega.z) / (nu_eHeart * nu_eHeart + omega_sq);
@@ -2195,6 +2217,16 @@ void TriMesh::AccumulateDiffusiveHeatRateAndCalcIonisation(f64 h_use, NTrates NT
 
 				// if the outward gradient of T is positive, inwardheatflux is positive.
 				ourrates.NeTe += TWOTHIRDS * kappa_grad_T.dot(edge_normal);
+				
+				if (iVertex == CHOSEN) {
+					printf("CPU NeTe %d : contrib %1.14E kappa_par %1.14E edge_nor %1.14E %1.14E\n"
+						"omega %1.14E %1.14E %1.14E \nnu_eHeart %1.14E grad_T %1.14E %1.14E\n",
+						iVertex, 
+						TWOTHIRDS * kappa_grad_T.dot(edge_normal),
+						kappa_parallel, edge_normal.x, edge_normal.y,
+						omega.x, omega.y, omega.z, nu_eHeart, gradTe.x, gradTe.y
+					);
+				}
 
 				// ------------------------------------------------------------------------
 				// Ion:
@@ -2223,14 +2255,14 @@ void TriMesh::AccumulateDiffusiveHeatRateAndCalcIonisation(f64 h_use, NTrates NT
 
 				ourrates.NiTi += TWOTHIRDS * kappa_grad_T.dot(edge_normal);
 
-				if (iVertex == CHOSEN) {
-					printf("CPU %d : %d NiTicontrib %1.9E kappa_par %1.9E nu %1.12E omega %1.9E %1.9E %1.9E "
-						"gradTi %1.10E %1.10E edge_normal %1.9E %1.9E\nOWN nu: %1.12E nu_iHeart2 %1.12E\n",
-						CHOSEN,izNeigh[i], TWOTHIRDS * kappa_grad_T.dot(edge_normal),
-						kappa_parallel, nu_iHeart, omega.x, omega.y, omega.z,
-						gradTi.x, gradTi.y,edge_normal.x,edge_normal.y,
-						nu_iHeart1,nu_iHeart2);
-				}
+			//	if (iVertex == CHOSEN) {
+			//		printf("CPU %d : %d NiTicontrib %1.9E kappa_par %1.9E nu %1.12E omega %1.9E %1.9E %1.9E "
+			//			"gradTi %1.10E %1.10E edge_normal %1.9E %1.9E\nOWN nu: %1.12E nu_iHeart2 %1.12E\n",
+			//			CHOSEN,izNeigh[i], TWOTHIRDS * kappa_grad_T.dot(edge_normal),
+			//			kappa_parallel, nu_iHeart, omega.x, omega.y, omega.z,
+			//			gradTi.x, gradTi.y,edge_normal.x,edge_normal.y,
+			//			nu_iHeart1,nu_iHeart2);
+			//	}
 
 				// ----------------------------------------------------------------------
 				// Neutral:
@@ -2295,12 +2327,16 @@ void TriMesh::AccumulateDiffusiveHeatRateAndCalcIonisation(f64 h_use, NTrates NT
 				printf("CPU iVertex %d : ourrates.N %1.14E recomb_rate %1.14E \n"
 					"Ttothe5point5 %1.14E hR %1.14E \n", iVertex,
 					ourrates.N, recomb_rate, Ttothe5point5, hR);
+				printf("CPU iVertex %d : NeTe %1.14E\n", iVertex, ourrates.NeTe);
 			};
 
 			ourrates.NeTe += -TWOTHIRDS * 13.6*kB_*ourrates.N + 0.5*ourdata.Tn*ionise_rate;
 			ourrates.NiTi += 0.5*ourdata.Tn*ionise_rate;
 			ourrates.NnTn += (ourdata.Te + ourdata.Ti)*recomb_rate;
 
+			if (iVertex == CHOSEN) printf("CPU iVertex %d : ionisation %1.14E NeTe %1.14E\n", iVertex,
+				-TWOTHIRDS * 13.6*kB_*ourrates.N + 0.5*ourdata.Tn*ionise_rate,
+				ourrates.NeTe);
 			memcpy(NTadditionrates + iVertex, &ourrates, sizeof(NTrates));
 
 		}
@@ -3505,7 +3541,7 @@ void TriMesh::Create_momflux_integral_grad_nT_and_gradA_LapA_CurlA_on_minors(
 
 		i = 0; iprev = tri_len - 1;
 
-		memcpy(&prevdata, pData + izTri[tri_len - 1], sizeof(plasma_data));
+		memcpy(&prevdata, pData + izTri[tri_len - 1], sizeof(plasma_data)); // all vertices
 		if (szPBC[iprev] != 0) {
 			if (szPBC[iprev] == ROTATE_ME_CLOCKWISE) {
 				prevdata.v_n = Clockwise3 * prevdata.v_n;
@@ -3547,7 +3583,7 @@ void TriMesh::Create_momflux_integral_grad_nT_and_gradA_LapA_CurlA_on_minors(
 
 		overall_v_ours.x = 0.0;
 		overall_v_ours.y = 0.0;
-		if (iMinor == CHOSEN) {
+		if ((iMinor == CHOSEN) && (0)) {
 			printf("CPU ourdata.Te %1.9E oppdata.Te %1.9E izTri[0] %d\n",
 				ourdata.Te, oppdata.Te, izTri[0]);
 		}
@@ -3602,9 +3638,6 @@ void TriMesh::Create_momflux_integral_grad_nT_and_gradA_LapA_CurlA_on_minors(
 				};
 				nextAz = nextdata.Az;
 			
-//if (iVertex == 11588) {
-			//		printf("izTri[inext] %d  nextdata.v_n.y %1.8E \n", izTri[inext], nextdata.v_n.y);
-//}
 				// Infer T at endpts
 				// I think we'd better assume we have T on each minor at this point.
 				// ???***???***???***???***???***???***???***???***???***???
@@ -3643,21 +3676,7 @@ void TriMesh::Create_momflux_integral_grad_nT_and_gradA_LapA_CurlA_on_minors(
 				ownrates.neut -= Make3(0.5*(n_n0*Tn0 + n_n1 * Tn1)*over_m_n_*edge_normal, 0.0);
 				ownrates.ion -= Make3(0.5*(n0*Ti0 + n1 * Ti1)*over_m_i_*edge_normal, 0.0);
 				ownrates.elec -= Make3(0.5*(n0*Te0 + n1 * Te1)*over_m_e_*edge_normal, 0.0);
-
-
-			//	if (iVertex == VERT1) {
-			//		printf("CPUpressure %d ownrates.ion.x %1.9E contrib.x %1.12E n0 %1.12E Ti0 %1.12E n1 %1.12E Ti1 %1.12E edge_normal.x %1.12E \n",
-			//			CHOSEN, ownrates.ion.x,
-			//			-0.5*(n0*Ti0 + n1 * Ti1)*over_m_i_*edge_normal.x,
-			//			n0, Ti0, n1, Ti1, edge_normal.x);
-			//	}
-
-			//	if (iVertex == 11588) {
-				//	printf("11588 ownrates.neut.y %1.8E contrib %1.8E n_n0 %1.8E Tn0 %1.8E n_n1 %1.8E Tn1 %1.8E edge_normal %1.8E  \n",
-					//	ownrates.neut.y, 0.5*(n_n0*Tn0 + n_n1 * Tn1)*over_m_n_*edge_normal.y,
-			//			n_n0, Tn0, n_n1, Tn1, edge_normal.y);
-			//	};
-
+				
 				// Addition rate Nv receives MINUS integral grad / m_s and the contrib to integral grad is MINUS because clockwise
 		//		opprates.neut += Make3(0.5*(n_n0*Tn0 + n_n1 * Tn1)*over_m_n_*edge_normal, 0.0);
 			//	opprates.ion += Make3(0.5*(n0*Ti0 + n1 * Ti1)*over_m_i_*edge_normal, 0.0);
@@ -3687,9 +3706,8 @@ void TriMesh::Create_momflux_integral_grad_nT_and_gradA_LapA_CurlA_on_minors(
 				ownrates.neut -= 0.5*relvnormal*
 					(n_n0 * (v_n0 - ourdata.v_n)
 						+ n_n1 * (v_n1 - ourdata.v_n));
-
-
-				if (iMinor == CHOSEN) {
+				
+				if ((iMinor == CHOSEN) && (0)) {
 					printf("CPU %d neutadvectcontrib %1.12E  relvnormal %1.12E"
 						"n_n0 %1.12E n_n1 %1.12E v0.y %1.12E v0-v.y %1.12E v1-v %1.12E  v_n.y %1.12E\n",
 						CHOSEN,
@@ -3707,15 +3725,6 @@ void TriMesh::Create_momflux_integral_grad_nT_and_gradA_LapA_CurlA_on_minors(
 				ownrates.elec -= 0.5*relvnormal*
 					(n0 * (Make3(vxy0 - ourdata.vxy, vez0 - ourdata.vez))
 						+ n1 * (Make3(vxy1 - ourdata.vxy, vez1 - ourdata.vez)));
-
-
-				//if (iVertex == VERT1) {
-				//	printf("CPUadvect %d ownrates.ion.x %1.9E contrib.x %1.12E n0 %1.12E %1.6E v0x %1.12E v1x %1.12E ourvx %1.12E relvnormal %1.12E\n",
-				//		CHOSEN, ownrates.ion.x,
-					//	0.5*relvnormal* (n0 * (vxy0.x - ourdata.vxy.x) + n1 * (vxy1.x - ourdata.vxy.x)),
-				//		n0, n1, vxy0.x, vxy1.x, ourdata.vxy.x, relvnormal);
-				//}
-
 
 				// ______________________________________________________
 				
@@ -3768,8 +3777,7 @@ void TriMesh::Create_momflux_integral_grad_nT_and_gradA_LapA_CurlA_on_minors(
 				Our_integral_Lap_Az += grad_Az.dot(edge_normal);
 			
 				AreaMinor += (0.5*endpt0.x + 0.5*endpt1.x)*edge_normal.x;
-
-
+				
 				// I daresay if we wanted to get really confused we could proceed
 				// by expanding the dot product into integ_grad and inserting expressions
 				// for edge_normal, rearrange to get some kind of havoc.
@@ -3780,9 +3788,7 @@ void TriMesh::Create_momflux_integral_grad_nT_and_gradA_LapA_CurlA_on_minors(
 					(iMinor == index[3]) )
 				{
 					fp = fp1; if (iMinor == index[1]) fp = fp2; if (iMinor == index[2]) fp = fp3; if (iMinor == index[3]) fp = fp4;
-
-
-
+					
 					fprintf(fp, "area_quadrilateral %1.14E ourdata.pos %1.14E %1.14E "
 						"prevdata.pos %1.14E %1.14E oppdata.pos %1.14E %1.14E "
 						"nextdata.pos %1.14E %1.14E grad_Az %1.14E %1.14E "
@@ -3892,6 +3898,11 @@ void TriMesh::Create_momflux_integral_grad_nT_and_gradA_LapA_CurlA_on_minors(
 			AreaMinorArray[iMinor] = AreaMinor;
 			memcpy(&(AdditionRateNv[iMinor]), &ownrates, sizeof(three_vec3));
 
+			if (iMinor == 36500 + BEGINNING_OF_CENTRAL) {
+				printf("iMinor %d iVertex %d B %1.14E %1.14E %1.14E \n&&&&&&&&&&&&&&&&&&&&&&&&&&\n",
+					iMinor, iMinor - BEGINNING_OF_CENTRAL, pData[iMinor].B.x, pData[iMinor].B.y, pData[iMinor].B.z);
+			}
+
 			pData[iMinor].temp.x = Our_integral_Lap_Az / AreaMinor;
 #ifdef LAPFILE
 			if ((iMinor == index[0]) ||
@@ -3904,11 +3915,12 @@ void TriMesh::Create_momflux_integral_grad_nT_and_gradA_LapA_CurlA_on_minors(
 				fprintf(fp, "\nWritten %1.14E\n\n", Our_integral_Lap_Az/ AreaMinor);
 			};
 #endif
-
-		}
-		else {
+		} else {
 
 			f64_vec2 projendpt0, projendpt1;
+
+			prevAz = prevdata.Az;
+			oppAz = oppdata.Az;
 
 			int istart = 0;
 			int iend = tri_len;
@@ -3927,42 +3939,13 @@ void TriMesh::Create_momflux_integral_grad_nT_and_gradA_LapA_CurlA_on_minors(
 
 				if (pVertex->flags == OUTERMOST) {
 					endpt0.project_to_radius(projendpt0, OutermostFrillCentroidRadius); // back of cell for Lap purposes
-				}
-				else {
+				} else {
 					endpt0.project_to_radius(projendpt0, InnermostFrillCentroidRadius); // back of cell for Lap purposes
 				}
 				edge_normal.x = endpt0.y - projendpt0.y;
 				edge_normal.y = projendpt0.x - endpt0.x;
 				AreaMinor += (0.5*projendpt0.x + 0.5*endpt0.x)*edge_normal.x;
-
-				if (0) {
-					printf("AreaMinor PROJECT %d : %1.10E Contrib %1.10E edge_nml %1.9E endpt.x %1.9E %1.9E\n",
-						73841, AreaMinor, (0.5*endpt0.x + 0.5*projendpt0.x)*edge_normal.x,
-						edge_normal.x, endpt0.x, projendpt0.x);
-				}
-
-				//				
-				//				memcpy(&prevdata, pData + izTri[0], sizeof(plasma_data));
-				//				if (szPBC[0] != 0) {
-				//					if (szPBC[0] == ROTATE_ME_CLOCKWISE) {
-				//						prevdata.pos = Clockwise * prevdata.pos;
-				//					} else {
-				//						prevdata.pos = Anticlockwise * prevdata.pos;
-				//					};
-				//				};
-				//				memcpy(&oppdata, pData + izTri[1], sizeof(plasma_data));
-				//				if (szPBC[1] != 0) {
-				//					if (szPBC[1] == ROTATE_ME_CLOCKWISE) {
-				//						oppdata.pos = Clockwise * oppdata.pos;
-				//					}
-				//					else {
-				//						oppdata.pos = Anticlockwise * oppdata.pos;
-				//					};
-				//				};
-				//
 			};
-			prevAz = prevdata.Az;
-			oppAz = oppdata.Az;
 			
 			for (i = istart; i < iend; i++)
 			{
@@ -4007,11 +3990,9 @@ void TriMesh::Create_momflux_integral_grad_nT_and_gradA_LapA_CurlA_on_minors(
 				Our_integral_Lap_Az += grad_Az.dot(edge_normal);
 				AreaMinor += (0.5*endpt0.x + 0.5*endpt1.x)*edge_normal.x;
 
-				if (0) {
-					printf("AreaMinor %d : %1.10E Contrib %1.10E edge_nml %1.9E endpt01.x %1.9E %1.9E\n",
-						73841, AreaMinor, (0.5*endpt0.x + 0.5*endpt1.x)*edge_normal.x,
-						edge_normal.x, endpt0.x, endpt1.x);
-				}
+				// This is no good - we didn't compute B for vertices within insulator!
+				// Just set to 0 for OUTERMOST and in ins -- we never use the latter and the former is not well-defined due to 2D cross-section.
+				
 #ifdef LAPFILE
 				if ((iMinor == index[0]) ||
 					(iMinor == index[1]) ||
@@ -4038,7 +4019,6 @@ void TriMesh::Create_momflux_integral_grad_nT_and_gradA_LapA_CurlA_on_minors(
 				// I daresay if we wanted to get really confused we could proceed
 				// by expanding the dot product into integ_grad and inserting expressions
 				// for edge_normal, rearrange to get some kind of havoc.
-
 				// ===================================================================
 
 				++iprev;
@@ -4065,21 +4045,9 @@ void TriMesh::Create_momflux_integral_grad_nT_and_gradA_LapA_CurlA_on_minors(
 				edge_normal.y = endpt1.x - projendpt1.x;
 				AreaMinor += (0.5*projendpt1.x + 0.5*endpt1.x)*edge_normal.x;
 
-				if (0) {
-					printf("AreaMinor PROJECT2 %d : %1.10E Contrib %1.10E edge_nml %1.9E endpt11.x %1.9E %1.9E\n",
-						73841, AreaMinor, (0.5*endpt1.x + 0.5*projendpt1.x)*edge_normal.x,
-						edge_normal.x, endpt1.x, projendpt1.x);
-				}
-
 				edge_normal.x = projendpt0.y - projendpt1.y;
 				edge_normal.y = projendpt1.x - projendpt0.x;
 				AreaMinor += (0.5*projendpt1.x + 0.5*projendpt0.x)*edge_normal.x;
-
-				if (0) {
-					printf("AreaMinor PROJECT3 %d : %1.10E Contrib %1.10E edge_nml %1.9E projendpt10.x %1.9E %1.9E\n",
-						73841, AreaMinor, (0.5*projendpt1.x + 0.5*projendpt0.x)*edge_normal.x,
-						edge_normal.x, projendpt1.x, projendpt0.x);
-				}
 
 				// line between out-projected points
 			};
@@ -4087,6 +4055,7 @@ void TriMesh::Create_momflux_integral_grad_nT_and_gradA_LapA_CurlA_on_minors(
 			LapAzArray[iMinor] = Our_integral_Lap_Az / AreaMinor;
 			ROCAzduetoAdvection[iMinor] = 0.0;
 			ROCAzdotduetoAdvection[iMinor] = 0.0;
+			GradTeArray[iMinor] = Vector2(0.0, 0.0);
 
 			// Within insulator we don't care about grad A or curl A, only Lap A
 			AreaMinorArray[iMinor] = AreaMinor;
@@ -4107,14 +4076,16 @@ void TriMesh::Create_momflux_integral_grad_nT_and_gradA_LapA_CurlA_on_minors(
 
 			// Not enough: We run AntiAdvectAz for all minors so we want GradAz=0 to be set outside domain
 			memset(GradAz + iMinor, 0, sizeof(f64_vec2));
+			ROCAzdotduetoAdvection[iMinor] = 0.0;
+			ROCAzduetoAdvection[iMinor] = 0.0;
 
+			pData[iMinor].B = Vector3(0.0, 0.0, BZ_CONSTANT);
 		}; // was it DOMAIN_VERTEX
 
 		++pVertex;
 		++iMinor;
 	};
-
-
+	
 	pTri = T;
 	for (iMinor = 0; iMinor < BEGINNING_OF_CENTRAL; iMinor++)
 	{
@@ -4262,14 +4233,14 @@ void TriMesh::Create_momflux_integral_grad_nT_and_gradA_LapA_CurlA_on_minors(
 					ownrates.ion -= Make3(0.5*(n_array[i]*Ti0 + n_array[inext] * Ti1)*over_m_i_*edge_normal, 0.0);
 					ownrates.elec -= Make3(0.5*(n_array[i]*Te0 + n_array[inext] * Te1)*over_m_e_*edge_normal, 0.0);
 					/*
-					if (iMinor == CHOSEN) {
+					if ((iMinor == CHOSEN) && (0)) {
 						printf("CPU %d : ownrates.ion.x %1.10E contrib %1.11E n_array[i] %1.10E n_array[inext] %1.10E Ti0 %1.11E Ti1 %1.11E edge_normal.x %1.10E \n",
 							CHOSEN, ownrates.ion.x,
 							-0.5*(n_array[i] * Ti0 + n_array[inext] * Ti1)*over_m_i_*edge_normal.x,
 							n_array[i], n_array[inext], Ti0, Ti1, edge_normal.x);
 					}*/
 
-				//	if (iMinor == CHOSEN) {
+				//	if ((iMinor == CHOSEN) && (0)) {
 				//		printf("CPU %d ownrates.neut %1.11E %1.11E contrib %1.11E %1.11E n0 %1.11E n1 %1.11E T0 %1.11E T1 %1.11E edge_normal %1.11E %1.11E \n",
 				//			CHOSEN, ownrates.neut.x, ownrates.neut.y,
 				//			-0.5*(n_n_array[i] * Tn0 + n_n_array[inext] * Tn1)*over_m_n_*edge_normal.x,
@@ -4308,7 +4279,7 @@ void TriMesh::Create_momflux_integral_grad_nT_and_gradA_LapA_CurlA_on_minors(
 							+ n_n_array[inext] * (v_n1 - ourdata.v_n));
 
 
-					if (iMinor == CHOSEN) {
+					if ((iMinor == CHOSEN) && (0)) {
 						printf("CPU %d neutraladvectcontrib.y %1.12E relvnormal %1.12E n0 n1 %1.12E %1.12E v0 v1 %1.12E %1.12E our_v %1.12E \n",
 							CHOSEN,
 							0.5*relvnormal* (n_n_array[i] *(v_n0.y - ourdata.v_n.y) + n_n_array[inext] * (v_n1.y - ourdata.v_n.y)),
@@ -4325,7 +4296,7 @@ void TriMesh::Create_momflux_integral_grad_nT_and_gradA_LapA_CurlA_on_minors(
 						(n_array[i] * (Make3(vxy0,vez0) - Make3(ourdata.vxy, ourdata.vez))
 							+ n_array[inext] * (Make3(vxy1,vez1) - Make3(ourdata.vxy, ourdata.vez)));
 
-					//if (iMinor == CHOSEN) {
+					//if ((iMinor == CHOSEN) && (0)) {
 					//	printf("CPUadvective %d ownrates.ion.x %1.10E contrib %1.11E relvnormal %1.10E n_array[i] %1.12E n_array[inext] %1.12E vxy0.x %1.12E vxy1.x %1.12E ourvx %1.12E \n",
 					//		CHOSEN,
 					//		ownrates.ion.x, 
@@ -4347,7 +4318,7 @@ void TriMesh::Create_momflux_integral_grad_nT_and_gradA_LapA_CurlA_on_minors(
 					f64 T_edge = SIXTH * (2.0*ourdata.Te + 2.0*oppdata.Te + prevdata.Te + nextdata.Te);
 					Our_integral_grad_Te += T_edge * edge_normal;
 
-//					if (iMinor == CHOSEN) {
+//					if ((iMinor == CHOSEN) && (0)) {
 //						printf("CPU %d : ourintegralgradTe %1.9E %1.9E contrib %1.9E %1.9E T_edge %1.9E edgenormal %1.9E %1.9E\n",
 //							CHOSEN,
 //							Our_integral_grad_Te.x, Our_integral_grad_Te.y,
@@ -4382,6 +4353,12 @@ void TriMesh::Create_momflux_integral_grad_nT_and_gradA_LapA_CurlA_on_minors(
 					Our_integral_Lap_Az += grad_Az.dot(edge_normal);
 
 					AreaMinor += (0.5*endpt0.x + 0.5*endpt1.x)*edge_normal.x;				
+
+					if (iMinor == CHOSEN) printf("CPU AreaMinor %d : %1.14E from += %1.14E : endpt0.x %1.14E endpt1.x %1.14E edge_normal.x %1.14E\n"
+						"endpt1.y endpt0.y, %1.14E %1.14E \n",
+						iMinor, AreaMinor, (0.5*endpt0.x + 0.5*endpt1.x)*edge_normal.x,
+						endpt0.x, endpt1.x, edge_normal.x,
+						endpt1.y, endpt0.y);
 
 #ifdef LAPFILE
 					if ((iMinor == index[0]) ||
@@ -4439,7 +4416,7 @@ void TriMesh::Create_momflux_integral_grad_nT_and_gradA_LapA_CurlA_on_minors(
 				LapAzArray[iMinor] = Our_integral_Lap_Az / AreaMinor;
 				ROCAzduetoAdvection[iMinor] = (Our_integral_grad_Az / AreaMinor).dot(overall_v_ours);
 				ROCAzdotduetoAdvection[iMinor] = (Our_integral_grad_Azdot / AreaMinor).dot(overall_v_ours);
-				pData[iMinor].B = Make3(Our_integral_curl_Az/AreaMinor,BZ_CONSTANT); // THEN WE NEED TO DIVIDE TO GIVE B
+				pData[iMinor].B = Make3(Our_integral_curl_Az/AreaMinor,BZ_CONSTANT); 
 				GradTeArray[iMinor] = Our_integral_grad_Te / AreaMinor;
 				AreaMinorArray[iMinor] = AreaMinor;
 				memcpy(&(AdditionRateNv[iMinor]), &ownrates, sizeof(three_vec3));
@@ -4915,6 +4892,10 @@ void TriMesh::GetLap(real Az_array[], real LapAz_array[])
 			AreaMinor = 1.0e-12;
 
 			LapAz_array[iMinor] = Our_integral_Lap_Az;
+
+	//		if (iMinor == 0) printf("Az_array_neigh %1.14E Az_array %1.14E LapAz[0] %1.14E Neigh0 %d \n",
+	//			Az_array[pTri->neighbours[0] - T], Az_array[iMinor], Our_integral_Lap_Az,
+	//			pTri->neighbours[0] - T);
 		}
 		else {
 			memcpy(izNeighMinor, TriMinorNeighLists[iMinor], sizeof(long) * 6);
@@ -4946,9 +4927,12 @@ void TriMesh::GetLap(real Az_array[], real LapAz_array[])
 			};
 			prevAz = Az_array[izNeighMinor[iprev]];
 			oppAz = Az_array[izNeighMinor[0]];
+	//		if (iMinor == CHOSEN) printf("\n%d Az %1.14E\n", iMinor, ourAz);
 			for (i = 0; i < 6; i++)
 			{
 				inext = i + 1; if (inext > 5) inext = 0;
+
+	//			if (iMinor == CHOSEN) printf("%d Az %1.14E\n", izNeighMinor[i], oppAz);
 
 				memcpy(&nextdata, pData + izNeighMinor[inext], sizeof(plasma_data));
 				// Make contiguous:
@@ -4998,6 +4982,24 @@ void TriMesh::GetLap(real Az_array[], real LapAz_array[])
 				f64_vec2 grad_Az = integ_grad_Az / area_quadrilateral;
 				Our_integral_Lap_Az += grad_Az.dot(edge_normal);
 
+
+
+	//			if (iMinor == CHOSEN) printf("ourdata.pos %1.14E %1.14E oppdata.pos %1.14E %1.14E gradAz %1.14E %1.14E edge_normal %1.14E %1.14E \ncontrib %1.14E Area_quadrilateral %1.14E \n",
+	//				ourdata.pos.x, ourdata.pos.y, oppdata.pos.x, oppdata.pos.y,
+	//				grad_Az.x, grad_Az.y, edge_normal.x, edge_normal.y,
+	//				grad_Az.dot(edge_normal),
+	//				area_quadrilateral);
+
+	//			if (iMinor == CHOSEN) printf("GradAz.x comps: %1.14E %1.14E %1.14E %1.14E\n"
+	//				"%1.14E %1.14E %1.14E %1.14E\n",
+	//				ourAz, prevAz, oppAz, nextAz,
+	//				(ourdata.pos.y - nextdata.pos.y) + (prevdata.pos.y - ourdata.pos.y),
+	//				(prevdata.pos.y - ourdata.pos.y) + (oppdata.pos.y - prevdata.pos.y),
+	//				(oppdata.pos.y - prevdata.pos.y) + (nextdata.pos.y - oppdata.pos.y),
+	//				(nextdata.pos.y - oppdata.pos.y) + (ourdata.pos.y - nextdata.pos.y)
+	//			);
+				
+
 				AreaMinor += (0.5*endpt0.x + 0.5*endpt1.x)*edge_normal.x;
 
 				endpt0 = endpt1;
@@ -5017,6 +5019,8 @@ void TriMesh::GetLap(real Az_array[], real LapAz_array[])
 			};
 
 			LapAz_array[iMinor] = Our_integral_Lap_Az / AreaMinor;
+	//		if (iMinor == CHOSEN) printf("LapAz %1.14E integralLap %1.14E AreaMinor %1.14E\n",
+	//			LapAz_array[iMinor], Our_integral_Lap_Az, AreaMinor);
 		};
 
 		++pTri;
@@ -5024,8 +5028,7 @@ void TriMesh::GetLap(real Az_array[], real LapAz_array[])
 }
 
 void TriMesh::GetLapCoeffs()
-{
-	
+{	
 	FILE * fp;
 	Triangle * pTri;
 	long iVertex, iMinor;
@@ -5369,9 +5372,7 @@ void TriMesh::GetLapCoeffs()
 
 void TriMesh::Accelerate2018(f64 h_use, TriMesh * pUseMesh, TriMesh * pDestMesh, f64 evaltime_plus, bool bFeint, bool bUse_n_dest_for_Iz)
 {
-	// Changes 10/1/19: Change to evaluate Iz always at half the way through the step.
-
-
+	
 	// Populated inputs:
 
 	// pUseMesh->AreaMinorArray
@@ -5422,6 +5423,8 @@ void TriMesh::Accelerate2018(f64 h_use, TriMesh * pUseMesh, TriMesh * pDestMesh,
 	f64 vez0, viz0, nu_eiBar,nu_eHeart,denom, ROCAzdot_antiadvect;
 	char buffer[128];
 	f64 Iz_prescribed = GetIzPrescribed(evaltime_plus); // pass time t_k+1
+
+	memset(sigma_tiles, 0, numTilesMinor * sizeof(f64));
 
 	/*FILE * fptri[12];
 	FILE * fp1 = fopen("Accel14631.txt", "a");
@@ -5501,6 +5504,10 @@ void TriMesh::Accelerate2018(f64 h_use, TriMesh * pUseMesh, TriMesh * pDestMesh,
 					nu_en_MT = s_en_MT * electron_thermal * data_use.n_n;
 					nu_eiBar = nu_eiBarconst_ * kB_to_3halves*data_use.n*lnLambda / (data_use.Te*sqrt_Te);
 					nu_eHeart = 1.87*nu_eiBar + data_use.n_n*s_en_visc*electron_thermal;
+
+//					if ((iMinor == CHOSEN) && (0)) printf("CPU: s_in_MT %1.14E ionneut_thermal %1.14E s_en_MT %1.14E \n",
+	//					s_in_MT, ionneut_thermal, s_en_MT);
+
 				}
 
 				f64_vec3 v_e_k = Make3(data_k.vxy, data_k.vez);
@@ -5511,8 +5518,8 @@ void TriMesh::Accelerate2018(f64 h_use, TriMesh * pUseMesh, TriMesh * pDestMesh,
 
 				vn0 /= denom; // It is now the REDUCED value
 				
-				if (iMinor == CHOSEN) {
-					printf("CPU %d vn0 %1.9E %1.9E %1.9E denom %1.14E \n", CHOSEN, vn0.x, vn0.y, vn0.z, denom);
+				if ((iMinor == CHOSEN) && (0)) {
+				//	printf("CPU %d vn0 %1.9E %1.9E %1.9E denom %1.14E \n", CHOSEN, vn0.x, vn0.y, vn0.z, denom);
 				}
 
 				beta_ne = 0.5*h_use*(M_en)*nu_ne_MT / denom;
@@ -5529,12 +5536,12 @@ void TriMesh::Accelerate2018(f64 h_use, TriMesh * pUseMesh, TriMesh * pDestMesh,
 					+ h_use * ((m_e_*MomAddRate.elec.xypart() + m_i_*MomAddRate.ion.xypart())
 						/ (data_use.n*(m_i_ + m_e_)*AreaMinor));
 
-				if (iMinor == CHOSEN) {
-					printf("CPU %d vxy0 %1.14E %1.14E \n", CHOSEN, vxy0.x, vxy0.y);
-					printf("CPU %d data_k %1.10E %1.10E MomAddRate_elec %1.10E %1.10E \n", CHOSEN, 
-						data_k.vxy.x,data_k.vxy.y, MomAddRate.elec.x,MomAddRate.elec.y);
-					printf("CPU %d n %1.10E AreaMinor %1.10E MAR_ion %1.10E %1.10E \n", CHOSEN, data_use.n, AreaMinor,
-						MomAddRate.ion.x, MomAddRate.ion.y);
+				if ((iMinor == CHOSEN) && (0)) {
+				//	printf("CPU %d vxy0 %1.14E %1.14E \n", CHOSEN, vxy0.x, vxy0.y);
+			//		printf("CPU %d data_k %1.10E %1.10E MomAddRate_elec %1.10E %1.10E \n", CHOSEN, 
+				//		data_k.vxy.x,data_k.vxy.y, MomAddRate.elec.x,MomAddRate.elec.y);
+			//		printf("CPU %d n %1.10E AreaMinor %1.10E MAR_ion %1.10E %1.10E \n", CHOSEN, data_use.n, AreaMinor,
+			//			MomAddRate.ion.x, MomAddRate.ion.y);
 				}
 
 				vxy0 += -h_use * (q_/ (2.0*c_*(m_i_ + m_e_)))*(data_k.vez - data_k.viz)*grad_Az
@@ -5545,8 +5552,9 @@ void TriMesh::Accelerate2018(f64 h_use, TriMesh * pUseMesh, TriMesh * pDestMesh,
 				vxy0 /= denom;
 				beta_xy_z = (h_use * q_ / (2.0*c_*(m_i_ + m_e_)*denom)) * grad_Az;
 
-				if (iMinor == CHOSEN) {
-					printf("CPU %d v0.vxy %1.14E %1.14E denom %1.14E \n", CHOSEN, vxy0.x, vxy0.y, denom);
+				if ((iMinor == CHOSEN) && (0)) {
+		//			printf("CPU %d v0.vxy %1.14E %1.14E denom %1.14E \n", CHOSEN, vxy0.x, vxy0.y, denom);
+		//			printf("nu_in_MT %1.14E nu_en_MT %1.14E beta_ne %1.14E \n", nu_in_MT, nu_en_MT, beta_ne);
 				}
 				omega = eovermc_ * data_use.B; // Perhaps we'd rather B was stored separately
 
@@ -5571,22 +5579,44 @@ void TriMesh::Accelerate2018(f64 h_use, TriMesh * pUseMesh, TriMesh * pDestMesh,
 							+ h_use * ROCAzdot_antiadvect + h_use *c_*c_*( TWO_PI_OVER_C * q_*data_use.n*(data_k.viz - data_k.vez)))
 						- 0.5*h_use*qoverMc_*(data_k.vxy + vxy0).dot(grad_Az);
 				};
+				if ((iMinor == CHOSEN)) {
+					printf("viz0 I. %1.14E \n", viz0);
+					printf("contribs were: k+MAR %1.14E \n    Azdotk %1.14E \n   ROC %1.14E \n   JviaLap %1.14E \n   Lorenzmag %1.14E \n",
+					data_k.viz + h_use * MomAddRate.ion.z / (data_use.n*AreaMinor),
+						-0.5*h_use*qoverMc_*(2.0*data_k.Azdot),
+						-0.5*h_use*qoverMc_*h_use * ROCAzdot_antiadvect,
+						-0.5*h_use*qoverMc_*h_use *c_*c_*(TWO_PI_OVER_C * q_*data_use.n*(data_k.viz - data_k.vez)),
+						-0.5*h_use*qoverMc_*(data_k.vxy + vxy0).dot(grad_Az)
+						);
+					printf("viz0 due to LapAz if iPass==0 || bFeint==false: %1.14E iPass %d\n",
+						-0.5*h_use*qoverMc_*h_use *c_*c_*Lap_Az, iPass);
+				}
+
 				viz0 +=
 					1.5*h_use*nu_eiBar*((omega.x*omega.z - nu_eHeart * omega.y)*gradTe.x +
 					(omega.y*omega.z + nu_eHeart * omega.x)*gradTe.y) /
 						(m_i_*nu_eHeart*(nu_eHeart*nu_eHeart + omega.x*omega.x + omega.y*omega.y + omega.z*omega.z));
-
-				// Insert ionization effect...
+				if ((iMinor == CHOSEN)) printf("viz0 with thermal force %1.14E \n", viz0);
+				
+				// Insert ionization effect... // ????????????????????????????????????
 
 				viz0 += -h_use * 0.5*M_ni*nu_in_MT *(data_k.viz - data_k.v_n.z - vn0.z)
 					+ h_use * 0.5*(moverM_)*nu_ei_effective*(data_k.vez - data_k.viz);
-
+			
+				if ((iMinor == CHOSEN)) printf("viz0 contrib i-n %1.14E e-i %1.14E. viz0 %1.14E \n",
+					-h_use * 0.5*M_ni*nu_in_MT *(data_k.viz - data_k.v_n.z - vn0.z),
+					h_use * 0.5*(moverM_)*nu_ei_effective*(data_k.vez - data_k.viz),
+					viz0);
+				
 				denom = 1.0 + h_use * h_use*PI*qoverM_*q_*data_use.n + h_use * 0.5*qoverMc_*(grad_Az.dot(beta_xy_z)) +
 					h_use * 0.5*M_ni*nu_in_MT*(1.0 - beta_ni) + h_use * 0.5*moverM_*nu_ei_effective;
 
 				viz0_coeff_on_Lap_Az = -0.5*h_use*qoverMc_*h_use*c_*c_ / denom;
 
 				viz0 /= denom;
+
+				if ((iMinor == CHOSEN)) printf("viz0 divided %1.14E denom %1.14E \n", viz0, denom);
+
 				sigma_i_zz = h_use * qoverM_ / denom;
 				beta_ie_z = (h_use*h_use*PI*qoverM_*q_*data_use.n
 					+ 0.5*h_use*qoverMc_*(grad_Az.dot(beta_xy_z))
@@ -5605,6 +5635,16 @@ void TriMesh::Accelerate2018(f64 h_use, TriMesh * pUseMesh, TriMesh * pDestMesh,
 								+ TWO_PI_OVER_C * q_*data_use.n*(data_k.viz + viz0 - data_k.vez)))
 
 						+ 0.5*h_use*eovermc_*(data_k.vxy + vxy0 + viz0 * beta_xy_z).dot(grad_Az);
+				//	if ((iMinor == CHOSEN) && (0)) {
+				//		printf("iPass %d vez_k %1.14E vez0 %1.14E contribs %1.14E %1.14E %1.14E %1.14E \n",
+				//			iPass, data_k.vez, vez0,
+				//			h_use * MomAddRate.elec.z / (data_use.n*AreaMinor),
+				//			h_use * 0.5*eovermc_*2.0*data_k.Azdot,
+				//			h_use *0.5*eovermc_*h_use *c_*c_*Lap_Az,
+				//			h_use *0.5*eovermc_*h_use *c_*c_*TWO_PI_OVER_C * q_*data_use.n*(data_k.viz + viz0 - data_k.vez)
+				//		);
+				//		printf("viz0 %1.14E \n", viz0);
+				//	}
 				}
 				else {
 					vez0 = data_k.vez
@@ -5619,8 +5659,20 @@ void TriMesh::Accelerate2018(f64 h_use, TriMesh * pUseMesh, TriMesh * pDestMesh,
 						+ 0.5*h_use*eovermc_*(data_k.vxy + vxy0 + viz0 * beta_xy_z).dot(grad_Az);
 
 //					vez0_coeff_on_Lap_Az = h_use * h_use*0.5*eovermc_*c_*c_; // always same, do not need
-				};
-				
+					if ((iMinor == CHOSEN) && (0)) {
+						printf("iPass %d vez_k %1.14E vez0 now %1.14E contribs\n MomRate %1.14E \n"
+							"Azdot contrib %1.14E\nantiadvect %1.14E \n"
+							"JviaAdotz %1.14E Lorenzmag %1.14E \n",
+							iPass, data_k.vez, vez0,
+							h_use * MomAddRate.elec.z / (data_use.n*AreaMinor),
+							h_use * 0.5*eovermc_*2.0*data_k.Azdot,
+							h_use * 0.5*eovermc_*h_use * ROCAzdot_antiadvect,
+							h_use *0.5*eovermc_*h_use *c_*c_*TWO_PI_OVER_C * q_*data_use.n*(data_k.viz + viz0 - data_k.vez),
+							0.5*h_use*eovermc_*(data_k.vxy + vxy0 + viz0 * beta_xy_z).dot(grad_Az)
+						);
+						printf("viz0 %1.14E \n", viz0);
+					}					// No Lap Az contribution
+				};				
 				vez0 -=
 					1.5*h_use*nu_eiBar*((omega.x*omega.z - nu_eHeart * omega.y)*gradTe.x +
 					(omega.y*omega.z + nu_eHeart * omega.x)*gradTe.y) /
@@ -5628,26 +5680,48 @@ void TriMesh::Accelerate2018(f64 h_use, TriMesh * pUseMesh, TriMesh * pDestMesh,
 				// could store this from above and put opposite -- dividing by m_e_ instead of m_i_
 				vez0 += -0.5*h_use*M_ne*nu_en_MT*(data_k.vez - data_k.v_n.z - vn0.z - beta_ni * viz0)
 					- 0.5*h_use*nu_ei_effective*(data_k.vez - data_k.viz - viz0);
+				
+				if ((iMinor == CHOSEN) && (0)) {
+					printf("thermal force contrib to vez %1.14E\n",
+						-1.5*h_use*nu_eiBar*((omega.x*omega.z - nu_eHeart * omega.y)*gradTe.x +
+						(omega.y*omega.z + nu_eHeart * omega.x)*gradTe.y) /
+							(m_e_*nu_eHeart*(nu_eHeart*nu_eHeart + omega.x*omega.x + omega.y*omega.y + omega.z*omega.z)));
+					printf("e-n %1.14E i-n %1.14E  viz0 %1.14E multiplier %1.14E\n",
+						-0.5*h_use*M_ne*nu_en_MT*(data_k.vez - data_k.v_n.z - vn0.z - beta_ni * viz0),
+						-0.5*h_use*nu_ei_effective*(data_k.vez - data_k.viz - viz0), viz0,
+						-0.5*h_use*nu_ei_effective);
+				}			
 				denom = 1.0 + (h_use*h_use*PI*q_*qoverm_*data_use.n
 					+ 0.5*h_use*eovermc_*(grad_Az.dot(beta_xy_z)))*(1.0 - beta_ie_z)
 					+ 0.5*h_use*M_ne*nu_en_MT*(1.0 - beta_ne - beta_ni * beta_ie_z)
 					+ 0.5*h_use*nu_ei_effective*(1.0 - beta_ie_z);
 				
-				vez0_coeff_on_Lap_Az = h_use * h_use*0.5*eovermc_* c_*c_/	denom; // always same, do not need
+				// where is vez0 /= denom? Bug? below.						
+				
+				vez0_coeff_on_Lap_Az = h_use * h_use*0.5*eovermc_* c_*c_; // always same, divide by denom in a minute
+				vez0_coeff_on_Lap_Az += (
+					h_use * 0.5*eovermc_*h_use *c_*c_*TWO_PI_OVER_C * q_*data_use.n
+					 + 0.5*h_use*eovermc_*(beta_xy_z.dot(grad_Az))
+					+ 0.5*h_use*M_ne*nu_en_MT*beta_ni
+					+ 0.5*h_use*nu_ei_effective) // coeff on viz in vez
+											* viz0_coeff_on_Lap_Az; // knock-on effect
+				// 100% this is right?
+
+				// We are missing divide by denom there.					
+
+				if ((iMinor == CHOSEN) && (0)) printf("vez0_coeff_on_Lap_Az undivided %1.14E : cc_contrib %1.14E , coeff_on_viz_in_vez %1.12E viz0_coeff %1.14E \n",
+					vez0_coeff_on_Lap_Az, h_use * h_use*0.5*eovermc_* c_*c_,
+					(h_use * 0.5*eovermc_*h_use *c_*c_*TWO_PI_OVER_C * q_*data_use.n
+						+ 0.5*h_use*eovermc_*(beta_xy_z.dot(grad_Az))
+						+ 0.5*h_use*M_ne*nu_en_MT*beta_ni
+						+ 0.5*h_use*nu_ei_effective),
+					viz0_coeff_on_Lap_Az);
 
 				sigma_e_zz = (-h_use * qoverm_ + h_use * h_use*PI*q_*qoverm_*data_use.n*sigma_i_zz
 					+ h_use * 0.5*eovermc_*(grad_Az.dot(beta_xy_z))*sigma_i_zz
 					+ 0.5*h_use*M_ne*nu_en_MT*beta_ni*sigma_i_zz
 					+ 0.5*h_use*nu_ei_effective*sigma_i_zz)
 					/ denom;
-
-
-				if (iMinor == CHOSEN) {
-					printf("CPU %d vez0 %1.14E denom %1.14E bFeint %d \n", CHOSEN, vez0, denom,
-						bFeint?1:0);
-					printf("sigma_e_zz %1.14E \n", sigma_e_zz);
-				}
-
 
 				bool bFile = false;
 				//for (int i = 0; i < 12; i++) {
@@ -5688,7 +5762,35 @@ void TriMesh::Accelerate2018(f64 h_use, TriMesh * pUseMesh, TriMesh * pDestMesh,
 					*/
 				};
 				
+				if ((iMinor == CHOSEN) && (0)) 
+					printf("CPU %d vez0 before dividing %1.14E iPass %d\n", CHOSEN, vez0, iPass);
+
 				vez0 /= denom;
+				vez0_coeff_on_Lap_Az /= denom;
+
+				if ((iMinor == CHOSEN) && (0))
+					printf("vez0_coeff divided %1.14E coeff_viz_vez_divided %1.14E \n", vez0_coeff_on_Lap_Az,
+					(h_use *c_*c_*TWO_PI_OVER_C * q_*data_use.n
+						+ 0.5*h_use*eovermc_*(beta_xy_z.dot(grad_Az))
+						+ 0.5*h_use*M_ne*nu_en_MT*beta_ni
+						+ 0.5*h_use*nu_ei_effective)/denom
+						);
+
+				if ((iMinor == CHOSEN) && (0)) printf("vez0 divided %1.14E LapAzcontrib(not applied) %1.14E over denom %1.14E \n"
+					"Lap Az %1.14E factor %1.14E \n"
+					, vez0,
+					-0.5*h_use*eovermc_*h_use *c_*c_*Lap_Az,
+					-0.5*h_use*eovermc_*h_use *c_*c_*Lap_Az/denom,
+					Lap_Az, -0.5*h_use*eovermc_*h_use *c_*c_
+					);
+
+				if ((iMinor == CHOSEN) && (0)) {
+					printf("~~~~~~~~~~~\nCPU %d vez0(divided, no lap contrib on 2nd pass) %1.14E denom %1.14E bFeint %d \n", CHOSEN, vez0, denom,
+						bFeint ? 1 : 0);
+					printf("sigma_e_zz %1.14E \n", sigma_e_zz);
+				}
+
+
 #define NODEBUGJZ0
 #ifndef NODEBUGJZ0
 				vez0_component_vezk -= q * data_use.n*AreaMinor*data_k.vez;
@@ -5709,6 +5811,14 @@ void TriMesh::Accelerate2018(f64 h_use, TriMesh * pUseMesh, TriMesh * pDestMesh,
 				viz0 += beta_ie_z * vez0;
 				sigma_i_zz += beta_ie_z * sigma_e_zz;
 
+				viz0_coeff_on_Lap_Az += beta_ie_z*vez0_coeff_on_Lap_Az;
+
+				if (iMinor == CHOSEN) printf("vez0 %1.14E beta_ie_z %1.14E contribtoviz0 %1.14E\n",
+					vez0, beta_ie_z, beta_ie_z * vez0);
+				// did beta_ie_z ever get divided by  denom_i???
+
+
+
 				// sigma_e_zz and sigma_i_zz are change in vz for a change in Ez
 
 				f64 EzShape = GetEzShape__(data_use.pos.modulus());
@@ -5724,7 +5834,7 @@ void TriMesh::Accelerate2018(f64 h_use, TriMesh * pUseMesh, TriMesh * pDestMesh,
 						sigma_zz = //0.5*q_* data_use.n*(sigma_i_zz - sigma_e_zz);
 							q_* data_1.n*(sigma_i_zz - sigma_e_zz);
 
-						if (iMinor == CHOSEN) 
+						if ((iMinor == CHOSEN) && (0)) 
 							printf("data_1.n %1.12E sigma_zz %1.12E AreaMinor %1.12E\n\n",
 								data_1.n, sigma_zz, AreaMinor);
 					} else {
@@ -5732,7 +5842,7 @@ void TriMesh::Accelerate2018(f64 h_use, TriMesh * pUseMesh, TriMesh * pDestMesh,
 						//(0.5*(viz_k-vez_k)+ 0.5* (viz0 - vez0));
 						sigma_zz = //0.5*q_* data_use.n*(sigma_i_zz - sigma_e_zz);
 							q_* data_use.n*(sigma_i_zz - sigma_e_zz);
-						if (iMinor == CHOSEN) 
+						if ((0) && (iMinor == CHOSEN))
 							printf("data_use.n %1.12E sigma_zz %1.12E AreaMinor %1.12E\n\n",
 								data_use.n, sigma_zz, AreaMinor);
 					}
@@ -5758,15 +5868,18 @@ void TriMesh::Accelerate2018(f64 h_use, TriMesh * pUseMesh, TriMesh * pDestMesh,
 				//	if (iTile == 340) fprintf(fp_individual_sigma_block_340,
 				//		"%d: %1.14E %1.14E \n", iMinor, sigma_zz, sigma_zz*AreaMinor);
 
-					if (iMinor == CHOSEN) {
-						printf("CPU %d: Iz0 %1.10E  sigma_zz %1.10E \n"
-							"sigma_i_zz %1.10E\n\n",
-							CHOSEN, Iz0, sigma_zz*AreaMinor,
-							sigma_i_zz);
-					}
+					if ((iMinor == CHOSEN) && (0)) {
+						printf("CPU %d: Iz0 %1.12E  sigma_zz %1.12E \n\n",
+							CHOSEN, Iz0, sigma_zz*AreaMinor);
+					};
+
 				} else {
 					data_1.vez = vez0 + sigma_e_zz * Ez_strength;
 					data_1.viz = viz0 + sigma_i_zz * Ez_strength;
+					//if ((iMinor == CHOSEN)) printf("data_1.vez %1.14E vez0 %1.14E sigma_e_zz %1.14E Ez_strength %1.14E\n================\n",
+					//	data_1.vez, vez0, sigma_e_zz, Ez_strength);
+					if ((iMinor == CHOSEN)) printf("viz0 %1.14E data_1.viz %1.14E sigma_i_zz %1.14E Ez %1.14E\n================\n",
+						viz0, data_1.viz, sigma_i_zz, Ez_strength);
 
 					if (bFeint == false) {
 						data_1.vxy = vxy0 + beta_xy_z * (data_1.viz - data_1.vez);
@@ -5780,6 +5893,20 @@ void TriMesh::Accelerate2018(f64 h_use, TriMesh * pUseMesh, TriMesh * pDestMesh,
 								0.5*FOURPI_OVER_C_ * q_*data_use.n*(data_k.viz + data_1.viz
 									- data_k.vez - data_1.vez));
 
+						if ((iMinor == CHOSEN) && (0)) printf("\ndata_k.Azdot %1.14E antiadvect %1.14E\n"
+							"Lapcontrib %1.14E  contrib %1.14E  n_use.n %1.14E \n"
+							"vizk %1.14E viz %1.14E vezk %1.14E vez %1.14E\n\n",
+							data_k.Azdot,
+							h_use * ROCAzdot_antiadvect,
+							h_use *c_*c_*Lap_Az,
+							h_use *c_*c_*(
+								0.5*FOURPI_OVER_C_ * q_*data_use.n*(data_k.viz + data_1.viz
+									- data_k.vez - data_1.vez)),
+							data_use.n, 
+							data_k.viz, data_1.viz, data_k.vez, data_1.vez);
+
+						if (iMinor == CHOSEN) printf("viz used for Azdot: %1.14E\n\n", data_1.viz);
+
 						if (bUse_n_dest_for_Iz) {
 							Iz0 += q_* data_1.n*(data_1.viz - data_1.vez)*AreaMinor;
 						} else {
@@ -5787,15 +5914,35 @@ void TriMesh::Accelerate2018(f64 h_use, TriMesh * pUseMesh, TriMesh * pDestMesh,
 						}
 
 						memcpy(pDestMesh->pData + iMinor, &data_1, sizeof(plasma_data));
-					}
-					else {
+					} else {
 						Azdot0[iMinor] = data_k.Azdot
 							+ h_use * ROCAzdot_antiadvect + h_use *c_*c_*(
 								0.5*FOURPI_OVER_C_ * q_*data_use.n*(data_k.viz + data_1.viz
 									- data_k.vez - data_1.vez));
-						gamma[iMinor] = h_use *c_*c_*(1.0 + 0.5*FOURPI_OVER_C_ * q_*data_use.n*(viz0_coeff_on_Lap_Az - vez0_coeff_on_Lap_Az));
-					
+						gamma[iMinor] = h_use *c_*c_*(1.0 + 0.5*FOURPI_OVER_C_ * q_*data_use.n*
+							(viz0_coeff_on_Lap_Az - vez0_coeff_on_Lap_Az));
+						 
+						// Incorrect. 08/01/19
+						// We ignored the knock-on effect of Lap_Az on vez via viz, when we set up vez0_coeff_on_Lap_Az.
+						
+						if ((iMinor == CHOSEN) && (0)) printf("\n@@@@@@@@@@@@@@@@@@@@\nCPU data_k.Azdot %1.14E antiadvect %1.14E\n"
+							"contrib %1.14E  n_use.n %1.14E \n"
+							"vizk %1.14E viz %1.14E vezk %1.14E vez %1.14E\n\n",
+							data_k.Azdot,
+							h_use * ROCAzdot_antiadvect,
+							h_use *c_*c_*(
+								0.5*FOURPI_OVER_C_ * q_*data_use.n*(data_k.viz + data_1.viz
+									- data_k.vez - data_1.vez)),
+							data_use.n,
+							data_k.viz, data_1.viz, data_k.vez, data_1.vez);
+
+						if ((iMinor == CHOSEN) && (0)) {
+							printf("CPU Azdot0 %1.14E gamma %1.14E \n", Azdot0[iMinor], gamma[iMinor]);
+							printf("gamma components: n %1.14E viz_coeff_on_Lap %1.14E vez_coeff_on_Lap %1.14E",
+								data_use.n, viz0_coeff_on_Lap_Az, vez0_coeff_on_Lap_Az);
+						};
 					}
+
 					// This does not seem to come out equal to what it says on the graph.
 					// Seeing Jz = -2e16 and Azdot consistent with this, yet
 					// seeing Iz attained = -1e9. The well radius is about 0.1cm so 0.01*pi*(-2e16) = -6e14 roughly.
@@ -5966,8 +6113,16 @@ void TriMesh::Accelerate2018(f64 h_use, TriMesh * pUseMesh, TriMesh * pDestMesh,
 								pDestMesh->pData[iMinor].Azdot = pData[iMinor].Azdot
 									// + h_use * ROCAzdot_antiadvect // == 0
 									+ h_use * (c_*c_*LapAzArray[iMinor] + 4.0*PI*c_*Jz);
-							Azdot0[iMinor] = pData[iMinor].Azdot + +h_use * + 4.0*PI*c_*Jz;
+
+							Azdot0[iMinor] = pData[iMinor].Azdot + h_use * 4.0*PI*c_*Jz;
 							gamma[iMinor] = h_use *c_*c_;
+
+							if ((bFeint) && (iMinor == 2387)) {
+								printf("CPU 2387: Azdot0[iMinor] %1.14E Jz %1.14E pData[iMinor].Azdot %1.14E \n",
+									Azdot0[iMinor], Jz, pData[iMinor].Azdot);
+								printf("Jz*AreaMinor %1.14E Iz_presc %1.14E %d\n", -Iz_prescribed / (real)(numEndZCurrentTriangles - numStartZCurrentTriangles),
+									Iz_prescribed, numEndZCurrentTriangles - numStartZCurrentTriangles);
+							};
 					//	};
 				//	};					
 				};
@@ -5981,7 +6136,13 @@ void TriMesh::Accelerate2018(f64 h_use, TriMesh * pUseMesh, TriMesh * pDestMesh,
 		if (iPass == 0) {
 			Ez_strength = (Iz_prescribed - Iz0) / SigmaIzz;
 
-			printf("\nCPU Iz0 %1.14E Iz_presc %1.14E diff %1.6E SigmaIzz %1.13E Ez_strength %1.14E \n",
+			FILE * fp_ = fopen("sigma_tile.txt", "w");
+			for (long i = 0; i < numTilesMinor; i++)
+				fprintf(fp_, "%d sigma_tile %1.14E \n", i, sigma_tiles[i]);
+			fclose(fp_);
+
+			printf("\n&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&\n"
+				"CPU Iz0 %1.14E Iz_presc %1.14E diff %1.6E SigmaIzz %1.13E Ez_strength %1.14E \n\n",
 				Iz0,Iz_prescribed,Iz_prescribed-Iz0,SigmaIzz,Ez_strength);
 		/*	printf("Iz0 components: \n"
 				"vezk %1.9E \n"
