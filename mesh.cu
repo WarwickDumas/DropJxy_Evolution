@@ -3037,8 +3037,7 @@ void TriMesh::Flip(Triangle * pTri1, Triangle * pTri2, int iLevel)
 					printf("\n\n\nerror periodic\n\n"); getch();
 
 					//  We get here.
-
-
+					
 
 					pTri2 = pTri2;
 				} else {
@@ -3190,6 +3189,7 @@ void TriMesh::Flip(Triangle * pTri1, Triangle * pTri2, int iLevel)
 		pTri->neighbours[0] = ReturnPointerToOtherSharedTriangle(pTri->cornerptr[1],pTri->cornerptr[2],pTri,iLevel);
 		pTri->neighbours[1] = ReturnPointerToOtherSharedTriangle(pTri->cornerptr[0],pTri->cornerptr[2],pTri,iLevel);
 	};
+
 }
 
 

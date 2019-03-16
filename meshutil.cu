@@ -7589,23 +7589,22 @@ int TriMesh::SaveText(const char * filename)
 
 	FILE * fp = fopen(szString,"w");
 	if (fp == 0) { printf(" FILE OPEN FAILED %s", filename); return 1; };
-	plasma_data * pdata = pData+1715;
+	plasma_data * pdata = pData;
 	plasma_data data;
 	Triangle * pTri;
-	for (iMinor = 10000; iMinor <= 20000; iMinor++)
+	for (iMinor = 0; iMinor < 11582*2; iMinor++)
 	{
 		memcpy(&data, pdata, sizeof(plasma_data));
 
 		//if (data.pos.x*data.pos.x+data.pos.y*data.pos.y < 3.44*3.44)
 		{
 			memcpy(&data, pdata, sizeof(plasma_data));
-			fprintf(fp, "%d x %1.14E y %1.14E r %1.14E Az %1.14E Azdot %1.14E "
-				"  temp.x %1.14E temp.y %1.14E ",
-				iMinor, data.pos.x, data.pos.y, data.pos.modulus(), data.Az, data.Azdot, 
-				data.temp.x,data.temp.y);
-			pTri = T + iMinor;
-			fprintf(fp, "%d %d %d | %d %d %d \n", pTri->cornerptr[0] - X, pTri->cornerptr[1] - X, pTri->cornerptr[2] - X,
-				pTri->neighbours[0] - T, pTri->neighbours[1] - T, pTri->neighbours[2] - T);
+			fprintf(fp, "%d x %1.14E y %1.14E r %1.14E Az %1.14E Azdot %1.14E \n",
+				iMinor, data.pos.x, data.pos.y, data.pos.modulus(), data.Az, data.Azdot);
+			
+			// pTri = T + iMinor;
+			//fprintf(fp, "%d %d %d | %d %d %d \n", pTri->cornerptr[0] - X, pTri->cornerptr[1] - X, pTri->cornerptr[2] - X,
+			//	pTri->neighbours[0] - T, pTri->neighbours[1] - T, pTri->neighbours[2] - T);
 		};
 		++pdata;
 	};
@@ -7614,10 +7613,10 @@ int TriMesh::SaveText(const char * filename)
 	sprintf(szString, "%sVERTS.txt",filename);
 	fp = fopen(szString, "w");
 	if (fp == 0) { printf(" FILE OPEN FAILED %s", filename); return 1; };
-	Vertex * pVertex = X + 799;
-	pdata = pData + BEGINNING_OF_CENTRAL + 799;
+	Vertex * pVertex = X;
+	pdata = pData + BEGINNING_OF_CENTRAL;
 	long tri_len, izTri[128];
-	for (iMinor = BEGINNING_OF_CENTRAL+799; iMinor < BEGINNING_OF_CENTRAL+2000; iMinor++)
+	for (iMinor = BEGINNING_OF_CENTRAL; iMinor < BEGINNING_OF_CENTRAL+11582; iMinor++)
 	{
 		memcpy(&data, pdata, sizeof(plasma_data));
 
@@ -7625,14 +7624,12 @@ int TriMesh::SaveText(const char * filename)
 		{
 			memcpy(&data, pdata, sizeof(plasma_data));
 			 
-			fprintf(fp, "%d x %1.14E y %1.14E r %1.14E Az %1.14E Azdot %1.14E "
-				" temp.x %1.14E temp.y %1.14E | ",
-				iMinor, data.pos.x, data.pos.y, data.pos.modulus(), data.Az, data.Azdot, 
-				 data.temp.x,data.temp.y);
-			tri_len = pVertex->GetTriIndexArray(izTri);
-			for (int i = 0; i < tri_len; i++)
-				fprintf(fp, " %d ", izTri[i]);
-			fprintf(fp, "\n");
+			fprintf(fp, "%d x %1.14E y %1.14E r %1.14E Az %1.14E Azdot %1.14E \n",
+				iMinor, data.pos.x, data.pos.y, data.pos.modulus(), data.Az, data.Azdot);
+		//	tri_len = pVertex->GetTriIndexArray(izTri);
+		//	for (int i = 0; i < tri_len; i++)
+		//		fprintf(fp, " %d ", izTri[i]);
+		//	fprintf(fp, "\n");
 		}; 
 		++pdata;
 		++pVertex;

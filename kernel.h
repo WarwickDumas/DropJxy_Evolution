@@ -37,6 +37,7 @@ __global__ void kernelAverage_n_T_x_to_tris  (
 
 __global__ void kernelCreateShardModelOfDensities_And_SetMajorArea_Debug(
 	structural * __restrict__ p_info_minor,
+	nvals * __restrict__ p_n_major,
 	nvals * __restrict__ p_n_minor,
 
 	long * __restrict__ p_izTri_vert,
@@ -50,6 +51,7 @@ __global__ void kernelCreateShardModelOfDensities_And_SetMajorArea_Debug(
 
 __global__ void kernelCreateShardModelOfDensities_And_SetMajorArea(
 	structural * __restrict__ p_info_minor,
+	nvals * __restrict__ p_n_major,
 	nvals * __restrict__ p_n_minor,
 
 	long * __restrict__ p_izTri_vert,
@@ -178,7 +180,13 @@ __global__ void kernelPopulateOhmsLaw(
 
 	f64 * __restrict__ p_denom_i,
 	f64 * __restrict__ p_denom_e,
-	bool const bSwitchSave);
+
+	f64 * __restrict__ p_effect_of_viz0_on_vez0,
+	f64 * __restrict__ p_beta_ie_z,
+
+	bool const bSwitchSave,
+	bool const bUse_dest_n_for_Iz,
+	nvals * __restrict__ p_n_dest_minor);
 
 
 __global__ void kernelCalculateVelocityAndAzdot(
@@ -193,6 +201,11 @@ __global__ void kernelCalculateVelocityAndAzdot(
 	v4 * __restrict__ p_vie_out,
 	f64_vec3 * __restrict__ p_vn_out);
 
+__global__ void kernelAdvanceAzEuler(
+	f64 const h_use,
+	AAdot * __restrict__ p_AAdot_use,
+	AAdot * __restrict__ p_AAdot_dest,
+	f64 * __restrict__ p_ROCAzduetoAdvection);
 
 __global__ void kernelUpdateAz(
 	f64 const h_use,
@@ -238,6 +251,12 @@ __global__ void kernelResetFrillsAz(
 	structural * __restrict__ p_info,
 	LONG3 * __restrict__ trineighbourindex,
 	f64 * __restrict__ p_Az);
+
+__global__ void kernelResetFrillsAz_II(
+	structural * __restrict__ p_info,
+	LONG3 * __restrict__ trineighbourindex,
+	AAdot * __restrict__ p_Az);
+
 
 
 __global__ void kernelCreateEpsilonAndJacobi(
@@ -335,13 +354,14 @@ __global__ void kernelInterpolateVarsAndPositions(
 	nvals * __restrict__ p_n_minor2,
 	T3 * __restrict__ p_T_minor1,
 	T3 * __restrict__ p_T_minor2,
-	f64_vec3 * __restrict__ p_B1,
-	f64_vec3 * __restrict__ p_B2,
+//	f64_vec3 * __restrict__ p_B1,
+//	f64_vec3 * __restrict__ p_B2,
 
 	structural * __restrict__ p_info_dest,
 	nvals * __restrict__ p_n_minor,
-	T3 * __restrict__ p_T_minor,
-	f64_vec3 * __restrict__ p_B);
+	T3 * __restrict__ p_T_minor
+	//f64_vec3 * __restrict__ p_B
+	);
 
 __global__ void kernelCreate_momflux_minor(
 
@@ -372,6 +392,8 @@ __global__ void kernelCreateLinearRelationship(
 	nvals * __restrict__ p_n_minor,
 	f64 * __restrict__ p_denom_e,
 	f64 * __restrict__ p_denom_i,
+	f64 * __restrict__ p_coeff_of_vez_upon_viz, 
+	f64 * __restrict__ p_beta_ie_z,
 	AAdot * __restrict__ p_AAdot_intermediate,
 	f64 * __restrict__ p_Azdot0,
 	f64 * __restrict__ p_gamma
@@ -420,7 +442,8 @@ __global__ void kernelReassessTriNeighbourPeriodicFlags_and_populate_PBCIndexnei
 	char * __restrict__ p_was_vertex_rotated,
 	CHAR4 * __restrict__ p_tri_periodic_corner_flags,
 	CHAR4 * __restrict__ p_tri_periodic_neigh_flags,
-	char * __restrict__ p_szPBC_triminor
+	char * __restrict__ p_szPBC_triminor,
+	char * __restrict__ p_triPBClistaffected
 );
 __global__ void kernelReset_szPBCtri_vert(
 	structural * __restrict__ p_info_minor,

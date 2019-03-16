@@ -260,7 +260,8 @@ public:
 	void PerformCUDA_Advance(const cuSyst * pX_target, const cuSyst * pX_half);
 
 	void PerformCUDA_Advance_Debug(const cuSyst * pX_target, const cuSyst * pX_half,
-		const cuSyst * p_cuSyst_host, cuSyst * p_cuSyst_compare, TriMesh * pTriMesh, TriMesh * pTriMeshhalf);
+		const cuSyst * p_cuSyst_host, cuSyst * p_cuSyst_compare, TriMesh * pTriMesh, TriMesh * pTriMeshhalf,
+		TriMesh * pDestMesh);
 
 	void Output(const char * filename);
 
@@ -280,7 +281,8 @@ void PerformCUDA_Invoke_Populate (
 		);
 
 void PerformCUDA_RunStepsAndReturnSystem(cuSyst * pX_host);
-void PerformCUDA_RunStepsAndReturnSystem_Debug(cuSyst * pcuSyst_host, cuSyst * p_cuSyst_compare, TriMesh * pTriMesh, TriMesh * pTriMeshhalf);
+void PerformCUDA_RunStepsAndReturnSystem_Debug(cuSyst * pcuSyst_host, cuSyst * p_cuSyst_compare, TriMesh * pTriMesh, TriMesh * pTriMeshhalf,
+	TriMesh * pDestMesh);
 
 void PerformCUDA_Revoke();
 

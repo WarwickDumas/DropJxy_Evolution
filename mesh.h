@@ -1312,7 +1312,7 @@ public:
 	void EnsureAnticlockwiseTriangleCornerSequences_SetupTriMinorNeighboursLists();
 	void CalculateOverallVelocities(f64_vec2 p_v[]);
 	void EnsureAnticlockwiseTriangleCornerSequences();
-	void AdvanceDensityAndTemperature(f64 h_use, TriMesh * pHalfMesh, NTrates NTadditionrate[NUMVERTICES]);
+	void AdvanceDensityAndTemperature(f64 h_use, TriMesh * pUseMesh, TriMesh * pDestMesh, NTrates NTadditionrate[NUMVERTICES]);
 
 	// *******************************************************************
 	// *****																	  *****
@@ -1461,7 +1461,10 @@ public:
 
 	void CreateShardModelOfDensities_And_SetMajorArea();
 
-	void AccumulateAdvectiveMassHeatRate(f64_vec2 p_overall_v[NMINOR], NTrates AdditionalNT[NUMVERTICES]);
+	void AccumulateAdvectiveMassHeatRate(f64_vec2 p_overall_v[NMINOR], NTrates AdditionalNT[NUMVERTICES],
+		f64 * p_n_upwind,
+		f64 * p_nn_upwind);
+	void AccumulateAdvectiveMassHeatRateOld(f64_vec2 p_overall_v[NMINOR], NTrates AdditionalNT[NUMVERTICES]);
 
 	void Create_A_from_advance(f64 hstep, f64 ROCAzduetoAdvection[], f64 Az_array[]);
 	void FinalStepAz(f64 hstep, f64 ROCAzduetoAdvection[], TriMesh * pDestMesh, f64 Az_array[]);
@@ -1487,7 +1490,8 @@ public:
 		//ShardModel n_shards[NUMVERTICES],
 		three_vec3 AdditionRateNv[NMINOR]);
 	
-	void Accelerate2018(f64 h_use, TriMesh * pUseMesh, TriMesh * pDestMesh, f64 evaltime_use, bool bFeint);
+	void Accelerate2018(f64 h_use, TriMesh * pUseMesh, TriMesh * pDestMesh, f64 evaltime_plus, bool bFeint,
+		bool bUse_n_dest_for_Iz);
 		//three_vec3 AdditionRateNv[NMINOR], 
 		//f64_vec2 IntegratedGradAz[NMINOR], f64 IntegratedLapAz[NMINOR]);
 
