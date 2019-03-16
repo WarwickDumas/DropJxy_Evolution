@@ -31,7 +31,7 @@ bool const bScrewPinch = false;
 // frames between file pinch-offs:
 #define AVI_FILE_PINCHOFF_FREQUENCY     100
 // milliseconds between frames:
-#define AVIFRAMEPERIOD         200      // Try 0.4s per ns. 100ns = 40s
+#define AVIFRAMEPERIOD         50 // 20 fps which is ok with our setting of 50 frames/ns
 
 #define DATA_SAVE_FREQUENCY					   100
 
@@ -53,7 +53,7 @@ long const numTilesMinor = 432; // 432 = 288+144
 								// numTriTiles == numTilesMajor because the two sets are bijective.
 								// Then we also have to assign central minors to tiles, twice the size of the major tiles...
 
-long const threadsPerTileMinor = 256;
+long const threadsPerTileMinor = 256; // PopOhmsLaw ASSUMES THIS IS A POWER OF 2 !!!
 long const threadsPerTileMajor = 128; // see about it - usually we take info from minor.
 
 long const threadsPerTileMajorClever = 256;

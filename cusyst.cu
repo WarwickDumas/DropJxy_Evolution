@@ -509,10 +509,62 @@ void cuSyst::PopulateTriMesh(TriMesh * pX)
 		data.vez = p_vie[iMinor].vez;
 		data.viz = p_vie[iMinor].viz ;
 		data.B = p_B[iMinor] ;
+		
+		data.pos = p_info[iMinor].pos;
 
 		memcpy(&(pX->pData[iMinor]), &data, sizeof(plasma_data));
 		pX->AreaMinorArray[iMinor] = p_AreaMinor[iMinor];
 	};
+
+	// Plan.
+	// As long as we use TriMesh for graphs we have to cross information back to TriMesh
+	// including periodic info.
+
+	// So that is stop 1. Or we go the whole hog and change graphs to cuSyst.
+
+	structural info;
+	long iTri, iVertex;
+
+	Vertex * pVertex = pX->X;
+	for (iVertex = 0; iVertex < Nverts; iVertex++)
+	{
+		info = p_info[iVertex + BEGINNING_OF_CENTRAL];
+		pVertex->pos = info.pos;
+		++pVertex;
+	}
+
+	// Triangle structural?
+	Triangle * pTri = pX->T;
+	for (iTri = 0; iTri < Ntris; iTri++)
+	{
+		LONG3 tri_corner_index;
+		CHAR4 tri_periodic_corner_flags;
+		LONG3 who_am_I_to_corner;
+		LONG3 tri_neigh_index;
+		CHAR4 tri_periodic_neigh_flags;
+
+		tri_corner_index = p_tri_corner_index[iTri];
+		pTri->cornerptr[0] = pX->X + tri_corner_index.i1;
+		pTri->cornerptr[1] = pX->X + tri_corner_index.i2;
+		pTri->cornerptr[2] = pX->X + tri_corner_index.i3;
+
+		tri_neigh_index = p_tri_neigh_index[iTri];
+		pTri->neighbours[0] = tri_neigh_index.i1 + pX->T;
+		pTri->neighbours[1] = tri_neigh_index.i2 + pX->T;
+		pTri->neighbours[2] = tri_neigh_index.i3 + pX->T;
+		
+		tri_periodic_corner_flags = p_tri_periodic_corner_flags[iTri];
+		pTri->periodic = ((tri_periodic_corner_flags.per0 == ROTATE_ME_ANTICLOCKWISE) ? 1 : 0)
+			+ ((tri_periodic_corner_flags.per1 == ROTATE_ME_ANTICLOCKWISE) ? 1 : 0)
+			+ ((tri_periodic_corner_flags.per2 == ROTATE_ME_ANTICLOCKWISE) ? 1 : 0);
+		
+		info = p_info[iTri];
+		pTri->cent = info.pos;
+		pTri->u8domain_flag = info.flag;
+		++pTri;
+	}
+	// Neighbour lists can't be changed on GPU yet.
+
 }
                             
 #endif

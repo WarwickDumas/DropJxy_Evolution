@@ -42,6 +42,8 @@ cudaError_t addWithCuda(int *c, const int *a, const int *b, unsigned int size);
 
 // Global variables:
 // =================
+extern f64_vec3 * p_B_host;
+extern f64 EzStrength_;
 
 extern D3D Direct3D;
 
@@ -100,11 +102,11 @@ int Historic_powermin[200]; // just store previous value only.
 bool boolGlobalHistory, GlobalboolDisplayMeshWireframe;
 
 // avi file -oriented variables
-int const NUMAVI = 1;
+int const NUMAVI = 6;
 HAVI hAvi[NUMAVI + 1];
-int const GraphFlags[5] = { LAPAZ_AZ, VIZVEZJZAZDOT,
-							SPECIES_ELECTRON, JZAZBXYEZ, SPECIES_NEUTRAL};
-char szAvi[5][128] = { "LapAz_Az","VIZVEZJZAZDOT","Elec","JzAzBxyEz","Neut" };
+int const GraphFlags[6] = { SPECIES_ION, VIZVEZJZAZDOT, SPECIES_ELECTRON, 
+							JZAZBXYEZ, SPECIES_NEUTRAL, TOTAL};
+char szAvi[NUMAVI][128] = { "Ion","VIZVEZ","Elec","JzAzBxyEz","Neut", "Total" };
 
 AVICOMPRESSOPTIONS opts;
 int counter;
@@ -256,7 +258,7 @@ void surfacegraph::DrawSurface(const char * szname,
 		code);
 
 	if (this->bDisplayTimestamp) {
-		sprintf(buff, "%6.2f ps", evaltime*1.0e12);
+		sprintf(buff, "%6.2f ns", evaltime*1.0e9);
 		this->Render(szname, false, pX, buff);
 	}
 	else {
@@ -277,7 +279,8 @@ void RefreshGraphs(TriMesh & X, // only not const because of such as Reset_verte
 	plasma_data * pdata;
 	int offset_v, offset_T;
 	char buff[256];
-	sprintf(buff, "%5.2f ps", evaltime*1.0e12);
+	sprintf(buff, "%5.2f ns", evaltime*1.0e9);
+	f64 overc;
 
 	switch (iGraphsFlag) {
 		/*
@@ -549,35 +552,48 @@ void RefreshGraphs(TriMesh & X, // only not const because of such as Reset_verte
 
 	case JZAZBXYEZ:
 
-		/*
-		X.Setup_J(); // the others can already exist.
-
-		printf("About to do Az\n");
-		Graph[0].DrawSurface("Az",
-		DATA_HEIGHT, (real *)(&(X.X[0].A.z)),
-		AZSEGUE_COLOUR, (real *)(&(X.X[0].A.z)),
-		true,
-		GRAPH_AZ, &X);
-		printf("About to do Bxy\n");
-		Graph[1].DrawSurface("Bxy",
-		VELOCITY_HEIGHT, (real *)(&(X.X[0].B)),
-		VELOCITY_COLOUR, (real *)(&(X.X[0].B)),
-		true, // no inner mesh display: ??
-		GRAPH_BXY, &X);
-		printf("About to do Ez\n");
-		Graph[2].DrawSurface("Ez",
-		DATA_HEIGHT, (real *)(&(X.X[0].E.z)),
-		FLAG_SEGUE_COLOUR, (real *)(&(X.X[0].E.z)),
-		false, // ??
-		GRAPH_EZ, &X);
-		printf("About to do Jz\n");
+		pdata = X.pData + BEGINNING_OF_CENTRAL;
+		for (iVertex = 0; iVertex < NUMVERTICES; iVertex++)
+		{
+			pdata->temp.x = q_ * pdata->n*(pdata->viz - pdata->vez);
+			++pdata;
+		};
 		Graph[3].DrawSurface("Jz",
-		DATA_HEIGHT, (real *)(&(X.X[0].Temp.z)),
-		AZSEGUE_COLOUR, (real *)(&(X.X[0].Temp.z)),
-		false, // no inner mesh display.
-		GRAPH_JZ, &X);
-		break;
-		*/
+			DATA_HEIGHT, (real *)(&(X.pData[0].temp.x)),
+			AZSEGUE_COLOUR, (real *)(&(X.pData[0].temp.x)),
+			false, // no inner mesh display.
+			GRAPH_JZ, &X);
+
+		// create graph data for Ez : add Ez_strength*Ezshape to -Azdot/c
+		overc = 1.0 / c_;
+		for (iVertex = 0; iVertex < NUMVERTICES; iVertex++)
+		{
+			X.pData[iVertex + BEGINNING_OF_CENTRAL].temp.y =
+				-X.pData[iVertex + BEGINNING_OF_CENTRAL].Azdot*overc
+				+ GetEzShape__(X.pData[iVertex + BEGINNING_OF_CENTRAL].pos.modulus())*EzStrength_;
+		}
+		Graph[2].DrawSurface("Ez",
+			DATA_HEIGHT, (real *)(&(X.pData[0].temp.y)),
+			AZSEGUE_COLOUR, (real *)(&(X.pData[0].temp.x)), // use Jz's colour
+			false, 
+			GRAPH_EZ, &X);
+
+		Graph[0].DrawSurface("Az",
+			DATA_HEIGHT, (real *)(&(X.pData[0].Az)),
+			AZSEGUE_COLOUR, (real *)(&(X.pData[0].Az)),
+			true, GRAPH_AZ, &X);
+
+		for (iVertex = 0; iVertex < NUMVERTICES; iVertex++)
+		{
+			X.pData[iVertex + BEGINNING_OF_CENTRAL].temp.x = p_B_host[iVertex + BEGINNING_OF_CENTRAL].x;
+			X.pData[iVertex + BEGINNING_OF_CENTRAL].temp.y = p_B_host[iVertex + BEGINNING_OF_CENTRAL].y;
+		}
+		Graph[1].DrawSurface("Bxy",
+		VELOCITY_HEIGHT, (real *)(&(X.pData[0].temp.x)), // you're kidding me. Where do we get B?
+		VELOCITY_COLOUR, (real *)(&(X.pData[0].temp.x)),
+		false,
+		GRAPH_BXY, &X);
+		
 		break;
 	case VIZVEZJZAZDOT:
 
@@ -839,41 +855,102 @@ void RefreshGraphs(TriMesh & X, // only not const because of such as Reset_verte
 		break;
 
 	case TOTAL:
-		break;
+		
 		// In this case we have to create data,
 		// as we go.
-		/*
+		
 		// Best put it here so we can see where
 		// data is being populated.
 
-		X.CalculateTotalGraphingData();
+		/*long iVertex;
+		Vertex * pVertex = X;
+		for (iVertex = 0; iVertex < numVertices; iVertex++)
+		{
+		if ((pVertex->flags == DOMAIN_VERTEX) || (pVertex->flags == OUTERMOST))
+		{
+		pVertex->n = (pVertex->Neut.mass + pVertex->Ion.mass) / pVertex->AreaCell;
+		pVertex->v = (m_n*pVertex->Neut.mom + m_ion * pVertex->Ion.mom + m_e * pVertex->Elec.mom) /
+		(m_n*pVertex->Neut.mass + m_ion * pVertex->Ion.mass + m_e * pVertex->Elec.mass);
+		pVertex->T = (pVertex->Neut.heat + pVertex->Ion.heat + pVertex->Elec.heat) /
+		(pVertex->Neut.mass + pVertex->Ion.mass + pVertex->Elec.mass);
+		pVertex->Temp.x = pVertex->Ion.mass / (pVertex->Neut.mass + pVertex->Ion.mass);
+		};
+		++pVertex;
+		}*/
+		//X.CalculateTotalGraphingData();
 
 		// ought to change this to use variables n,v,T !
-
-		Graph[0].DrawSurface("n_n+n_ion",
-		DATA_HEIGHT, (real *)(&(X.X[0].n)),
-		IONISE_COLOUR, (real *)(&(X.X[0].Temp.y)),
+		pVertex = X.X;
+		pdata = X.pData + BEGINNING_OF_CENTRAL;
+		for (iVertex = 0; iVertex < NUMVERTICES; iVertex++)
+		{
+			if ((pVertex->flags == DOMAIN_VERTEX) || (pVertex->flags == OUTERMOST))
+			{
+				pdata->temp.x = pdata->n + pdata->n_n;
+				pdata->temp.y = pdata->n / pdata->temp.x;
+			}
+			++pVertex;
+			++pdata;
+		}
+		Graph[0].DrawSurface("n_n + n_ion",
+		DATA_HEIGHT, (real *)(&(X.pData[0].temp.x)),
+		IONISE_COLOUR, (real *)(&(X.pData[0].temp.y)),
 		false,
 		GRAPH_TOTAL_N, &X);
-		Graph[1].DrawSurface("[n_s v_s m_s]/[n_s m_s]",
-		VELOCITY_HEIGHT, (real *)(&(X.X[0].v)),
-		VELOCITY_COLOUR, (real *)(&(X.X[0].v)),
+
+
+		pVertex = X.X;
+		pdata = X.pData + BEGINNING_OF_CENTRAL;
+		for (iVertex = 0; iVertex < NUMVERTICES; iVertex++)
+		{
+			if ((pVertex->flags == DOMAIN_VERTEX) || (pVertex->flags == OUTERMOST))
+			{
+				pdata->temp.x = (m_neutral_*pdata->n_n*pdata->v_n.x
+					+ (m_ion_ + m_e_) * pdata->n*pdata->vxy.x) /
+					(m_neutral_*pdata->n_n + (m_ion_ + m_e_)*pdata->n);
+				pdata->temp.y = (m_neutral_*pdata->n_n*pdata->v_n.y
+					+ (m_ion_ + m_e_) * pdata->n*pdata->vxy.y) /
+					(m_neutral_*pdata->n_n + (m_ion_ + m_e_)*pdata->n);
+			}
+			++pVertex;
+			++pdata;
+		}
+		Graph[1].DrawSurface("sum[n_s v_s m_s]/sum[n_s m_s]",
+		VELOCITY_HEIGHT, (real *)(&(X.pData[0].temp.x)),
+		VELOCITY_COLOUR, (real *)(&(X.pData[0].temp.x)),
 		false, // no inner mesh display
 		GRAPH_TOTAL_V, &X);
-		Graph[2].DrawSurface("n_n+n_ion",
-		DATA_HEIGHT, (real *)(&(X.X[0].n)),
-		VELOCITY_COLOUR, (real *)(&(X.X[0].v)),
-		false,
-		GRAPH_TOTAL_N_II, &X);
-		Graph[3].TickRescaling = 1.0 / kB;
-		Graph[3].DrawSurface("[n_s T_s]/[n_s]",
-		DATA_HEIGHT, (real *)(&(X.X[0].T)),
-		SEGUE_COLOUR, (real *)(&(X.X[0].T)),
+		
+		
+		//Graph[2].DrawSurface("n_n+n_ion",
+		//DATA_HEIGHT, (real *)(&(X.X[0].n)),
+		//VELOCITY_COLOUR, (real *)(&(X.X[0].v)),
+		//false,
+		//GRAPH_TOTAL_N_II, &X);   // ok what we did here? we thought we'd colour with velocity .. but we haven't given ourselves room for 3 temp vars so drop this for now.
+		
+		
+		pVertex = X.X;
+		pdata = X.pData + BEGINNING_OF_CENTRAL;
+		for (iVertex = 0; iVertex < NUMVERTICES; iVertex++)
+		{
+			if ((pVertex->flags == DOMAIN_VERTEX) || (pVertex->flags == OUTERMOST))
+			{
+				pdata->temp.x = (pdata->n_n*pdata->Tn
+							+  pdata->n*(pdata->Ti + pdata->Te)) /
+								(pdata->n_n + pdata->n + pdata->n);
+			}
+			++pVertex;
+			++pdata;
+		}
+		Graph[3].TickRescaling = 1.0 / kB_;
+		Graph[3].DrawSurface("sum[n_s T_s]/sum[n_s]",
+		DATA_HEIGHT, (real *)(&(X.pData[0].temp.x)),
+		SEGUE_COLOUR, (real *)(&(X.pData[0].temp.x)),
 		false,
 		GRAPH_TOTAL_T, &X);
 		Graph[3].TickRescaling = 1.0;
 		break;
-		*/
+		
 	};
 
 	// Graph 2, in case of species graphs:
@@ -882,6 +959,7 @@ void RefreshGraphs(TriMesh & X, // only not const because of such as Reset_verte
 	case SPECIES_NEUTRAL:
 	case SPECIES_ION:
 	case SPECIES_ELEC:
+	case TOTAL:
 
 		int offset_v, offset_T;
 		offset_v = (real *)(&(X.pData[0].vxy)) - (real *)(&(X.pData[0]));
@@ -1125,7 +1203,6 @@ int main()
 		{
 			PostQuitMessage(204);
 		};
-
 	};
 
 	Graph[0].bDisplayTimestamp = false;
@@ -1168,8 +1245,7 @@ int main()
 	SelectObject(dibdc, dib);
 
 	BitBlt(dibdc, 0, 0, VIDEO_WIDTH, VIDEO_HEIGHT, surfdc, 0, 0, SRCCOPY);
-
-
+	
 	for (i = 0; i < NUMAVI; i++)
 	{
 		sprintf(szInitialFilenameAvi, "%s%s_%s", FOLDER, szAvi[i], INITIALAVI);
@@ -1187,16 +1263,11 @@ int main()
 	counter = 0;
 	//ReleaseDC(hWnd,surfdc);
 	p_backbuffer_surface->ReleaseDC(surfdc);
-
 	GlobalCutaway = true;
-	
 	RefreshGraphs(*pX, GlobalSpeciesToGraph); 
-
-	//printf("{1,2,3,4,5} + {10,20,30,40,50} = {%d,%d,%d,%d,%d}\n",
-	//	c[0], c[1], c[2], c[3], c[4]);
 	Direct3D.pd3dDevice->Present(NULL, NULL, NULL, NULL);
 
-						 // Main message loop:
+	// Main message loop:
 	memset(&msg, 0, sizeof(MSG));
 	while (msg.message != WM_QUIT)
 	{
@@ -1204,17 +1275,13 @@ int main()
 		{
 			TranslateMessage(&msg);
 			DispatchMessage(&msg);
-		}
-		else {
-		
+		} else {
 			Direct3D.pd3dDevice->Present(NULL, NULL, NULL, NULL);
-
 		};
 	};
 
 	UnregisterClass(szWindowClass, wcex.hInstance);
-
-
+	
     // cudaDeviceReset must be called before exiting in order for profiling and
     // tracing tools such as Nsight and Visual Profiler to show complete traces.
     cudaStatus = cudaDeviceReset();
@@ -1309,6 +1376,12 @@ Error:
 
 LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
+
+	f64 lowest_vez;
+	long iLow, iMinor;
+	Triangle * pTri;
+	Vertex * pVertex;
+
 	static bool bInvoked_cuSyst = false;
 	static long GSCCPU = 0;
 	int iAntiskips;
@@ -1335,7 +1408,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 	char buffer[256];
 
 	TriMesh * temp;
-	Vertex * pVertex;
 
 	static const real XCENTRE2 = DEVICE_RADIUS_INITIAL_FILAMENT_CENTRE * sin(PI / 32.0);
 	static const real XCENTRE1 = -XCENTRE2;
@@ -1591,10 +1663,11 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 		{
 			if (bInvoked_cuSyst == false) {
 				bInvoked_cuSyst = true;
-				cuSyst_host.InvokeHost();
-
+				
 				pX->EnsureAnticlockwiseTriangleCornerSequences_SetupTriMinorNeighboursLists();
 				pX->Average_n_T_to_tris_and_calc_centroids_and_minorpos();
+				
+				cuSyst_host.InvokeHost();
 				cuSyst_host.PopulateFromTriMesh(pX);
 				cuSyst_host2.InvokeHost();
 				cuSyst_host2.PopulateFromTriMesh(pX);
@@ -1613,13 +1686,23 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			// Run 1 step:
 			printf("evaltime %1.8E\n", evaltime);
 			
-			PerformCUDA_RunStepsAndReturnSystem_Debug(&cuSyst_host, &cuSyst_host2, pX, &X3);
-			cuSyst_host.PopulateTriMesh(pX);
+		//	PerformCUDA_RunStepsAndReturnSystem_Debug(&cuSyst_host, &cuSyst_host2, pX, &X3, pXnew);
+			PerformCUDA_RunStepsAndReturnSystem(&cuSyst_host);
 
+		//	printf("Stamp GPU over CPU y/n:");
+		//	do {
+		//		o = getch();
+		//	} while ((o != 'y') && (o != 'n'));
+		//	printf("%c\n\n", o);
+		//	if (o == 'y') 
+			cuSyst_host.PopulateTriMesh(pX); 
+
+			// even number of steps should lead us back to pX having it
 			steps_remaining--;
 			GlobalStepsCounter++;
 
 			printf("Done steps: %d   ||   Remaining this run: %d\n\n", GlobalStepsCounter, steps_remaining);
+			
 		}
 		else {
 			pX->Advance(pXnew, &X3);
@@ -1637,7 +1720,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 		};
 		printf("%s\n", report_time(1));
 
-		/*	
+		
 		if (GlobalStepsCounter % GRAPHICS_FREQUENCY == 0)
 		{
 			// make video frames:
@@ -1652,29 +1735,28 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 				if (DXChk(p_backbuffer_surface->GetDC(&surfdc), 100))
 					MessageBox(NULL, "GetDC failed", "oh dear", MB_OK);
 
-							//SelectObject(surfdc,surfbit);
+				//SelectObject(surfdc,surfbit);
 				BitBlt(dibdc, 0, 0, VIDEO_WIDTH, VIDEO_HEIGHT, surfdc, 0, 0, SRCCOPY);
 					p_backbuffer_surface->ReleaseDC(surfdc);
 					AddAviFrame(hAvi[i], dib);
-
 			};
-						sprintf(szFile, "System_%d", GlobalStepsCounter);
-						//			pX->SaveText(szFile);
-		};*/
+			// sprintf(szFile, "System_%d", GlobalStepsCounter);
+			// pX->SaveText(szFile);
+		};
 
-		/*
+		
 		if (GlobalStepsCounter % (AVI_FILE_PINCHOFF_FREQUENCY * GRAPHICS_FREQUENCY) == 0)
 		{
-		for (i = 0; i < NUMAVI; i++)
-		{
-		// now have to pinch out avi file and make a new one
-		CloseAvi(hAvi[i]);
-		sprintf(buf1000, "%s%s_%d.avi", FOLDER, szAvi[i], GlobalStepsCounter);
-		hAvi[i] = CreateAvi(buf1000, AVIFRAMEPERIOD, NULL);
-		SetAviVideoCompression(hAvi[i], dib, &opts, false, hWnd);
+			for (i = 0; i < NUMAVI; i++)
+			{
+				// now have to pinch out avi file and make a new one
+				CloseAvi(hAvi[i]);
+				sprintf(buf1000, "%s%s_%d.avi", FOLDER, szAvi[i], GlobalStepsCounter);
+				hAvi[i] = CreateAvi(buf1000, AVIFRAMEPERIOD, NULL);
+				SetAviVideoCompression(hAvi[i], dib, &opts, false, hWnd);
+			};
 		};
-		};
-		*/
+		
 		RefreshGraphs(*pX,GlobalSpeciesToGraph); // sends data to graphs AND renders them
 		Direct3D.pd3dDevice->Present( NULL, NULL, NULL, NULL );
 		
@@ -1686,6 +1768,15 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			SetTimer(hWnd, 2, DELAY_MILLISECS, NULL);
 			printf("Waiting %d milliseconds to allow user input.\n", DELAY_MILLISECS);
 		};
+
+
+	//	pX->RefreshVertexNeighboursOfVerticesOrdered();
+	//	pX->Redelaunerize(true);
+	//	pX->RefreshVertexNeighboursOfVerticesOrdered();
+
+
+
+		/*
 		if (wParam == 1) {
 			sprintf(buf1000, "autosaveGPU%d.dat", GlobalStepsCounter);
 		} else {
@@ -1693,18 +1784,49 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 		}
 		pX->Save(buf1000);
 		printf("saved as %s\n", buf1000);
-		printf("save ascii?");
 		
+		lowest_vez = 0.0;
+		iLow = 0;
+		pTri = pX->T;
+		for (iMinor = 0; iMinor < BEGINNING_OF_CENTRAL; iMinor++)
+		{
+			if ((pTri->u8domain_flag == DOMAIN_TRIANGLE) && (pX->pData[iMinor].vez < lowest_vez)) {
+				lowest_vez = pX->pData[iMinor].vez;
+				iLow = iMinor;
+			}
+			++pTri;
+		}
+		printf("Tris: lowest_vez %1.14E iLow %d \n", lowest_vez, iLow);
+		iLow = 0;
+		lowest_vez = 0.0;
+		pVertex = pX->X;
+		for (; iMinor < NMINOR; iMinor++)
+		{
+			if ((pVertex->flags == DOMAIN_VERTEX) && (pX->pData[iMinor].vez < lowest_vez)) {
+				lowest_vez = pX->pData[iMinor].vez;
+				iLow = iMinor;
+			}
+			++pVertex;
+		}
+		printf("Vertices: lowest_vez %1.14E iLow %d \n\n", lowest_vez, iLow);
+
+
+		printf("save ascii?");
 		do {
 			o = getch();
 		} while ((o != 'y') && (o != 'n'));
 		printf("%c\n", o);
 		if (o == 'y') {
+			sprintf(buf1000, "SaveGPUtext1_trackedAA");
 			pX->SaveText(buf1000);
-			printf("Ascii file saved.\n");
+			printf("Ascii file saved %s.\n",buf1000);
 		}
+		*/
+
 		printf("steps_remaining GPU: %d  CPU: %d\n",steps_remaining, steps_remaining_CPU);
 		
+
+
 			// Auto-save system:
 		//if (GlobalStepsCounter % DATA_SAVE_FREQUENCY == 0)
 		
