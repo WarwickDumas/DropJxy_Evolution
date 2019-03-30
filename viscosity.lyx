@@ -1,0 +1,1572 @@
+#LyX 2.0 created this file. For more info see http://www.lyx.org/
+\lyxformat 413
+\begin_document
+\begin_header
+\textclass article
+\use_default_options true
+\maintain_unincluded_children false
+\language english
+\language_package default
+\inputencoding auto
+\fontencoding global
+\font_roman default
+\font_sans default
+\font_typewriter default
+\font_default_family default
+\use_non_tex_fonts false
+\font_sc false
+\font_osf false
+\font_sf_scale 100
+\font_tt_scale 100
+
+\graphics default
+\default_output_format default
+\output_sync 0
+\bibtex_command default
+\index_command default
+\paperfontsize 11
+\spacing single
+\use_hyperref false
+\papersize a4paper
+\use_geometry true
+\use_amsmath 1
+\use_esint 1
+\use_mhchem 1
+\use_mathdots 1
+\cite_engine basic
+\use_bibtopic false
+\use_indices false
+\paperorientation portrait
+\suppress_date false
+\use_refstyle 1
+\index Index
+\shortcut idx
+\color #008000
+\end_index
+\leftmargin 1.5cm
+\topmargin 1cm
+\rightmargin 1.5cm
+\bottommargin 2cm
+\secnumdepth 3
+\tocdepth 3
+\paragraph_separation indent
+\paragraph_indentation default
+\quotes_language english
+\papercolumns 1
+\papersides 1
+\paperpagestyle default
+\tracking_changes false
+\output_changes false
+\html_math_output 0
+\html_css_as_file 0
+\html_be_strict false
+\end_header
+
+\begin_body
+
+\begin_layout Subsection
+Source material
+\end_layout
+
+\begin_layout Standard
+Per the NRL Formulary, let the rate-of-strain tensor be given by 
+\begin_inset Formula 
+\[
+W_{jk}=\frac{\partial v_{j}}{\partial x_{k}}+\frac{\partial v_{k}}{\partial x_{j}}-\frac{2}{3}\delta_{jk}\nabla\cdot v
+\]
+
+\end_inset
+
+and this is intended to apply in the magnetic coordinates used there.
+ 
+\end_layout
+
+\begin_layout Standard
+Then define the viscous stress tensor 
+\begin_inset Formula $\Pi$
+\end_inset
+
+: for a set of viscosity coefficients 
+\begin_inset Formula $\eta^{species}$
+\end_inset
+
+, where arbitrarily we shall relabel 
+\begin_inset Formula $z=b,\mbox{ }x=\perp,\mbox{ }y=\wedge$
+\end_inset
+
+ and from here on, the xyz notation of the magnetic coordinates is not used:
+\begin_inset Formula 
+\[
+\Pi_{bb}=-\eta_{0}W_{bb}
+\]
+
+\end_inset
+
+
+\begin_inset Formula 
+\[
+\Pi_{\perp b}=-\eta_{2}W_{\perp b}-\eta_{4}W_{\wedge b}
+\]
+
+\end_inset
+
+
+\begin_inset Formula 
+\[
+\Pi_{\perp\perp}=-\frac{\eta_{0}}{2}\left(W_{\perp\perp}+W_{\wedge\wedge}\right)-\frac{\eta_{1}}{2}\left(W_{\perp\perp}-W_{\wedge\wedge}\right)-\eta_{3}W_{\perp\wedge}
+\]
+
+\end_inset
+
+
+\begin_inset Formula 
+\[
+\Pi_{\wedge b}=-\eta_{2}W_{\wedge b}+\eta_{4}W_{\perp b}
+\]
+
+\end_inset
+
+
+\begin_inset Formula 
+\[
+\Pi_{\wedge\wedge}=-\frac{\eta_{0}}{2}\left(W_{\perp\perp}+W_{\wedge\wedge}\right)+\frac{\eta_{1}}{2}\left(W_{\perp\perp}-W_{\wedge\wedge}\right)+\eta_{3}W_{\perp\wedge}
+\]
+
+\end_inset
+
+
+\begin_inset Formula 
+\[
+\Pi_{\wedge\perp}=-\eta_{1}W_{\perp\wedge}+\frac{\eta_{3}}{2}\left(W_{\perp\perp}-W_{\wedge\wedge}\right)
+\]
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+Per the NRL Formulary, then we shall have (where 
+\begin_inset Formula $p$
+\end_inset
+
+ shall mean momentum)
+\end_layout
+
+\begin_layout Standard
+\begin_inset Formula 
+\[
+\frac{dp_{\alpha}}{dt}=m_{\alpha}n_{\alpha}\frac{dv_{\alpha}}{dt}+=-\nabla\cdot\Pi_{\alpha}
+\]
+
+\end_inset
+
+
+\begin_inset Formula 
+\begin{equation}
+mn\frac{dv_{x}}{dt}+=-\frac{\partial}{\partial x}\Pi_{xx}-\frac{\partial}{\partial y}\Pi_{xy}-\frac{\partial}{\partial z}\Pi_{xz}\label{eq:one}
+\end{equation}
+
+\end_inset
+
+in magnetic coordinates.
+ (Or perhaps transposed but it doesn't matter as 
+\begin_inset Formula $\Pi$
+\end_inset
+
+ is symmetric.)
+\end_layout
+
+\begin_layout Subsubsection
+Definition of viscosity coefficients 
+\begin_inset Formula $\eta$
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+Looking here at ion viscosity; electron is a bit different but not very.
+ 
+\end_layout
+
+\begin_layout Standard
+First, Braginskii 
+\begin_inset Formula $\omega/\nu\rightarrow\infty$
+\end_inset
+
+, fully ionised :
+\begin_inset Formula 
+\begin{equation}
+\eta_{0}=0.96\frac{nT}{\nu}=0.96\eta_{*}
+\end{equation}
+
+\end_inset
+
+
+\begin_inset Formula 
+\begin{equation}
+\eta_{2}=\frac{6}{5}\eta_{*}\frac{\nu^{2}}{\omega^{2}}
+\end{equation}
+
+\end_inset
+
+
+\begin_inset Formula 
+\begin{equation}
+\eta_{4}=\eta_{*}\frac{\nu}{\omega}
+\end{equation}
+
+\end_inset
+
+He has also 
+\begin_inset Formula $\eta_{3}=\frac{1}{2}\eta_{4}$
+\end_inset
+
+ and 
+\begin_inset Formula $\eta_{1}=\frac{1}{4}\eta_{2}$
+\end_inset
+
+, exact for ions but only rough for electrons.
+\end_layout
+
+\begin_layout Standard
+Landau-Lifschitz Volume 10, Pitaevskii & Lifshitz, 1981 has 
+\begin_inset Formula 
+\begin{equation}
+\eta_{1}=\frac{2\pi^{1/2}\left(Ze\right)^{4}\lambda_{i}n_{i}^{2}}{5\left(MT\right)^{1/2}\omega_{ci}^{2}}=\frac{1}{4}\eta_{2}
+\end{equation}
+
+\end_inset
+
+
+\begin_inset Formula 
+\begin{equation}
+\eta_{3}=\frac{nT}{2\omega_{ci}}=\frac{1}{2}\eta_{4}
+\end{equation}
+
+\end_inset
+
+which gives a little idea of how the numerical factors might be arrived
+ at(?).
+\end_layout
+
+\begin_layout Standard
+It is still a fair approximation for the electron tensor that 
+\begin_inset Formula $\eta_{1}=\frac{1}{4}\eta_{2}$
+\end_inset
+
+ and 
+\begin_inset Formula $\eta_{3}=\frac{1}{2}\eta_{4}$
+\end_inset
+
+.
+\end_layout
+
+\begin_layout Subsection
+My speculative viscous stress tensor formula
+\end_layout
+
+\begin_layout Standard
+I have yet to get hold of a source that treats even the fully ionised case
+ for general 
+\begin_inset Formula $\omega/\nu$
+\end_inset
+
+; generally texts eschew the subject saying that the expressions are awkward.
+ Instead we have the unmagnetised case and the highly magnetised case.
+\end_layout
+
+\begin_layout Standard
+If we take the 
+\begin_inset Formula $m_{\alpha}$
+\end_inset
+
+ from the left hand side then we see that
+\begin_inset Formula 
+\[
+\frac{\eta_{0}}{m}\propto\frac{nT}{m\nu}
+\]
+
+\end_inset
+
+showing that 
+\begin_inset Formula $\eta_{0}/m$
+\end_inset
+
+ is akin to the thermal conductivity 
+\begin_inset Formula $\kappa$
+\end_inset
+
+.
+\end_layout
+
+\begin_layout Standard
+My speculative version for the general case, based on the Alfven-type conductivi
+ty tensor that appears in the thermal conductivities, involves modifying
+ only the viscosity coefficients:
+\begin_inset Formula 
+\begin{equation}
+\eta_{\parallel}=\eta_{0}
+\end{equation}
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+\begin_inset Formula 
+\begin{equation}
+\eta_{2}=\eta_{\perp}\approx\frac{1}{0.96}\frac{6}{5}\eta_{\parallel}\frac{\nu^{2}}{\omega^{2}{\color{blue}+\nu^{2}}}
+\end{equation}
+
+\end_inset
+
+
+\begin_inset Formula 
+\begin{equation}
+\eta_{4}=\eta_{\times}=\frac{1}{0.96}\eta_{\parallel}\frac{\nu{\color{blue}\omega}}{{\color{blue}{\color{black}\omega}^{2}+\nu^{2}}}
+\end{equation}
+
+\end_inset
+
+
+\begin_inset Formula 
+\begin{equation}
+\eta_{1}=\frac{1}{4}\eta_{2}\mbox{ ;}\mbox{ }\eta_{3}=\frac{1}{2}\eta_{4}
+\end{equation}
+
+\end_inset
+
+Viscous effects and thermal conductivity are kindred processes (emphasised
+ by Braginskii) so this guess seems reasonable - though we should get hold
+ of a source to verify.
+\end_layout
+
+\begin_layout Standard
+To go even further: we need to deal with multicomponent plasma.
+ One obvious idea is to use the expressions from thermal conductivity to
+ substitute for part of 
+\begin_inset Formula $\eta_{0}$
+\end_inset
+
+, so as to create dependence on neutral collisions (with viscosity cross
+ section of course).
+\end_layout
+
+\begin_layout Standard
+Zhdanov is the book that treats multicomponent, contains the definitive
+ information but again looks at the high 
+\begin_inset Formula $B$
+\end_inset
+
+-field case, using the Grad(1949) method of moments as with Balescu.
+ Therefore a good way in the future might be to buy the Zhdanov book, use
+ it for the multicomponent high-
+\begin_inset Formula $B$
+\end_inset
+
+-field case, and as here intuit what might happen for intermediate 
+\begin_inset Formula $B$
+\end_inset
+
+ fields.
+ 
+\end_layout
+
+\begin_layout Standard
+Now in my speculative (and for electrons, simplified) version let's rewrite
+ :
+\begin_inset Formula 
+\begin{equation}
+\Pi_{bb}=-\eta_{\parallel}W_{bb}
+\end{equation}
+
+\end_inset
+
+
+\begin_inset Formula 
+\begin{equation}
+\Pi_{\perp b}=-\eta_{\perp}W_{\perp b}-\eta_{\times}W_{\wedge b}
+\end{equation}
+
+\end_inset
+
+
+\begin_inset Formula 
+\begin{eqnarray}
+\Pi_{\perp\perp} & = & -\frac{\eta_{\parallel}}{2}\left(W_{\perp\perp}+W_{\wedge\wedge}\right)-\frac{\eta_{\perp}}{8}\left(W_{\perp\perp}-W_{\wedge\wedge}\right)-\frac{\eta_{\times}}{2}W_{\perp\wedge}
+\end{eqnarray}
+
+\end_inset
+
+
+\begin_inset Formula 
+\begin{equation}
+\Pi_{\wedge b}=-\eta_{\perp}W_{\wedge b}+\eta_{\times}W_{\perp b}
+\end{equation}
+
+\end_inset
+
+
+\begin_inset Formula 
+\begin{eqnarray}
+\Pi_{\wedge\wedge} & = & -\frac{\eta_{\parallel}}{2}\left(W_{\perp\perp}+W_{\wedge\wedge}\right)+\frac{\eta_{\perp}}{8}\left(W_{\perp\perp}-W_{\wedge\wedge}\right)+\frac{\eta_{\times}}{2}W_{\perp\wedge}
+\end{eqnarray}
+
+\end_inset
+
+
+\begin_inset Formula 
+\begin{eqnarray}
+\Pi_{\wedge\perp} & = & -\frac{\eta_{\perp}}{4}W_{\perp\wedge}+\frac{\eta_{\times}}{4}\left(W_{\perp\perp}-W_{\wedge\wedge}\right)
+\end{eqnarray}
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+Or,
+\end_layout
+
+\begin_layout Standard
+\begin_inset Formula 
+\begin{equation}
+\Pi_{bb}=-\eta_{\parallel}\left(2\frac{\partial v_{b}}{\partial b}-\frac{2}{3}\nabla\cdot v\right)\label{eq:bb}
+\end{equation}
+
+\end_inset
+
+
+\begin_inset Formula 
+\begin{equation}
+\Pi_{\perp b}=-\eta_{\perp}\left(\frac{\partial v_{\perp}}{\partial b}+\frac{\partial v_{b}}{\partial\perp}\right)-\eta_{\times}\left(\frac{\partial v_{\wedge}}{\partial b}+\frac{\partial v_{b}}{\partial\wedge}\right)
+\end{equation}
+
+\end_inset
+
+
+\begin_inset Formula 
+\begin{eqnarray}
+\Pi_{\perp\perp} & = & -\eta_{\parallel}\left(\frac{\partial v_{\perp}}{\partial\perp}+\frac{\partial v_{\wedge}}{\partial\wedge}-\frac{2}{3}\nabla\cdot v\right)-\frac{\eta_{\perp}}{4}\left(\frac{\partial v_{\perp}}{\partial\perp}-\frac{\partial v_{\wedge}}{\partial\wedge}\right)-\frac{\eta_{\times}}{2}\left(\frac{\partial v_{\wedge}}{\partial\perp}+\frac{\partial v_{\perp}}{\partial\wedge}\right)
+\end{eqnarray}
+
+\end_inset
+
+
+\begin_inset Formula 
+\begin{equation}
+\Pi_{\wedge b}=-\eta_{\perp}\left(\frac{\partial v_{\wedge}}{\partial b}+\frac{\partial v_{b}}{\partial\wedge}\right)+\eta_{\times}\left(\frac{\partial v_{\perp}}{\partial b}+\frac{\partial v_{b}}{\partial\perp}\right)
+\end{equation}
+
+\end_inset
+
+
+\begin_inset Formula 
+\begin{eqnarray}
+\Pi_{\wedge\wedge} & = & -\eta_{\parallel}\left(\frac{\partial v_{\perp}}{\partial\perp}+\frac{\partial v_{\wedge}}{\partial\wedge}-\frac{2}{3}\nabla\cdot v\right)+\frac{\eta_{\perp}}{4}\left(\frac{\partial v_{\perp}}{\partial\perp}-\frac{\partial v_{\wedge}}{\partial\wedge}\right)+\frac{\eta_{\times}}{2}\left(\frac{\partial v_{\wedge}}{\partial\perp}+\frac{\partial v_{\perp}}{\partial\wedge}\right)
+\end{eqnarray}
+
+\end_inset
+
+
+\begin_inset Formula 
+\begin{eqnarray}
+\Pi_{\wedge\perp} & = & -\frac{\eta_{\perp}}{4}\left(\frac{\partial v_{\wedge}}{\partial\perp}+\frac{\partial v_{\perp}}{\partial\wedge}\right)+\frac{\eta_{\times}}{2}\left(\frac{\partial v_{\perp}}{\partial\perp}-\frac{\partial v_{\wedge}}{\partial\wedge}\right)\label{eq:wedgeperp}
+\end{eqnarray}
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Subsection
+Implementation in a Cartesian simulation
+\end_layout
+
+\begin_layout Paragraph
+Preliminary
+\end_layout
+
+\begin_layout Standard
+Let
+\begin_inset Formula 
+\begin{equation}
+\perp=\frac{v-\left(v\cdot b\right)b}{\left\Vert v-\left(v\cdot b\right)b\right\Vert }\label{eq:perp}
+\end{equation}
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+\begin_inset Formula 
+\begin{equation}
+\wedge=b\times\perp
+\end{equation}
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+Clearly
+\begin_inset Formula 
+\[
+\left(\begin{array}{c}
+v_{b}\\
+v_{\perp}\\
+v_{\wedge}
+\end{array}\right)=\left(\begin{array}{ccc}
+b_{x} & b_{y} & b_{z}\\
+\perp_{x} & \perp_{y} & \perp_{z}\\
+\wedge_{x} & \wedge_{y} & \wedge_{z}
+\end{array}\right)\left(\begin{array}{c}
+v_{x}\\
+v_{y}\\
+v_{z}
+\end{array}\right)
+\]
+
+\end_inset
+
+
+\begin_inset Formula 
+\begin{equation}
+\left(\begin{array}{c}
+v_{x}\\
+v_{y}\\
+v_{z}
+\end{array}\right)=\left(\begin{array}{ccc}
+b_{x} & b_{y} & b_{z}\\
+\perp_{x} & \perp_{y} & \perp_{z}\\
+\wedge_{x} & \wedge_{y} & \wedge_{z}
+\end{array}\right)^{-1}\left(\begin{array}{c}
+v_{b}\\
+v_{\perp}\\
+v_{\wedge}
+\end{array}\right)=\left(\begin{array}{ccc}
+b_{x} & \perp_{x} & \wedge_{x}\\
+b_{y} & \perp_{y} & \wedge_{y}\\
+b_{z} & \perp_{z} & \wedge_{z}
+\end{array}\right)\left(\begin{array}{c}
+v_{b}\\
+v_{\perp}\\
+v_{\wedge}
+\end{array}\right)
+\end{equation}
+
+\end_inset
+
+since 
+\begin_inset Formula 
+\[
+\left(\begin{array}{ccc}
+b_{x} & b_{y} & b_{z}\\
+\perp_{x} & \perp_{y} & \perp_{z}\\
+\wedge_{x} & \wedge_{y} & \wedge_{z}
+\end{array}\right)\left(\begin{array}{ccc}
+b_{x} & \perp_{x} & \wedge_{x}\\
+b_{y} & \perp_{y} & \wedge_{y}\\
+b_{z} & \perp_{z} & \wedge_{z}
+\end{array}\right)=\left(\begin{array}{ccc}
+b\cdot b & b\cdot\perp & b\cdot\wedge\\
+b\cdot\perp & \perp\cdot\perp & \perp\cdot\wedge\\
+b\cdot\wedge & \perp\cdot\wedge & \wedge\cdot\wedge
+\end{array}\right)
+\]
+
+\end_inset
+
+Therefore [here 
+\begin_inset Formula $b$
+\end_inset
+
+ is not changing since we are just looking at the changes due to viscosity],
+ 
+\begin_inset Formula 
+\begin{equation}
+\frac{\partial}{\partial t}\left(\begin{array}{c}
+v_{x}\\
+v_{y}\\
+v_{z}
+\end{array}\right)=\left(\begin{array}{ccc}
+b_{x} & \perp_{x} & \wedge_{x}\\
+b_{y} & \perp_{y} & \wedge_{y}\\
+b_{z} & \perp_{z} & \wedge_{z}
+\end{array}\right)\frac{\partial}{\partial t}\left(\begin{array}{c}
+v_{b}\\
+v_{\perp}\\
+v_{\wedge}
+\end{array}\right)
+\end{equation}
+
+\end_inset
+
+Now consider that from (
+\begin_inset CommandInset ref
+LatexCommand ref
+reference "eq:one"
+
+\end_inset
+
+), we have such as
+\begin_inset Formula 
+\begin{equation}
+mn\frac{\partial v_{b}}{\partial t}=-\nabla\cdot\left(\begin{array}{c}
+\Pi_{b\perp}\\
+\Pi_{b\wedge}\\
+\Pi_{bb}
+\end{array}\right)=\left(\begin{array}{c}
+\frac{\partial}{\partial\perp}\\
+\frac{\partial}{\partial\wedge}\\
+\frac{\partial}{\partial b}
+\end{array}\right)\cdot\left(\begin{array}{c}
+\Pi_{b\perp}\\
+\Pi_{b\wedge}\\
+\Pi_{bb}
+\end{array}\right)
+\end{equation}
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+Therefore 
+\begin_inset Formula 
+\begin{equation}
+mn\frac{\partial v_{x}}{\partial t}=-b_{x}\left(\begin{array}{c}
+\frac{\partial}{\partial\perp}\\
+\frac{\partial}{\partial\wedge}\\
+\frac{\partial}{\partial b}
+\end{array}\right)\cdot\left(\begin{array}{c}
+\Pi_{b\perp}\\
+\Pi_{b\wedge}\\
+\Pi_{bb}
+\end{array}\right)-\perp_{x}\left(\begin{array}{c}
+\frac{\partial}{\partial\perp}\\
+\frac{\partial}{\partial\wedge}\\
+\frac{\partial}{\partial b}
+\end{array}\right)\cdot\left(\begin{array}{c}
+\Pi_{\perp\perp}\\
+\Pi_{\perp\wedge}\\
+\Pi_{\perp b}
+\end{array}\right)-\wedge_{x}\left(\begin{array}{c}
+\frac{\partial}{\partial\perp}\\
+\frac{\partial}{\partial\wedge}\\
+\frac{\partial}{\partial b}
+\end{array}\right)\cdot\left(\begin{array}{c}
+\Pi_{\wedge\perp}\\
+\Pi_{\wedge\wedge}\\
+\Pi_{\wedge b}
+\end{array}\right)
+\end{equation}
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Paragraph
+Motivation
+\end_layout
+
+\begin_layout Standard
+We are going to want to regard the viscous effect as a flow of momentum
+ from one cell to another, by applying the divergence theorem.
+ What we are then aiming to compute in this approach, is the amount of 
+\begin_inset Formula $p_{x}$
+\end_inset
+
+ to send across a cell boundary given the nearby values of 
+\begin_inset Formula $v$
+\end_inset
+
+ which determine an estimate of 
+\begin_inset Formula $\nabla v$
+\end_inset
+
+, and given 
+\begin_inset Formula $b$
+\end_inset
+
+ at the edge.
+ This is not just so we can actually carry it out; we need something we
+ can actually insert into 
+\begin_inset Formula $\frac{\partial\left(v_{e}-v_{i}\right)}{\partial t}=0$
+\end_inset
+
+.
+ However, getting a linear combination at runtime is sufficient; our algebra
+ can anticipate it.
+ 
+\end_layout
+
+\begin_layout Paragraph
+Divergence theorem application
+\end_layout
+
+\begin_layout Standard
+In a given coordinate system, 
+\begin_inset Formula 
+\begin{equation}
+\int_{cell}\nabla\cdot f\mbox{ }dx=\int_{\partial cell}f\cdot\hat{n}=\sum_{edges}f_{avg}\cdot\perp_{(outward)}^{edge}\label{eq:divthm}
+\end{equation}
+
+\end_inset
+
+where 
+\begin_inset Formula $\perp^{edge}$
+\end_inset
+
+ is an outward normal vector that has the length of the edge.
+ (For the sign consider a square with 
+\begin_inset Formula $\left(1,0,0\right)$
+\end_inset
+
+ as the normal on the right and 
+\begin_inset Formula $\left(-1,0,0\right)$
+\end_inset
+
+ on the left ; 
+\begin_inset Formula $\int\frac{\partial f_{x}}{\partial x}$
+\end_inset
+
+ gets positive from right.) 
+\end_layout
+
+\begin_layout Standard
+Note that 
+\begin_inset Formula $\perp_{z}^{edge}=0$
+\end_inset
+
+ for 2D.
+\end_layout
+
+\begin_layout Standard
+So each negated divergence term in 
+\begin_inset Formula $mn\frac{\partial v_{x}}{\partial t}=-\nabla\cdot f$
+\end_inset
+
+, for any 
+\begin_inset Formula $f$
+\end_inset
+
+, will represent an INWARD derivative on each edge, summed, 
+\series bold
+\shape slanted
+to determine what is a net flow of 
+\begin_inset Formula $p_{x}$
+\end_inset
+
+
+\series default
+\shape default
+ because it will feature in the divergence of the neighbouring cell, equal
+ and opposite.
+ However, 
+\begin_inset Formula $\Pi$
+\end_inset
+
+ is then mostly negative terms; so basically a positive outward gradient
+ of 
+\begin_inset Formula $v$
+\end_inset
+
+ is contributing to an increase of 
+\begin_inset Formula $p$
+\end_inset
+
+ here -- as it should be.
+\end_layout
+
+\begin_layout Standard
+Because divergence is invariant to transformations between orthonormal coordinat
+e bases,
+\begin_inset Formula 
+\begin{equation}
+\left(\begin{array}{c}
+\frac{\partial}{\partial b}\\
+\frac{\partial}{\partial\perp}\\
+\frac{\partial}{\partial\wedge}
+\end{array}\right)\cdot\left(\begin{array}{c}
+\Pi_{bb}\\
+\Pi_{b\perp}\\
+\Pi_{b\wedge}
+\end{array}\right)=\left(\begin{array}{c}
+\frac{\partial}{\partial x}\\
+\frac{\partial}{\partial y}\\
+\frac{\partial}{\partial z}
+\end{array}\right)\cdot\left(\left(\begin{array}{ccc}
+b_{x} & \perp_{x} & \wedge_{x}\\
+b_{y} & \perp_{y} & \wedge_{y}\\
+b_{z} & \perp_{z} & \wedge_{z}
+\end{array}\right)\left(\begin{array}{c}
+\Pi_{bb}\\
+\Pi_{b\perp}\\
+\Pi_{b\wedge}
+\end{array}\right)\right)
+\end{equation}
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+so proceeding that way round and applying 
+\begin_inset Formula $\left(\ref{eq:divthm}\right)$
+\end_inset
+
+, 
+\begin_inset Formula 
+\begin{eqnarray}
+mn\frac{\partial v_{x}}{\partial t}+ & = & -\left(b_{x}\left(\begin{array}{ccc}
+b_{x} & \perp_{x} & \wedge_{x}\\
+b_{y} & \perp_{y} & \wedge_{y}\\
+b_{z} & \perp_{z} & \wedge_{z}
+\end{array}\right)\left(\begin{array}{c}
+\Pi_{bb}\\
+\Pi_{b\perp}\\
+\Pi_{b\wedge}
+\end{array}\right)+\perp_{x}\left(\begin{array}{ccc}
+b_{x} & \perp_{x} & \wedge_{x}\\
+b_{y} & \perp_{y} & \wedge_{y}\\
+b_{z} & \perp_{z} & \wedge_{z}
+\end{array}\right)\left(\begin{array}{c}
+\Pi_{\perp b}\\
+\Pi_{\perp\perp}\\
+\Pi_{\perp\wedge}
+\end{array}\right)+\wedge_{x}\left(\begin{array}{ccc}
+b_{x} & \perp_{x} & \wedge_{x}\\
+b_{y} & \perp_{y} & \wedge_{y}\\
+b_{z} & \perp_{z} & \wedge_{z}
+\end{array}\right)\left(\begin{array}{c}
+\Pi_{\wedge b}\\
+\Pi_{\wedge\perp}\\
+\Pi_{\wedge\wedge}
+\end{array}\right)\right)\cdot\perp^{edge}\nonumber \\
+ & = & -\left(\left(\begin{array}{ccc}
+b_{x} & \perp_{x} & \wedge_{x}\\
+b_{y} & \perp_{y} & \wedge_{y}\\
+b_{z} & \perp_{z} & \wedge_{z}
+\end{array}\right)\left(\begin{array}{c}
+b_{x}\Pi_{bb}+\perp_{x}\Pi_{\perp b}+\wedge_{x}\Pi_{\wedge b}\\
+b_{x}\Pi_{b\perp}+\perp_{x}\Pi_{\perp\perp}+\wedge_{x}\Pi_{\wedge\perp}\\
+b_{x}\Pi_{b\wedge}+\perp_{x}\Pi_{\perp\wedge}+\wedge_{x}\Pi_{\wedge\wedge}
+\end{array}\right)\right)\cdot\perp^{edge}\label{eq:jibs}\\
+ & = & -\left(\left(\begin{array}{ccc}
+b_{x} & \perp_{x} & \wedge_{x}\\
+b_{y} & \perp_{y} & \wedge_{y}\\
+b_{z} & \perp_{z} & \wedge_{z}
+\end{array}\right)\left(\begin{array}{c}
+b_{x}\Pi_{bb}+\perp_{x}\Pi_{\perp b}+\wedge_{x}\Pi_{\wedge b}\\
+b_{x}\Pi_{b\perp}+\perp_{x}\Pi_{\perp\perp}+\wedge_{x}\Pi_{\wedge\perp}\\
+b_{x}\Pi_{b\wedge}+\perp_{x}\Pi_{\perp\wedge}+\wedge_{x}\Pi_{\wedge\wedge}
+\end{array}\right)\right)^{Transpose}\perp^{edge}\\
+ & = & -\left(\begin{array}{c}
+b_{x}\Pi_{bb}+\perp_{x}\Pi_{\perp b}+\wedge_{x}\Pi_{\wedge b}\\
+b_{x}\Pi_{b\perp}+\perp_{x}\Pi_{\perp\perp}+\wedge_{x}\Pi_{\wedge\perp}\\
+b_{x}\Pi_{b\wedge}+\perp_{x}\Pi_{\perp\wedge}+\wedge_{x}\Pi_{\wedge\wedge}
+\end{array}\right)\cdot\left(\left(\begin{array}{ccc}
+b_{x} & b_{y} & b_{z}\\
+\perp_{x} & \perp_{y} & \perp_{z}\\
+\wedge_{x} & \wedge_{y} & \wedge_{z}
+\end{array}\right)\perp^{edge}\right)\label{eq:33}
+\end{eqnarray}
+
+\end_inset
+
+This then shows what we could have got by going the other way: putting 
+\begin_inset Formula $\perp^{edge}$
+\end_inset
+
+ into magnetic coordinates and applying the divergence theorem to div in
+ magnetic coordinates.
+\end_layout
+
+\begin_layout Paragraph
+Transformed viscous tensor version
+\end_layout
+
+\begin_layout Standard
+Moreover we can also put it another way: from 
+\begin_inset Formula $\left(\ref{eq:jibs}\right)$
+\end_inset
+
+,
+\begin_inset Formula 
+\begin{equation}
+mn\frac{\partial v_{x}}{\partial t}+=-\left(\left(\begin{array}{ccc}
+b_{x} & \perp_{x} & \wedge_{x}\\
+b_{y} & \perp_{y} & \wedge_{y}\\
+b_{z} & \perp_{z} & \wedge_{z}
+\end{array}\right)\left(\begin{array}{ccc}
+\Pi_{bb} & \Pi_{\perp b} & \Pi_{\wedge b}\\
+\Pi_{b\perp} & \Pi_{\perp\perp} & \Pi_{\wedge\perp}\\
+\Pi_{b\wedge} & \Pi_{\perp\wedge} & \Pi_{\wedge\wedge}
+\end{array}\right)\left(\begin{array}{c}
+b_{x}\\
+\perp_{x}\\
+\wedge_{x}
+\end{array}\right)\right)\cdot\perp^{edge}
+\end{equation}
+
+\end_inset
+
+from which it is seen that the Cartesian momentum vector fluxes are found
+ as the columns of
+\begin_inset Formula 
+\begin{equation}
+\left(\begin{array}{ccc}
+\Pi_{xx} & \Pi_{xy} & \Pi_{xz}\\
+\Pi_{yx} & \Pi_{yy} & \Pi_{yz}\\
+\Pi_{zx} & \Pi_{zy} & \Pi_{zz}
+\end{array}\right)=\left(\begin{array}{ccc}
+b_{x} & \perp_{x} & \wedge_{x}\\
+b_{y} & \perp_{y} & \wedge_{y}\\
+b_{z} & \perp_{z} & \wedge_{z}
+\end{array}\right)\left(\begin{array}{ccc}
+\Pi_{bb} & \Pi_{\perp b} & \Pi_{\wedge b}\\
+\Pi_{b\perp} & \Pi_{\perp\perp} & \Pi_{\wedge\perp}\\
+\Pi_{b\wedge} & \Pi_{\perp\wedge} & \Pi_{\wedge\wedge}
+\end{array}\right)\left(\begin{array}{ccc}
+b_{x} & b_{y} & b_{z}\\
+\perp_{x} & \perp_{y} & \perp_{z}\\
+\wedge_{x} & \wedge_{y} & \wedge_{z}
+\end{array}\right)\label{eq:transform}
+\end{equation}
+
+\end_inset
+
+which can then be dotted with the outward edge normal.
+ 
+\family roman
+\series medium
+\shape up
+\size normal
+\emph off
+\bar no
+\strikeout off
+\uuline off
+\uwave off
+\noun off
+\color none
+Notice that the CMVF matrix 
+\begin_inset Formula $\Pi_{(xyz)}$
+\end_inset
+
+ is symmetric since the transpose is the same:
+\begin_inset Formula 
+\[
+\Pi_{(xyz)}=\left(\begin{array}{ccc}
+b_{x} & b_{y} & b_{z}\\
+\perp_{x} & \perp_{y} & \perp_{z}\\
+\wedge_{x} & \wedge_{y} & \wedge_{z}
+\end{array}\right)^{T}\left(\begin{array}{ccc}
+\Pi_{bb} & \Pi_{\perp b} & \Pi_{\wedge b}\\
+\Pi_{b\perp} & \Pi_{\perp\perp} & \Pi_{\wedge\perp}\\
+\Pi_{b\wedge} & \Pi_{\perp\wedge} & \Pi_{\wedge\wedge}
+\end{array}\right)\left(\begin{array}{ccc}
+b_{x} & \perp_{x} & \wedge_{x}\\
+b_{y} & \perp_{y} & \wedge_{y}\\
+b_{z} & \perp_{z} & \wedge_{z}
+\end{array}\right)^{T}=\Pi_{(xyz)}
+\]
+
+\end_inset
+
+Finally, we can then say that
+\begin_inset Formula 
+\begin{equation}
+\left(\begin{array}{c}
+mn\frac{\partial v_{x}}{\partial t}\\
+mn\frac{\partial v_{y}}{\partial t}\\
+mn\frac{\partial v_{zx}}{\partial t}
+\end{array}\right)+=\left(\begin{array}{ccc}
+\Pi_{xx} & \Pi_{xy} & \Pi_{xz}\\
+\Pi_{yx} & \Pi_{yy} & \Pi_{yz}\\
+\Pi_{zx} & \Pi_{zy} & \Pi_{zz}
+\end{array}\right)\perp^{edge}
+\end{equation}
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+This gives two routes:
+\end_layout
+
+\begin_layout Subsubsection
+Route 1 - work more in magnetic coordinates
+\end_layout
+
+\begin_layout Standard
+Note that for a direction vector 
+\begin_inset Formula $a$
+\end_inset
+
+,
+\begin_inset Formula 
+\begin{eqnarray}
+\frac{\partial v_{b}}{\partial a} & = & a_{x}\frac{\partial v_{b}}{\partial x}+a_{y}\frac{\partial v_{b}}{\partial y}+a_{z}\frac{\partial v_{b}}{\partial z}=\left(a_{x}b_{x}\frac{\partial v_{x}}{\partial x}+a_{x}b_{y}\frac{\partial v_{y}}{\partial x}+a_{x}b_{z}\frac{\partial v_{z}}{\partial x}\right)+a_{y}\frac{\partial v_{b}}{\partial y}+a_{z}\frac{\partial v_{b}}{\partial z}\nonumber \\
+ & = & b^{T}\left[\frac{\partial v_{i}}{\partial x_{j}}\right]a\label{eq:deriv}
+\end{eqnarray}
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+Therefore 
+\end_layout
+
+\begin_layout Enumerate
+Given 
+\begin_inset Formula $\frac{\partial v_{i}}{\partial x_{j}}$
+\end_inset
+
+ as linear combinations of nearby 
+\begin_inset Formula $v$
+\end_inset
+
+, we can infer 
+\family roman
+\series medium
+\shape up
+\size normal
+\emph off
+\bar no
+\strikeout off
+\uuline off
+\uwave off
+\noun off
+\color none
+magnetic-coordinate derivatives 
+\begin_inset Formula $\frac{\partial v_{\wedge}}{\partial\wedge},\frac{\partial v_{\perp}}{\partial b}$
+\end_inset
+
+ etc as linear combinations of nearby 
+\begin_inset Formula $v$
+\end_inset
+
+.
+\end_layout
+
+\begin_layout Enumerate
+Therefore infer the elements of the magnetic-coordinated tensor 
+\begin_inset Formula $\Pi_{\left(b\perp\wedge\right)}$
+\end_inset
+
+ as linear combinations of nearby 
+\begin_inset Formula $v$
+\end_inset
+
+.
+\end_layout
+
+\begin_layout Enumerate
+
+\family roman
+\series medium
+\shape up
+\size normal
+\emph off
+\bar no
+\strikeout off
+\uuline off
+\uwave off
+\noun off
+\color none
+Infer as linear combinations, the Cartesian momentum flux vectors that form
+ 
+\begin_inset Formula $\Pi_{(xyz)}$
+\end_inset
+
+ found as 
+\begin_inset Formula $\left(\ref{eq:transform}\right)$
+\end_inset
+
+.
+\end_layout
+
+\begin_layout Enumerate
+Infer as linear combinations the outward momentum flux in 
+\begin_inset Formula $x,y,z$
+\end_inset
+
+ by dotting each column of 
+\begin_inset Formula $\Pi_{(xyz)}$
+\end_inset
+
+ with the edge normal vector.
+\end_layout
+
+\begin_layout Subsubsection
+Route 2 - work more in native coordinates
+\end_layout
+
+\begin_layout Standard
+We can instead rely more on analytical rearrangements that might or might
+ not reveal something clarifying about the nature of viscosity.
+\end_layout
+
+\begin_layout Enumerate
+Work out formulae for coefficients on 
+\begin_inset Formula $\frac{\partial v_{i}}{\partial x_{j}}$
+\end_inset
+
+ in each element of the partially transformed matrix 
+\begin_inset Formula 
+\[
+\left(\begin{array}{ccc}
+\Pi_{bb} & \Pi_{\perp b} & \Pi_{\wedge b}\\
+\Pi_{b\perp} & \Pi_{\perp\perp} & \Pi_{\wedge\perp}\\
+\Pi_{b\wedge} & \Pi_{\perp\wedge} & \Pi_{\wedge\wedge}
+\end{array}\right)\left(\begin{array}{ccc}
+b_{x} & b_{y} & b_{z}\\
+\perp_{x} & \perp_{y} & \perp_{z}\\
+\wedge_{x} & \wedge_{y} & \wedge_{z}
+\end{array}\right)
+\]
+
+\end_inset
+
+and therefore be able to infer each of these elements as a linear combination
+ of 
+\begin_inset Formula $\frac{\partial v_{i}}{\partial x_{j}}$
+\end_inset
+
+.
+\end_layout
+
+\begin_layout Enumerate
+Use 
+\begin_inset Formula $\left(\ref{eq:33}\right)$
+\end_inset
+
+: dotting with the edge vector in magnetic coordinates, infer as linear
+ combinations, the outward momentum flux in 
+\begin_inset Formula $x,y,z$
+\end_inset
+
+.
+\end_layout
+
+\begin_layout Subsubsection
+Route 3
+\end_layout
+
+\begin_layout Standard
+Or, we could go even further: work out formulae for coefficients on 
+\begin_inset Formula $\frac{\partial v_{i}}{\partial x_{j}}$
+\end_inset
+
+ in each element of 
+\begin_inset Formula $\Pi_{(xyz)}$
+\end_inset
+
+ and so skip Step 1 and Step 2 of Route 1.
+\end_layout
+
+\begin_layout Standard
+To do each of these we are only applying 
+\begin_inset Formula $\left(\ref{eq:deriv}\right)$
+\end_inset
+
+ repeatedly, so even numerically we should probably come to the same result...
+\end_layout
+
+\begin_layout Standard
+\begin_inset VSpace defskip
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+\begin_inset CommandInset line
+LatexCommand rule
+offset "0.5ex"
+width "100col%"
+height "1pt"
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Subsection
+Calculating coefficients in the Cartesian viscous tensor 
+\begin_inset Formula $\Pi_{(xyz)}$
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+Using the rule 
+\begin_inset Formula $\left(\ref{eq:deriv}\right)$
+\end_inset
+
+ we can compute the coefficient 
+\begin_inset Formula $c_{xy}$
+\end_inset
+
+ on 
+\begin_inset Formula $\frac{\partial v_{x}}{\partial y}$
+\end_inset
+
+ (etc) in each of the elements of the transformed tensor 
+\begin_inset Formula $\left(\ref{eq:transform}\right)$
+\end_inset
+
+.
+ Note that up to now we have not used 
+\begin_inset Formula $\left(\ref{eq:perp}\right)$
+\end_inset
+
+ and it seems to not make any difference to anything.
+ We can pick arbitrary axes orthogonal to 
+\begin_inset Formula $b$
+\end_inset
+
+ and have no effect, since 
+\begin_inset Formula $v_{\perp}$
+\end_inset
+
+ never appears in anything, only such as 
+\begin_inset Formula $\frac{\partial v_{\wedge}}{\partial\perp}$
+\end_inset
+
+ and we can say little about what that will be.
+\end_layout
+
+\begin_layout Standard
+Firstly
+\begin_inset Formula 
+\begin{eqnarray}
+\Pi_{xx} & = & b_{x}\left(b_{x}\Pi_{bb}+\perp_{x}\Pi_{\perp b}+\wedge_{x}\Pi_{\wedge b}\right)\nonumber \\
+ &  & +\perp_{x}\left(b_{x}\Pi_{b\perp}+\perp_{x}\Pi_{\perp\perp}+\wedge_{x}\Pi_{\wedge\perp}\right)\nonumber \\
+ &  & +\wedge_{x}\left(b_{x}\Pi_{b\wedge}+\perp_{x}\Pi_{\perp\wedge}+\wedge_{x}\Pi_{\wedge\wedge}\right)\nonumber \\
+ & = & b_{x}^{2}\Pi_{bb}+\perp_{x}^{2}\Pi_{\perp\perp}+\wedge_{x}^{2}\Pi_{\wedge\wedge}\\
+ &  & +2b_{x}\perp_{x}\Pi_{\perp b}+2\wedge_{x}\perp_{x}\Pi_{\wedge\perp}+2b_{x}\wedge_{x}\Pi_{b\wedge}\nonumber 
+\end{eqnarray}
+
+\end_inset
+
+Suppose we have a go at 
+\begin_inset Formula $\Pi_{xx}$
+\end_inset
+
+.
+ First substitute the expressions for 
+\begin_inset Formula $\Pi_{bb}$
+\end_inset
+
+:
+\begin_inset Formula 
+\begin{eqnarray}
+\Pi_{xx} & = & b_{x}^{2}\left(-\eta_{\parallel}\left(2\frac{\partial v_{b}}{\partial b}-\frac{2}{3}\nabla\cdot v\right)\right)\nonumber \\
+ &  & +\perp_{x}^{2}\left(-\eta_{\parallel}\left(\frac{\partial v_{\perp}}{\partial\perp}+\frac{\partial v_{\wedge}}{\partial\wedge}-\frac{2}{3}\nabla\cdot v\right)-\frac{\eta_{\perp}}{4}\left(\frac{\partial v_{\perp}}{\partial\perp}-\frac{\partial v_{\wedge}}{\partial\wedge}\right)-\frac{\eta_{\times}}{2}\left(\frac{\partial v_{\wedge}}{\partial\perp}+\frac{\partial v_{\perp}}{\partial\wedge}\right)\right)\nonumber \\
+ &  & +\wedge_{x}^{2}\left(-\eta_{\parallel}\left(\frac{\partial v_{\perp}}{\partial\perp}+\frac{\partial v_{\wedge}}{\partial\wedge}-\frac{2}{3}\nabla\cdot v\right)+\frac{\eta_{\perp}}{4}\left(\frac{\partial v_{\perp}}{\partial\perp}-\frac{\partial v_{\wedge}}{\partial\wedge}\right)+\frac{\eta_{\times}}{2}\left(\frac{\partial v_{\wedge}}{\partial\perp}+\frac{\partial v_{\perp}}{\partial\wedge}\right)\right)\nonumber \\
+ &  & +2b_{x}\perp_{x}\left(-\eta_{\perp}\left(\frac{\partial v_{\perp}}{\partial b}+\frac{\partial v_{b}}{\partial\perp}\right)-\eta_{\times}\left(\frac{\partial v_{\wedge}}{\partial b}+\frac{\partial v_{b}}{\partial\wedge}\right)\right)\nonumber \\
+ &  & +2\wedge_{x}\perp_{x}\left(-\frac{\eta_{\perp}}{4}\left(\frac{\partial v_{\wedge}}{\partial\perp}+\frac{\partial v_{\perp}}{\partial\wedge}\right)+\frac{\eta_{\times}}{2}\left(\frac{\partial v_{\perp}}{\partial\perp}-\frac{\partial v_{\wedge}}{\partial\wedge}\right)\right)\nonumber \\
+ &  & +2b_{x}\wedge_{x}\left(-\eta_{\perp}\left(\frac{\partial v_{\wedge}}{\partial b}+\frac{\partial v_{b}}{\partial\wedge}\right)+\eta_{\times}\left(\frac{\partial v_{\perp}}{\partial b}+\frac{\partial v_{b}}{\partial\perp}\right)\right)
+\end{eqnarray}
+
+\end_inset
+
+ We will never aim to combine the terms in different 
+\begin_inset Formula $\eta$
+\end_inset
+
+ so we might as well handle each of them separately, and do some simplification
+ before continuing.
+ Parallel part:
+\begin_inset Formula 
+\begin{eqnarray*}
+\Pi_{xx} & += & -\eta_{\parallel}\left(b_{x}^{2}\left(2\frac{\partial v_{b}}{\partial b}-\frac{2}{3}\nabla\cdot v\right)+\perp_{x}^{2}\left(\frac{\partial v_{\perp}}{\partial\perp}+\frac{\partial v_{\wedge}}{\partial\wedge}-\frac{2}{3}\nabla\cdot v\right)+\wedge_{x}^{2}\left(\frac{\partial v_{\perp}}{\partial\perp}+\frac{\partial v_{\wedge}}{\partial\wedge}-\frac{2}{3}\nabla\cdot v\right)\right)\\
+ & = & \eta_{\parallel}\frac{2}{3}\nabla\cdot v-\eta_{\parallel}\left(2b_{x}^{2}\frac{\partial v_{b}}{\partial b}+\left(\perp_{x}^{2}+\wedge_{x}^{2}\right)\left(\frac{\partial v_{\perp}}{\partial\perp}+\frac{\partial v_{\wedge}}{\partial\wedge}\right)\right)
+\end{eqnarray*}
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+Perpendicular part:
+\begin_inset Formula 
+\begin{eqnarray*}
+\Pi_{xx} & += & -\frac{\eta_{\perp}}{4}\left(\perp_{x}^{2}-\wedge_{x}^{2}\right)\left(\frac{\partial v_{\perp}}{\partial\perp}-\frac{\partial v_{\wedge}}{\partial\wedge}\right)\\
+ &  & -2\eta_{\perp}\left(b_{x}\perp_{x}\left(\frac{\partial v_{\perp}}{\partial b}+\frac{\partial v_{b}}{\partial\perp}\right)+\frac{\wedge_{x}\perp_{x}}{4}\left(\frac{\partial v_{\wedge}}{\partial\perp}+\frac{\partial v_{\perp}}{\partial\wedge}\right)+b_{x}\wedge_{x}\left(\frac{\partial v_{\wedge}}{\partial b}+\frac{\partial v_{b}}{\partial\wedge}\right)\right)
+\end{eqnarray*}
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+Cross part:
+\begin_inset Formula 
+\begin{eqnarray*}
+\Pi_{xx} & += & -\frac{\eta_{\times}}{2}\left(\perp_{x}^{2}-\wedge_{x}^{2}\right)\left(\frac{\partial v_{\wedge}}{\partial\perp}+\frac{\partial v_{\perp}}{\partial\wedge}\right)\\
+ &  & +2\eta_{\times}\left(-b_{x}\perp_{x}\left(\frac{\partial v_{\wedge}}{\partial b}+\frac{\partial v_{b}}{\partial\wedge}\right)+\frac{\wedge_{x}\perp_{x}}{2}\left(\frac{\partial v_{\perp}}{\partial\perp}-\frac{\partial v_{\wedge}}{\partial\wedge}\right)+b_{x}\wedge_{x}\left(\frac{\partial v_{\perp}}{\partial b}+\frac{\partial v_{b}}{\partial\perp}\right)\right)
+\end{eqnarray*}
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+Therefore the coefficient on 
+\begin_inset Formula $\frac{\partial v_{x}}{\partial x}$
+\end_inset
+
+ is
+\begin_inset Formula 
+\begin{eqnarray*}
+c_{xx} & = & \eta_{\parallel}\frac{2}{3}-\eta_{\parallel}\left(2b_{x}^{2}b_{x}b_{x}+\left(\perp_{x}^{2}+\wedge_{x}^{2}\right)^{2}\right)\\
+ &  & -\frac{\eta_{\perp}}{4}\left(\perp_{x}^{2}-\wedge_{x}^{2}\right)^{2}-2\eta_{\perp}\left(2\left(b_{x}\perp_{x}\right)^{2}+\frac{\left(\wedge_{x}\perp_{x}\right)^{2}}{2}+2\left(b_{x}\wedge_{x}\right)^{2}\right)\\
+ &  & -\eta_{\times}\left(\perp_{x}^{2}-\wedge_{x}^{2}\right)\left(\wedge_{x}\perp_{x}\right)+2\eta_{\times}\left(-2b_{x}\perp_{x}\wedge_{x}b_{x}+\frac{\wedge_{x}\perp_{x}}{2}\left(\perp_{x}^{2}-\wedge_{x}^{2}\right)+2b_{x}\wedge_{x}b_{x}\perp_{x}\right)
+\end{eqnarray*}
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+Work on the 
+\begin_inset Formula $\eta_{\perp}$
+\end_inset
+
+ coefficient:
+\begin_inset Formula 
+\[
+-\frac{1}{4}\left(\perp_{x}^{2}-\wedge_{x}^{2}\right)^{2}-\left(\wedge_{x}\perp_{x}\right)^{2}-4\left(\left(b_{x}\perp_{x}\right)^{2}+\left(b_{x}\wedge_{x}\right)^{2}\right)
+\]
+
+\end_inset
+
+
+\begin_inset Formula 
+\[
+=-\frac{\left(\perp_{x}^{2}+\wedge_{x}^{2}\right)^{2}}{4}-4\left(\left(b_{x}\perp_{x}\right)^{2}+\left(b_{x}\wedge_{x}\right)^{2}\right)
+\]
+
+\end_inset
+
+Cross coefficient:
+\begin_inset Formula 
+\[
+-4b_{x}\perp_{x}\wedge_{x}b_{x}+4b_{x}\wedge_{x}b_{x}\perp_{x}=0
+\]
+
+\end_inset
+
+Therefore
+\begin_inset Formula 
+\begin{eqnarray*}
+c_{xx} & = & \eta_{\parallel}\frac{2}{3}-\eta_{\parallel}\left(2b_{x}^{4}+\left(\perp_{x}^{2}+\wedge_{x}^{2}\right)^{2}\right)\\
+ &  & -\eta_{\perp}\left(\frac{\left(\perp_{x}^{2}+\wedge_{x}^{2}\right)^{2}}{4}+4\left(\left(b_{x}\perp_{x}\right)^{2}+\left(b_{x}\wedge_{x}\right)^{2}\right)\right)
+\end{eqnarray*}
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+Even it's own on-diagonal coefficient looks forbidding.
+ Better to go with Route 1?
+\end_layout
+
+\begin_layout Subsubsection
+Work out something for the general element
+\end_layout
+
+\begin_layout Standard
+
+\family roman
+\series medium
+\shape up
+\size normal
+\emph off
+\bar no
+\strikeout off
+\uuline off
+\uwave off
+\noun off
+\color none
+Element 
+\begin_inset Formula $ij$
+\end_inset
+
+ is given by
+\begin_inset Formula 
+\begin{eqnarray}
+\Pi_{ij} & = & b_{i}\left(b_{j}\Pi_{bb}+\perp_{j}\Pi_{\perp b}+\wedge_{j}\Pi_{\wedge b}\right)\nonumber \\
+ &  & +\perp_{i}\left(b_{j}\Pi_{b\perp}+\perp_{j}\Pi_{\perp\perp}+\wedge_{j}\Pi_{\wedge\perp}\right)\nonumber \\
+ &  & +\wedge_{i}\left(b_{j}\Pi_{b\wedge}+\perp_{j}\Pi_{\perp\wedge}+\wedge_{j}\Pi_{\wedge\wedge}\right)\nonumber \\
+ & = & b_{i}b_{j}\Pi_{bb}+\perp_{i}\perp_{j}\Pi_{\perp\perp}+\wedge_{i}\wedge_{j}\Pi_{\wedge\wedge}\\
+ &  & +\left(b_{i}\perp_{j}+\perp_{i}b_{j}\right)\Pi_{b\perp}+\left(\wedge_{i}\perp_{j}+\wedge_{j}\perp_{i}\right)\Pi_{\wedge\perp}+\left(b_{i}\wedge_{j}+b_{j}\wedge_{i}\right)\Pi_{b\wedge}\nonumber 
+\end{eqnarray}
+
+\end_inset
+
+
+\family default
+\series default
+\shape default
+\size default
+\emph default
+\bar default
+\strikeout default
+\uuline default
+\uwave default
+\noun default
+\color inherit
+Substitute the formulas (
+\begin_inset CommandInset ref
+LatexCommand ref
+reference "eq:bb"
+
+\end_inset
+
+-
+\begin_inset CommandInset ref
+LatexCommand ref
+reference "eq:wedgeperp"
+
+\end_inset
+
+) for 
+\begin_inset Formula $\Pi_{bb}$
+\end_inset
+
+:
+\begin_inset Formula 
+\begin{eqnarray*}
+\Pi_{ij} & = & b_{i}b_{j}\left(-\eta_{\parallel}\left(2\frac{\partial v_{b}}{\partial b}-\frac{2}{3}\nabla\cdot v\right)\right)\\
+ &  & +\perp_{i}\perp_{j}\left(-\eta_{\parallel}\left(\frac{\partial v_{\perp}}{\partial\perp}+\frac{\partial v_{\wedge}}{\partial\wedge}-\frac{2}{3}\nabla\cdot v\right)-\frac{\eta_{\perp}}{4}\left(\frac{\partial v_{\perp}}{\partial\perp}-\frac{\partial v_{\wedge}}{\partial\wedge}\right)-\frac{\eta_{\times}}{2}\left(\frac{\partial v_{\wedge}}{\partial\perp}+\frac{\partial v_{\perp}}{\partial\wedge}\right)\right)\\
+ &  & +\wedge_{i}\wedge_{j}\left(-\eta_{\parallel}\left(\frac{\partial v_{\perp}}{\partial\perp}+\frac{\partial v_{\wedge}}{\partial\wedge}-\frac{2}{3}\nabla\cdot v\right)+\frac{\eta_{\perp}}{4}\left(\frac{\partial v_{\perp}}{\partial\perp}-\frac{\partial v_{\wedge}}{\partial\wedge}\right)+\frac{\eta_{\times}}{2}\left(\frac{\partial v_{\wedge}}{\partial\perp}+\frac{\partial v_{\perp}}{\partial\wedge}\right)\right)\\
+ &  & +\left(b_{i}\perp_{j}+\perp_{i}b_{j}\right)\left(-\eta_{\perp}\left(\frac{\partial v_{\perp}}{\partial b}+\frac{\partial v_{b}}{\partial\perp}\right)-\eta_{\times}\left(\frac{\partial v_{\wedge}}{\partial b}+\frac{\partial v_{b}}{\partial\wedge}\right)\right)\\
+ &  & +\left(\wedge_{i}\perp_{j}+\wedge_{j}\perp_{i}\right)\left(-\frac{\eta_{\perp}}{4}\left(\frac{\partial v_{\wedge}}{\partial\perp}+\frac{\partial v_{\perp}}{\partial\wedge}\right)+\frac{\eta_{\times}}{2}\left(\frac{\partial v_{\perp}}{\partial\perp}-\frac{\partial v_{\wedge}}{\partial\wedge}\right)\right)\\
+ &  & +\left(b_{i}\wedge_{j}+b_{j}\wedge_{i}\right)\left(-\eta_{\perp}\left(\frac{\partial v_{\wedge}}{\partial b}+\frac{\partial v_{b}}{\partial\wedge}\right)+\eta_{\times}\left(\frac{\partial v_{\perp}}{\partial b}+\frac{\partial v_{b}}{\partial\perp}\right)\right)
+\end{eqnarray*}
+
+\end_inset
+
+Put into magnetic components and simplify:
+\begin_inset Formula 
+\begin{eqnarray}
+\Pi_{ij} & = & \frac{2}{3}\delta_{ij}\eta_{\parallel}\nabla\cdot v-\eta_{\parallel}\left(2b_{i}b_{j}\frac{\partial v_{b}}{\partial b}+\left(\perp_{i}\perp_{j}+\wedge_{i}\wedge_{j}\right)\left(\frac{\partial v_{\perp}}{\partial\perp}+\frac{\partial v_{\wedge}}{\partial\wedge}\right)\right)\nonumber \\
+ &  & -\frac{\eta_{\perp}}{4}\left(\perp_{i}\perp_{j}-\wedge_{i}\wedge_{j}\right)\left(\frac{\partial v_{\perp}}{\partial\perp}-\frac{\partial v_{\wedge}}{\partial\wedge}\right)-\frac{\eta_{\perp}}{4}\left(\wedge_{i}\perp_{j}+\wedge_{j}\perp_{i}\right)\left(\frac{\partial v_{\wedge}}{\partial\perp}+\frac{\partial v_{\perp}}{\partial\wedge}\right)\nonumber \\
+ &  & -\eta_{\perp}\left(b_{i}\perp_{j}+\perp_{i}b_{j}\right)\left(\frac{\partial v_{\perp}}{\partial b}+\frac{\partial v_{b}}{\partial\perp}\right)-\eta_{\perp}\left(b_{i}\wedge_{j}+b_{j}\wedge_{i}\right)\left(\frac{\partial v_{\wedge}}{\partial b}+\frac{\partial v_{b}}{\partial\wedge}\right)\nonumber \\
+ &  & -\frac{\eta_{\times}}{2}\left(\perp_{i}\perp_{j}-\wedge_{i}\wedge_{j}\right)\left(\frac{\partial v_{\wedge}}{\partial\perp}+\frac{\partial v_{\perp}}{\partial\wedge}\right)+\frac{\eta_{\times}}{2}\left(\wedge_{i}\perp_{j}+\wedge_{j}\perp_{i}\right)\left(\frac{\partial v_{\perp}}{\partial\perp}-\frac{\partial v_{\wedge}}{\partial\wedge}\right)\nonumber \\
+ &  & -\eta_{\times}\left(b_{i}\perp_{j}+\perp_{i}b_{j}\right)\left(\frac{\partial v_{\wedge}}{\partial b}+\frac{\partial v_{b}}{\partial\wedge}\right)+\eta_{\times}\left(b_{i}\wedge_{j}+b_{j}\wedge_{i}\right)\left(\frac{\partial v_{\perp}}{\partial b}+\frac{\partial v_{b}}{\partial\perp}\right)
+\end{eqnarray}
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+This expression is actually useful even in Route 1 since it takes us from
+ 
+\begin_inset Formula $\frac{\partial v_{\perp}}{\partial\perp}$
+\end_inset
+
+ to 
+\begin_inset Formula $\Pi_{(xyz)}$
+\end_inset
+
+, allowing us to skip Step 2 of Route 1.
+\end_layout
+
+\begin_layout Standard
+What is the coefficient on 
+\begin_inset Formula $ik$
+\end_inset
+
+ in element 
+\begin_inset Formula $ij$
+\end_inset
+
+?
+\end_layout
+
+\begin_layout Standard
+There is definitely more working out worth doing.
+ And we should stick with the transformed perspective I think.
+\end_layout
+
+\begin_layout Standard
+\begin_inset Formula 
+\begin{eqnarray}
+c_{ii} & = & \frac{2}{3}\delta_{ij}\eta_{\parallel}-\eta_{\parallel}\left(2b_{i}b_{j}b_{i}^{2}+\left(\perp_{i}\perp_{j}+\wedge_{i}\wedge_{j}\right)\left(\perp_{i}^{2}+\wedge_{i}^{2}\right)\right)\nonumber \\
+ &  & -\frac{\eta_{\perp}}{4}\left(\left(\perp_{i}\perp_{j}-\wedge_{i}\wedge_{j}\right)\left(\perp_{i}^{2}-\wedge_{i}^{2}\right)+2\left(\wedge_{i}\perp_{j}+\wedge_{j}\perp_{i}\right)\perp_{i}\wedge_{i}\right)\nonumber \\
+ &  & -2\eta_{\perp}\left(\left(b_{i}\perp_{j}+\perp_{i}b_{j}\right)b_{i}\perp_{i}+\left(b_{i}\wedge_{j}+b_{j}\wedge_{i}\right)b_{i}\wedge_{i}\right)\nonumber \\
+ &  & -\eta_{\times}\left(\perp_{i}\perp_{j}-\wedge_{i}\wedge_{j}\right)\wedge_{i}\perp_{i}+\frac{\eta_{\times}}{2}\left(\wedge_{i}\perp_{j}+\wedge_{j}\perp_{i}\right)\left(\perp_{i}^{2}-\wedge_{i}^{2}\right)\nonumber \\
+ &  & -2\eta_{\times}\left(b_{i}\perp_{j}+\perp_{i}b_{j}\right)b_{i}\wedge_{i}+2\eta_{\times}\left(b_{i}\wedge_{j}+b_{j}\wedge_{i}\right)b_{i}\perp_{i}
+\end{eqnarray}
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+It is actually worth collecting terms in 
+\begin_inset Formula $\frac{\partial v_{\perp}}{\partial b}$
+\end_inset
+
+ since 
+\begin_inset Formula $\eta$
+\end_inset
+
+ components will be already known.
+\begin_inset Formula 
+\begin{eqnarray*}
+\Pi_{ij} & = & \frac{2}{3}\delta_{ij}\eta_{\parallel}\nabla\cdot v-\eta_{\parallel}\left(2b_{i}b_{j}\frac{\partial v_{b}}{\partial b}\right)\\
+ &  & +\frac{\partial v_{\perp}}{\partial\perp}\left(-\eta_{\parallel}\left(\delta_{ij}-b_{i}b_{j}\right)-\frac{\eta_{\perp}}{4}\left(\perp_{i}\perp_{j}-\wedge_{i}\wedge_{j}\right)+\frac{\eta_{\times}}{2}\left(\wedge_{i}\perp_{j}+\wedge_{j}\perp_{i}\right)\right)\\
+ &  & +\frac{\partial v_{\wedge}}{\partial\wedge}\left(-\eta_{\parallel}\left(\delta_{ij}-b_{i}b_{j}\right)+\frac{\eta_{\perp}}{4}\left(\perp_{i}\perp_{j}-\wedge_{i}\wedge_{j}\right)-\frac{\eta_{\times}}{2}\left(\wedge_{i}\perp_{j}+\wedge_{j}\perp_{i}\right)\right)\\
+ &  & +\left(\frac{\partial v_{\perp}}{\partial b}+\frac{\partial v_{b}}{\partial\perp}\right)\left(-\eta_{\perp}\left(b_{i}\perp_{j}+\perp_{i}b_{j}\right)+\eta_{\times}\left(b_{i}\wedge_{j}+b_{j}\wedge_{i}\right)\right)\\
+ &  & +\left(\frac{\partial v_{\wedge}}{\partial b}+\frac{\partial v_{b}}{\partial\wedge}\right)\left(-\eta_{\perp}\left(b_{i}\wedge_{j}+b_{j}\wedge_{i}\right)-\eta_{\times}\left(b_{i}\perp_{j}+\perp_{i}b_{j}\right)\right)\\
+ &  & +\left(\frac{\partial v_{\wedge}}{\partial\perp}+\frac{\partial v_{\perp}}{\partial\wedge}\right)\left(-\frac{\eta_{\perp}}{4}\left(\wedge_{i}\perp_{j}+\wedge_{j}\perp_{i}\right)-\frac{\eta_{\times}}{2}\left(\perp_{i}\perp_{j}-\wedge_{i}\wedge_{j}\right)\right)
+\end{eqnarray*}
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Subsection
+Calculating the coefficients on Cartesian partials 
+\begin_inset Formula $\frac{\partial v_{x}}{\partial y}$
+\end_inset
+
+ for the partially transformed matrix - 
+\end_layout
+
+\begin_layout Standard
+included in previous version.
+\end_layout
+
+\end_body
+\end_document
