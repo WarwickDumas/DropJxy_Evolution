@@ -33,7 +33,7 @@ bool const bScrewPinch = false;
 // milliseconds between frames:
 #define AVIFRAMEPERIOD         50 // 20 fps which is ok with our setting of 50 frames/ns
 
-#define DATA_SAVE_FREQUENCY					   100
+#define DATA_SAVE_FREQUENCY					  10
 
 // Program Mechanics:
 // ==================

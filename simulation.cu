@@ -3729,7 +3729,7 @@ void TriMesh::Create_momflux_integral_grad_nT_and_gradA_LapA_CurlA_on_minors(
 						(n_n0 * (v_n0.y - ourdata.v_n.y)
 							+ n_n1 * (v_n1.y - ourdata.v_n.y)),
 						relvnormal, 
-						n_n0, n_n1, v_n0.y, v_n0.y - ourdata.v_n.y, v_n1.y, v_n1.y - ourdata.v_n.y, ourdata.v_n.y);
+						n_n0, n_n1, v_n0.y, v_n0.y - ourdata.v_n.y, v_n1.y - ourdata.v_n.y, ourdata.v_n.y);
 				}
 
 				relvnormal = 0.5*(vxy0 + vxy1 - motion_edge1 - motion_edge0).dot(edge_normal);

@@ -42,9 +42,9 @@ cudaError_t addWithCuda(int *c, const int *a, const int *b, unsigned int size);
 
 // Global variables:
 // =================
-extern f64_vec3 * p_B_host;
+//extern f64_vec3 * p_B_host;
 extern f64 EzStrength_;
-
+extern cuSyst cuSyst1;
 extern D3D Direct3D;
 
 float xzscale;
@@ -583,14 +583,14 @@ void RefreshGraphs(TriMesh & X, // only not const because of such as Reset_verte
 			AZSEGUE_COLOUR, (real *)(&(X.pData[0].Az)),
 			true, GRAPH_AZ, &X);
 
-		for (iVertex = 0; iVertex < NUMVERTICES; iVertex++)
-		{
-			X.pData[iVertex + BEGINNING_OF_CENTRAL].temp.x = p_B_host[iVertex + BEGINNING_OF_CENTRAL].x;
-			X.pData[iVertex + BEGINNING_OF_CENTRAL].temp.y = p_B_host[iVertex + BEGINNING_OF_CENTRAL].y;
-		}
+//		for (iVertex = 0; iVertex < NUMVERTICES; iVertex++)
+//		{
+//			X.pData[iVertex + BEGINNING_OF_CENTRAL].temp.x = p_B_host[iVertex + BEGINNING_OF_CENTRAL].x;
+//			X.pData[iVertex + BEGINNING_OF_CENTRAL].temp.y = p_B_host[iVertex + BEGINNING_OF_CENTRAL].y;
+//		}
 		Graph[1].DrawSurface("Bxy",
-		VELOCITY_HEIGHT, (real *)(&(X.pData[0].temp.x)), // you're kidding me. Where do we get B?
-		VELOCITY_COLOUR, (real *)(&(X.pData[0].temp.x)),
+		VELOCITY_HEIGHT, (real *)(&(X.pData[0].B.x)),
+		VELOCITY_COLOUR, (real *)(&(X.pData[0].B.x)),
 		false,
 		GRAPH_BXY, &X);
 		
@@ -1531,6 +1531,53 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 				printf("file error camera\n");
 			};
 			break; 
+		case ID_FILE_LOADGPU:
+
+			// Initialize OPENFILENAME:
+			ZeroMemory(&ofn, sizeof(ofn));
+			ofn.lStructSize = sizeof(ofn);
+			ofn.hwndOwner = hWnd;
+			ofn.lpstrFile = szFile;
+			//
+			// Set lpstrFile[0] to '\0' so that GetOpenFileName does not 
+			// use the contents of szFile to initialize itself.
+			ofn.lpstrFile[0] = '\0';
+			ofn.nMaxFile = sizeof(szFile);
+			//strcpy(szFilter, "All\0*.*\0Dat\0*.DAT\0\0");
+			memcpy(szfilter, "All\0*.*\0Dat\0*.DAT\0\0", 19); // strcpy stops at first null !!
+			ofn.lpstrFilter = szfilter; //"All\0*.*\0Dat\0*.DAT\0\0";	// summat weird about that example code
+			ofn.nFilterIndex = 1;
+			ofn.lpstrFileTitle = NULL;
+			ofn.nMaxFileTitle = 0;
+			ofn.lpstrInitialDir = NULL;
+			ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST;
+
+			// Display the Open dialog box. 
+			if (GetOpenFileName(&ofn) == TRUE)
+			{
+				if (bInvoked_cuSyst == false) {
+					bInvoked_cuSyst = true;
+
+					cuSyst_host.InvokeHost();
+					cuSyst_host.PopulateFromTriMesh(pX);
+
+					PerformCUDA_Invoke_Populate(
+						&cuSyst_host,
+						NUMVERTICES,
+						pX->InnermostFrillCentroidRadius,
+						pX->OutermostFrillCentroidRadius,
+						pX->numStartZCurrentTriangles,
+						pX->numEndZCurrentTriangles);
+				};
+
+				cuSyst_host.Load(ofn.lpstrFile);
+			};
+			printf("Populate *pX\n");
+			cuSyst_host.PopulateTriMesh(pX);
+			cuSyst_host.SendToDevice(cuSyst1);
+			printf("done\n");
+
+			break;
 		case ID_FILE_SAVEBINARY:
 			// Initialize OPENFILENAME
 			ZeroMemory(&ofn, sizeof(ofn));
@@ -1672,7 +1719,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 				cuSyst_host2.InvokeHost();
 				cuSyst_host2.PopulateFromTriMesh(pX);
 				
-				cuSyst_host.Output("n0.txt");
+		//		cuSyst_host.Output("n0.txt");
 
 				PerformCUDA_Invoke_Populate(
 					&cuSyst_host,
@@ -1687,6 +1734,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			printf("evaltime %1.8E\n", evaltime);
 			
 		//	PerformCUDA_RunStepsAndReturnSystem_Debug(&cuSyst_host, &cuSyst_host2, pX, &X3, pXnew);
+			
 			PerformCUDA_RunStepsAndReturnSystem(&cuSyst_host);
 
 		//	printf("Stamp GPU over CPU y/n:");
@@ -1696,6 +1744,15 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 		//	printf("%c\n\n", o);
 		//	if (o == 'y') 
 			cuSyst_host.PopulateTriMesh(pX); 
+
+
+			// Auto-save system:
+			if (GlobalStepsCounter % DATA_SAVE_FREQUENCY == 0)
+			{
+				sprintf(szFile, "auto%d.dat", GlobalStepsCounter);
+				// SAVE cuSyst:
+				cuSyst_host.Save(szFile);
+			}
 
 			// even number of steps should lead us back to pX having it
 			steps_remaining--;
@@ -1773,9 +1830,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 	//	pX->RefreshVertexNeighboursOfVerticesOrdered();
 	//	pX->Redelaunerize(true);
 	//	pX->RefreshVertexNeighboursOfVerticesOrdered();
-
-
-
+		
 		/*
 		if (wParam == 1) {
 			sprintf(buf1000, "autosaveGPU%d.dat", GlobalStepsCounter);
@@ -1825,10 +1880,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
 		printf("steps_remaining GPU: %d  CPU: %d\n",steps_remaining, steps_remaining_CPU);
 		
-
-
-			// Auto-save system:
-		//if (GlobalStepsCounter % DATA_SAVE_FREQUENCY == 0)
 		
 		break;
 

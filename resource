@@ -1551,6 +1551,7 @@
 #define ID_HELP_ABOUT                   40010
 #define ID_RUN_STOP                     40020
 #define ID_RUN_CPUSTEP                  40021
+#define ID_FILE_LOADGPU                 40022
 #define ID_RUN_SIMULATIONSTEPS_CPU      40030
 #define ID_DISPLAY_NEUT                 50000
 #define ID_DISPLAY_ION                  50001
@@ -1594,7 +1595,7 @@
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NEXT_RESOURCE_VALUE        102
-#define _APS_NEXT_COMMAND_VALUE         40022
+#define _APS_NEXT_COMMAND_VALUE         40023
 #define _APS_NEXT_CONTROL_VALUE         1001
 #define _APS_NEXT_SYMED_VALUE           101
 #endif

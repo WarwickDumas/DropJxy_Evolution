@@ -4,6 +4,9 @@
 #ifndef CUSYSTCU
 #define CUSYSTCU
 
+extern real evaltime;
+extern long GlobalStepsCounter;
+
 __host__ bool Call(cudaError_t cudaStatus, char str[])
 {
 	if (cudaStatus == cudaSuccess) {
@@ -187,6 +190,114 @@ free(p_AreaMajor);
 
 	};
 }
+
+void cuSyst::Save(const char filename[])
+{
+	FILE * fp = fopen(filename, "wb");
+	if (fp == 0) { printf("open %s failed\n\n", filename); getch();  return; }
+	else { printf("opened file %s ..", filename); }
+
+	long filevers = 1;
+	fwrite(&filevers, sizeof(long),1,fp);
+	fwrite(&Nverts, sizeof(long),1,fp);
+	fwrite(&Ntris, sizeof(long),1,fp);
+
+	fwrite(&GlobalStepsCounter, sizeof(long), 1, fp);
+	fwrite(&evaltime, sizeof(f64), 1, fp);
+
+	fwrite(p_info, sizeof(structural),NMINOR, fp);
+
+	fwrite(p_izTri_vert, sizeof(long), Nverts*MAXNEIGH_d, fp);
+
+	fwrite(p_izNeigh_vert, sizeof(long),Nverts*MAXNEIGH_d, fp);
+	fwrite(p_szPBCtri_vert, sizeof(char),Nverts*MAXNEIGH_d, fp);
+	fwrite(p_szPBCneigh_vert, sizeof(char),Nverts*MAXNEIGH_d, fp);
+
+	fwrite(p_izNeigh_TriMinor, sizeof(long), Ntris * 6 , fp);
+	fwrite(p_szPBC_triminor, sizeof(char), Ntris * 6, fp);
+	fwrite(p_tri_corner_index, sizeof(LONG3), Ntris , fp);
+	fwrite(p_tri_periodic_corner_flags, sizeof(CHAR4), Ntris, fp);
+	fwrite(p_tri_neigh_index, sizeof(LONG3), Ntris , fp);
+	fwrite(p_tri_periodic_neigh_flags, sizeof(CHAR4), Ntris , fp);
+	fwrite(p_who_am_I_to_corner, sizeof(LONG3), Ntris, fp);
+
+	fwrite(p_n_major, sizeof(nvals), Nverts, fp);
+	fwrite(p_n_minor, sizeof(nvals), Nminor,fp);
+	fwrite(p_T_minor, sizeof(T3), Nminor,fp);
+
+	fwrite(p_AAdot, sizeof(AAdot), Nminor,fp);
+
+	fwrite(p_v_n, sizeof(f64_vec3), Nminor , fp);
+	fwrite(p_vie, sizeof(v4), Nminor , fp);
+	fwrite(p_B, sizeof(f64_vec3), Nminor , fp);
+
+//	fwrite(p_Lap_Az, Nminor * sizeof(f64));
+//	fwrite(p_v_overall_minor, Nminor * sizeof(f64_vec2));
+//	fwrite(p_n_upwind_minor, Nminor * sizeof(nvals));
+
+	fwrite(p_AreaMinor, sizeof(f64), Nminor, fp);
+	fwrite(p_AreaMajor, sizeof(f64), Nverts, fp);
+	
+	fclose(fp);
+	printf("File save done.\n");
+}
+
+void cuSyst::Load(const char filename[])
+{
+	FILE * fp = fopen(filename, "rb");
+	if (fp == 0) { printf("open %s failed\n\n", filename); getch();  return; } 
+	else { printf("opened file %s ..", filename); }
+	rewind(fp);
+	long Nverttest, Ntritest, filevers;
+	fread(&filevers, sizeof(long), 1, fp);
+	fread(&Nverttest, sizeof(long), 1, fp);
+	fread(&Ntritest, sizeof(long), 1, fp);
+
+	if ( (filevers != 1) || (Nverttest != Nverts) || (Ntritest != Ntris) ) {
+		printf("filevers %d Nverts Ntris %d %d File: %d %d \n\n", filevers, Nverts, Ntris, Nverttest, Ntritest);
+		return;
+	}
+	
+	fread(&GlobalStepsCounter, sizeof(long), 1, fp);
+	fread(&evaltime, sizeof(f64), 1, fp);
+
+	fread(p_info, sizeof(structural), NMINOR, fp);
+
+	fread(p_izTri_vert, sizeof(long), Nverts*MAXNEIGH_d, fp);
+
+	fread(p_izNeigh_vert, sizeof(long), Nverts*MAXNEIGH_d, fp);
+	fread(p_szPBCtri_vert, sizeof(char), Nverts*MAXNEIGH_d, fp);
+	fread(p_szPBCneigh_vert, sizeof(char), Nverts*MAXNEIGH_d, fp);
+
+	fread(p_izNeigh_TriMinor, sizeof(long), Ntris * 6, fp);
+	fread(p_szPBC_triminor, sizeof(char), Ntris * 6, fp);
+	fread(p_tri_corner_index, sizeof(LONG3), Ntris, fp);
+	fread(p_tri_periodic_corner_flags, sizeof(CHAR4), Ntris, fp);
+	fread(p_tri_neigh_index, sizeof(LONG3), Ntris, fp);
+	fread(p_tri_periodic_neigh_flags, sizeof(CHAR4), Ntris, fp);
+	fread(p_who_am_I_to_corner, sizeof(LONG3), Ntris, fp);
+
+	fread(p_n_major, sizeof(nvals), Nverts, fp);
+	fread(p_n_minor, sizeof(nvals), NMINOR, fp);
+	fread(p_T_minor, sizeof(T3), NMINOR, fp);
+
+	fread(p_AAdot, sizeof(AAdot), NMINOR, fp);
+
+	fread(p_v_n, sizeof(f64_vec3), NMINOR, fp);
+	fread(p_vie, sizeof(v4), NMINOR, fp);
+	fread(p_B, sizeof(f64_vec3), NMINOR, fp);
+
+	//	fread(p_Lap_Az, Nminor * sizeof(f64));
+	//	fread(p_v_overall_minor, Nminor * sizeof(f64_vec2));
+	//	fread(p_n_upwind_minor, Nminor * sizeof(nvals));
+
+	fread(p_AreaMinor, sizeof(f64), NMINOR, fp);
+	fread(p_AreaMajor, sizeof(f64), Nverts, fp);
+
+	fclose(fp);
+	printf("File read done.\n");
+}
+
 
 void cuSyst::SendToHost(cuSyst & Xhost)
 {

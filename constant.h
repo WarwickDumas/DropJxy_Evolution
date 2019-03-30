@@ -71,6 +71,7 @@ real const FOUR_PI_Q_ = 4.0*PI*q_;
 real const FOURPI_OVER_C_ = 4.0*PI/c_;
 real const FOURPIOVERC_ = 4.0*PI/c_;
 real const FOUR_PI_OVER_C_ = FOURPIOVERC_;
+real const FOURPI_ = 4.0*PI;
 
 real const m_en_ = m_e_ * m_n_ / (m_e_ + m_n_);
 real const m_ei_ = m_e_ * m_i_ / (m_e_ + m_i_);

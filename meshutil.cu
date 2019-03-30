@@ -17,6 +17,7 @@
 //		$$$   	Graphics functions
 
 bool GlobalFlagNeedPeriodicImage, GlobalFlagNeedReflectedImage;
+long NumInnerFrills, FirstOuterFrill;
 
 //int nesting;
 long GlobalVerticesInRange;
@@ -1279,6 +1280,10 @@ int TriMesh::Initialise(int token)
 
 	   // Now go around again for outer frills:
 	iVertex = iVertexLowFirst;
+	
+	NumInnerFrills = numRow[0];
+	FirstOuterFrill = iTri;
+
 	for (int iExtra = 0; iExtra < numRow[numRows - 1]; iExtra++)
 	{
 		SetTriangleVertex(0, pTri, X + iVertex);
@@ -1292,9 +1297,6 @@ int TriMesh::Initialise(int token)
 		++pTri;
 		++iTri;
 	}
-
-
-
 
 	numTriangles = iTri;
 

@@ -128,6 +128,25 @@ __global__ void kernelCalculateUpwindDensity_tris(
 	nvals * __restrict__ p_n_upwind_minor // result
 );
 
+__global__ void Estimate_Effect_on_Integral_Azdot_from_Jz_and_LapAz(
+	f64 hstep,
+	structural * __restrict__ p_info,
+	nvals * __restrict__ p_nvals_k,
+	nvals * __restrict__ p_nvals_use,
+	v4 * __restrict__ p_vie_k,
+	v4 * __restrict__ p_vie_kplus1,
+	f64 * __restrict__ p_AreaMinor,
+	f64 * __restrict__ p_LapAz,
+
+	AAdot * __restrict__ p_Azdot,
+
+	f64 * __restrict__ p_tile1, // +ve Jz
+	f64 * __restrict__ p_tile2, // -ve Jz
+	f64 * __restrict__ p_tile3, // LapAz
+	f64 * __restrict__ p_tile4, // integrate Azdot diff
+	f64 * __restrict__ p_tile5,
+	f64 * __restrict__ p_tile6
+);
 
 __global__ void kernelAccumulateAdvectiveMassHeatRate(
 	f64 h_use,
@@ -150,6 +169,13 @@ __global__ void kernelAccumulateAdvectiveMassHeatRate(
 	f64 * __restrict__ p_Integrated_div_v_overall
 	);
 
+__global__ void kernelEstimateCurrent(
+	structural * __restrict__ p_info_minor,
+	nvals * __restrict__ p_n_minor,
+	v4 * __restrict__ p_vie,
+	f64 * __restrict__ p_AreaMinor,
+	f64 * __restrict__ p_Iz
+);
 
 __global__ void kernelPopulateOhmsLaw(
 	f64 h_use,
@@ -177,7 +203,7 @@ __global__ void kernelPopulateOhmsLaw(
 
 	f64 * __restrict__ p_Iz0,
 	f64 * __restrict__ p_sigma_zz,
-
+	
 	f64 * __restrict__ p_denom_i,
 	f64 * __restrict__ p_denom_e,
 
@@ -191,11 +217,13 @@ __global__ void kernelPopulateOhmsLaw(
 
 __global__ void kernelCalculateVelocityAndAzdot(
 	f64 h_use,
+	structural * p_info_minor,
 	f64_vec3 * __restrict__ p_vn0,
 	v4 * __restrict__ p_v0,
 	OhmsCoeffs * __restrict__ p_OhmsCoeffs,
 	AAdot * __restrict__ p_AAzdot_intermediate,
-	nvals * __restrict__ p_n_minor,
+	nvals * __restrict__ p_n_minor, 
+	f64 * __restrict__ p_AreaMinor,
 
 	AAdot * __restrict__ p_AAzdot_out,
 	v4 * __restrict__ p_vie_out,
@@ -311,7 +339,13 @@ __global__ void kernelGetLap_minor(
 	char * __restrict__ p_szPBCtri_vertex,
 	char * __restrict__ p_szPBCtriminor,
 
-	f64 * __restrict__ p_LapAz);
+	f64 * __restrict__ p_LapAz,
+
+//	f64 * __restrict__ p_Integratedconts_fromtri,
+//	f64 * __restrict__ p_Integratedconts_fromvert,
+//	f64 * __restrict__ p_Integratedconts_vert,
+	f64 * __restrict__ p_AreaMinor);
+// debug why it is that we get sum of Lap nonzero when we integrate against AreaMinor, yet sum here to small
 
 
 __global__ void kernelCreate_pressure_gradT_and_gradA_LapA_CurlA_minor(
@@ -395,6 +429,7 @@ __global__ void kernelCreateLinearRelationship(
 	f64 * __restrict__ p_coeff_of_vez_upon_viz, 
 	f64 * __restrict__ p_beta_ie_z,
 	AAdot * __restrict__ p_AAdot_intermediate,
+	f64 * __restrict__ p_AreaMinor,
 	f64 * __restrict__ p_Azdot0,
 	f64 * __restrict__ p_gamma
 );

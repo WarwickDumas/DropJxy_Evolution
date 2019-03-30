@@ -257,13 +257,17 @@ public:
 	void PopulateFromTriMesh(TriMesh * pX);
 	void PopulateTriMesh(TriMesh * pX);
 
-	void PerformCUDA_Advance(const cuSyst * pX_target, const cuSyst * pX_half);
+	void PerformCUDA_Advance(const cuSyst * pX_target, //const
+		cuSyst * pX_half);
 
 	void PerformCUDA_Advance_Debug(const cuSyst * pX_target, const cuSyst * pX_half,
 		const cuSyst * p_cuSyst_host, cuSyst * p_cuSyst_compare, TriMesh * pTriMesh, TriMesh * pTriMeshhalf,
 		TriMesh * pDestMesh);
 
 	void Output(const char * filename);
+
+	void cuSyst::Load(const char filename[]);
+	void cuSyst::Save(const char filename[]);
 
 	void ZeroData();
 	~cuSyst();

@@ -46,6 +46,7 @@ BEGIN
         MENUITEM "Load camera",                 ID_FILE_LOADCAMERA
         MENUITEM "Save camera",                 ID_FILE_SAVECAMERA
         MENUITEM "Exit",                        ID_FILE_EXIT
+        MENUITEM "LoadGPU",                     ID_FILE_LOADGPU
     END
     POPUP "Initialise"
     BEGIN
