@@ -26,12 +26,12 @@ bool const bScrewPinch = false;
 #define DELAY_MILLISECS      100 // pause
 
 // steps per frame
-#define GRAPHICS_FREQUENCY				1
+#define GRAPHICS_FREQUENCY				2
 #define STEPS_PER_LOOP               1    // soon change to 500
 // frames between file pinch-offs:
-#define AVI_FILE_PINCHOFF_FREQUENCY     100
+#define AVI_FILE_PINCHOFF_FREQUENCY     120
 // milliseconds between frames:
-#define AVIFRAMEPERIOD         50 // 20 fps which is ok with our setting of 50 frames/ns
+#define AVIFRAMEPERIOD         50 // 20 fps which is ok with our setting of 25 frames/ns [running 2e-11 x 2 = 4e-11 per frame]
 
 #define DATA_SAVE_FREQUENCY					  10
 

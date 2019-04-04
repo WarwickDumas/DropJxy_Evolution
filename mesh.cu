@@ -1873,9 +1873,7 @@ void TriMesh::Redelaunerize(bool exhaustion, bool bReplace)
 
 	printf("start of redelaunerize");
 	DebugTestWrongNumberTrisPerEdge();
-
-	printf(" D ");
-
+	
 	long totalflips = 0;
 	// if exhaustion == true, carry on to exhaustion; otherwise do 1 pass.
 	do
@@ -1902,7 +1900,10 @@ void TriMesh::Redelaunerize(bool exhaustion, bool bReplace)
 					pTri2 = pTri->neighbours[iNeigh];
 					
 					if (	(pTri2 != pTri) 
-						&& ((pTri2->u8domain_flag != OUT_OF_DOMAIN) || (pTri->u8domain_flag != OUT_OF_DOMAIN)) 
+						// Edit 04/04/19: change the following line to && to make life easier.
+						// Flipping with tris within ins shouldn't be strictly necessary since we do not have
+						// points inside but close to the insulator. It does stop us from being Delaunay if we do not do this though.
+						&& ((pTri2->u8domain_flag != OUT_OF_DOMAIN) && (pTri->u8domain_flag != OUT_OF_DOMAIN)) 
 						&& (pTri2->cornerptr[0]->flags != OUTERMOST)
 						&& (pTri2->cornerptr[1]->flags != OUTERMOST)
 						&& (pTri2->cornerptr[2]->flags != OUTERMOST)
@@ -1923,6 +1924,86 @@ void TriMesh::Redelaunerize(bool exhaustion, bool bReplace)
 							++flip_tri_to_tri;
 
 							if (bReplace) {
+
+								plasma_data data_tri1, data_tri2, data_vert;
+								//data_unsh1, data_unsh2, data_sh1, data_sh2;
+
+								memcpy(&data_tri1, &(pData[pTri - T]), sizeof(plasma_data));
+								memcpy(&data_tri2, &(pData[pTri2 - T]), sizeof(plasma_data));
+								
+								Flip(pTri, pTri2, -1);
+								
+								pVertex1 = pTri->ReturnUnsharedVertex(pTri2);
+								pVertex2 = pTri2->ReturnUnsharedVertex(pTri);
+
+								// simple average FOR NOW:
+								
+								// EXCEPTIONAL CASE 1: vertex is below insulator in which case just average tri data.
+								// EXCEPTIONAL CASE 2: flip involved tris below ins: ruled this out above.
+								// EXCEPTIONAL CASE 3: created 2 CROSSING_INS tris: fine.
+
+								plasma_data temp;
+								if (pVertex1->flags != DOMAIN_VERTEX) {
+									temp.n = 0.5*(data_tri1.n + data_tri2.n);
+									temp.Tn = 0.5*data_tri1.Tn + data_tri2.Tn);
+									temp.Ti = 0.5*( data_tri1.Ti + data_tri2.Ti);
+									temp.Te = 0.5*(data_tri1.Te + data_tri2.Te);
+									temp.Az = 0.5*(data_tri1.Az + data_tri2.Az);
+									temp.Azdot = 0.5*( data_tri1.Azdot + data_tri2.Azdot);
+									temp.v_n = 0.5*( data_tri1.v_n + data_tri2.v_n);
+									temp.vxy = 0.5*( data_tri1.vxy + data_tri2.vxy);
+									temp.vez = 0.5*( data_tri1.vez + data_tri2.vez);
+									temp.viz = 0.5*( data_tri1.viz + data_tri2.viz);
+									temp.B = 0.5*(data_tri1.B + data_tri2.B);
+								} else {
+									memcpy(&data_vert, &(pData[pVertex1 - X]), sizeof(plasma_data));
+									temp.n = THIRD*(data_vert.n + data_tri1.n + data_tri2.n);
+									temp.Tn = THIRD*(data_vert.Tn + data_tri1.Tn + data_tri2.Tn);
+									temp.Ti = THIRD*(data_vert.Ti + data_tri1.Ti + data_tri2.Ti);
+									temp.Te = THIRD*(data_vert.Te + data_tri1.Te + data_tri2.Te);
+									temp.Az = THIRD*(data_vert.Az + data_tri1.Az + data_tri2.Az);
+									temp.Azdot = THIRD*(data_vert.Azdot + data_tri1.Azdot + data_tri2.Azdot);
+									temp.v_n = THIRD*(data_vert.v_n + data_tri1.v_n + data_tri2.v_n);
+									temp.vxy = THIRD*(data_vert.vxy + data_tri1.vxy + data_tri2.vxy);
+									temp.vez = THIRD*(data_vert.vez + data_tri1.vez + data_tri2.vez);
+									temp.viz = THIRD*(data_vert.viz + data_tri1.viz + data_tri2.viz);
+									temp.B = THIRD*(data_vert.B + data_tri1.B + data_tri2.B);
+								}								
+								memcpy(&(pData[pTri - T]), &temp, sizeof(plasma_data)); // so must populate every member
+
+								if (pVertex2->flags != DOMAIN_VERTEX) {
+									temp.n = 0.5*(data_tri1.n + data_tri2.n);
+									temp.Tn = 0.5*data_tri1.Tn + data_tri2.Tn);
+									temp.Ti = 0.5*(data_tri1.Ti + data_tri2.Ti);
+									temp.Te = 0.5*(data_tri1.Te + data_tri2.Te);
+									temp.Az = 0.5*(data_tri1.Az + data_tri2.Az);
+									temp.Azdot = 0.5*(data_tri1.Azdot + data_tri2.Azdot);
+									temp.v_n = 0.5*(data_tri1.v_n + data_tri2.v_n);
+									temp.vxy = 0.5*(data_tri1.vxy + data_tri2.vxy);
+									temp.vez = 0.5*(data_tri1.vez + data_tri2.vez);
+									temp.viz = 0.5*(data_tri1.viz + data_tri2.viz);
+									temp.B = 0.5*(data_tri1.B + data_tri2.B);
+								}
+								else {
+									memcpy(&data_vert, &(pData[pVertex2 - X]), sizeof(plasma_data));
+									temp.n = THIRD*(data_vert.n + data_tri1.n + data_tri2.n);
+									temp.Tn = THIRD*(data_vert.Tn + data_tri1.Tn + data_tri2.Tn);
+									temp.Ti = THIRD*(data_vert.Ti + data_tri1.Ti + data_tri2.Ti);
+									temp.Te = THIRD*(data_vert.Te + data_tri1.Te + data_tri2.Te);
+									temp.Az = THIRD*(data_vert.Az + data_tri1.Az + data_tri2.Az);
+									temp.Azdot = THIRD*(data_vert.Azdot + data_tri1.Azdot + data_tri2.Azdot);
+									temp.v_n = THIRD*(data_vert.v_n + data_tri1.v_n + data_tri2.v_n);
+									temp.vxy = THIRD*(data_vert.vxy + data_tri1.vxy + data_tri2.vxy);
+									temp.vez = THIRD*(data_vert.vez + data_tri1.vez + data_tri2.vez);
+									temp.viz = THIRD*(data_vert.viz + data_tri1.viz + data_tri2.viz);
+									temp.B = THIRD*(data_vert.B + data_tri1.B + data_tri2.B);
+								}
+								memcpy(&(pData[pTri2 - T]), &temp, sizeof(plasma_data)); // so must populate every member
+
+
+								/*
+								
+								
 								// pTri2 is neighbours[iNeigh]
 								// so pTri->cornerptr[iNeigh] is unshared.
 								
@@ -1959,9 +2040,12 @@ void TriMesh::Redelaunerize(bool exhaustion, bool bReplace)
 									GiveAndTake(shard_data2,pUnsh,pVertex2);
 								if ((pVertq->flags == DOMAIN_VERTEX) && (pVertex2->flags == DOMAIN_VERTEX))
 									GiveAndTake(shard_data2,pVertq,pVertex2);
+
+									*/
 							} else {
 
 								Flip(pTri, pTri2, -1);
+
 							}
 							
 							iNeigh = 4; // Skip out of loop.
@@ -2891,9 +2975,8 @@ real ConvexPolygon::minmod(real n[], // output array
 	};
 	
 }
-
-
 */
+
 
 void TriMesh::Flip(Triangle * pTri1, Triangle * pTri2, int iLevel)
 {

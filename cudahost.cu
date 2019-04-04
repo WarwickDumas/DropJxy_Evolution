@@ -5,10 +5,10 @@
 
 #pragma once
   
-#define CHOSEN 10087768
-#define CHOSEN1 87030
-#define CHOSEN2 87031
-#define VERTCHOSEN 4
+#define CHOSEN 89745
+#define CHOSEN1 1000000
+#define CHOSEN2 1000000
+#define VERTCHOSEN 1000000
 
 #include <math.h>
 #include <time.h>
@@ -22,7 +22,7 @@
    
 // This is the file for CUDA host code.
 #include "simulation.cu"
-
+FILE * fp_trajectory;
 FILE * fp_dbg;
 
 extern long NumInnerFrills, FirstOuterFrill;
@@ -125,7 +125,6 @@ f64  *p_sum_eps_deps_by_dbeta_host, *p_sum_depsbydbeta_sq_host, *p_sum_eps_eps_h
 __device__ char * p_was_vertex_rotated, *p_triPBClistaffected;
 
 f64 * temp_array_host;
-
 f64 tempf64;
 
 //f64 Tri_n_n_lists[NMINOR][6],Tri_n_lists[NMINOR][6];
@@ -888,6 +887,7 @@ void PerformCUDA_RunStepsAndReturnSystem(cuSyst * pX_host)
 	// B is set for pX_half and pX1. So take pX_half value and spit it to host.
 
 	fp_dbg = fopen("dbg1.txt", "a");
+	fp_trajectory = fopen("traj.txt", "a");
 	for (iSubstep = 0; iSubstep < 10; iSubstep++)
 	{
 		printf("\nSTEP %d\n-------------\n", iSubstep);
@@ -900,6 +900,7 @@ void PerformCUDA_RunStepsAndReturnSystem(cuSyst * pX_host)
 	// After an even number of goes, pX1 = &cuSyst1 and this is where we ended up.
 		
 	fclose(fp_dbg);
+	fclose(fp_trajectory);
 
 	cudaEventRecord(stop1, 0);
 	cudaEventSynchronize(stop1);
@@ -3318,7 +3319,7 @@ void cuSyst::PerformCUDA_Advance(const cuSyst * pX_target,
 		this->p_T_minor + BEGINNING_OF_CENTRAL,
 		p_nu_major);
 	Call(cudaThreadSynchronize(), "cudaTS CalculateNu");
-
+	 
 	kernelAccumulateDiffusiveHeatRateAndCalcIonisation << <numTilesMajorClever, threadsPerTileMajorClever >> >(
 		0.5*TIMESTEP,
 		this->p_info + BEGINNING_OF_CENTRAL,
@@ -3329,10 +3330,13 @@ void cuSyst::PerformCUDA_Advance(const cuSyst * pX_target,
 		this->p_B + BEGINNING_OF_CENTRAL, // NEED POPULATED
 		p_nu_major,
 		NT_addition_rates_d,
-		this->p_AreaMajor);
+		this->p_AreaMajor
+//		p_temp1, // spit out effect on dTe/dt of conduction
+//		p_temp4 // spit out effect on dTe/dt of ionisation   // vertex
+		);
 	Call(cudaThreadSynchronize(), "cudaTS AccumulateDiffusiveHeatRate");
 	// To increase the efficiency we want to make a clever 2nd set of major tiles of size 192. Also try 256, 384.
-
+	
 	kernelAdvanceDensityAndTemperature << <numTilesMajor, threadsPerTileMajor >> >(
 		0.5*TIMESTEP,
 		this->p_info + BEGINNING_OF_CENTRAL,
@@ -3349,8 +3353,17 @@ void cuSyst::PerformCUDA_Advance(const cuSyst * pX_target,
 		this->p_AreaMajor,
 		pX_half->p_n_major,
 		pX_half->p_T_minor + BEGINNING_OF_CENTRAL
+
+		//p_temp2, p_temp3 // ei, en resistive effect on T
 		);
-	Call(cudaThreadSynchronize(), "cudaTS Advance_n_and_T");
+	Call(cudaThreadSynchronize(), "cudaTS Advance_n_and_T"); // vertex
+
+	// DEBUG:
+//	cudaMemcpy(p_temphost1, p_temp1, sizeof(f64)*NMINOR, cudaMemcpyDeviceToHost);
+//	cudaMemcpy(p_temphost2, p_temp2, sizeof(f64)*NMINOR, cudaMemcpyDeviceToHost);
+//	cudaMemcpy(p_temphost3, p_temp3, sizeof(f64)*NMINOR, cudaMemcpyDeviceToHost);
+//	cudaMemcpy(p_temphost4, p_temp4, sizeof(f64)*NMINOR, cudaMemcpyDeviceToHost);
+
 
 	kernelAverage_n_T_x_to_tris << <numTriTiles, threadsPerTileMinor >> >(
 		pX_half->p_n_minor,
@@ -3368,9 +3381,7 @@ void cuSyst::PerformCUDA_Advance(const cuSyst * pX_target,
 	// We are going to want to introduce 2nd degree approx to get n,T desired on tris.
 	// Now let's set up the accel move to half-time which will provide us input of v to the full n,T move.
 	// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-
-
+		
 	//////////////////////////////////////////////////////////////////////////
 	// Even more shards!:
 
@@ -3441,6 +3452,7 @@ void cuSyst::PerformCUDA_Advance(const cuSyst * pX_target,
 		false,
 		true, // use this for Iz:
 		pX_half->p_n_minor
+		//p_temp5, p_temp6 // vez effect from friction, Ez : iMinor
 		); 
 
 	Call(cudaThreadSynchronize(), "cudaTS AccelerateOhms 1");
@@ -3486,7 +3498,10 @@ void cuSyst::PerformCUDA_Advance(const cuSyst * pX_target,
 		);
 	Call(cudaThreadSynchronize(), "cudaTS AccelerateUpdate 1");
 	
-	 /*
+	getch();
+
+
+	/*
 	Estimate_Effect_on_Integral_Azdot_from_Jz_and_LapAz << <numTilesMinor, threadsPerTileMinor >> > (
 		0.5*TIMESTEP,
 		pX_half->p_info,
@@ -3537,7 +3552,6 @@ void cuSyst::PerformCUDA_Advance(const cuSyst * pX_target,
 	printf("runs %d : sum_plus %1.15E sum_minus %1.15E sum_Lap %1.15E abs_Lap %1.15E sum_Azdot %1.15E abs_Azdot %1.15E \n",
 		runs, sum_plus, sum_minus, sum_Lap, abs_Lap, sum_Azdot, abs_Azdot);
 		*/
-	 
 	/*
 	fp_2 = fopen("LapAzetc1.txt", "w");
 	this->SendToHost(cuSyst_host);	
@@ -3569,8 +3583,37 @@ void cuSyst::PerformCUDA_Advance(const cuSyst * pX_target,
 	printf("file saved.\n");
 	*/
 	
-	getch();
+	// Output to file:
 
+//	this->SendToHost(cuSyst_host);
+//	long const VERTEX1 = CHOSEN1 - BEGINNING_OF_CENTRAL;
+//	long const VERTEX2 = CHOSEN2 - BEGINNING_OF_CENTRAL;
+//	cudaMemcpy(p_temphost5, p_temp5, NMINOR * sizeof(f64), cudaMemcpyDeviceToHost);
+//	cudaMemcpy(p_temphost6, p_temp6, NMINOR * sizeof(f64), cudaMemcpyDeviceToHost);
+	
+/*	fprintf(fp_trajectory, "runs %d vez %1.14E %1.14E %1.14E %1.14E "
+		"Te  %1.14E %1.14E %1.14E %1.14E "
+		"n   %1.14E %1.14E %1.14E %1.14E "
+		"nn  %1.14E %1.14E %1.14E %1.14E "
+		"dTe_cond  %1.14E %1.14E %1.14E %1.14E "
+		"dTe_ei  %1.14E %1.14E %1.14E %1.14E "
+		"dTe_en  %1.14E %1.14E %1.14E %1.14E "
+		"dTe_ionise  %1.14E %1.14E %1.14E %1.14E "
+		"dvez_en+ei  %1.14E %1.14E %1.14E %1.14E "
+		"dvez_E  %1.14E %1.14E %1.14E %1.14E \n",
+		runs,
+		cuSyst_host.p_vie[CHOSEN1].vez, cuSyst_host.p_vie[CHOSEN2].vez, cuSyst_host.p_vie[CHOSEN2 + 1].vez, cuSyst_host.p_vie[CHOSEN2 + 2].vez,
+		cuSyst_host.p_T_minor[CHOSEN1].Te, cuSyst_host.p_T_minor[CHOSEN2].Te, cuSyst_host.p_T_minor[CHOSEN2 + 1].Te, cuSyst_host.p_T_minor[CHOSEN2 + 2].Te,
+		cuSyst_host.p_n_minor[CHOSEN1].n, cuSyst_host.p_n_minor[CHOSEN2].n, cuSyst_host.p_n_minor[CHOSEN2 + 1].n, cuSyst_host.p_n_minor[CHOSEN2 + 2].n,
+		cuSyst_host.p_n_minor[CHOSEN1].n_n, cuSyst_host.p_n_minor[CHOSEN2].n_n, cuSyst_host.p_n_minor[CHOSEN2 + 1].n_n, cuSyst_host.p_n_minor[CHOSEN2 + 2].n_n,
+		p_temphost1[VERTEX1], p_temphost1[VERTEX2], p_temphost1[VERTEX2 + 1], p_temphost1[VERTEX2 + 2],
+		p_temphost2[VERTEX1], p_temphost2[VERTEX2], p_temphost2[VERTEX2 + 1], p_temphost2[VERTEX2 + 2],
+		p_temphost3[VERTEX1], p_temphost3[VERTEX2], p_temphost3[VERTEX2 + 1], p_temphost3[VERTEX2 + 2],
+		p_temphost4[VERTEX1], p_temphost4[VERTEX2], p_temphost4[VERTEX2 + 1], p_temphost4[VERTEX2 + 2],
+		p_temphost5[CHOSEN1], p_temphost5[CHOSEN2], p_temphost5[CHOSEN2 + 1], p_temphost5[CHOSEN2 + 2],
+		p_temphost6[CHOSEN1], p_temphost6[CHOSEN2], p_temphost6[CHOSEN2 + 1], p_temphost6[CHOSEN2 + 2]
+	);*/
+	
 	// =====================
 
 	kernelAdvanceAzEuler << <numTilesMinor, threadsPerTileMinor >> >
@@ -3818,7 +3861,17 @@ void cuSyst::PerformCUDA_Advance(const cuSyst * pX_target,
 	printf("run %d ", runs);
 	cudaEventRecord(middle,0);
 	cudaEventSynchronize(middle);
-	
+
+	kernelGetLapCoeffs << <numTriTiles, threadsPerTileMinor >> >(
+		pX_half->p_info,
+		pX_half->p_izTri_vert,
+		pX_half->p_izNeigh_TriMinor,
+		pX_half->p_szPBCtri_vert,
+		pX_half->p_szPBC_triminor,
+		p_LapCoeffself
+		);
+	Call(cudaThreadSynchronize(), "cudaTS GetLapCoeffs");
+
 	if (runs % 10 == 0)
 	{
 		printf("backward!\n");
@@ -3830,16 +3883,6 @@ void cuSyst::PerformCUDA_Advance(const cuSyst * pX_target,
 		);
 		Call(cudaThreadSynchronize(), "cudaTS PullAz");
 
-		kernelGetLapCoeffs << <numTriTiles, threadsPerTileMinor >> >(
-			pX_half->p_info,
-			pX_half->p_izTri_vert,
-			pX_half->p_izNeigh_TriMinor,
-			pX_half->p_szPBCtri_vert,
-			pX_half->p_szPBC_triminor,
-			p_LapCoeffself
-			);
-		Call(cudaThreadSynchronize(), "cudaTS GetLapCoeffs");
-		
 	//	f64 Azdotarrays[22][40], Azarrays[22][40];
 	//	f64 Azarraytemp[40];
 	//	AAdot AAdotarray[40];
@@ -4272,21 +4315,15 @@ void cuSyst::PerformCUDA_Advance(const cuSyst * pX_target,
 
 			// But if we use it to set Iz
 
-
-
 			// We do get an imbalance of + & -.
-
 			// That would be because the Ez we picked does not deliver Iz_presc
 			// according to n_used at the final time.
-
 			// What to do about that?
 			// Simple answer is we used n_half to apply Jz_k and so should be using it
 			// to apply Jz_k+1 to Azdot, as we are doing. Therefore we just want
 			// the negative (+) contrib to Azdot to match what + we actually get.
 			// Hard to believe that this would ever have a big impact but you never know.
 			
-
-
 			// Might as well recalculate Ez_strength again :
 			// Iz already set for t+SUBSTEP.
 			cudaMemcpy(p_Iz0_summands_host, p_Iz0_summands, sizeof(f64)*numTilesMinor, cudaMemcpyDeviceToHost);
@@ -4334,9 +4371,10 @@ void cuSyst::PerformCUDA_Advance(const cuSyst * pX_target,
 
 				pX_target->p_AAdot,
 				pX_target->p_vie,
-				pX_target->p_v_n
+				pX_target->p_v_n				
 				);
 			Call(cudaThreadSynchronize(), "cudaTS kernelUpdate_v ");
+
 
 			// DEBUG:
 			/*kernelEstimateCurrent << <numTilesMinor, threadsPerTileMinor >> > (
@@ -4410,9 +4448,7 @@ void cuSyst::PerformCUDA_Advance(const cuSyst * pX_target,
 				iSubstep, sum_plus, sum_minus, sum_Lap, abs_Lap, sum_Azdot, abs_Azdot);
 		*/
 			/////////////////////////////////////////////////////////////////////////////////////
-
-			getch();
-
+			
 			evaltime += 0.5*SUBSTEP;
 			// Why we do not pass it back and forth? Can't remember.
 		}; // next substep
@@ -4582,6 +4618,7 @@ void cuSyst::PerformCUDA_Advance(const cuSyst * pX_target,
 				);
 			Call(cudaThreadSynchronize(), "cudaTS kernelUpdate_v ");
 			
+
 			kernelUpdateAz << <numTilesMinor, threadsPerTileMinor >> >(
 				(iSubstep == SUBCYCLES-1)?0.5*SUBSTEP:SUBSTEP,
 				pX_target->p_AAdot,

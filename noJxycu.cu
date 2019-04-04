@@ -1743,9 +1743,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 		//	} while ((o != 'y') && (o != 'n'));
 		//	printf("%c\n\n", o);
 		//	if (o == 'y') 
-			cuSyst_host.PopulateTriMesh(pX); 
-
-
+			
 			// Auto-save system:
 			if (GlobalStepsCounter % DATA_SAVE_FREQUENCY == 0)
 			{
@@ -1759,7 +1757,11 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			GlobalStepsCounter++;
 
 			printf("Done steps: %d   ||   Remaining this run: %d\n\n", GlobalStepsCounter, steps_remaining);
-			
+
+			if ((GlobalStepsCounter % GRAPHICS_FREQUENCY == 0) ||
+				(GlobalStepsCounter % REDELAUN_FREQUENCY == 0) ||
+				(steps_remaining == 0))
+				cuSyst_host.PopulateTriMesh(pX);
 		}
 		else {
 			pX->Advance(pXnew, &X3);
@@ -1776,7 +1778,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			printf("saved as %s\n", buf1000);
 		};
 		printf("%s\n", report_time(1));
-
 		
 		if (GlobalStepsCounter % GRAPHICS_FREQUENCY == 0)
 		{
@@ -1785,13 +1786,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			{
 				RefreshGraphs(*pX, GraphFlags[i]); // sends data to graphs AND renders them
 															   //	::PlanViewGraphs1(*pX);
-
-															   //RefreshGraphs(*pX,GraphFlags[i]); // sends data to graphs AND renders them
 				Direct3D.pd3dDevice->Present(NULL, NULL, NULL, NULL);
 
 				if (DXChk(p_backbuffer_surface->GetDC(&surfdc), 100))
 					MessageBox(NULL, "GetDC failed", "oh dear", MB_OK);
-
 				//SelectObject(surfdc,surfbit);
 				BitBlt(dibdc, 0, 0, VIDEO_WIDTH, VIDEO_HEIGHT, surfdc, 0, 0, SRCCOPY);
 					p_backbuffer_surface->ReleaseDC(surfdc);
@@ -1800,7 +1798,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			// sprintf(szFile, "System_%d", GlobalStepsCounter);
 			// pX->SaveText(szFile);
 		};
-
 		
 		if (GlobalStepsCounter % (AVI_FILE_PINCHOFF_FREQUENCY * GRAPHICS_FREQUENCY) == 0)
 		{
@@ -1817,6 +1814,27 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 		RefreshGraphs(*pX,GlobalSpeciesToGraph); // sends data to graphs AND renders them
 		Direct3D.pd3dDevice->Present( NULL, NULL, NULL, NULL );
 		
+		if (GlobalStepsCounter % REDELAUN_FREQUENCY == 0)
+		{
+			pX->RefreshVertexNeighboursOfVerticesOrdered();
+			pX->Redelaunerize(true, true);
+			pX->RefreshVertexNeighboursOfVerticesOrdered();
+			// We must also ensure that n,T,v,A,Adot values are updated to the best of our ability.
+
+			// Send back to GPU:
+			pX->EnsureAnticlockwiseTriangleCornerSequences_SetupTriMinorNeighboursLists();
+			pX->Average_n_T_to_tris_and_calc_centroids_and_minorpos(); // Obviates some of our flip calcs to replace tri n,T 
+			// not sure if needed .. just for calc centroid .. they do soon get wiped out anyway.
+
+			cuSyst_host.PopulateFromTriMesh(pX); 
+			// check what this does: 
+			// 1. Does it update lists? --- some had to be updated on CPU first.
+			// 2. How corrupted is data? 
+			cuSyst_host.SendToDevice(cuSyst1); // check this is right
+
+			printf("sent back re-delaunerized system\n");
+		};
+		
 		if (steps_remaining > 0) {
 			SetTimer(hWnd, 1, DELAY_MILLISECS, NULL);
 			printf("Waiting %d milliseconds to allow user input.\n", DELAY_MILLISECS);
@@ -1826,11 +1844,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			printf("Waiting %d milliseconds to allow user input.\n", DELAY_MILLISECS);
 		};
 
-
-	//	pX->RefreshVertexNeighboursOfVerticesOrdered();
-	//	pX->Redelaunerize(true);
-	//	pX->RefreshVertexNeighboursOfVerticesOrdered();
-		
 		/*
 		if (wParam == 1) {
 			sprintf(buf1000, "autosaveGPU%d.dat", GlobalStepsCounter);

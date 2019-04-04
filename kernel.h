@@ -488,3 +488,92 @@ __global__ void kernelReset_szPBCtri_vert(
 	char * __restrict__ p_szPBCneigh_vert,
 	char * __restrict__ p_triPBClistaffected
 );
+
+__global__ void kernelPopulateOhmsLaw_debug(
+	f64 h_use,
+
+	structural * __restrict__ p_info_minor,
+	f64_vec3 * __restrict__ p_MAR_neut,
+	f64_vec3 * __restrict__ p_MAR_ion,
+	f64_vec3 * __restrict__ p_MAR_elec,
+	f64_vec3 * __restrict__ p_B,
+	f64 * __restrict__ p_LapAz,
+	f64_vec2 * __restrict__ p_GradAz,
+	f64_vec2 * __restrict__ p_GradTe,
+	nvals * __restrict__ p_n_minor_use,
+	T3 * __restrict__ p_T_minor_use,
+
+	v4 * __restrict__ p_vie_src,
+	f64_vec3 * __restrict__ p_v_n_src,
+	AAdot * __restrict__ p_AAdot_src,
+	f64 * __restrict__ p_AreaMinor,
+
+	f64 * __restrict__ ROCAzdotduetoAdvection,
+	// Now going to need to go through and see this set 0 or sensible every time.
+
+	f64_vec3 * __restrict__ p_vn0_dest,
+	v4 * __restrict__ p_v0_dest,
+	OhmsCoeffs * __restrict__ p_OhmsCoeffs_dest,
+	AAdot * __restrict__ p_AAdot_intermediate,
+
+	f64 * __restrict__ p_Iz0,
+	f64 * __restrict__ p_sigma_zz,
+
+	f64 * __restrict__ p_denom_i,
+	f64 * __restrict__ p_denom_e,
+	f64 * __restrict__ p_effect_of_viz0_on_vez0,
+	f64 * __restrict__ p_beta_ie_z,
+
+	bool const bSwitchSave,
+	bool const bUse_dest_n_for_Iz,
+	nvals * __restrict__ p_n_dest_minor,
+	f64 * __restrict__ p_dvez_friction,
+	f64 * __restrict__ p_dvez_Ez
+);
+
+__global__ void kernelAccumulateDiffusiveHeatRateAndCalcIonisation_debug(
+	f64 const h_use,
+	structural * __restrict__ p_info_major,
+	long * __restrict__ pIndexNeigh,
+	char * __restrict__ pPBCNeigh,
+
+	nvals * __restrict__ p_n_major,
+	T3 * __restrict__ p_T_major,
+	f64_vec3 * __restrict__ p_B_major,
+	species3 * __restrict__ p_nu_major,
+
+	NTrates * __restrict__ NTadditionrates,
+	f64 * __restrict__ p_AreaMajor,
+
+	f64 * __restrict__ p_dTedtconduction,
+	f64 * __restrict__ p_dTedtionisation
+);
+
+
+__global__ void kernelAdvanceDensityAndTemperature_debug(
+	f64 h_use,
+	structural * __restrict__ p_info_major,
+	nvals * p_n_major,
+	T3 * p_T_major,
+	NTrates * __restrict__ NTadditionrates,
+
+	// Think we see the mistake here: are these to be major or minor values?
+	// Major, right? Check code:
+
+	nvals * p_n_use,
+	T3 * p_T_use,
+	v4 * __restrict__ p_vie_use,
+	f64_vec3 * __restrict__ p_v_n_use,
+
+	f64 * __restrict__ p_div_v_neut,
+	f64 * __restrict__ p_div_v,
+	f64 * __restrict__ p_Integrated_div_v_overall,
+	f64 * __restrict__ p_AreaMajor, // hmm
+
+	nvals * __restrict__ p_n_major_dest,
+	T3 * __restrict__ p_T_major_dest,
+
+	f64 * __restrict__ p_ei,
+	f64 * __restrict__ p_en
+);
+
