@@ -10,12 +10,13 @@ extern long GlobalStepsCounter;
 __host__ bool Call(cudaError_t cudaStatus, char str[])
 {
 	if (cudaStatus == cudaSuccess) {
-		printf("Success: %s \n",str);
+		if (strncmp(str,"cudaMemcpy",8) != 0)
+			printf("\tSuccess: %s ||| \n",str);
 		return false;
 	} else {
 		printf("Error: %s\nReturned %d : %s\n",
 			str, cudaStatus, cudaGetErrorString(cudaStatus));
-		printf("Anykey.\n");	getch();
+		printf("Anykey.\n");	getch(); getch();
 	};
 	return true;
 }
@@ -264,7 +265,6 @@ void cuSyst::Load(const char filename[])
 	fread(p_info, sizeof(structural), NMINOR, fp);
 
 	fread(p_izTri_vert, sizeof(long), Nverts*MAXNEIGH_d, fp);
-
 	fread(p_izNeigh_vert, sizeof(long), Nverts*MAXNEIGH_d, fp);
 	fread(p_szPBCtri_vert, sizeof(char), Nverts*MAXNEIGH_d, fp);
 	fread(p_szPBCneigh_vert, sizeof(char), Nverts*MAXNEIGH_d, fp);
@@ -280,9 +280,7 @@ void cuSyst::Load(const char filename[])
 	fread(p_n_major, sizeof(nvals), Nverts, fp);
 	fread(p_n_minor, sizeof(nvals), NMINOR, fp);
 	fread(p_T_minor, sizeof(T3), NMINOR, fp);
-
 	fread(p_AAdot, sizeof(AAdot), NMINOR, fp);
-
 	fread(p_v_n, sizeof(f64_vec3), NMINOR, fp);
 	fread(p_vie, sizeof(v4), NMINOR, fp);
 	fread(p_B, sizeof(f64_vec3), NMINOR, fp);
@@ -390,6 +388,92 @@ void cuSyst::SendToDevice(cuSyst & Xdevice)
 		printf("SendToDevice error"); getch();
 	}
 	Call(cudaThreadSynchronize(), "cudaThreadSynchronize cuSyst::SendToHost");
+}
+
+void cuSyst::ReportDifferencesHost(cuSyst &X2)
+{
+	long iMinor, iVertex, iTri;
+
+	printf("\nDIFFERENCES:\n");
+	for (iMinor = 0; iMinor < Nminor; iMinor++)
+	{
+		if (X2.p_info[iMinor].flag != p_info[iMinor].flag) printf("%d flag %d %d \n",iMinor, X2.p_info[iMinor].flag, p_info[iMinor].flag);
+		if (X2.p_info[iMinor].pos.x != p_info[iMinor].pos.x) printf("%d pos %1.9E %1.9E \n", iMinor, X2.p_info[iMinor].pos.x, p_info[iMinor].pos.x);
+	}
+	for (iVertex = 0; iVertex < Nverts; iVertex++)
+	{
+		if (memcmp(X2.p_izTri_vert + iVertex*MAXNEIGH_d, p_izTri_vert + iVertex*MAXNEIGH_d, MAXNEIGH_d * sizeof(long)) != 0) {
+			printf("vertex %d izTri_vert \n", iVertex);
+		}
+		if (memcmp(X2.p_izNeigh_vert + iVertex*MAXNEIGH_d, p_izNeigh_vert + iVertex*MAXNEIGH_d, MAXNEIGH_d * sizeof(long)) != 0) {
+			printf("vertex %d izNeigh_vert \n", iVertex);
+		}
+		if (memcmp(X2.p_szPBCtri_vert + iVertex*MAXNEIGH_d, p_szPBCtri_vert + iVertex*MAXNEIGH_d, MAXNEIGH_d * sizeof(char)) != 0) {
+			printf("vertex %d szPBCtri_vert \n", iVertex);
+		}
+		if (memcmp(X2.p_szPBCneigh_vert + iVertex*MAXNEIGH_d, p_szPBCneigh_vert + iVertex*MAXNEIGH_d, MAXNEIGH_d * sizeof(char)) != 0) {
+			printf("vertex %d szPBCneigh_vert \n", iVertex);
+		}
+	};
+
+	for (iTri = 0; iTri < Ntris; iTri++)
+	{
+		if (memcmp(X2.p_izNeigh_TriMinor + iTri*6, p_izNeigh_TriMinor + iTri*6, 6 * sizeof(long)) != 0) {
+			printf("tri %d izNeigh_TriMinor \n", iTri);
+		}
+		if (memcmp(X2.p_szPBC_triminor + iTri * 6, p_szPBC_triminor + iTri * 6, 6 * sizeof(char)) != 0) {
+			printf("tri %d szPBC_triminor \n", iTri);
+		}
+		if (memcmp(X2.p_tri_corner_index + iTri, p_tri_corner_index + iTri, sizeof(LONG3)) != 0) {
+			printf("tri %d p_tri_corner_index %d %d %d | %d %d %d \n", iTri,
+				(X2.p_tri_corner_index + iTri)->i1, (X2.p_tri_corner_index + iTri)->i2, (X2.p_tri_corner_index + iTri)->i3,
+				(p_tri_corner_index + iTri)->i1, (p_tri_corner_index + iTri)->i2, (p_tri_corner_index + iTri)->i3);
+		}
+		if (memcmp(X2.p_tri_periodic_corner_flags + iTri, p_tri_periodic_corner_flags + iTri, sizeof(CHAR4)) != 0) {
+			printf("tri %d p_tri_periodic_corner_flags \n", iTri);
+		}
+		if (memcmp(X2.p_tri_neigh_index + iTri, p_tri_neigh_index + iTri, sizeof(LONG3)) != 0) {
+			printf("tri %d p_tri_neigh_index \n", iTri);
+		}
+		if (memcmp(X2.p_tri_periodic_neigh_flags + iTri, p_tri_periodic_neigh_flags + iTri, sizeof(CHAR4)) != 0) {
+			printf("tri %d p_tri_periodic_neigh_flags \n", iTri);
+		}
+		if (memcmp(X2.p_who_am_I_to_corner + iTri, p_who_am_I_to_corner + iTri, sizeof(LONG3)) != 0) {
+			printf("tri %d p_who_am_I_to_corner \n", iTri);
+		}
+	};
+	for (iVertex = 0; iVertex < Nverts; iVertex++)
+	{
+		if (memcmp(X2.p_n_major + iVertex, p_n_major + iVertex, sizeof(nvals)) != 0) {
+			printf("n_major %d %1.10E %1.10E \n", iVertex, (X2.p_n_major + iVertex)->n, (p_n_major + iVertex)->n);
+		}
+	};
+	for (iMinor = 0; iMinor < Nminor; iMinor++)
+	{
+		if (memcmp(X2.p_n_minor + iMinor, p_n_minor + iMinor, sizeof(nvals)) != 0) {
+			printf("n_minor %d %1.10E %1.10E \n", iMinor, (X2.p_n_minor + iMinor)->n, (p_n_minor + iMinor)->n);
+		} // hmm
+		if (memcmp(X2.p_T_minor + iMinor, p_T_minor + iMinor, sizeof(T3)) != 0) {
+			printf("T_minor %d %1.10E %1.10E \n", iMinor, (X2.p_T_minor + iMinor)->Te, (p_T_minor + iMinor)->Te);
+		} 
+		if (memcmp(X2.p_AAdot + iMinor, p_AAdot + iMinor, sizeof(AAdot)) != 0) {
+			printf("AAdot %d %1.10E %1.10E \n", iMinor, (X2.p_AAdot + iMinor)->Azdot, (p_AAdot + iMinor)->Azdot);
+		}
+		if (memcmp(X2.p_v_n + iMinor, p_v_n + iMinor, sizeof(f64_vec3)) != 0) {
+			printf("v_n %d %1.10E %1.10E \n", iMinor, (X2.p_v_n + iMinor)->x, (p_v_n + iMinor)->x);
+		}
+		if (memcmp(X2.p_vie + iMinor, p_vie + iMinor, sizeof(v4)) != 0) {
+			printf("vie %d %1.10E %1.10E \n", iMinor, (X2.p_vie + iMinor)->vez, (p_vie + iMinor)->vez);
+		}
+		if (memcmp(X2.p_B + iMinor, p_B + iMinor, sizeof(f64_vec3)) != 0) {
+			printf("B %d %1.10E %1.10E \n", iMinor, (X2.p_B + iMinor)->x, (p_B + iMinor)->x);
+		}
+		if (memcmp(X2.p_AreaMinor + iMinor, p_AreaMinor + iMinor, sizeof(f64)) != 0) {
+			printf("AreaMinor %d %1.10E %1.10E \n", iMinor, *(X2.p_AreaMinor + iMinor), *(p_AreaMinor + iMinor));
+		}
+	}
+	printf("Difference detection done! \n\n");
+
 }
 
 void cuSyst::Output(const char * filename)
@@ -599,7 +683,11 @@ void cuSyst::CopyStructuralDetailsFrom(cuSyst & src) // this assume both live on
 void cuSyst::PopulateTriMesh(TriMesh * pX)
 {
 	// AsSUMES THIS cuSyst has been allocated on the host.
-	
+
+	long izTri[MAXNEIGH], izNeigh[MAXNEIGH];
+	char szPBCtri[MAXNEIGH], szPBCneigh[MAXNEIGH];
+	short tri_len, neigh_len;
+
 	plasma_data data;
 	long iMinor;
 	for (iMinor = 0; iMinor < NMINOR; iMinor++)
@@ -627,11 +715,7 @@ void cuSyst::PopulateTriMesh(TriMesh * pX)
 		pX->AreaMinorArray[iMinor] = p_AreaMinor[iMinor];
 	};
 
-	// Plan.
-	// As long as we use TriMesh for graphs we have to cross information back to TriMesh
-	// including periodic info.
-
-	// So that is stop 1. Or we go the whole hog and change graphs to cuSyst.
+	// UNTIL we go the whole hog and change graphs to cuSyst.
 
 	structural info;
 	long iTri, iVertex;
@@ -641,8 +725,31 @@ void cuSyst::PopulateTriMesh(TriMesh * pX)
 	{
 		info = p_info[iVertex + BEGINNING_OF_CENTRAL];
 		pVertex->pos = info.pos;
+
+		//tri_len = pVertex->GetTriIndexArray(izTri);
+		//info.neigh_len = tri_len;
+		//memset(izTri + tri_len, 0, sizeof(long)*(MAXNEIGH - tri_len));
+		//memcpy(p_izTri_vert + iVertex*MAXNEIGH, izTri, sizeof(long)*MAXNEIGH);
+
+		memcpy(izTri, p_izTri_vert + iVertex*MAXNEIGH, sizeof(long)*MAXNEIGH);
+		pVertex->SetTriIndexArray(izTri, info.neigh_len); // FOR SOME REASON WE PUT == tri_len when we x-ferred????
+		//neigh_len = pVertex->GetNeighIndexArray(izNeigh); 
+		//memset(izNeigh + neigh_len, 0, sizeof(long)*(MAXNEIGH - neigh_len));
+		//memcpy(p_izNeigh_vert + iVertex*MAXNEIGH, izNeigh, sizeof(long)*MAXNEIGH);
+
+		memcpy(izNeigh, p_izNeigh_vert + iVertex*MAXNEIGH, sizeof(long)*MAXNEIGH);
+		pVertex->SetNeighIndexArray(izNeigh, info.neigh_len + (((info.flag == INNERMOST) || (info.flag == OUTERMOST))? -1:0));
+		// For INNERMOST, tri_len != neigh_len. 5 tris inc frills, 4 neighs.
+		
+		// PB lists:
+		//memcpy(szPBCtri, pX->MajorTriPBC[iVertex], sizeof(char)*tri_len);
+		memcpy(szPBCtri, p_szPBCtri_vert + iVertex*MAXNEIGH, sizeof(char)*MAXNEIGH);
+		memcpy(pX->MajorTriPBC[iVertex], szPBCtri, sizeof(char)*MAXNEIGH);
+		
 		++pVertex;
 	}
+	
+	printf(".....");
 
 	// Triangle structural?
 	Triangle * pTri = pX->T;
@@ -668,14 +775,15 @@ void cuSyst::PopulateTriMesh(TriMesh * pX)
 		pTri->periodic = ((tri_periodic_corner_flags.per0 == ROTATE_ME_ANTICLOCKWISE) ? 1 : 0)
 			+ ((tri_periodic_corner_flags.per1 == ROTATE_ME_ANTICLOCKWISE) ? 1 : 0)
 			+ ((tri_periodic_corner_flags.per2 == ROTATE_ME_ANTICLOCKWISE) ? 1 : 0);
-		
+		if (pTri->periodic > 0) pTri->periodic = 3 - pTri->periodic;
+		// CPU periodic is how many need to be clockwise rotated.
+
 		info = p_info[iTri];
 		pTri->cent = info.pos;
 		pTri->u8domain_flag = info.flag;
 		++pTri;
 	}
-	// Neighbour lists can't be changed on GPU yet.
-
+	
 }
                             
 #endif

@@ -44,7 +44,7 @@ cudaError_t addWithCuda(int *c, const int *a, const int *b, unsigned int size);
 // =================
 //extern f64_vec3 * p_B_host;
 extern f64 EzStrength_;
-extern cuSyst cuSyst1;
+extern cuSyst cuSyst1, cuSyst2, cuSyst3;
 extern D3D Direct3D;
 
 float xzscale;
@@ -1381,6 +1381,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 	long iLow, iMinor;
 	Triangle * pTri;
 	Vertex * pVertex;
+	
+	long izTri[128];
 
 	static bool bInvoked_cuSyst = false;
 	static long GSCCPU = 0;
@@ -1558,9 +1560,14 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 				if (bInvoked_cuSyst == false) {
 					bInvoked_cuSyst = true;
 
+					pX->EnsureAnticlockwiseTriangleCornerSequences_SetupTriMinorNeighboursLists();
+					pX->Average_n_T_to_tris_and_calc_centroids_and_minorpos();
+
 					cuSyst_host.InvokeHost();
 					cuSyst_host.PopulateFromTriMesh(pX);
-
+					cuSyst_host2.InvokeHost();
+					cuSyst_host2.PopulateFromTriMesh(pX);
+					
 					PerformCUDA_Invoke_Populate(
 						&cuSyst_host,
 						NUMVERTICES,
@@ -1574,8 +1581,28 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			};
 			printf("Populate *pX\n");
 			cuSyst_host.PopulateTriMesh(pX);
+			printf("send to device\n");
 			cuSyst_host.SendToDevice(cuSyst1);
 			printf("done\n");
+
+			// Debug: redelaun on load:
+			pX->RefreshVertexNeighboursOfVerticesOrdered();
+			pX->Redelaunerize(true, true);
+			// pX->RefreshVertexNeighboursOfVerticesOrdered();
+			// pX->X[89450-BEGINNING_OF_CENTRAL].GetTriIndexArray(izTri);
+//			printf("89450 : %d %d %d %d %d %d \n",
+//				izTri[0], izTri[1], izTri[2], izTri[3], izTri[4], izTri[5]);
+//
+			pX->EnsureAnticlockwiseTriangleCornerSequences_SetupTriMinorNeighboursLists();			 
+			//	pX->Average_n_T_to_tris_and_calc_centroids_and_minorpos(); // Obviates some of our flip calcs to replace tri n,T 
+			// not sure if needed .. just for calc centroid .. they do soon get wiped out anyway.
+			cuSyst_host.PopulateFromTriMesh(pX);
+			cuSyst_host.SendToDevice(cuSyst1); // check this is right
+			cuSyst2.CopyStructuralDetailsFrom(cuSyst1);
+			cuSyst3.CopyStructuralDetailsFrom(cuSyst1);
+				// Let's assume these always carry through during GPU runs.
+				// It certainly does not work as it stands if you don't populate them all the same, put it that way!!
+			printf("sent back re-delaunerized system\n");
 
 			break;
 		case ID_FILE_SAVEBINARY:
@@ -1710,16 +1737,24 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 		{
 			if (bInvoked_cuSyst == false) {
 				bInvoked_cuSyst = true;
-				
+
 				pX->EnsureAnticlockwiseTriangleCornerSequences_SetupTriMinorNeighboursLists();
 				pX->Average_n_T_to_tris_and_calc_centroids_and_minorpos();
-				
+//
+//				printf("tri 340: %d %d %d \n%1.14E %1.14E \n%1.14E %1.14E \n%1.14E %1.14E\n",
+//					pX->T[340].cornerptr[0] - pX->X, pX->T[340].cornerptr[1] - pX->X, pX->T[340].cornerptr[2] - pX->X,
+//					pX->T[340].cornerptr[0]->pos.x, pX->T[340].cornerptr[0]->pos.y,
+//					pX->T[340].cornerptr[1]->pos.x, pX->T[340].cornerptr[1]->pos.y,
+//					pX->T[340].cornerptr[2]->pos.x, pX->T[340].cornerptr[2]->pos.y);
+//				printf("tri 340 periodic %d \n", pX->T[340].periodic);
+//				getch();
+
 				cuSyst_host.InvokeHost();
 				cuSyst_host.PopulateFromTriMesh(pX);
 				cuSyst_host2.InvokeHost();
 				cuSyst_host2.PopulateFromTriMesh(pX);
-				
-		//		cuSyst_host.Output("n0.txt");
+
+				//		cuSyst_host.Output("n0.txt");
 
 				PerformCUDA_Invoke_Populate(
 					&cuSyst_host,
@@ -1731,20 +1766,20 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			}
 
 			// Run 1 step:
-			printf("evaltime %1.8E\n", evaltime);
-			
-		//	PerformCUDA_RunStepsAndReturnSystem_Debug(&cuSyst_host, &cuSyst_host2, pX, &X3, pXnew);
-			
+			printf("evaltime %1.9E\n", evaltime);
+
+			//	PerformCUDA_RunStepsAndReturnSystem_Debug(&cuSyst_host, &cuSyst_host2, pX, &X3, pXnew);
+
 			PerformCUDA_RunStepsAndReturnSystem(&cuSyst_host);
 
-		//	printf("Stamp GPU over CPU y/n:");
-		//	do {
-		//		o = getch();
-		//	} while ((o != 'y') && (o != 'n'));
-		//	printf("%c\n\n", o);
-		//	if (o == 'y') 
-			
-			// Auto-save system:
+			//	printf("Stamp GPU over CPU y/n:");
+			//	do {
+			//		o = getch();
+			//	} while ((o != 'y') && (o != 'n'));
+			//	printf("%c\n\n", o);
+			//	if (o == 'y') 
+
+				// Auto-save system:
 			if (GlobalStepsCounter % DATA_SAVE_FREQUENCY == 0)
 			{
 				sprintf(szFile, "auto%d.dat", GlobalStepsCounter);
@@ -1761,7 +1796,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			if ((GlobalStepsCounter % GRAPHICS_FREQUENCY == 0) ||
 				(GlobalStepsCounter % REDELAUN_FREQUENCY == 0) ||
 				(steps_remaining == 0))
+			{
 				cuSyst_host.PopulateTriMesh(pX);
+				printf("pulled back to host\n");
+			}
 		}
 		else {
 			pX->Advance(pXnew, &X3);
@@ -1810,29 +1848,38 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 				SetAviVideoCompression(hAvi[i], dib, &opts, false, hWnd);
 			};
 		};
-		
+		 
 		RefreshGraphs(*pX,GlobalSpeciesToGraph); // sends data to graphs AND renders them
 		Direct3D.pd3dDevice->Present( NULL, NULL, NULL, NULL );
-		
+		 
 		if (GlobalStepsCounter % REDELAUN_FREQUENCY == 0)
 		{
 			pX->RefreshVertexNeighboursOfVerticesOrdered();
 			pX->Redelaunerize(true, true);
-			pX->RefreshVertexNeighboursOfVerticesOrdered();
-			// We must also ensure that n,T,v,A,Adot values are updated to the best of our ability.
-
 			// Send back to GPU:
 			pX->EnsureAnticlockwiseTriangleCornerSequences_SetupTriMinorNeighboursLists();
-			pX->Average_n_T_to_tris_and_calc_centroids_and_minorpos(); // Obviates some of our flip calcs to replace tri n,T 
+//
+//			printf("tri 340: %d %d %d \n%1.14E %1.14E \n%1.14E %1.14E \n%1.14E %1.14E\n",
+//				pX->T[340].cornerptr[0] - pX->X, pX->T[340].cornerptr[1] - pX->X, pX->T[340].cornerptr[2] - pX->X,
+//				pX->T[340].cornerptr[0]->pos.x, pX->T[340].cornerptr[0]->pos.y,
+//				pX->T[340].cornerptr[1]->pos.x, pX->T[340].cornerptr[1]->pos.y,
+//				pX->T[340].cornerptr[2]->pos.x, pX->T[340].cornerptr[2]->pos.y);
+//			printf("tri 340 periodic %d \n", pX->T[340].periodic);
+			
+			//	pX->Average_n_T_to_tris_and_calc_centroids_and_minorpos(); // Obviates some of our flip calcs to replace tri n,T 
 			// not sure if needed .. just for calc centroid .. they do soon get wiped out anyway.
-
-			cuSyst_host.PopulateFromTriMesh(pX); 
-			// check what this does: 
-			// 1. Does it update lists? --- some had to be updated on CPU first.
-			// 2. How corrupted is data? 
-			cuSyst_host.SendToDevice(cuSyst1); // check this is right
+			
+			cuSyst_host.PopulateFromTriMesh(pX);// 1. Does it update lists? --- some had to be updated on CPU first.
+			//cuSyst1.SendToHost(cuSyst_host2);
+			//cuSyst_host.ReportDifferencesHost(cuSyst_host2);
+			cuSyst_host.SendToDevice(cuSyst1); 
+			cuSyst2.CopyStructuralDetailsFrom(cuSyst1);
+			cuSyst3.CopyStructuralDetailsFrom(cuSyst1);
+			// Let's assume these always carry through during GPU runs.
+			// It certainly does not work as it stands if you don't populate them all the same, put it that way!!
 
 			printf("sent back re-delaunerized system\n");
+			
 		};
 		
 		if (steps_remaining > 0) {

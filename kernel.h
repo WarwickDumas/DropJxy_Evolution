@@ -215,6 +215,21 @@ __global__ void kernelPopulateOhmsLaw(
 	nvals * __restrict__ p_n_dest_minor);
 
 
+__global__ void kernelCalculateVelocityAndAzdot_debug(
+	f64 h_use,
+	structural * p_info_minor,
+	f64_vec3 * __restrict__ p_vn0,
+	v4 * __restrict__ p_v0,
+	OhmsCoeffs * __restrict__ p_OhmsCoeffs,
+	AAdot * __restrict__ p_AAzdot_intermediate,
+	nvals * __restrict__ p_n_minor,
+	f64 * __restrict__ p_AreaMinor,
+
+	AAdot * __restrict__ p_AAzdot_out,
+	v4 * __restrict__ p_vie_out,
+	f64_vec3 * __restrict__ p_vn_out,
+	bool * __restrict__ p_alertflag);
+
 __global__ void kernelCalculateVelocityAndAzdot(
 	f64 h_use,
 	structural * p_info_minor,
@@ -329,6 +344,17 @@ __global__ void kernelGetLapCoeffs(
 	char * __restrict__ p_szPBCtri_vertex,
 	char * __restrict__ p_szPBCtriminor,
 	f64 * __restrict__ p_LapCoeffSelf);
+
+__global__ void kernelGetLapCoeffs_and_min(
+	structural * __restrict__ p_info,
+	long * __restrict__ p_izTri,
+	long * __restrict__ p_izNeighMinor,
+	char * __restrict__ p_szPBCtri_vertex,
+	char * __restrict__ p_szPBCtriminor,
+	f64 * __restrict__ p_LapCoeffSelf,
+	f64 * __restrict__ p_min_array,
+	long * __restrict__ p_min_index);
+
 
 __global__ void kernelGetLap_minor(
 	structural * __restrict__ p_info,

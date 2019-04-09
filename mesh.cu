@@ -1868,30 +1868,32 @@ void TriMesh::Redelaunerize(bool exhaustion, bool bReplace)
 	long lowflip_wedge_to_tri = 0;
 
 	static real const COS60 = 0.5;
-
+	long iTri;
 	// whereas cos 90 = 0
 
 	printf("start of redelaunerize");
 	DebugTestWrongNumberTrisPerEdge();
-	
+	printf("got to here\n");
+
 	long totalflips = 0;
 	// if exhaustion == true, carry on to exhaustion; otherwise do 1 pass.
 	do
 	{
 		flips = 0;
 		pTri = T;
-		for (long iTri = 0; iTri < numTriangles; ++iTri)
+		for (iTri = 0; iTri < numTriangles; ++iTri)
 		{
-
 			// Do not play at outer edge of memory: (fluid replace is not designed to work there)
 
 			if ((pTri->cornerptr[0]->flags == OUTERMOST) ||
 				(pTri->cornerptr[1]->flags == OUTERMOST) ||
-				(pTri->cornerptr[2]->flags == OUTERMOST) ) 
+				(pTri->cornerptr[2]->flags == OUTERMOST) ||
+				(pTri->u8domain_flag == OUTER_FRILL) ||
+				(pTri->u8domain_flag == INNER_FRILL)
+				) 
 			{
 				// do nothing
 			} else {
-
 				// calculate circumcenter first....
 				pTri->CalculateCircumcenter(cc, &pdistsq);
 					
@@ -1903,7 +1905,9 @@ void TriMesh::Redelaunerize(bool exhaustion, bool bReplace)
 						// Edit 04/04/19: change the following line to && to make life easier.
 						// Flipping with tris within ins shouldn't be strictly necessary since we do not have
 						// points inside but close to the insulator. It does stop us from being Delaunay if we do not do this though.
-						&& ((pTri2->u8domain_flag != OUT_OF_DOMAIN) && (pTri->u8domain_flag != OUT_OF_DOMAIN)) 
+						&& (
+								((pTri2->u8domain_flag == DOMAIN_TRIANGLE) || (pTri2->u8domain_flag == CROSSING_INS)) && 
+								((pTri->u8domain_flag == DOMAIN_TRIANGLE) || (pTri->u8domain_flag == CROSSING_INS)) )
 						&& (pTri2->cornerptr[0]->flags != OUTERMOST)
 						&& (pTri2->cornerptr[1]->flags != OUTERMOST)
 						&& (pTri2->cornerptr[2]->flags != OUTERMOST)
@@ -1922,8 +1926,8 @@ void TriMesh::Redelaunerize(bool exhaustion, bool bReplace)
 						{
 							++flips;
 							++flip_tri_to_tri;
-
-							if (bReplace) {
+							if ((bReplace)) { //&& ((pTri->u8domain_flag == DOMAIN_TRIANGLE) || (pTri2->u8domain_flag == DOMAIN_TRIANGLE))) {
+								// need to do even if it's just AZ
 
 								plasma_data data_tri1, data_tri2, data_vert;
 								//data_unsh1, data_unsh2, data_sh1, data_sh2;
@@ -1945,7 +1949,8 @@ void TriMesh::Redelaunerize(bool exhaustion, bool bReplace)
 								plasma_data temp;
 								if (pVertex1->flags != DOMAIN_VERTEX) {
 									temp.n = 0.5*(data_tri1.n + data_tri2.n);
-									temp.Tn = 0.5*data_tri1.Tn + data_tri2.Tn);
+									temp.n_n = 0.5*(data_tri1.n_n + data_tri2.n_n);
+									temp.Tn = 0.5*(data_tri1.Tn + data_tri2.Tn);
 									temp.Ti = 0.5*( data_tri1.Ti + data_tri2.Ti);
 									temp.Te = 0.5*(data_tri1.Te + data_tri2.Te);
 									temp.Az = 0.5*(data_tri1.Az + data_tri2.Az);
@@ -1956,8 +1961,9 @@ void TriMesh::Redelaunerize(bool exhaustion, bool bReplace)
 									temp.viz = 0.5*( data_tri1.viz + data_tri2.viz);
 									temp.B = 0.5*(data_tri1.B + data_tri2.B);
 								} else {
-									memcpy(&data_vert, &(pData[pVertex1 - X]), sizeof(plasma_data));
+									memcpy(&data_vert, &(pData[pVertex1 - X + BEGINNING_OF_CENTRAL]), sizeof(plasma_data));
 									temp.n = THIRD*(data_vert.n + data_tri1.n + data_tri2.n);
+									temp.n_n = THIRD*(data_vert.n_n + data_tri1.n_n + data_tri2.n_n);
 									temp.Tn = THIRD*(data_vert.Tn + data_tri1.Tn + data_tri2.Tn);
 									temp.Ti = THIRD*(data_vert.Ti + data_tri1.Ti + data_tri2.Ti);
 									temp.Te = THIRD*(data_vert.Te + data_tri1.Te + data_tri2.Te);
@@ -1969,11 +1975,18 @@ void TriMesh::Redelaunerize(bool exhaustion, bool bReplace)
 									temp.viz = THIRD*(data_vert.viz + data_tri1.viz + data_tri2.viz);
 									temp.B = THIRD*(data_vert.B + data_tri1.B + data_tri2.B);
 								}								
+
+								temp.pos = THIRD*(
+									pData[(pTri->cornerptr[0] - X) + BEGINNING_OF_CENTRAL].pos +
+									pData[(pTri->cornerptr[1] - X) + BEGINNING_OF_CENTRAL].pos +
+									pData[(pTri->cornerptr[2] - X) + BEGINNING_OF_CENTRAL].pos);
+										
 								memcpy(&(pData[pTri - T]), &temp, sizeof(plasma_data)); // so must populate every member
 
 								if (pVertex2->flags != DOMAIN_VERTEX) {
 									temp.n = 0.5*(data_tri1.n + data_tri2.n);
-									temp.Tn = 0.5*data_tri1.Tn + data_tri2.Tn);
+									temp.n_n = 0.5*(data_tri1.n_n + data_tri2.n_n);
+									temp.Tn = 0.5*(data_tri1.Tn + data_tri2.Tn);
 									temp.Ti = 0.5*(data_tri1.Ti + data_tri2.Ti);
 									temp.Te = 0.5*(data_tri1.Te + data_tri2.Te);
 									temp.Az = 0.5*(data_tri1.Az + data_tri2.Az);
@@ -1985,8 +1998,9 @@ void TriMesh::Redelaunerize(bool exhaustion, bool bReplace)
 									temp.B = 0.5*(data_tri1.B + data_tri2.B);
 								}
 								else {
-									memcpy(&data_vert, &(pData[pVertex2 - X]), sizeof(plasma_data));
+									memcpy(&data_vert, &(pData[pVertex2 - X + BEGINNING_OF_CENTRAL]), sizeof(plasma_data));
 									temp.n = THIRD*(data_vert.n + data_tri1.n + data_tri2.n);
+									temp.n_n = THIRD*(data_vert.n_n + data_tri1.n_n + data_tri2.n_n);
 									temp.Tn = THIRD*(data_vert.Tn + data_tri1.Tn + data_tri2.Tn);
 									temp.Ti = THIRD*(data_vert.Ti + data_tri1.Ti + data_tri2.Ti);
 									temp.Te = THIRD*(data_vert.Te + data_tri1.Te + data_tri2.Te);
@@ -1998,9 +2012,16 @@ void TriMesh::Redelaunerize(bool exhaustion, bool bReplace)
 									temp.viz = THIRD*(data_vert.viz + data_tri1.viz + data_tri2.viz);
 									temp.B = THIRD*(data_vert.B + data_tri1.B + data_tri2.B);
 								}
+
+								temp.pos = THIRD*(
+									pData[(pTri2->cornerptr[0] - X) + BEGINNING_OF_CENTRAL].pos +
+									pData[(pTri2->cornerptr[1] - X) + BEGINNING_OF_CENTRAL].pos +
+									pData[(pTri2->cornerptr[2] - X) + BEGINNING_OF_CENTRAL].pos);
+
+
 								memcpy(&(pData[pTri2 - T]), &temp, sizeof(plasma_data)); // so must populate every member
 
-
+								
 								/*
 								
 								
@@ -2070,6 +2091,14 @@ void TriMesh::Redelaunerize(bool exhaustion, bool bReplace)
 	// 1. vertex neighs do not need to be maintained during Delaunay routines.
 	// 2. Flip does actually maintain lists, but not order of tris or vertices.
 	// Therefore, we maintain afterwards:
+
+	pTri = T;
+	for (iTri = 0; iTri < numTriangles; iTri++)
+	{
+		pTri->RecalculateCentroid(this->InnermostFrillCentroidRadius, this->OutermostFrillCentroidRadius);
+		++pTri; // this seems like it should still work if we have not wrapped any vertex that moved, even if tri no longer periodic in truth but some pts outside tranche
+	};
+
 	if (totalflips > 0) {
 		this->RefreshVertexNeighboursOfVerticesOrdered();
 	}
@@ -3312,9 +3341,9 @@ void TriMesh::DebugTestWrongNumberTrisPerEdge(void)
 				for (int ii = 0; ii < tri_len; ii++)
 				{
 					pTri = T+izTri[ii];
-					for (int jj = 0; jj < 3; jj++)
-						if (pTri->cornerptr[jj] == pVert2)
-							count++;
+					int jj = 0;
+					while ((jj < 3) && (pTri->cornerptr[jj] != pVert2)) jj++;
+					if (jj < 3) count++; 
 				};
 				if ((count != 2) && (count != 0))
 				{
@@ -3331,6 +3360,7 @@ void TriMesh::DebugTestWrongNumberTrisPerEdge(void)
 						};
 					} else {
 						printf("Value %d appears %d times at vertex %d.\n",neighs.ptr[iii],count,pVert-X);
+
 						count = count;
 						getch();
 					};
