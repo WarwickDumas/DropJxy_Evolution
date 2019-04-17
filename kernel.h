@@ -215,6 +215,40 @@ __global__ void kernelPopulateOhmsLaw(
 	nvals * __restrict__ p_n_dest_minor);
 
 
+__global__ void kernelCalculate_ita_visc(
+	structural * __restrict__ p_info_minor,
+	nvals * __restrict__ p_n_minor,
+	T3 * __restrict__ p_T_minor,
+
+	f64 * __restrict__ p_nu_ion_minor,
+	f64 * __restrict__ p_nu_elec_minor,
+	f64 * __restrict__ p_nu_nn_visc,
+	f64 * __restrict__ p_ita_par_ion_minor,
+	f64 * __restrict__ p_ita_par_elec_minor,
+	f64 * __restrict__ p_ita_neutral_minor);
+
+
+__global__ void kernelCreate_viscous_contrib_to_MAR_and_NT(
+	structural * __restrict__ p_info_minor,
+	v4 * __restrict__ p_vie_minor,
+
+	long * __restrict__ p_izTri,
+	char * __restrict__ p_szPBC,
+	long * __restrict__ p_izNeighMinor,
+	char * __restrict__ p_szPBCtriminor,
+	
+	f64 * __restrict__ p_ita_parallel_ion_minor,   // nT / nu ready to look up
+	f64 * __restrict__ p_ita_parallel_elec_minor,   // nT / nu ready to look up
+	f64 * __restrict__ p_nu_ion_minor,   // nT / nu ready to look up
+	f64 * __restrict__ p_nu_elec_minor,   // nT / nu ready to look up
+	f64_vec3 * __restrict__ p_B_minor,
+
+	f64_vec3 * __restrict__ p_MAR_ion,
+	f64_vec3 * __restrict__ p_MAR_elec,
+	NTrates * __restrict__ p_NT_addition_rate
+);
+
+
 __global__ void kernelCalculateVelocityAndAzdot_debug(
 	f64 h_use,
 	structural * p_info_minor,
@@ -393,6 +427,7 @@ __global__ void kernelCreate_pressure_gradT_and_gradA_LapA_CurlA_minor(
 	f64_vec3 * __restrict__ p_MAR_elec,
 
 	ShardModel * __restrict__ p_n_shards,
+	nvals * __restrict__ p_n_minor, // Just so we can handle insulator
 
 	f64_vec2 * __restrict__ p_GradTe,
 	f64_vec2 * __restrict__ p_GradAz,
@@ -473,6 +508,8 @@ __global__ void kernelNeutral_pressure_and_momflux(
 	T3 * __restrict__ p_T_minor,
 	f64_vec3 * __restrict__ p_v_n,
 	ShardModel * __restrict__ p_n_shards,
+	nvals * __restrict__ p_n_minor, // Just to handle insulator
+
 	f64_vec2 * __restrict__ p_v_overall_minor,
 	f64_vec3 * __restrict__ p_MAR_neut
 );
