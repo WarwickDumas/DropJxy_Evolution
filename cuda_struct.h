@@ -254,10 +254,13 @@ public:
 	void SendToDevice(cuSyst & Xdevice);
 	void CopyStructuralDetailsFrom(cuSyst & src); // on device
 
+	void ReportDifferencesHost(cuSyst &X2);
+
 	void PopulateFromTriMesh(TriMesh * pX);
 	void PopulateTriMesh(TriMesh * pX);
 
-	void PerformCUDA_Advance(const cuSyst * pX_target, //const
+	void PerformCUDA_Advance(//const 
+		cuSyst * pX_target, //const
 		cuSyst * pX_half);
 
 	void PerformCUDA_Advance_Debug(const cuSyst * pX_target, const cuSyst * pX_half,

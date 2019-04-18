@@ -134,6 +134,9 @@ __global__ void kernelAdvectPositions(
 	f64_vec2 overall_v = p_v_overall_minor[index];
 	info.pos += h_use*overall_v;
 	p_info_dest[index] = info;
+
+	if (index == 11653+BEGINNING_OF_CENTRAL) printf("11653 overall v.y %1.10E newpos %1.10E %1.10E mod %1.10E\n",
+		overall_v.y, info.pos.x, info.pos.y, info.pos.modulus());
 }
 
 __global__ void kernelAverage_n_T_x_to_tris(
@@ -217,6 +220,13 @@ __global__ void kernelAverage_n_T_x_to_tris(
 		if (tri_corner_per_flag.per2 == ROTATE_ME_ANTICLOCKWISE) poscorner = Anticlockwise_d*poscorner;
 		pos += THIRD*poscorner;
 
+	//	if (index == 23160) {
+	//		printf("23160 DOMAIN : Te = %1.10E Tcorner %1.8E %1.8E %1.10E\n", T.Te,
+	//			p_T_minor[tri_corner_index.i1 + BEGINNING_OF_CENTRAL].Te,
+	//			p_T_minor[tri_corner_index.i2 + BEGINNING_OF_CENTRAL].Te,
+	//			p_T_minor[tri_corner_index.i3 + BEGINNING_OF_CENTRAL].Te
+	//			);
+	//	}
 	} else {
 		// What else?
 		if (info.flag == CROSSING_INS)
@@ -232,6 +242,7 @@ __global__ void kernelAverage_n_T_x_to_tris(
 					T += shared_T[tri_corner_index.i1 - StartMajor];
 					iAbove++;
 				};
+
 			} else {
 				poscorner = p_info[tri_corner_index.i1 + BEGINNING_OF_CENTRAL].pos;
 				if (poscorner.dot(poscorner) > DEVICE_RADIUS_INSULATOR_OUTER*DEVICE_RADIUS_INSULATOR_OUTER)
@@ -244,7 +255,10 @@ __global__ void kernelAverage_n_T_x_to_tris(
 			if (tri_corner_per_flag.per0 == ROTATE_ME_CLOCKWISE) poscorner = Clockwise_d*poscorner;
 			if (tri_corner_per_flag.per0 == ROTATE_ME_ANTICLOCKWISE) poscorner = Anticlockwise_d*poscorner;
 			pos += THIRD*poscorner;
-			
+
+		//	if (index == 23160) {
+		//		printf("poscorner %1.14E %1.14E\n", poscorner.x, poscorner.y);
+		///	}
 			if ((tri_corner_index.i2 >= StartMajor) && (tri_corner_index.i2 < EndMajor))
 			{
 				poscorner = shared_pos[tri_corner_index.i2 - StartMajor];
@@ -267,6 +281,11 @@ __global__ void kernelAverage_n_T_x_to_tris(
 			if (tri_corner_per_flag.per1 == ROTATE_ME_ANTICLOCKWISE) poscorner = Anticlockwise_d*poscorner;
 			pos += THIRD*poscorner;
 			
+
+	//		if (index == 23160) {
+	//			printf("poscorner %1.14E %1.14E\n", poscorner.x, poscorner.y);
+	//		}
+
 			if ((tri_corner_index.i3 >= StartMajor) && (tri_corner_index.i3 < EndMajor))
 			{
 				poscorner = shared_pos[tri_corner_index.i3 - StartMajor];
@@ -289,6 +308,11 @@ __global__ void kernelAverage_n_T_x_to_tris(
 			if (tri_corner_per_flag.per2 == ROTATE_ME_ANTICLOCKWISE) poscorner = Anticlockwise_d*poscorner;
 			pos += THIRD*poscorner;
 			
+
+	//		if (index == 23160) {
+	//			printf("poscorner %1.14E %1.14E\n", poscorner.x, poscorner.y);
+	//		}
+
 			f64_vec2 pos2 = pos;
 			pos2.project_to_radius(pos,DEVICE_RADIUS_INSULATOR_OUTER);
 			f64 divide = 1.0 / (f64)iAbove;
@@ -297,6 +321,18 @@ __global__ void kernelAverage_n_T_x_to_tris(
 			T.Tn *= divide;
 			T.Ti *= divide;
 			T.Te *= divide;
+
+		//	if (index == 23160) {
+		//		printf("23160 CROSSING_INS : Te = %1.10E Tcorner %1.8E %1.8E %1.10E\n %d %d %d iAbove %d pos %1.8E %1.8E\n",
+		//			 T.Te,
+		//			p_T_minor[tri_corner_index.i1 + BEGINNING_OF_CENTRAL].Te,
+		//			p_T_minor[tri_corner_index.i2 + BEGINNING_OF_CENTRAL].Te,
+		//			p_T_minor[tri_corner_index.i3 + BEGINNING_OF_CENTRAL].Te,
+		//			tri_corner_index.i1, tri_corner_index.i2, tri_corner_index.i3,
+		//			iAbove, pos.x, pos.y
+		//		);
+		//	}
+
 		} else {
 			n.n = 0.0;
 			n.n_n = 0.0;
@@ -1554,16 +1590,16 @@ __global__ void kernelCalculateNu_eHeartNu_iHeart_nu_nn_visc(
 		// nu_iHeart:
 		nu.i = 0.75*nu_in_visc + 0.8*nu_ii - 0.25*(nu_in_visc*nu_ni_visc) / (3.0*nu_ni_visc + nu.n);
 
-		if ((index == 11645) || (index == 11645)) {
-			printf("@@@\nGPU %d: nu.i %1.12E |  %1.12E %1.12E %1.12E %1.12E n %1.10E n_n %1.10E Ti %1.10E\n"
-				"sigma_visc %1.12E Ti %1.10E Tn %1.10E sqrt %1.10E\n", 
-				
-				index, nu.i, nu_in_visc, nu_ii, nu_ni_visc, nu.n,
-				our_n.n, our_n.n_n, T.Ti,
-				sigma_visc, T.Ti, T.Tn, sqrt(T.Ti / m_i + T.Tn / m_n));
-			printf("@@@\nGPU %d: nu.e %1.14E | nu_eiBar %1.14E our_n %1.14E lambda %1.14E over T^3/2 %1.14E nu_en_visc %1.14E\n",
-				index, nu.e, nu_eiBar, our_n.n, Get_lnLambda_d(our_n.n, T.Te), 1.0 / (T.Te*sqrt_T), nu_en_visc);
-		}
+	//	if ((index == 11645) || (index == 11645)) {
+	//		printf("@@@\nGPU %d: nu.i %1.12E |  %1.12E %1.12E %1.12E %1.12E n %1.10E n_n %1.10E Ti %1.10E\n"
+	//			"sigma_visc %1.12E Ti %1.10E Tn %1.10E sqrt %1.10E\n", 
+	//			
+	//			index, nu.i, nu_in_visc, nu_ii, nu_ni_visc, nu.n,
+	//			our_n.n, our_n.n_n, T.Ti,
+	//			sigma_visc, T.Ti, T.Tn, sqrt(T.Ti / m_i + T.Tn / m_n));
+	//		printf("@@@\nGPU %d: nu.e %1.14E | nu_eiBar %1.14E our_n %1.14E lambda %1.14E over T^3/2 %1.14E nu_en_visc %1.14E\n",
+	//			index, nu.e, nu_eiBar, our_n.n, Get_lnLambda_d(our_n.n, T.Te), 1.0 / (T.Te*sqrt_T), nu_en_visc);
+	//	}
 
 		//  shared_n_over_nu[threadIdx.x].e = our_n.n / nu.e;
 		//	shared_n_over_nu[threadIdx.x].i = our_n.n / nu.i;
@@ -1730,8 +1766,6 @@ __global__ void kernelAccumulateDiffusiveHeatRateAndCalcIonisation(
 	}
 	else {
 		// SHOULD NOT BE LOOKING INTO INS.
-		// Is OUTERMOST another thing that comes to this branch? What about it? Should we also rule out traffic?
-
 		
 		// How do we avoid?
 		memset(&(shared_B[threadIdx.x]), 0, sizeof(f64_vec2));
@@ -1742,9 +1776,7 @@ __global__ void kernelAccumulateDiffusiveHeatRateAndCalcIonisation(
 		// Almost certainly, we take block that is in domain
 		// And it will look into ins.
 		// Simple criterion: iVertex < value means within ins
-		// and therefore no traffic.
-		// !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-		
+		// and therefore no traffic.		
 	}
 	__syncthreads();
 
@@ -1868,7 +1900,7 @@ __global__ void kernelAccumulateDiffusiveHeatRateAndCalcIonisation(
 					pos_anti = Clockwise_rotate2(pos_anti);
 					//		B_anti = Clockwise_rotate2(B_anti);
 				};
-				if (iVertex == CHOSEN) printf("pos_anti %1.12E %1.12E\n", pos_anti.x, pos_anti.y);
+		//		if (iVertex == CHOSEN) printf("pos_anti %1.12E %1.12E\n", pos_anti.x, pos_anti.y);
 
 				// Do we even really need to be doing with B_anti? Why not just
 				// take just once the nu and B from opposite and take 0.5 average with self.
@@ -1997,7 +2029,7 @@ __global__ void kernelAccumulateDiffusiveHeatRateAndCalcIonisation(
 							kappa_neut = 0.0;
 						}
 
-						if (iVertex == 11645) printf(":============\n"
+						if (0) printf(":============\n"
 							"iVertex %d indexneigh %d n_out %1.8E our_nu.i %1.8E nu_out %1.8E T %1.8E\n",
 							
 							iVertex, indexneigh, n_out.n, our_nu.i, nu_out.i,
@@ -2151,23 +2183,20 @@ __global__ void kernelAccumulateDiffusiveHeatRateAndCalcIonisation(
 			f64 recomb_rate = AreaMajor * our_n.n * hR / h_use; // could reasonably again take hR/(1+hR) for n_k+1
 			ourrates.N -= recomb_rate;
 			ourrates.Nn += recomb_rate;
-			if (iVertex == 11645) {
-				printf("GPU iVertex %d ioniserate %1.14E recomb_rate %1.14E\n", 
-					iVertex, ionise_rate, recomb_rate);
-			};
+			
 			ourrates.NeTe += -TWOTHIRDS * 13.6*kB*(ionise_rate - recomb_rate) + 0.5*shared_T[threadIdx.x].Tn*ionise_rate;
 			ourrates.NiTi += 0.5*shared_T[threadIdx.x].Tn*ionise_rate;
 			ourrates.NnTn += (shared_T[threadIdx.x].Te + shared_T[threadIdx.x].Ti)*recomb_rate;
-			if (iVertex == 11645) {
-				printf("GPU iVertex %d NeTe %1.12E NiTi %1.12E NnTn %1.12E\n"
-					"due to I+R : NeTe %1.12E NiTi %1.12E NnTn %1.12E\n"
-					"d/dtNeTe/N %1.9E d/dtNiTi/N %1.9E d/dtNnTn/Nn %1.9E \n",
-					iVertex, ourrates.NeTe, ourrates.NiTi, ourrates.NnTn,
-					-TWOTHIRDS * 13.6*kB*(ionise_rate - recomb_rate) + 0.5*shared_T[threadIdx.x].Tn*ionise_rate,
-					0.5*shared_T[threadIdx.x].Tn*ionise_rate,
-					(shared_T[threadIdx.x].Te + shared_T[threadIdx.x].Ti)*recomb_rate,
-					ourrates.NeTe / (our_n.n*AreaMajor), ourrates.NiTi / (our_n.n*AreaMajor), ourrates.NnTn / (our_n.n_n*AreaMajor));
-			};
+			//if (iVertex == 11645) {
+			//	printf("GPU iVertex %d NeTe %1.12E NiTi %1.12E NnTn %1.12E\n"
+			//		"due to I+R : NeTe %1.12E NiTi %1.12E NnTn %1.12E\n"
+			//		"d/dtNeTe/N %1.9E d/dtNiTi/N %1.9E d/dtNnTn/Nn %1.9E \n",
+			//		iVertex, ourrates.NeTe, ourrates.NiTi, ourrates.NnTn,
+			//		-TWOTHIRDS * 13.6*kB*(ionise_rate - recomb_rate) + 0.5*shared_T[threadIdx.x].Tn*ionise_rate,
+			//		0.5*shared_T[threadIdx.x].Tn*ionise_rate,
+			//		(shared_T[threadIdx.x].Te + shared_T[threadIdx.x].Ti)*recomb_rate,
+			//		ourrates.NeTe / (our_n.n*AreaMajor), ourrates.NiTi / (our_n.n*AreaMajor), ourrates.NnTn / (our_n.n_n*AreaMajor));
+			//};
 			memcpy(NTadditionrates + iVertex, &ourrates, sizeof(NTrates));
 		} else {
 			// Not DOMAIN_VERTEX or INNERMOST or OUTERMOST
@@ -2363,7 +2392,7 @@ __global__ void kernelAccumulateDiffusiveHeatRateAndCalcIonisation_debug(
 			if (PBC == NEEDS_CLOCK) {
 				pos_out = Clockwise_rotate2(pos_out);
 			};
-			if (iVertex == CHOSEN) printf("pos_out %1.12E %1.12E\n", pos_out.x, pos_out.y);
+		//	if (iVertex == CHOSEN) printf("pos_out %1.12E %1.12E\n", pos_out.x, pos_out.y);
 
 			if (T_clock.Te == 0.0) {
 				T_clock.Te = 0.5*(our_T.Te + T_out.Te);
@@ -2406,7 +2435,7 @@ __global__ void kernelAccumulateDiffusiveHeatRateAndCalcIonisation_debug(
 					pos_anti = Clockwise_rotate2(pos_anti);
 					//		B_anti = Clockwise_rotate2(B_anti);
 				};
-				if (iVertex == CHOSEN) printf("pos_anti %1.12E %1.12E\n", pos_anti.x, pos_anti.y);
+			//	if (iVertex == CHOSEN) printf("pos_anti %1.12E %1.12E\n", pos_anti.x, pos_anti.y);
 
 				// Do we even really need to be doing with B_anti? Why not just
 				// take just once the nu and B from opposite and take 0.5 average with self.
@@ -2564,30 +2593,30 @@ __global__ void kernelAccumulateDiffusiveHeatRateAndCalcIonisation_debug(
 						/ (nu_eHeart * nu_eHeart + omega.dot(omega));
 
 
-					if ((iVertex == CHOSEN2 - BEGINNING_OF_CENTRAL)) {
-						printf("GPU NeTe %d : indexneigh %d contrib %1.14E kappa_par %1.14E edge_nor %1.14E %1.14E\n"
+					//if ((iVertex == CHOSEN2 - BEGINNING_OF_CENTRAL)) {
+					//	printf("GPU NeTe %d : indexneigh %d contrib %1.14E kappa_par %1.14E edge_nor %1.14E %1.14E\n"
 
-							"omega %1.14E %1.14E %1.14E \nnu_eHeart %1.14E grad_T %1.14E %1.14E\nOWN nu: %1.14E\n",
-							iVertex, indexneigh,
-							TWOTHIRDS*kappa_parallel_e*(
-								edge_normal.x*(
-									//kappa.xx*grad_T.x + kappa.xy*grad_T.y
-								(nu_eHeart*nu_eHeart + omega.x*omega.x)*grad_T.x +
-									(omega.x*omega.y - nu_eHeart *omega.z)*grad_T.y
-									)
-								+ edge_normal.y*(
-									//kappa.yx*grad_T.x + kappa.yy*grad_T.y
-								(omega.x*omega.y + nu_eHeart * omega.z)*grad_T.x +
-									(omega.y*omega.y + nu_eHeart * nu_eHeart)*grad_T.y
-									))
-							/ (nu_eHeart * nu_eHeart + omega.dot(omega)),
-							kappa_parallel_e, edge_normal.x, edge_normal.y,
-							omega.x, omega.y, omega.z, nu_eHeart, grad_T.x, grad_T.y,
-							our_nu.e
-						);
-						printf("our_T %1.14E T_anti %1.14E T_out %1.14E T_clock %1.14E\n\n",
-							our_T.Te, T_anti.Te, T_out.Te, T_clock.Te);
-					}
+					//		"omega %1.14E %1.14E %1.14E \nnu_eHeart %1.14E grad_T %1.14E %1.14E\nOWN nu: %1.14E\n",
+					//		iVertex, indexneigh,
+					//		TWOTHIRDS*kappa_parallel_e*(
+					//			edge_normal.x*(
+					//				//kappa.xx*grad_T.x + kappa.xy*grad_T.y
+					//			(nu_eHeart*nu_eHeart + omega.x*omega.x)*grad_T.x +
+					//				(omega.x*omega.y - nu_eHeart *omega.z)*grad_T.y
+					//				)
+					//			+ edge_normal.y*(
+					//				//kappa.yx*grad_T.x + kappa.yy*grad_T.y
+					//			(omega.x*omega.y + nu_eHeart * omega.z)*grad_T.x +
+					//				(omega.y*omega.y + nu_eHeart * nu_eHeart)*grad_T.y
+					//				))
+					//		/ (nu_eHeart * nu_eHeart + omega.dot(omega)),
+					//		kappa_parallel_e, edge_normal.x, edge_normal.y,
+					//		omega.x, omega.y, omega.z, nu_eHeart, grad_T.x, grad_T.y,
+					//		our_nu.e
+					//	);
+					//	printf("our_T %1.14E T_anti %1.14E T_out %1.14E T_clock %1.14E\n\n",
+					//		our_T.Te, T_anti.Te, T_out.Te, T_clock.Te);
+					//}
 
 					// ****************************************************************************************
 					// Look: nu_eHeart appeared in kappa formula sep from n/nu in kappa_parallel - we need both
@@ -2661,10 +2690,10 @@ __global__ void kernelAccumulateDiffusiveHeatRateAndCalcIonisation_debug(
 			AreaMajor = p_AreaMajor[iVertex];
 
 			p_dTedtconduction[iVertex] = ourrates.NeTe/(AreaMajor*our_n.n);
-			if ((iVertex == CHOSEN2 - BEGINNING_OF_CENTRAL))
-				printf("dTbydt %1.14E d/dt NeTe %1.14E N %1.14E \n",
-					p_dTedtconduction[iVertex], ourrates.NeTe, (AreaMajor*our_n.n));
-					
+		//	if ((iVertex == CHOSEN2 - BEGINNING_OF_CENTRAL))
+		//		printf("dTbydt %1.14E d/dt NeTe %1.14E N %1.14E \n",
+		//			p_dTedtconduction[iVertex], ourrates.NeTe, (AreaMajor*our_n.n));
+		//		
 			// So this will be different.
 			// now add IONISATION:
 			f64 TeV = shared_T[threadIdx.x].Te * one_over_kB;
@@ -2687,29 +2716,11 @@ __global__ void kernelAccumulateDiffusiveHeatRateAndCalcIonisation_debug(
 			f64 recomb_rate = AreaMajor * our_n.n * hR / h_use; // could reasonably again take hR/(1+hR) for n_k+1
 			ourrates.N -= recomb_rate;
 			ourrates.Nn += recomb_rate;
-			if (iVertex == CHOSEN) {
-				printf("GPU iVertex %d NeTe :  %1.14E ioniserate %1.14E recomb_rate %1.14E\n", iVertex, ourrates.NeTe,
-					ionise_rate, recomb_rate);
-			};
+		
 			ourrates.NeTe += -TWOTHIRDS * 13.6*kB*(ionise_rate-recomb_rate) + 0.5*shared_T[threadIdx.x].Tn*ionise_rate;
 			ourrates.NiTi += 0.5*shared_T[threadIdx.x].Tn*ionise_rate;
 			ourrates.NnTn += (shared_T[threadIdx.x].Te + shared_T[threadIdx.x].Ti)*recomb_rate;
 
-			if (iVertex == CHOSEN2 - BEGINNING_OF_CENTRAL) {
-				printf("****************************************\n"
-					"iVertex = %d \n"
-					"ourrates.N %1.14E ionise_rate %1.14E recomb %1.14E \n"
-					"AreaMajor %1.14E TeV %1.14E n %1.14E nn %1.14E \n"
-					"Te %1.14E htg %1.14E hnS %1.14E hR %1.14E \n"
-					"temp %1.14E \n"
-					"****************************************\n",
-					iVertex, 
-					ourrates.N, ionise_rate, recomb_rate,
-					AreaMajor, TeV,	our_n.n, our_n.n_n,
-					shared_T[threadIdx.x].Te, -TWOTHIRDS * 13.6*kB*(ionise_rate - recomb_rate) + 0.5*shared_T[threadIdx.x].Tn*ionise_rate,
-					hnS,hR,temp
-					);
-			}
 			memcpy(NTadditionrates + iVertex, &ourrates, sizeof(NTrates));
 
 			p_dTedtionisation[iVertex] = ( -TWOTHIRDS * 13.6*kB*(ionise_rate - recomb_rate) + 0.5*shared_T[threadIdx.x].Tn*ionise_rate)
@@ -2760,7 +2771,7 @@ __global__ void kernelAdvanceDensityAndTemperature_debug(
 
 	long const index = threadIdx.x + blockIdx.x * blockDim.x; // INDEX OF VERTEX
 	structural info = p_info_major[index];
-	if (index == CHOSEN) printf("GPU iVertex %d info.flag %d \n", CHOSEN, info.flag);
+	//if (index == CHOSEN) printf("GPU iVertex %d info.flag %d \n", CHOSEN, info.flag);
 
 	if (info.flag == DOMAIN_VERTEX) {
 
@@ -2776,13 +2787,13 @@ __global__ void kernelAdvanceDensityAndTemperature_debug(
 			newdata.NiTi = h_use * AdditionNT.NiTi;
 			newdata.NeTe = h_use * AdditionNT.NeTe;
 
-			if (index == CHOSEN)
-				//			printf("GPU %d : h*AdditionNT = NnTn %1.14E NeTe %1.14E \n", CHOSEN, newdata.NnTn, newdata.NeTe);
-				printf("GPU %d : nsrc %1.14E N_n %1.14E h*AdditionNn %1.14E \n"
-					"newdata.Nn %1.14E AreaMajor %1.14E \n", CHOSEN,
-					n_src_or_use[threadIdx.x].n_n,
-					n_src_or_use[threadIdx.x].n_n*AreaMajor[threadIdx.x], h_use * AdditionNT.Nn,
-					newdata.Nn, AreaMajor[threadIdx.x]);
+			//if (index == CHOSEN)
+			//	//			printf("GPU %d : h*AdditionNT = NnTn %1.14E NeTe %1.14E \n", CHOSEN, newdata.NnTn, newdata.NeTe);
+			//	printf("GPU %d : nsrc %1.14E N_n %1.14E h*AdditionNn %1.14E \n"
+			//		"newdata.Nn %1.14E AreaMajor %1.14E \n", CHOSEN,
+			//		n_src_or_use[threadIdx.x].n_n,
+			//		n_src_or_use[threadIdx.x].n_n*AreaMajor[threadIdx.x], h_use * AdditionNT.Nn,
+			//		newdata.Nn, AreaMajor[threadIdx.x]);
 		}
 
 		{
@@ -2792,8 +2803,8 @@ __global__ void kernelAdvanceDensityAndTemperature_debug(
 			n_dest.n_n = newdata.Nn / (AreaMajor[threadIdx.x] + h_use*Div_v_overall_integrated); // What could do differently: know ROC area as well as mass flux through walls
 			p_n_major_dest[index] = n_dest;
 
-			if (index == CHOSEN) printf("GPU %d n_dest.n_n %1.14E  Area_used %1.14E \n\n", index, n_dest.n_n,
-				(AreaMajor[threadIdx.x] + h_use*Div_v_overall_integrated));
+			//if (index == CHOSEN) printf("GPU %d n_dest.n_n %1.14E  Area_used %1.14E \n\n", index, n_dest.n_n,
+			//	(AreaMajor[threadIdx.x] + h_use*Div_v_overall_integrated));
 		}
 
 		// roughly right ; maybe there are improvements.
@@ -3099,7 +3110,7 @@ __global__ void kernelAdvanceDensityAndTemperature(
 
 	long const index = threadIdx.x + blockIdx.x * blockDim.x; // INDEX OF VERTEX
 	structural info = p_info_major[index];
-	if (index == CHOSEN) printf("GPU iVertex %d info.flag %d \n", CHOSEN, info.flag);
+//	if (index == CHOSEN) printf("GPU iVertex %d info.flag %d \n", CHOSEN, info.flag);
 
 	if (info.flag == DOMAIN_VERTEX) {
 
@@ -3115,17 +3126,17 @@ __global__ void kernelAdvanceDensityAndTemperature(
 			newdata.NiTi = h_use * AdditionNT.NiTi;
 			newdata.NeTe = h_use * AdditionNT.NeTe;
 
-			if (index == 11645)
-	//			printf("GPU %d : h*AdditionNT = NnTn %1.14E NeTe %1.14E \n", CHOSEN, newdata.NnTn, newdata.NeTe);
-				printf("GPU %d : nsrc %1.12E nn %1.12E *AreaMajor %1.12E %1.12E\n"
-					"newdata.Nn %1.12E newdata.Ni %1.10E AreaMajor %1.12E \n"
-					"newdata.NiTi(=h*additionNiTi) %1.12E NeTe %1.12E NnTn %1.12E \n"
-					, CHOSEN,
-					n_src_or_use[threadIdx.x].n, n_src_or_use[threadIdx.x].n_n,
-					n_src_or_use[threadIdx.x].n*AreaMajor[threadIdx.x],
-					n_src_or_use[threadIdx.x].n_n*AreaMajor[threadIdx.x],
-					newdata.Nn, newdata.N, AreaMajor[threadIdx.x],
-					newdata.NiTi, newdata.NeTe, newdata.NnTn);
+	//		if (index == 11645)
+	////			printf("GPU %d : h*AdditionNT = NnTn %1.14E NeTe %1.14E \n", CHOSEN, newdata.NnTn, newdata.NeTe);
+	//			printf("GPU %d : nsrc %1.12E nn %1.12E *AreaMajor %1.12E %1.12E\n"
+	//				"newdata.Nn %1.12E newdata.Ni %1.10E AreaMajor %1.12E \n"
+	//				"newdata.NiTi(=h*additionNiTi) %1.12E NeTe %1.12E NnTn %1.12E \n"
+	//				, CHOSEN,
+	//				n_src_or_use[threadIdx.x].n, n_src_or_use[threadIdx.x].n_n,
+	//				n_src_or_use[threadIdx.x].n*AreaMajor[threadIdx.x],
+	//				n_src_or_use[threadIdx.x].n_n*AreaMajor[threadIdx.x],
+	//				newdata.Nn, newdata.N, AreaMajor[threadIdx.x],
+	//				newdata.NiTi, newdata.NeTe, newdata.NnTn);
 		}
 
 		// So at this vertex, near the insulator, NiTi that comes in is NaN. Is that advection or diffusion?
@@ -3138,8 +3149,8 @@ __global__ void kernelAdvanceDensityAndTemperature(
 			n_dest.n_n = newdata.Nn / (AreaMajor[threadIdx.x] + h_use*Div_v_overall_integrated); // What could do differently: know ROC area as well as mass flux through walls
 			p_n_major_dest[index] = n_dest;
 
-			if (index == CHOSEN) printf("GPU %d n_dest.n_n %1.14E  Area_used %1.14E \n\n", index, n_dest.n_n,
-				(AreaMajor[threadIdx.x] + h_use*Div_v_overall_integrated));
+	//		if (index == CHOSEN) printf("GPU %d n_dest.n_n %1.14E  Area_used %1.14E \n\n", index, n_dest.n_n,
+	//			(AreaMajor[threadIdx.x] + h_use*Div_v_overall_integrated));
 		}
 
 		// roughly right ; maybe there are improvements.
@@ -3182,14 +3193,14 @@ __global__ void kernelAdvanceDensityAndTemperature(
 			newdata.NiTi += n_src_or_use[threadIdx.x].n*AreaMajor[threadIdx.x] * T_src.Ti*factor;
 			newdata.NeTe += n_src_or_use[threadIdx.x].n*AreaMajor[threadIdx.x] * T_src.Te*factor;  // 
 
-
-			if (index == 11645) {
-				printf("\nGPU %d : n %1.12E Area %1.12E Te_k %1.12E compressfac %1.12E \n"
-					"newdate.NiTi %1.12E Ti_k %1.12E \n"
-					, 11645, 
-				n_src_or_use[threadIdx.x].n, AreaMajor[threadIdx.x], T_src.Te, factor,
-					newdata.NiTi,T_src.Ti);
-			}
+//
+//			if (index == 11645) {
+//				printf("\nGPU %d : n %1.12E Area %1.12E Te_k %1.12E compressfac %1.12E \n"
+//					"newdate.NiTi %1.12E Ti_k %1.12E \n"
+//					, 11645, 
+//				n_src_or_use[threadIdx.x].n, AreaMajor[threadIdx.x], T_src.Te, factor,
+//					newdata.NiTi,T_src.Ti);
+//			}
 		}
 		
 		f64 nu_ne_MT, nu_en_MT, nu_ni_MT, nu_in_MT, nu_ei; // optimize after
@@ -3281,10 +3292,6 @@ __global__ void kernelAdvanceDensityAndTemperature(
 			nu_ei = nu_eiBarconst * kB_to_3halves*n_src_or_use[threadIdx.x].n*lnLambda /
 				(T_use.Te*sqrt_Te);
 
-			if (index == 11645) 
-				printf("\nnu_ei %1.9E n %1.9E lnLambda %1.9E sqrtTe %1.9E \n",
-					nu_ei, n_src_or_use[threadIdx.x].n, lnLambda, sqrt_Te);
-			
 			//		nu_ie = nu_ei;
 
 			//		nu_eHeart = 1.87*nu_eiBar + data_k.n_n*s_en_visc*electron_thermal;
@@ -3369,11 +3376,6 @@ __global__ void kernelAdvanceDensityAndTemperature(
 		RHS.z = newdata.NeTe - h_use * (nu_en_MT*M_en + nu_ei * M_ei)*newdata.NeTe
 			+ h_use * nu_ie*M_ei*newdata.NiTi + h_use * nu_ne_MT*M_en*newdata.NnTn;
 
-		if (index == 11645) {
-			printf("\n11645 newdata %1.9E %1.9E %1.9E  \n11645 RHS %1.9E %1.9E %1.9E\n\n",
-				newdata.NnTn, newdata.NiTi, newdata.NeTe,
-				RHS.x,RHS.y,RHS.z);
-		}
 		f64_vec3 NT;
 		NT = inverted * RHS;
 		newdata.NnTn = NT.x;
@@ -3391,14 +3393,11 @@ __global__ void kernelAdvanceDensityAndTemperature(
 		T_dest.Ti = newdata.NiTi* factor / newdata.N;
 		T_dest.Te = newdata.NeTe* factor / newdata.N;
 
-		if (index == 11645) {
-			printf("11645 Te %1.10E Ti %1.10E factor %1.10E newdata.N %1.10E\n",
-				T_dest.Te, T_dest.Ti, factor, newdata.N);
-		}
 
-//		if (index == CHOSEN) 
-//			printf("GPU %d :  Te %1.14E factor %1.14E newdata.N %1.14E\n",
-//				CHOSEN,T_dest.Te, factor, newdata.N);
+		if (T_dest.Te != T_dest.Te) {
+			printf("Advance_n_T %d : Te NaN factor %1.8E newdata.N %1.10E\n",
+				index, factor, newdata.N);
+		}
 
 		p_T_major_dest[index] = T_dest;
 
@@ -4103,21 +4102,21 @@ __global__ void kernelAccumulateAdvectiveMassHeatRate(
 								+ nn_next*(v_n_next-v_overall_next)).dot(edge_normal);
 			totalheatflux_out.Tn += 0.5*(nn_prev*Tn_prev*(v_n_prev-v_overall_prev)
 								+ nn_next*Tn_next*(v_n_next-v_overall_next)).dot(edge_normal);
-
-			if (iVertex == CHOSEN) printf("advect GPU %d : "
-				"i %d iTri %d heatfluxout_contrib %1.14E \n"
-				"nprev %1.14E nnext %1.14E\n"
-				"Ti_prev next %1.14E %1.14E \nrel vxy %1.14E %1.14E ; %1.14E %1.14E\n"
-				"edge_normal %1.14E %1.14E \n"
-				"-------------------------\n",
-				iVertex, i, iTri,
-				0.5*(n_prev*Ti_prev*(vxy_prev - v_overall_prev)
-					+ n_next*Ti_next*(vxy_next - v_overall_next)).dot(edge_normal),
-				n_prev, n_next,
-				Ti_prev, Ti_next, (vxy_prev-v_overall_prev).x, (vxy_prev - v_overall_prev).y,
-				(vxy_next - v_overall_next).x, (vxy_next - v_overall_next).y,
-				edge_normal.x, edge_normal.y);
-
+//
+//			if (iVertex == CHOSEN) printf("advect GPU %d : "
+//				"i %d iTri %d heatfluxout_contrib %1.14E \n"
+//				"nprev %1.14E nnext %1.14E\n"
+//				"Ti_prev next %1.14E %1.14E \nrel vxy %1.14E %1.14E ; %1.14E %1.14E\n"
+//				"edge_normal %1.14E %1.14E \n"
+//				"-------------------------\n",
+//				iVertex, i, iTri,
+//				0.5*(n_prev*Ti_prev*(vxy_prev - v_overall_prev)
+//					+ n_next*Ti_next*(vxy_next - v_overall_next)).dot(edge_normal),
+//				n_prev, n_next,
+//				Ti_prev, Ti_next, (vxy_prev-v_overall_prev).x, (vxy_prev - v_overall_prev).y,
+//				(vxy_next - v_overall_next).x, (vxy_next - v_overall_next).y,
+//				edge_normal.x, edge_normal.y);
+//
 			endpt0 = endpt1;
 			n_prev = n_next;
 			nn_prev = nn_next;
@@ -4136,19 +4135,19 @@ __global__ void kernelAccumulateAdvectiveMassHeatRate(
 		NTplus.NeTe = -totalheatflux_out.Te;
 		NTplus.NiTi = -totalheatflux_out.Ti;
 		NTplus.NnTn = -totalheatflux_out.Tn;
-
-		if (iVertex == CHOSEN) printf("\n%d : NTplus.NiTi %1.10E NTplus.N %1.10E Tsrc.i %1.10E nsrc.n %1.10E\n"
-			"NTplus.NiTi/NTplus.N (avg temp of those coming/going) %1.10E\n"
-			"NTplus.NiTi/N (ROC Ti) %1.10E\n"
-			"NTplus.NiTi/NiTi (elasticity of T?) %1.10E \n"
-			"NTplus.N/N (elasticity of N) %1.10E \n\n",
-			CHOSEN, NTplus.NiTi, NTplus.N,
-			Tsrc.Ti, nsrc.n,
-			NTplus.NiTi/NTplus.N,
-			NTplus.NiTi/(AreaMajor*nsrc.n),
-			NTplus.NiTi/(AreaMajor*nsrc.n*Tsrc.Ti),
-			NTplus.N/(AreaMajor*nsrc.n)
-			);
+//
+//		if (iVertex == CHOSEN) printf("\n%d : NTplus.NiTi %1.10E NTplus.N %1.10E Tsrc.i %1.10E nsrc.n %1.10E\n"
+//			"NTplus.NiTi/NTplus.N (avg temp of those coming/going) %1.10E\n"
+//			"NTplus.NiTi/N (ROC Ti) %1.10E\n"
+//			"NTplus.NiTi/NiTi (elasticity of T?) %1.10E \n"
+//			"NTplus.N/N (elasticity of N) %1.10E \n\n",
+//			CHOSEN, NTplus.NiTi, NTplus.N,
+//			Tsrc.Ti, nsrc.n,
+//			NTplus.NiTi/NTplus.N,
+//			NTplus.NiTi/(AreaMajor*nsrc.n),
+//			NTplus.NiTi/(AreaMajor*nsrc.n*Tsrc.Ti),
+//			NTplus.N/(AreaMajor*nsrc.n)
+//			);
 
 		memcpy(p_NTadditionrates + iVertex, &NTplus, sizeof(NTrates));
 
@@ -4513,7 +4512,10 @@ __global__ void kernelPopulateOhmsLaw(
 	long const iMinor = threadIdx.x + blockIdx.x * blockDim.x; // INDEX OF VERTEX
 	structural info = p_info_minor[iMinor];
 
-	if ((info.flag == DOMAIN_VERTEX) || (info.flag == DOMAIN_TRIANGLE))
+	// Can see no reason not to put OUTERMOST here. No point creating a big gradient of vz to it.
+
+	if ((info.flag == DOMAIN_VERTEX) || (info.flag == DOMAIN_TRIANGLE)
+		|| (info.flag == CROSSING_INS) || (info.flag == OUTERMOST))
 	{
 		v4 vie_k = p_vie_src[iMinor];
 		f64_vec3 v_n_src = p_v_n_src[iMinor];
@@ -4543,16 +4545,18 @@ __global__ void kernelPopulateOhmsLaw(
 		//			v0.viz, vie_k.viz, h_use * MAR.z / (n_use.n*AreaMinor));
 			//}
 
+//			if ((iMinor == CHOSEN))
+	//			printf("GPU %d WITH MAR ION v0.vxy %1.14E %1.14E v_k %1.14E %1.14E\n", CHOSEN, v0.vxy.x, v0.vxy.y,
+		//			vie_k.vxy.x,vie_k.vxy.y);
+			
 			memcpy(&MAR, p_MAR_elec + iMinor, sizeof(f64_vec3));
 			v0.vxy += h_use * (m_e*MAR.xypart() / (n_use.n*(m_i + m_e)*AreaMinor));
 			v0.vez = vie_k.vez + h_use * MAR.z / (n_use.n*AreaMinor);   // UM WHY WAS THIS NEGATIVE
 													 // + !!!!
-	//		if (((iMinor == CHOSEN1) || (iMinor == CHOSEN2))) 
-	//			printf("%d vez_k %1.14E vez with MAR_z %1.14E\n",
-	//				iMinor, vie_k.vez, v0.vez);
+			if (v0.vez != v0.vez) printf("NANVEZ %d v_k %1.9E MAR.z %1.9E \n", iMinor, vie_k.vez, MAR.z);
 
-//			if ((iMinor == CHOSEN) && (0)) {
-	//			printf("GPU %d v0.vxy %1.14E %1.14E vez_k %1.14E vez %1.14E \n", CHOSEN, v0.vxy.x, v0.vxy.y, vie_k.vez, v0.vez);
+	//		if ((iMinor == CHOSEN)) 
+		//		printf("GPU %d WITH MAR v0.vxy %1.14E %1.14E\n", CHOSEN, v0.vxy.x, v0.vxy.y);
 				//	printf("GPU %d data_k %1.10E %1.10E MAR %1.10E %1.10E\n", CHOSEN, vie_k.vxy.x, vie_k.vxy.y,
 					//	MAR.x, MAR.y);
 //				printf("GPU %d n %1.12E AreaMinor %1.12E \n", CHOSEN, n_use.n, AreaMinor);
@@ -4585,12 +4589,12 @@ __global__ void kernelPopulateOhmsLaw(
 
 			cross_section_times_thermal_en = s_en_MT * electron_thermal;
 			cross_section_times_thermal_in = s_in_MT * ionneut_thermal;
-
-			if ((iMinor == CHOSEN) && (0)) printf("GPU: s_in_MT %1.14E ionneut_thermal %1.14E s_en_MT %1.14E \n",
-				s_in_MT, ionneut_thermal, s_en_MT);
-
+			
 			nu_eiBar = nu_eiBarconst * kB_to_3halves*n_use.n*lnLambda / (T.Te*sqrt_Te);
 			nu_eHeart = 1.87*nu_eiBar + n_use.n_n*s_en_visc*electron_thermal;
+			if (nu_eiBar != nu_eiBar) printf("&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&\n"
+				"iMinor %d n_use.n %1.9E lnLambda %1.9E Te %1.9E sqrt %1.9E \n",
+				iMinor, n_use.n, lnLambda, T.Te, sqrt_Te);
 		}
 
 		vn0.x += -0.5*h_use*(M_e_over_en)*(cross_section_times_thermal_en*n_use.n)*(v_n_src.x - vie_k.vxy.x)
@@ -4635,13 +4639,14 @@ __global__ void kernelPopulateOhmsLaw(
 			m_n* M_i_over_in* (cross_section_times_thermal_in*n_use.n_n)
 			+ m_n * M_e_over_en*(cross_section_times_thermal_en*n_use.n_n))*(1.0 - ohm.beta_ne - ohm.beta_ni);
 		v0.vxy /= denom;
-
-		if ((0) && (iMinor == CHOSEN)) {
-			printf("GPU %d v0.vxy %1.14E %1.14E denom %1.14E \n", CHOSEN, v0.vxy.x, v0.vxy.y, denom);
-
-			printf("nu_in_MT %1.14E nu_en_MT %1.14E beta_ne %1.14E \n", cross_section_times_thermal_in*n_use.n_n, cross_section_times_thermal_en*n_use.n_n, ohm.beta_ne);
-		}
-	
+//
+//		if ((iMinor == CHOSEN)) {
+//			printf("GPU %d v0.vxy %1.14E %1.14E denom %1.14E \n"
+//				"nu_in_MT %1.14E nu_en_MT %1.14E beta_ne %1.14E \n", 
+//				CHOSEN, v0.vxy.x, v0.vxy.y, denom,
+//				cross_section_times_thermal_in*n_use.n_n, cross_section_times_thermal_en*n_use.n_n, ohm.beta_ne);
+//		}
+//	
 		ohm.beta_xy_z = (h_use * q / (2.0*c*(m_i + m_e)*denom)) * grad_Az[threadIdx.x];
 		/////////////////////////////////////////////////////////////////////////////// midpoint
 //		if ((iMinor == CHOSEN)) printf("ohm.beta_xy_z %1.14E \n", ohm.beta_xy_z);
@@ -4650,6 +4655,9 @@ __global__ void kernelPopulateOhmsLaw(
 
 		f64 nu_ei_effective = nu_eiBar * (1.0 - 0.9*nu_eiBar*(nu_eHeart*nu_eHeart + qovermc*BZ_CONSTANT*qovermc*BZ_CONSTANT) /
 			(nu_eHeart*(nu_eHeart*nu_eHeart + omega[threadIdx.x].x*omega[threadIdx.x].x + omega[threadIdx.x].y*omega[threadIdx.x].y + qovermc*BZ_CONSTANT*qovermc*BZ_CONSTANT)));
+
+	//	if (nu_ei_effective != nu_ei_effective) printf("nu_ei NaN: omega %1.8E %1.8E nu_eHeart %1.8E nu_eiBar %1.8E\n",
+	//		omega[threadIdx.x].x, omega[threadIdx.x].y, nu_eHeart, nu_eiBar);
 
 		AAdot AAzdot_k = p_AAdot_src[iMinor];
 
@@ -4730,17 +4738,17 @@ __global__ void kernelPopulateOhmsLaw(
 					+ 0.5*FOURPI_Q_OVER_C*n_use.n*(vie_k.viz + v0.viz - vie_k.vez))) // ?????????????????
 			+ 0.5*h_use*qovermc*(vie_k.vxy + v0.vxy + v0.viz * ohm.beta_xy_z).dot(grad_Az[threadIdx.x]);
 
-		if ((iMinor == CHOSEN1) || (iMinor == CHOSEN2)) {
-			printf("GPU %d v0.vez %1.14E Azdotctb %1.14E antiadvect %1.14E LapAzctb %1.14E \n"
-				"%d JviaAzdot %1.14E lorenzmag %1.14E \n",
-				iMinor, v0.vez, h_use * 0.5*qovermc*2.0*AAzdot_k.Azdot,
-				h_use * 0.5*qovermc*h_use * ROCAzdot_antiadvect,
-				h_use * 0.5*qovermc*h_use * c*c*LapAz,
-				iMinor,
-				h_use * 0.5*qovermc*h_use * c*c* 0.5*FOURPI_Q_OVER_C*n_use.n*(vie_k.viz + v0.viz - vie_k.vez),
-				0.5*h_use*qovermc*(vie_k.vxy + v0.vxy + v0.viz * ohm.beta_xy_z).dot(grad_Az[threadIdx.x])
-				);
-		};
+	//	if (v0.vez != v0.vez) {
+	//		printf("NANvez %d v0.vez %1.14E Azdotctb %1.14E antiadvect %1.14E LapAzctb %1.14E \n"
+	//			"%d JviaAzdot %1.14E lorenzmag %1.14E \n",
+	//			iMinor, v0.vez, h_use * 0.5*qovermc*2.0*AAzdot_k.Azdot,
+	//			h_use * 0.5*qovermc*h_use * ROCAzdot_antiadvect,
+	//			h_use * 0.5*qovermc*h_use * c*c*LapAz,
+	//			iMinor,
+	//			h_use * 0.5*qovermc*h_use * c*c* 0.5*FOURPI_Q_OVER_C*n_use.n*(vie_k.viz + v0.viz - vie_k.vez),
+	//			0.5*h_use*qovermc*(vie_k.vxy + v0.vxy + v0.viz * ohm.beta_xy_z).dot(grad_Az[threadIdx.x])
+	//			);
+	//	};
 
 		// implies:
 		f64 effect_of_viz0_on_vez0 = 
@@ -4796,43 +4804,44 @@ __global__ void kernelPopulateOhmsLaw(
 			+ 0.5*h_use*nu_ei_effective*ohm.sigma_i_zz)
 			/ denom;
 		
-		if ((iMinor == CHOSEN1) || (iMinor == CHOSEN2))
-			printf("GPU %d vez0 before divide %1.14E \n", iMinor, v0.vez);
-
+	//	if ((iMinor == CHOSEN1) || (iMinor == CHOSEN2))
+//printf("GPU %d vez0 before divide %1.14E \n", iMinor, v0.vez);
+//
 		v0.vez /= denom;
 		effect_of_viz0_on_vez0 /= denom; // of course 
 
-		if (v0.vez != v0.vez) {
-			printf("iMinor %d v0.vez %1.10E ohm.sigma_e %1.10E denom %1.10E \n"
-				"%1.10E %1.10E %1.10E %1.10E n %1.10E Te %1.10E\n"	,
-				iMinor, v0.vez, ohm.sigma_e_zz, denom,
-				h_use*h_use*M_PI*q*eoverm*n_use.n,//*(1.0 - beta_ie_z)
-				0.5*h_use*qovermc*(grad_Az[threadIdx.x].dot(ohm.beta_xy_z))*(1.0 - beta_ie_z),
+		//if (v0.vez != v0.vez) {
+		//	printf("iMinor %d v0.vez %1.10E ohm.sigma_e %1.10E denom %1.10E \n"
+		//		"%1.10E %1.10E %1.10E %1.10E n %1.10E Te %1.10E\n"	,
+		//		iMinor, v0.vez, ohm.sigma_e_zz, denom,
+		//		h_use*h_use*M_PI*q*eoverm*n_use.n,//*(1.0 - beta_ie_z) // this was ok
+		//		0.5*h_use*qovermc*(grad_Az[threadIdx.x].dot(ohm.beta_xy_z))*(1.0 - beta_ie_z), // this was not ok
+		//		0.5*h_use*M_n_over_ne*(cross_section_times_thermal_en*n_use.n_n) *(1.0 - ohm.beta_ne - ohm.beta_ni * beta_ie_z),
+		//		0.5*h_use*nu_ei_effective,//*(1.0 - beta_ie_z) // this was not ok -- even though n,T come out ok
+		//		n_use.n, T.Te);			
+		//}
+
+
+		if ((iMinor == CHOSEN1) || (iMinor == CHOSEN2) || (iMinor == CHOSEN)) {
+			printf("GPU %d v0.vez %1.14E denom %1.14E \n"
+				"ohm.sigma_e_zz %1.14E n_use %1.10E nn %1.10E Te %1.10E\n"
+				"%d %1.12E %1.12E %1.12E %1.12E %1.12E \n"
+				"%d denom %1.14E : %1.12E %1.12E %1.12E %1.12E\n",
+				iMinor, v0.vez, denom,
+				ohm.sigma_e_zz,
+				n_use.n,n_use.n_n, T.Te, iMinor, -h_use * eoverm,
+				h_use * h_use*M_PI*q*eoverm*n_use.n*ohm.sigma_i_zz,
+				h_use * 0.5*qovermc*(grad_Az[threadIdx.x].dot(ohm.beta_xy_z))*ohm.sigma_i_zz,
+				0.5*h_use*M_n_over_ne*(cross_section_times_thermal_en*n_use.n_n) *ohm.beta_ni*ohm.sigma_i_zz,
+				0.5*h_use*nu_ei_effective*ohm.sigma_i_zz,
+				iMinor, denom,
+				(h_use*h_use*M_PI*q*eoverm*n_use.n)*(1.0 - beta_ie_z),
+				(0.5*h_use*qovermc*(grad_Az[threadIdx.x].dot(ohm.beta_xy_z)))*(1.0 - beta_ie_z),
 				0.5*h_use*M_n_over_ne*(cross_section_times_thermal_en*n_use.n_n) *(1.0 - ohm.beta_ne - ohm.beta_ni * beta_ie_z),
-				0.5*h_use*nu_ei_effective,//*(1.0 - beta_ie_z)
-				n_use.n, T.Te);			
-		}
-
-
-	//	if ((iMinor == CHOSEN1) || (iMinor == CHOSEN2) || (iMinor == CHOSEN2+1)) {
-	//		printf("GPU %d v0.vezdivided %1.14E denom %1.14E \n", iMinor, v0.vez, denom);
-	//		printf("%d ohm.sigma_e_zz %1.14E n_use %1.10E nn %1.10E Te %1.10E\n", iMinor, ohm.sigma_e_zz,
-	//			n_use.n,n_use.n_n, T.Te);
-	//		printf("%d %1.12E %1.12E %1.12E %1.12E %1.12E \n",
-	//			iMinor, -h_use * eoverm,
-	//			h_use * h_use*M_PI*q*eoverm*n_use.n*ohm.sigma_i_zz,
-	//			h_use * 0.5*qovermc*(grad_Az[threadIdx.x].dot(ohm.beta_xy_z))*ohm.sigma_i_zz,
-	//			0.5*h_use*M_n_over_ne*(cross_section_times_thermal_en*n_use.n_n) *ohm.beta_ni*ohm.sigma_i_zz,
-	//			0.5*h_use*nu_ei_effective*ohm.sigma_i_zz);
-	//		printf("%d denom %1.14E : %1.12E %1.12E %1.12E %1.12E\n",
-	//			iMinor, denom,
-	//			(h_use*h_use*M_PI*q*eoverm*n_use.n)*(1.0 - beta_ie_z),
-	//			(0.5*h_use*qovermc*(grad_Az[threadIdx.x].dot(ohm.beta_xy_z)))*(1.0 - beta_ie_z),
-	//			0.5*h_use*M_n_over_ne*(cross_section_times_thermal_en*n_use.n_n) *(1.0 - ohm.beta_ne - ohm.beta_ni * beta_ie_z),
-	//			0.5*h_use*nu_ei_effective*(1.0 - beta_ie_z)
-	//		);
-	//	};
-		// Why v0.vez is coming out exactly 0? Have to output the contributing parts.
+				0.5*h_use*nu_ei_effective*(1.0 - beta_ie_z)
+			);
+		};
+		
 
 		if (bSwitchSave) {
 			p_denom_e[iMinor] = denom;
@@ -5362,7 +5371,7 @@ __global__ void kernelPopulateOhmsLaw_debug(
 		v0.vez /= denom;
 		effect_of_viz0_on_vez0 /= denom; // of course 
 
-		/*if ((iMinor == CHOSEN1) || (iMinor == CHOSEN2) || (iMinor == CHOSEN2 + 1)) {
+		if ((iMinor == CHOSEN1) || (iMinor == CHOSEN2) || (iMinor == CHOSEN)) {
 			printf("GPU %d v0.vezdivided %1.14E denom %1.14E \n", iMinor, v0.vez, denom);
 			printf("%d ohm.sigma_e_zz %1.14E n_use %1.10E nn %1.10E Te %1.10E\n", iMinor, ohm.sigma_e_zz,
 				n_use.n, n_use.n_n, T.Te);
@@ -5379,9 +5388,8 @@ __global__ void kernelPopulateOhmsLaw_debug(
 				0.5*h_use*M_n_over_ne*(cross_section_times_thermal_en*n_use.n_n) *(1.0 - ohm.beta_ne - ohm.beta_ni * beta_ie_z),
 				0.5*h_use*nu_ei_effective*(1.0 - beta_ie_z)
 			);
-		}*/
-		// Why v0.vez is coming out exactly 0? Have to output the contributing parts.
-
+		}
+		
 		if (bSwitchSave) {
 			p_denom_e[iMinor] = denom;
 			p_effect_of_viz0_on_vez0[iMinor] = effect_of_viz0_on_vez0;
@@ -5449,7 +5457,7 @@ __global__ void kernelPopulateOhmsLaw_debug(
 		//		+ h_use * ROCAzdot_antiadvect + h_use * c*c*(Lap_Az +
 		//			0.5*FOURPI_OVER_C * q*n_use.n*(data_k.viz - data_k.vez)); // INTERMEDIATE
 
-		if ((iMinor == CHOSEN)) printf("******************* AAzdot_k.Azdot %1.14E \n", AAzdot_k.Azdot);
+	//	if ((iMinor == CHOSEN)) printf("******************* AAzdot_k.Azdot %1.14E \n", AAzdot_k.Azdot);
 
 		AAzdot_k.Azdot +=
 			h_use * ROCAzdot_antiadvect + h_use * c*c*(LapAz +
@@ -5459,16 +5467,16 @@ __global__ void kernelPopulateOhmsLaw_debug(
 
 												 //Iz_k[threadIdx.x] = q*n_use.n*(vie_k.viz - vie_k.vez)*AreaMinor;
 
-		if ((iMinor == CHOSEN)) {
-			printf("\n!!! kernelPopOhms GPU %d: \n******* Azdot_intermediate %1.14E vie_k %1.14E %1.14E\n"
-				"antiadvect %1.10E Lapcontrib %1.13E Jcontrib_k %1.14E\n\n",
-				CHOSEN, p_AAdot_intermediate[iMinor].Azdot,
-				vie_k.viz, vie_k.vez,
-				h_use * ROCAzdot_antiadvect,
-				h_use * c*c*LapAz,
-				h_use * c*c*0.5*FOURPI_OVER_C * q*n_use.n*(vie_k.viz - vie_k.vez)
-			);
-		}
+//		if ((iMinor == CHOSEN)) {
+//			printf("\n!!! kernelPopOhms GPU %d: \n******* Azdot_intermediate %1.14E vie_k %1.14E %1.14E\n"
+//				"antiadvect %1.10E Lapcontrib %1.13E Jcontrib_k %1.14E\n\n",
+//				CHOSEN, p_AAdot_intermediate[iMinor].Azdot,
+//				vie_k.viz, vie_k.vez,
+//				h_use * ROCAzdot_antiadvect,
+//				h_use * c*c*LapAz,
+//				h_use * c*c*0.5*FOURPI_OVER_C * q*n_use.n*(vie_k.viz - vie_k.vez)
+//			);
+//		}
 
 		//data_1.Azdot = data_k.Azdot
 		//	+ h_use * ROCAzdot_antiadvect + h_use * c*c*(LapAz +
@@ -5831,7 +5839,8 @@ __global__ void kernelCalculateVelocityAndAzdot(
 	structural info = p_info_minor[iMinor];
 	AAdot temp = p_AAzdot_intermediate[iMinor];
 
-	if ((info.flag == DOMAIN_TRIANGLE) || (info.flag == DOMAIN_VERTEX))
+	if ((info.flag == DOMAIN_TRIANGLE) || (info.flag == DOMAIN_VERTEX)
+		|| (info.flag == CROSSING_INS) || (info.flag == OUTERMOST))
 	{
 		v4 v;
 		nvals n_use = p_n_minor[iMinor];
@@ -5846,20 +5855,22 @@ __global__ void kernelCalculateVelocityAndAzdot(
 		v_n.x += (ohm.beta_ne + ohm.beta_ni)*v.vxy.x;    // 2
 		v_n.y += (ohm.beta_ne + ohm.beta_ni)*v.vxy.y;
 		v_n.z += ohm.beta_ne * v.vez + ohm.beta_ni * v.viz;
+		
+		if (info.flag == CROSSING_INS) {
+			f64_vec2 rhat = info.pos / info.pos.modulus();
+			v_n -= Make3((v_n.dotxy(rhat))*rhat, 0.0);
+			v.vxy -= v.vxy.dot(rhat)*rhat;
+		}
 
-		if ((iMinor == CHOSEN1) || (iMinor == CHOSEN2))
-			printf("%d vez %1.14E v0.vez %1.14E sigma %1.14E \n"
-				"vnz %1.14E \n",
-				iMinor, v.vez, v0.vez, ohm.sigma_e_zz,
-				v_n.z);
-				
 		memcpy(&(p_vie_out[iMinor]), &v, sizeof(v4)); // operator = vs memcpy
 		p_vn_out[iMinor] = v_n;
 
-		temp.Azdot += h_use*c*0.5*FOUR_PI*q*n_use.n*(v.viz - v.vez);
+		temp.Azdot += h_use*c*0.5*FOUR_PI*q*n_use.n*(v.viz - v.vez); // logical for C_INS too
 
-//		if ((0) && (iMinor == CHOSEN)) printf("CVAA iMinor %d Azdot %1.14E J1contrib %1.14E \n",
-//			iMinor, temp.Azdot, h_use*c*0.5*FOUR_PI*q*n_use.n*(v.viz - v.vez));
+		if ((iMinor == CHOSEN1) || (iMinor == CHOSEN2) || (iMinor == CHOSEN)) printf(
+			"CVAA iMinor %d v0.vez %1.9E sigma_e_zz %1.9E Ez %1.9E v.vez %1.9E\n",
+			iMinor, v0.vez, ohm.sigma_e_zz, Ez_strength, v.vez);
+
 
 	} else {
 
@@ -5981,6 +5992,24 @@ __global__ void kernelResetFrillsAz(
 		p_Az[index] = p_Az[izNeigh.i1];
 	}
 }
+
+__global__ void kernelReset_v_in_outer_frill
+(
+	structural * __restrict__ p_info,
+	v4 * __restrict__ p_vie,
+	f64_vec3 * __restrict__ p_v_n,
+	LONG3 * __restrict__ trineighbourindex
+	) {
+	long const index = blockDim.x*blockIdx.x + threadIdx.x;
+	structural info = p_info[index];
+	if ((info.flag == OUTER_FRILL))
+	{
+		LONG3 izNeigh = trineighbourindex[index];
+		p_vie[index] = p_vie[izNeigh.i1];
+		p_v_n[index] = p_v_n[izNeigh.i1];
+	}
+}
+
 // Try resetting frills here and ignoring in calculation:
 __global__ void kernelResetFrillsAz_II(
 	structural * __restrict__ p_info,
@@ -8697,6 +8726,10 @@ __global__ void kernelCreate_pressure_gradT_and_gradA_LapA_CurlA_minor(
 					(MAR_elec.dotxy(info.pos) / 
 					(info.pos.x*info.pos.x + info.pos.y*info.pos.y))*info.pos, 0.0);
 
+				// and we looked at insulator values for T so Grad Te was meaningless:
+				Our_integral_grad_Te.x = 0.0;
+				Our_integral_grad_Te.y = 0.0;
+
 				// I think we do need to make v_r = 0. It's common sense that it IS 0
 				// since we site our v_r estimate on the insulator. Since it is sited there,
 				// it is used for traffic into the insulator by n,nT unless we pick out
@@ -9464,12 +9497,25 @@ __global__ void kernelCreate_momflux_minor(
 					- (THIRD * (our_v_overall + prev_v_overall + opp_v_overall))
 					).dot(edge_normal);
 
-				ownrates_minor.ion -= 0.5*relvnormal*
-					(n0 * (Make3(vxy0 - our_v.vxy, viz0 - our_v.viz))
-						+ n1 * (Make3(vxy1 - our_v.vxy, viz1 - our_v.viz)));
-				ownrates_minor.elec -= 0.5*relvnormal*
-					(n0 * (Make3(vxy0 - our_v.vxy, vez0 - our_v.vez))
-						+ n1 * (Make3(vxy1 - our_v.vxy, vez1 - our_v.vez)));
+				if (info.flag == CROSSING_INS) {
+					char flag = p_info_minor[izNeighMinor[i]].flag;
+					if ((flag == DOMAIN_TRIANGLE) || (flag == DOMAIN_VERTEX))
+					{
+						ownrates_minor.ion -= 0.5*relvnormal*
+							(n0 * (Make3(vxy0 - our_v.vxy, viz0 - our_v.viz))
+								+ n1 * (Make3(vxy1 - our_v.vxy, viz1 - our_v.viz)));
+						ownrates_minor.elec -= 0.5*relvnormal*
+							(n0 * (Make3(vxy0 - our_v.vxy, vez0 - our_v.vez))
+								+ n1 * (Make3(vxy1 - our_v.vxy, vez1 - our_v.vez)));
+					}
+				} else {
+					ownrates_minor.ion -= 0.5*relvnormal*
+						(n0 * (Make3(vxy0 - our_v.vxy, viz0 - our_v.viz))
+							+ n1 * (Make3(vxy1 - our_v.vxy, viz1 - our_v.viz)));
+					ownrates_minor.elec -= 0.5*relvnormal*
+						(n0 * (Make3(vxy0 - our_v.vxy, vez0 - our_v.vez))
+							+ n1 * (Make3(vxy1 - our_v.vxy, vez1 - our_v.vez)));
+				};
 
 				//		if ((iMinor == CHOSEN) && (0)) {
 				//			printf("advectiveGPU %d ownrates_minor.ion.x %1.12E contrib %1.12E relvnormal %1.12E n0 %1.12E n1 %1.12E vxy0.x %1.12E vxy1.x %1.12E vxyours.x %1.12E\n", 
@@ -9500,15 +9546,36 @@ __global__ void kernelCreate_momflux_minor(
 			// ==========================================
 		} // non-domain tri
 	}; // was it FRILL
-
-
+	
 	   // Something in the commented code triggers error 77 bad memory access
-
+}
+__global__ void kernelTransmitHeatToVerts(
+	structural * __restrict__ p_info,
+	long * __restrict__ p_izTri,
+	NTrates * __restrict__ NT_addition_rates,
+	NTrates * __restrict__ NT_addition_tri
+) {
+	long iVertex = blockDim.x*blockIdx.x + threadIdx.x;
+	structural info = p_info[iVertex + BEGINNING_OF_CENTRAL];
+	long izTri[MAXNEIGH_d];
+	short i;
+	f64 sum_NeTe = 0.0, sum_NiTi = 0.0;
+	if (info.flag == DOMAIN_VERTEX) {
+		memcpy(izTri, p_izTri + MAXNEIGH_d*iVertex, sizeof(long)*MAXNEIGH_d);
+		for (i = 0; i < info.neigh_len; i++)
+		{
+			sum_NiTi += THIRD*NT_addition_tri[izTri[i]].NiTi;
+			sum_NeTe += THIRD*NT_addition_tri[izTri[i]].NeTe;
+		};
+		NT_addition_rates[iVertex].NiTi += sum_NiTi;
+		NT_addition_rates[iVertex].NeTe += sum_NeTe;
+	}
 }
 
 // Not optimized: !!
 #define FACTOR_HALL (1.0/0.96)
 #define FACTOR_PERP (1.2/0.96)
+#define DEBUGNANS
 
 __global__ void kernelCreate_viscous_contrib_to_MAR_and_NT(
 
@@ -9528,7 +9595,8 @@ __global__ void kernelCreate_viscous_contrib_to_MAR_and_NT(
 
 	f64_vec3 * __restrict__ p_MAR_ion,
 	f64_vec3 * __restrict__ p_MAR_elec,
-	NTrates * __restrict__ p_NT_addition_rate)
+	NTrates * __restrict__ p_NT_addition_rate,
+	NTrates * __restrict__ p_NT_addition_tri)
 {
 	__shared__ v4 shared_vie[threadsPerTileMinor]; // sort of thing we want as input
 	__shared__ f64_vec2 shared_pos[threadsPerTileMinor];
@@ -9575,10 +9643,13 @@ __global__ void kernelCreate_viscous_contrib_to_MAR_and_NT(
 		info = p_info_minor[iVertex + BEGINNING_OF_CENTRAL];
 		shared_pos_verts[threadIdx.x] = info.pos;
 		shared_B_verts[threadIdx.x] = p_B_minor[iVertex + BEGINNING_OF_CENTRAL].xypart();
-		if (info.flag == DOMAIN_VERTEX) {
+		if ((info.flag == DOMAIN_VERTEX) || (info.flag == OUTERMOST)) {
 			memcpy(&(shared_vie_verts[threadIdx.x]), &(p_vie_minor[iVertex + BEGINNING_OF_CENTRAL]), sizeof(v4));
 			shared_ita_par_verts[threadIdx.x] = p_ita_parallel_ion_minor[iVertex + BEGINNING_OF_CENTRAL];
 			shared_nu_verts[threadIdx.x] = p_nu_ion_minor[iVertex + BEGINNING_OF_CENTRAL];
+			// But now I am going to set ita == 0 in OUTERMOST and agree never to look there because that's fairer than one-way traffic and I don't wanna handle OUTERMOST?
+			// I mean, I could handle it, and do flows only if the flag does not come up OUTER_FRILL.
+			// OK just do that.
 		} else {
 			// it still manages to coalesce, let's hope, because ShardModel is 13 doubles not 12.
 			memset(&(shared_vie_verts[threadIdx.x]), 0, sizeof(v4));
@@ -9608,12 +9679,13 @@ __global__ void kernelCreate_viscous_contrib_to_MAR_and_NT(
 		char szPBC[MAXNEIGH];
 		short tri_len = info.neigh_len; // ?!
 		
-		if (info.flag == DOMAIN_VERTEX) {
+		if ((info.flag == DOMAIN_VERTEX) || (info.flag == OUTERMOST)) {
+			// if we include OUTERMOST then it has frills..
 
 			// We are losing energy if there is viscosity into OUTERMOST.
 			memcpy(izTri, p_izTri + iVertex*MAXNEIGH, MAXNEIGH * sizeof(long));
 			memcpy(szPBC, p_szPBC + iVertex*MAXNEIGH, MAXNEIGH * sizeof(char));
-
+			
 			our_v = shared_vie_verts[threadIdx.x]; // optimization: use replace or #define to get rid of storing this again.
 
 			short iprev = tri_len - 1;
@@ -9804,22 +9876,43 @@ __global__ void kernelCreate_viscous_contrib_to_MAR_and_NT(
 					visc_contrib.y = -over_m_i*(Pi_yx*edge_normal.x + Pi_yy*edge_normal.y);
 					visc_contrib.z = -over_m_i*(Pi_zx*edge_normal.x + Pi_zy*edge_normal.y);
 
-					ownrates_visc += visc_contrib;
+					if (info.flag == OUTERMOST) {
+						if (p_info_minor[izTri[i]].flag == DOMAIN_TRIANGLE)
+						{
+							ownrates_visc += visc_contrib;
 
-					visc_htg += -THIRD*m_ion*(
-						(our_v.vxy.x - opp_v.vxy.x)*visc_contrib.x
-						+ (our_v.vxy.y - opp_v.vxy.y)*visc_contrib.y
-						+ (our_v.viz - opp_v.viz)*visc_contrib.z);
+							visc_htg += -THIRD*m_ion*(
+								(our_v.vxy.x - opp_v.vxy.x)*visc_contrib.x
+								+ (our_v.vxy.y - opp_v.vxy.y)*visc_contrib.y
+								+ (our_v.viz - opp_v.viz)*visc_contrib.z);
+							// do not look into frill
+						}
+						else {
+							visc_contrib.x = 0.0; visc_contrib.y = 0.0; visc_contrib.z = 0.0;
+						}
+					} else {
+						ownrates_visc += visc_contrib;
 
-					if (iVertex == VERTCHOSEN) printf("iVertex %d ION ita_par %1.9E \n"
-						"gradvx %1.8E %1.8E gradvy %1.8E %1.8E edgenormal %1.8E %1.8E\n"
-						"Pi_xx %1.8E xy %1.8E yy %1.8E zx %1.8E\n"
-						"visc_contrib %1.9E %1.9E %1.9E\n"
-						"===\n",
-						iVertex, ita_par, gradvx.x, gradvx.y, gradvy.x, gradvy.y, edge_normal.x, edge_normal.y,
-						Pi_xx, Pi_xy, Pi_yy, Pi_zx,
-						visc_contrib.x, visc_contrib.y, visc_contrib.z
-					);
+						visc_htg += -THIRD*m_ion*(
+							(our_v.vxy.x - opp_v.vxy.x)*visc_contrib.x
+							+ (our_v.vxy.y - opp_v.vxy.y)*visc_contrib.y
+							+ (our_v.viz - opp_v.viz)*visc_contrib.z);
+					}
+
+					
+					if ((iVertex + BEGINNING_OF_CENTRAL == CHOSEN1) || (iVertex + BEGINNING_OF_CENTRAL == CHOSEN2)) 
+						printf("iVertex %d tri %d ION ita_par %1.9E \n"
+							"gradvx %1.8E %1.8E gradvy %1.8E %1.8E gradvz %1.8E %1.8E\n"
+							"edgenormal %1.8E %1.8E  opp_viz %1.10E our_viz %1.10E\n"
+							"Pi_xx %1.8E xy %1.8E yy %1.8E zx %1.8E\n"
+							"visc_contrib %1.9E %1.9E %1.9E visc_htg %1.10E\n"
+							"===\n",
+							iVertex, izTri[i], ita_par, gradvx.x, gradvx.y, gradvy.x, gradvy.y, 
+							gradviz.x, gradviz.y,
+							edge_normal.x, edge_normal.y, opp_v.viz, our_v.viz,
+							Pi_xx, Pi_xy, Pi_yy, Pi_zx,
+							visc_contrib.x, visc_contrib.y, visc_contrib.z, visc_htg
+						);
 
 					// So we are saying if edge_normal.x > 0 and gradviz.x > 0
 					// then Pi_zx < 0 then ownrates += a positive amount. That is correct.
@@ -9928,32 +10021,42 @@ __global__ void kernelCreate_viscous_contrib_to_MAR_and_NT(
 					visc_contrib.y = over_m_i*(unit_b.y*momflux_b + unit_perp.y*momflux_perp + unit_Hall.y*momflux_Hall);
 					visc_contrib.z = over_m_i*(unit_b.z*momflux_b + unit_perp.z*momflux_perp + unit_Hall.z*momflux_Hall);
 
-					ownrates_visc += visc_contrib;
-					
-					visc_htg += -THIRD*m_ion*(
-						  (our_v.vxy.x - opp_v.vxy.x)*visc_contrib.x
-						+ (our_v.vxy.y - opp_v.vxy.y)*visc_contrib.y
-						+ (our_v.viz - opp_v.viz)*visc_contrib.z); 
+					if (info.flag == OUTERMOST) {
+						if (p_info_minor[izTri[i]].flag == DOMAIN_TRIANGLE)	{
+							ownrates_visc += visc_contrib;
 
-					//if (iVertex == VERTCHOSEN) {
-					//	f64_vec3 mag_edge;
-					//	f64_vec2 edge_normal;
-					//	edge_normal.x = endpt1.y - endpt0.y;
-					//	edge_normal.y = endpt0.x - endpt1.x; // need to define so as to create unit vectors
-					//										 // Most efficient way: compute mom flux in magnetic coords
-					//	mag_edge.x = unit_b.x*edge_normal.x + unit_b.y*edge_normal.y;
-					//	mag_edge.y = unit_perp.x*edge_normal.x + unit_perp.y*edge_normal.y;
-					//	mag_edge.z = unit_Hall.x*edge_normal.x + unit_Hall.y*edge_normal.y;
+							visc_htg += -TWOTHIRDS*m_ion*(
+								(our_v.vxy.x - opp_v.vxy.x)*visc_contrib.x
+								+ (our_v.vxy.y - opp_v.vxy.y)*visc_contrib.y
+								+ (our_v.viz - opp_v.viz)*visc_contrib.z);  // Claim all visc htg for this vertcell
+						}
+					} else {
+						ownrates_visc += visc_contrib;
 
-					//	printf("iVertex %d MAGNETIZED case: visc contrib %1.8E %1.8E %1.8E\n"
-					//		"ita_par %1.9E momflux_b %1.8E momflux_perp %1.8E Hall %1.8E\n"
-					//		"mag_edge %1.8E %1.8E %1.8E edge %1.8E %1.8E \n===\n",
-					//		iVertex, visc_contrib.x, visc_contrib.y, visc_contrib.z,
-					//		ita_par, momflux_b, momflux_perp, momflux_Hall,
-					//		mag_edge.x, mag_edge.y, mag_edge.z,
-					//		edge_normal.x, edge_normal.y);
+						visc_htg += -TWOTHIRDS*m_ion*(
+							(our_v.vxy.x - opp_v.vxy.x)*visc_contrib.x
+							+ (our_v.vxy.y - opp_v.vxy.y)*visc_contrib.y
+							+ (our_v.viz - opp_v.viz)*visc_contrib.z);  // Claim all visc htg for this vertcell
+					}
+					if ((iVertex + BEGINNING_OF_CENTRAL == CHOSEN1) || (iVertex + BEGINNING_OF_CENTRAL == CHOSEN2)) {
+						f64_vec3 mag_edge;
+						f64_vec2 edge_normal;
+						edge_normal.x = endpt1.y - endpt0.y;
+						edge_normal.y = endpt0.x - endpt1.x; // need to define so as to create unit vectors
+															 // Most efficient way: compute mom flux in magnetic coords
+						mag_edge.x = unit_b.x*edge_normal.x + unit_b.y*edge_normal.y;
+						mag_edge.y = unit_perp.x*edge_normal.x + unit_perp.y*edge_normal.y;
+						mag_edge.z = unit_Hall.x*edge_normal.x + unit_Hall.y*edge_normal.y;
 
-					//}
+						printf("iVertex %d MAGNETIZED case: visc contrib %1.8E %1.8E %1.8E\n"
+							"ita_par %1.9E momflux_b %1.8E momflux_perp %1.8E Hall %1.8E\n"
+							"mag_edge %1.8E %1.8E %1.8E edge %1.8E %1.8E \n===\n",
+							iVertex, visc_contrib.x, visc_contrib.y, visc_contrib.z,
+							ita_par, momflux_b, momflux_perp, momflux_Hall,
+							mag_edge.x, mag_edge.y, mag_edge.z,
+							edge_normal.x, edge_normal.y);
+
+					}
 
 					// sign: ours is gaining visc_contrib so negate that effect to add to NT
 					// THIRD because 2/3 factor appears in heat energy, but we divide by 2 because split between this cell and opposing.
@@ -9984,8 +10087,18 @@ __global__ void kernelCreate_viscous_contrib_to_MAR_and_NT(
 			ownrates += ownrates_visc;
 			memcpy(p_MAR_ion + iVertex + BEGINNING_OF_CENTRAL, &ownrates, sizeof(f64_vec3));
 			
-			p_NT_addition_rate[iVertex + BEGINNING_OF_CENTRAL].NiTi += visc_htg;
+			p_NT_addition_rate[iVertex].NiTi += visc_htg;
 			
+#ifdef DEBUGNANS
+			if (ownrates.x != ownrates.x)
+				printf("iVertex %d NaN ownrates.x\n",iVertex);
+			if (ownrates.y != ownrates.y)
+				printf("iVertex %d NaN ownrates.y\n", iVertex);
+			if (ownrates.z != ownrates.z)
+				printf("iVertex %d NaN ownrates.z\n", iVertex);			
+			if (visc_htg != visc_htg) printf("iVertex %d NAN VISC HTG\n", iVertex);
+#endif
+
 		} else {
 			// NOT domain vertex: Do nothing			
 		};
@@ -10211,20 +10324,33 @@ __global__ void kernelCreate_viscous_contrib_to_MAR_and_NT(
 						char flag = p_info_minor[izNeighMinor[i]].flag;
 						if ((flag == DOMAIN_TRIANGLE) || (flag == DOMAIN_VERTEX)) {
 							ownrates_visc += visc_contrib;
-							visc_htg += -THIRD*m_ion*(
-								(our_v.vxy.x - opp_v.vxy.x)*visc_contrib.x
-								+ (our_v.vxy.y - opp_v.vxy.y)*visc_contrib.y
-								+ (our_v.viz - opp_v.viz)*visc_contrib.z);
+						
+							if (i % 2 == 0) {
+								// vertex : heat collected by vertex
+							}
+							else {
+								visc_htg += -THIRD*m_ion*(
+									(our_v.vxy.x - opp_v.vxy.x)*visc_contrib.x
+									+ (our_v.vxy.y - opp_v.vxy.y)*visc_contrib.y
+									+ (our_v.viz - opp_v.viz)*visc_contrib.z);
+								// And we are going to give it to what? Just spread it out after.
+							}
 						}
 						else {
 							// DO NOTHING
 						}
 					} else {
 						ownrates_visc += visc_contrib;
-						visc_htg += -THIRD*m_ion*(
-							(our_v.vxy.x - opp_v.vxy.x)*visc_contrib.x
-							+ (our_v.vxy.y - opp_v.vxy.y)*visc_contrib.y
-							+ (our_v.viz - opp_v.viz)*visc_contrib.z);
+
+						if (i % 2 == 0) {
+							// vertex : heat collected by vertex
+						}
+						else {
+							visc_htg += -THIRD*m_ion*(
+								(our_v.vxy.x - opp_v.vxy.x)*visc_contrib.x
+								+ (our_v.vxy.y - opp_v.vxy.y)*visc_contrib.y
+								+ (our_v.viz - opp_v.viz)*visc_contrib.z);
+						}
 					}
 
 					// So we are saying if edge_normal.x > 0 and gradviz.x > 0
@@ -10347,19 +10473,23 @@ __global__ void kernelCreate_viscous_contrib_to_MAR_and_NT(
 						char flag = p_info_minor[izNeighMinor[i]].flag;
 						if ((flag == DOMAIN_TRIANGLE) || (flag == DOMAIN_VERTEX)) {
 							ownrates_visc += visc_contrib;
-							visc_htg += -THIRD*m_ion*(
-								(our_v.vxy.x - opp_v.vxy.x)*visc_contrib.x
-								+ (our_v.vxy.y - opp_v.vxy.y)*visc_contrib.y
-								+ (our_v.viz - opp_v.viz)*visc_contrib.z);
+							if (i % 2 != 0) // not vertex
+							{
+								visc_htg += -THIRD*m_ion*(
+									(our_v.vxy.x - opp_v.vxy.x)*visc_contrib.x
+									+ (our_v.vxy.y - opp_v.vxy.y)*visc_contrib.y
+									+ (our_v.viz - opp_v.viz)*visc_contrib.z);
+							}
+							// NOTE: ISSUES
 						} else {
 							// DO NOTHING
 						}
 					} else {
 						ownrates_visc += visc_contrib;
-						visc_htg += -THIRD*m_ion*(
-							(our_v.vxy.x - opp_v.vxy.x)*visc_contrib.x
-							+ (our_v.vxy.y - opp_v.vxy.y)*visc_contrib.y
-							+ (our_v.viz - opp_v.viz)*visc_contrib.z);
+						if (i % 2 != 0) // not vertex
+							visc_htg += -THIRD*m_ion*((our_v.vxy.x - opp_v.vxy.x)*visc_contrib.x
+								+ (our_v.vxy.y - opp_v.vxy.y)*visc_contrib.y
+								+ (our_v.viz - opp_v.viz)*visc_contrib.z);
 					}
 
 					// MAR_elec -= Make3(0.5*(n0 * T0.Te + n1 * T1.Te)*over_m_e*edge_normal, 0.0);
@@ -10378,8 +10508,21 @@ __global__ void kernelCreate_viscous_contrib_to_MAR_and_NT(
 			ownrates += ownrates_visc;
 			memcpy(&(p_MAR_ion[iMinor]), &(ownrates), sizeof(f64_vec3));
 
-			p_NT_addition_rate[iMinor].NiTi += visc_htg;
+			p_NT_addition_tri[iMinor].NiTi += visc_htg;
 
+			// We will have to round this up into the vertex heat afterwards.
+
+
+#ifdef DEBUGNANS
+			if (ownrates.x != ownrates.x)
+				printf("iMinor %d NaN ownrates.x\n", iMinor);
+			if (ownrates.y != ownrates.y)
+				printf("iMinor %d NaN ownrates.y\n", iMinor);
+			if (ownrates.z != ownrates.z)
+				printf("iMinor %d NaN ownrates.z\n", iMinor);
+
+			if (visc_htg != visc_htg) printf("iMinor %d NAN VISC HTG\n", iMinor);
+#endif
 		//		-TWOTHIRDS*m_i*(our_v.vxy.x * ownrates_visc.x
 		//			+ our_v.vxy.y*ownrates_visc.y
 		//			+ our_v.viz*ownrates_visc.z);
@@ -10408,7 +10551,7 @@ __global__ void kernelCreate_viscous_contrib_to_MAR_and_NT(
 	if (threadIdx.x < threadsPerTileMajor) {
 		info = p_info_minor[iVertex + BEGINNING_OF_CENTRAL];
 
-		if (info.flag == DOMAIN_VERTEX) {
+		if ((info.flag == DOMAIN_VERTEX) || (info.flag == OUTERMOST)) {
 			shared_ita_par_verts[threadIdx.x] = p_ita_parallel_elec_minor[iVertex + BEGINNING_OF_CENTRAL];
 			shared_nu_verts[threadIdx.x] = p_nu_elec_minor[iVertex + BEGINNING_OF_CENTRAL];
 		}
@@ -10432,7 +10575,7 @@ __global__ void kernelCreate_viscous_contrib_to_MAR_and_NT(
 
 		our_v = shared_vie_verts[threadIdx.x]; // optimization: use replace or #define to get rid of storing this again.
 
-		if (info.flag == DOMAIN_VERTEX) {
+		if ((info.flag == DOMAIN_VERTEX) || (info.flag == OUTERMOST)) {
 
 			short iprev = tri_len - 1;
 			short i = 0;
@@ -10538,15 +10681,6 @@ __global__ void kernelCreate_viscous_contrib_to_MAR_and_NT(
 					+ (next_v.vxy.y + opp_v.vxy.y)*(nextpos.x - opppos.x) // nextpos = pos_anti, assumed
 					) / area_quadrilateral;
 
-				// This should have given exact same answer as for ion but it did not.
-				if (iVertex == VERTCHOSEN) printf(
-					"iVertex %d our_v.y next prev opp %1.8E %1.8E %1.8E %1.8E\n"
-					"area_quad %1.8E \n"
-					"info.pos %1.8E %1.8E opppos %1.8E %1.8E prev %1.8E %1.8E next %1.8E %1.8E\n",
-					iVertex, our_v.vxy.y, next_v.vxy.y, prev_v.vxy.y, opp_v.vxy.y,
-					area_quadrilateral,
-					info.pos.x, info.pos.y, opppos.x, opppos.y, prevpos.x, prevpos.y, nextpos.x, nextpos.y);
-
 				gradvez.x = 0.5*(
 					(our_v.vez + next_v.vez)*(info.pos.y - nextpos.y)
 					+ (prev_v.vez + our_v.vez)*(prevpos.y - info.pos.y)
@@ -10608,24 +10742,60 @@ __global__ void kernelCreate_viscous_contrib_to_MAR_and_NT(
 					visc_contrib.y = -over_m_e*(Pi_yx*edge_normal.x + Pi_yy*edge_normal.y);
 					visc_contrib.z = -over_m_e*(Pi_zx*edge_normal.x + Pi_zy*edge_normal.y);
 
-					ownrates_visc += visc_contrib;
-					
-					visc_htg += -THIRD*m_e*(
-						(our_v.vxy.x - opp_v.vxy.x)*visc_contrib.x
-						+ (our_v.vxy.y - opp_v.vxy.y)*visc_contrib.y
-						+ (our_v.vez - opp_v.vez)*visc_contrib.z);
+					if (info.flag == OUTERMOST) {
+						if (p_info_minor[izTri[i]].flag == DOMAIN_TRIANGLE) {
+							ownrates_visc += visc_contrib;
 
-					if (iVertex == VERTCHOSEN) printf("iVertex %d ELEC ita_par %1.9E \n"
-						"gradvx %1.8E %1.8E gradvy %1.8E %1.8E edgenormal %1.8E %1.8E\n"
-						"our_v %1.8E %1.8E opp_v %1.8E %1.8E\n"
-						"Pi_xx %1.8E xy %1.8E yy %1.8E zx %1.8E\n"
-						"visc_contrib %1.9E %1.9E %1.9E\n"
-						"===\n",
-						iVertex, ita_par, gradvx.x, gradvx.y, gradvy.x, gradvy.y, edge_normal.x, edge_normal.y,
-						our_v.vxy.x,our_v.vxy.y,opp_v.vxy.x,opp_v.vxy.y,
-						Pi_xx, Pi_xy, Pi_yy, Pi_zx,
-						visc_contrib.x, visc_contrib.y, visc_contrib.z
-					);
+							visc_htg += -TWOTHIRDS*m_e*(
+								(our_v.vxy.x - opp_v.vxy.x)*visc_contrib.x
+								+ (our_v.vxy.y - opp_v.vxy.y)*visc_contrib.y
+								+ (our_v.vez - opp_v.vez)*visc_contrib.z);
+						}
+						else {
+							visc_contrib.x = 0.0; visc_contrib.y = 0.0; visc_contrib.z = 0.0;
+						}
+					} else {
+						ownrates_visc += visc_contrib;
+
+						visc_htg += -TWOTHIRDS*m_e*(
+							(our_v.vxy.x - opp_v.vxy.x)*visc_contrib.x
+							+ (our_v.vxy.y - opp_v.vxy.y)*visc_contrib.y
+							+ (our_v.vez - opp_v.vez)*visc_contrib.z);
+					};
+					// The alternative, that may or may not run faster, is to test for ita == 0 before we do all the calcs
+					// and then set ita == 0 in all the places not to look, including OUTERMOST, and do not do traffic to or from it.
+
+
+					if ((iVertex + BEGINNING_OF_CENTRAL == CHOSEN1) || (iVertex + BEGINNING_OF_CENTRAL == CHOSEN2))
+						printf("iVertex %d tri %d ELEC ita_par %1.9E \n"
+							"gradvx %1.8E %1.8E gradvy %1.8E %1.8E gradvz %1.8E %1.8E\n"
+							"edgenormal %1.8E %1.8E  opp_vez %1.10E our_vez %1.10E\n"
+							"Pi_xx %1.8E xy %1.8E yy %1.8E zx %1.8E\n"
+							"visc_contrib %1.9E %1.9E %1.9E visc_htg %1.10E\n"
+							"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n",
+							iVertex, izTri[i], ita_par, gradvx.x, gradvx.y, gradvy.x, gradvy.y,
+							gradvez.x, gradvez.y,
+							edge_normal.x, edge_normal.y, opp_v.vez, our_v.vez,
+							Pi_xx, Pi_xy, Pi_yy, Pi_zx,
+							visc_contrib.x, visc_contrib.y, visc_contrib.z, visc_htg
+						);
+				//	if (iVertex == VERTCHOSEN) printf("iVertex %d tri %d ELEC ita_par %1.9E own ita %1.9E\n"
+				//		"gradvx %1.8E %1.8E gradvy %1.8E %1.8E edgenormal %1.8E %1.8E\n"
+				//		"our_v %1.8E %1.8E opp_v %1.8E %1.8E\n"
+				//		"Pi_xx %1.8E xy %1.8E yy %1.8E zx %1.8E\n"
+				//		"visc_contrib %1.9E %1.9E %1.9E htg %1.9E\n "
+				//		"heating contribs %1.9E %1.9E %1.9E"
+				//		"===\n",
+				//		iVertex, izTri[i], ita_par, shared_ita_par_verts[threadIdx.x],
+				//		gradvx.x, gradvx.y, gradvy.x, gradvy.y, edge_normal.x, edge_normal.y,
+				//		our_v.vxy.x,our_v.vxy.y,opp_v.vxy.x,opp_v.vxy.y,
+				//		Pi_xx, Pi_xy, Pi_yy, Pi_zx,
+				//		visc_contrib.x, visc_contrib.y, visc_contrib.z, visc_htg,
+				//		-TWOTHIRDS*m_e*((our_v.vxy.x - opp_v.vxy.x)*visc_contrib.x),
+				//		-TWOTHIRDS*m_e*((our_v.vxy.y - opp_v.vxy.y)*visc_contrib.y),
+				//		-TWOTHIRDS*m_e*((our_v.vez - opp_v.vez)*visc_contrib.z)
+				//	);
+
 					// -= !!!
 					// So we are saying if edge_normal.x > 0 and gradviz.x > 0
 					// then Pi_zx < 0 then ownrates += a positive amount. That is correct.
@@ -10743,8 +10913,24 @@ __global__ void kernelCreate_viscous_contrib_to_MAR_and_NT(
 					visc_contrib.y = over_m_e*(unit_b.y*momflux_b + unit_perp.y*momflux_perp + unit_Hall.y*momflux_Hall);
 					visc_contrib.z = over_m_e*(unit_b.z*momflux_b + unit_perp.z*momflux_perp + unit_Hall.z*momflux_Hall);
 
-					ownrates_visc += visc_contrib;
+					if (info.flag == OUTERMOST) {
+						if (p_info_minor[izTri[i]].flag == DOMAIN_TRIANGLE) {
+							ownrates_visc += visc_contrib;
 
+							visc_htg += -TWOTHIRDS*m_e*(
+								(our_v.vxy.x - opp_v.vxy.x)*visc_contrib.x
+								+ (our_v.vxy.y - opp_v.vxy.y)*visc_contrib.y
+								+ (our_v.vez - opp_v.vez)*visc_contrib.z);
+						}
+					}
+					else {
+						ownrates_visc += visc_contrib;
+
+						visc_htg += -TWOTHIRDS*m_e*(
+							(our_v.vxy.x - opp_v.vxy.x)*visc_contrib.x
+							+ (our_v.vxy.y - opp_v.vxy.y)*visc_contrib.y
+							+ (our_v.vez - opp_v.vez)*visc_contrib.z);
+					};
 					//if (iVertex == VERTCHOSEN) {
 					//	f64_vec3 mag_edge;
 					//	f64_vec2 edge_normal;
@@ -10771,11 +10957,6 @@ __global__ void kernelCreate_viscous_contrib_to_MAR_and_NT(
 					//		omega_ce.x, omega_ce.y, omega_ce.z, omega_ce.modulus(), nu);
 					//}
 					//
-					visc_htg += -THIRD*m_e*(
-						(our_v.vxy.x - opp_v.vxy.x)*visc_contrib.x
-						+ (our_v.vxy.y - opp_v.vxy.y)*visc_contrib.y
-						+ (our_v.vez - opp_v.vez)*visc_contrib.z);
-
 					// MAR_elec -= Make3(0.5*(n0 * T0.Te + n1 * T1.Te)*over_m_e*edge_normal, 0.0);
 					// v0.vez = vie_k.vez + h_use * MAR.z / (n_use.n*AreaMinor);
 				}
@@ -10796,8 +10977,18 @@ __global__ void kernelCreate_viscous_contrib_to_MAR_and_NT(
 			ownrates += ownrates_visc;
 			memcpy(p_MAR_elec + iVertex + BEGINNING_OF_CENTRAL, &ownrates, sizeof(f64_vec3));
 
-			p_NT_addition_rate[iVertex + BEGINNING_OF_CENTRAL].NeTe += visc_htg;
+			p_NT_addition_rate[iVertex].NeTe += visc_htg;
 
+#ifdef DEBUGNANS
+			if (ownrates.x != ownrates.x)
+				printf("iVertex e %d NaN ownrates.x\n", iVertex);
+			if (ownrates.y != ownrates.y)
+				printf("iVertex e %d NaN ownrates.y\n", iVertex);
+			if (ownrates.z != ownrates.z)
+				printf("iVertex e %d NaN ownrates.z\n", iVertex);
+
+			if (visc_htg != visc_htg) printf("iVertex e %d NAN VISC HTG\n", iVertex);
+#endif
 		} else {
 			 // NOT domain vertex: Do nothing			
 		};
@@ -11014,20 +11205,33 @@ __global__ void kernelCreate_viscous_contrib_to_MAR_and_NT(
 						char flag = p_info_minor[izNeighMinor[i]].flag;
 						if ((flag == DOMAIN_TRIANGLE) || (flag == DOMAIN_VERTEX)) {
 							ownrates_visc += visc_contrib;
-							visc_htg += -THIRD*m_e*(
-								(our_v.vxy.x - opp_v.vxy.x)*visc_contrib.x
-								+ (our_v.vxy.y - opp_v.vxy.y)*visc_contrib.y
-								+ (our_v.vez - opp_v.vez)*visc_contrib.z);
+							if (i % 2 != 0) {
+								visc_htg += -THIRD*m_e*(
+									(our_v.vxy.x - opp_v.vxy.x)*visc_contrib.x
+									+ (our_v.vxy.y - opp_v.vxy.y)*visc_contrib.y
+									+ (our_v.vez - opp_v.vez)*visc_contrib.z);
+							}
 						} else {
 							// DO NOTHING
+							visc_contrib.x = 0.0; visc_contrib.y = 0.0; visc_contrib.z = 0.0;
 						}
 					} else {
 						ownrates_visc += visc_contrib;
-						visc_htg += -THIRD*m_e*(
+						if (i % 2 != 0)
+							visc_htg += -THIRD*m_e*(
 							(our_v.vxy.x - opp_v.vxy.x)*visc_contrib.x
-							+ (our_v.vxy.y - opp_v.vxy.y)*visc_contrib.y
-							+ (our_v.vez - opp_v.vez)*visc_contrib.z);
+								+ (our_v.vxy.y - opp_v.vxy.y)*visc_contrib.y
+								+ (our_v.vez - opp_v.vez)*visc_contrib.z);
 					}
+
+					if (iMinor == CHOSEN) 
+						printf("\n%d : %d : ita %1.8E our_vez %1.10E opp_vez %1.10E \n"
+							"gradvz %1.9E %1.9E ourpos %1.9E %1.9E opppos %1.9E %1.9E \n"
+							"visc_contrib.z %1.10E visc_htg %1.10E\n", iMinor, izNeighMinor[i],
+							ita_par, our_v.vez, opp_v.vez, 
+							gradvez.x,gradvez.y, info.pos.x,info.pos.y,opppos.x,opppos.y,
+							visc_contrib.z, visc_htg);
+
 				} else {
 					f64_vec3 unit_b, unit_perp, unit_Hall;
 					{
@@ -11135,7 +11339,7 @@ __global__ void kernelCreate_viscous_contrib_to_MAR_and_NT(
 						char flag = p_info_minor[izNeighMinor[i]].flag;
 						if ((flag == DOMAIN_TRIANGLE) || (flag == DOMAIN_VERTEX)) {
 							ownrates_visc += visc_contrib;
-							visc_htg += -THIRD*m_e*(
+							if (i %2 != 0) visc_htg += -THIRD*m_e*(
 								(our_v.vxy.x - opp_v.vxy.x)*visc_contrib.x
 								+ (our_v.vxy.y - opp_v.vxy.y)*visc_contrib.y
 								+ (our_v.vez - opp_v.vez)*visc_contrib.z);
@@ -11144,6 +11348,7 @@ __global__ void kernelCreate_viscous_contrib_to_MAR_and_NT(
 						}
 					} else {
 						ownrates_visc += visc_contrib;
+						if (i %2 != 0)
 						visc_htg += -THIRD*m_e*(
 							(our_v.vxy.x - opp_v.vxy.x)*visc_contrib.x
 							+ (our_v.vxy.y - opp_v.vxy.y)*visc_contrib.y
@@ -11161,8 +11366,19 @@ __global__ void kernelCreate_viscous_contrib_to_MAR_and_NT(
 			ownrates += ownrates_visc;
 			memcpy(&(p_MAR_elec[iMinor]), &(ownrates), sizeof(f64_vec3));
 
-			p_NT_addition_rate[iMinor].NeTe += visc_htg;
+			p_NT_addition_tri[iMinor].NeTe += visc_htg;
 
+
+#ifdef DEBUGNANS
+			if (ownrates.x != ownrates.x)
+				printf("iMinor e %d NaN ownrates.x\n", iMinor);
+			if (ownrates.y != ownrates.y)
+				printf("iMinor e %d NaN ownrates.y\n", iMinor);
+			if (ownrates.z != ownrates.z)
+				printf("iMinor e %d NaN ownrates.z\n", iMinor);
+
+			if (visc_htg != visc_htg) printf("iMinor e %d NAN VISC HTG\n", iMinor);
+#endif
 		} else {
 			// Not domain, not crossing_ins, not a frill			
 		} // non-domain tri

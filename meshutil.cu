@@ -4671,7 +4671,8 @@ void TriMesh::RefreshVertexNeighboursOfVerticesOrdered(void)
 	
 	pVertex = X;
 	for (iVertex = 0; iVertex < numVertices; iVertex++)
-	{					
+	{
+		
 		tri_len = pVertex->GetTriIndexArray(izTri);
 		if (tri_len >= 100)
 		{
@@ -4707,6 +4708,7 @@ void TriMesh::RefreshVertexNeighboursOfVerticesOrdered(void)
 		};
 		for (i = 0; i < tri_len; i++)
 			tempint[i] = izTri[index[i]];
+
 		// And now we come to have problems.
 		pVertex->SetTriIndexArray(tempint,tri_len);
 		pVertex->GetTriIndexArray(izTri);

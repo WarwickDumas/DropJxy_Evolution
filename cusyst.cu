@@ -484,10 +484,20 @@ void cuSyst::Output(const char * filename)
 		long i;
 		for (i = 0; i < NUMVERTICES; i++)
 		{
-			fprintf(fp, "nmajor %d %1.14E %1.14E \n",
-				i, p_n_major[i].n, p_n_major[i].n_n);
+			fprintf(fp, "izTri %d : %d %d %d %d %d %d \n",
+				i, p_izTri_vert[MAXNEIGH*i + 0],
+				p_izTri_vert[MAXNEIGH*i + 1],
+				p_izTri_vert[MAXNEIGH*i + 2],
+				p_izTri_vert[MAXNEIGH*i + 3],
+				p_izTri_vert[MAXNEIGH*i + 4],
+				p_izTri_vert[MAXNEIGH*i + 5]);
 		}
-
+		for (i = 0; i < NMINOR; i++)
+		{
+			fprintf(fp, "%d pos %1.14E %1.14E T %1.14E %1.14E %1.14E n %1.14E vxy %1.14E %1.14E vez %1.14E\n",
+				i, p_info[i].pos.x, p_info[i].pos.y, p_T_minor[i].Tn, p_T_minor[i].Ti, p_T_minor[i].Te,
+				p_n_minor[i].n, p_vie[i].vxy.x, p_vie[i].vxy.y, p_vie[i].vez );
+		}
 		fclose(fp);
 	}
 	else {

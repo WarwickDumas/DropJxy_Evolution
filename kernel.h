@@ -227,6 +227,12 @@ __global__ void kernelCalculate_ita_visc(
 	f64 * __restrict__ p_ita_par_elec_minor,
 	f64 * __restrict__ p_ita_neutral_minor);
 
+__global__ void kernelTransmitHeatToVerts (
+	structural * __restrict__ p_info,
+	long * __restrict__ p_izTri,
+	NTrates * __restrict__ NT_addition_rates,
+	NTrates * __restrict__ NT_addition_tri
+	);
 
 __global__ void kernelCreate_viscous_contrib_to_MAR_and_NT(
 	structural * __restrict__ p_info_minor,
@@ -245,7 +251,8 @@ __global__ void kernelCreate_viscous_contrib_to_MAR_and_NT(
 
 	f64_vec3 * __restrict__ p_MAR_ion,
 	f64_vec3 * __restrict__ p_MAR_elec,
-	NTrates * __restrict__ p_NT_addition_rate
+	NTrates * __restrict__ p_NT_addition_rate,
+	NTrates * __restrict__ p_NT_addition_tri
 );
 
 
@@ -335,6 +342,13 @@ __global__ void kernelResetFrillsAz_II(
 	AAdot * __restrict__ p_Az);
 
 
+__global__ void kernelReset_v_in_outer_frill 
+(
+	structural * __restrict__ p_info,
+	v4 * __restrict__ p_vie,
+	f64_vec3 * __restrict__ p_v_n,
+	LONG3 * __restrict__ trineighbourindex
+	);
 
 __global__ void kernelCreateEpsilonAndJacobi(
 	f64 const h_use,

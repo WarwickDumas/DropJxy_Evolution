@@ -2264,9 +2264,9 @@ VOID surfacegraph::Render(const char * szTitle, bool RenderTriLabels,
 			{
 				// Let's render some on vertices instead.
 
-				const Vertex * pVertex = pX->X + 11800;
+				const Vertex * pVertex = pX->Xdomain;
 			//	for (long iVertex = 0; iVertex < pX->numVertices; iVertex++)
-				for (long iVertex = 11800; iVertex < 14500; iVertex++)
+				for (long iVertex = pX->Xdomain-pX->X; iVertex < NUMVERTICES; iVertex++)
 				{
 					if (GlobalWhichLabels == 0) {
 						sprintf(buffer,"%d",iVertex);
