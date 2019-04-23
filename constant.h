@@ -85,7 +85,7 @@ real const nu_eiBarconst_ = //(4.0/3.0)*sqrt(2.0*PI/m_e)*q*q*q*q;
 		// don't know in what units but it IS exactly what we already had - see Formulary
 									1.0/(3.44e5);
 
-#define NEUTRAL_KAPPA_FACTOR   10.0
+#define NEUTRAL_KAPPA_FACTOR   2.5
 
 #define ION_KAPPA_FACTOR = (20.0/9.0)
 //; // 10/3 times 2/3

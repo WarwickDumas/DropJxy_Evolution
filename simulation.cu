@@ -29,7 +29,12 @@ f64 Lap_Aznext[NMINOR];
 real GlobalIzElasticity;
 
 f64 inline GetEzShape__(f64 r) {
-	return 1.0 - 1.0 / (1.0 + exp(-16.0*(r - 4.2))); // At 4.0cm it is 96% as strong as at tooth. At 4.4 it is 4%.
+	return 1.0;
+
+	// FOR NOW
+
+	// return 1.0 - 1.0 / (1.0 + exp(-16.0*(r - 4.2))); // At 4.0cm it is 96% as strong as at tooth. At 4.4 it is 4%.
+
 }  
 //class nvT_data {
 //public:

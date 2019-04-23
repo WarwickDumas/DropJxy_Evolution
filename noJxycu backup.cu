@@ -2,7 +2,7 @@
 #define f64 double
 
 #define HISTORY										4
- 
+
 #include "headers.h"
 #include "cuda_runtime.h"
 #include "device_launch_parameters.h"
@@ -551,7 +551,7 @@ void RefreshGraphs(TriMesh & X, // only not const because of such as Reset_verte
 		break;
 
 	case JZAZBXYEZ:
-		 
+
 		pdata = X.pData + BEGINNING_OF_CENTRAL;
 		for (iVertex = 0; iVertex < NUMVERTICES; iVertex++)
 		{
@@ -1381,8 +1381,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 	long iLow, iMinor;
 	Triangle * pTri;
 	Vertex * pVertex;
-	
-	long izTri[128];
 
 	static bool bInvoked_cuSyst = false;
 	static long GSCCPU = 0;
@@ -1581,28 +1579,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			};
 			printf("Populate *pX\n");
 			cuSyst_host.PopulateTriMesh(pX);
-			printf("send to device\n");
 			cuSyst_host.SendToDevice(cuSyst1);
 			printf("done\n");
-
-			// Debug: redelaun on load:
-			pX->RefreshVertexNeighboursOfVerticesOrdered();
-			pX->Redelaunerize(true, true);
-			// pX->RefreshVertexNeighboursOfVerticesOrdered();
-			// pX->X[89450-BEGINNING_OF_CENTRAL].GetTriIndexArray(izTri);
-//			printf("89450 : %d %d %d %d %d %d \n",
-//				izTri[0], izTri[1], izTri[2], izTri[3], izTri[4], izTri[5]);
-//
-			pX->EnsureAnticlockwiseTriangleCornerSequences_SetupTriMinorNeighboursLists();			 
-			//	pX->Average_n_T_to_tris_and_calc_centroids_and_minorpos(); // Obviates some of our flip calcs to replace tri n,T 
-			// not sure if needed .. just for calc centroid .. they do soon get wiped out anyway.
-			cuSyst_host.PopulateFromTriMesh(pX);
-			cuSyst_host.SendToDevice(cuSyst1); // check this is right
-			cuSyst2.CopyStructuralDetailsFrom(cuSyst1);
-			cuSyst3.CopyStructuralDetailsFrom(cuSyst1);
-				// Let's assume these always carry through during GPU runs.
-				// It certainly does not work as it stands if you don't populate them all the same, put it that way!!
-			printf("sent back re-delaunerized system\n");
 
 			break;
 		case ID_FILE_SAVEBINARY:
@@ -1740,14 +1718,14 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
 				pX->EnsureAnticlockwiseTriangleCornerSequences_SetupTriMinorNeighboursLists();
 				pX->Average_n_T_to_tris_and_calc_centroids_and_minorpos();
-//
-//				printf("tri 340: %d %d %d \n%1.14E %1.14E \n%1.14E %1.14E \n%1.14E %1.14E\n",
-//					pX->T[340].cornerptr[0] - pX->X, pX->T[340].cornerptr[1] - pX->X, pX->T[340].cornerptr[2] - pX->X,
-//					pX->T[340].cornerptr[0]->pos.x, pX->T[340].cornerptr[0]->pos.y,
-//					pX->T[340].cornerptr[1]->pos.x, pX->T[340].cornerptr[1]->pos.y,
-//					pX->T[340].cornerptr[2]->pos.x, pX->T[340].cornerptr[2]->pos.y);
-//				printf("tri 340 periodic %d \n", pX->T[340].periodic);
-//				getch();
+
+				printf("tri 340: %d %d %d \n%1.14E %1.14E \n%1.14E %1.14E \n%1.14E %1.14E\n",
+					pX->T[340].cornerptr[0] - pX->X, pX->T[340].cornerptr[1] - pX->X, pX->T[340].cornerptr[2] - pX->X,
+					pX->T[340].cornerptr[0]->pos.x, pX->T[340].cornerptr[0]->pos.y,
+					pX->T[340].cornerptr[1]->pos.x, pX->T[340].cornerptr[1]->pos.y,
+					pX->T[340].cornerptr[2]->pos.x, pX->T[340].cornerptr[2]->pos.y);
+				printf("tri 340 periodic %d \n", pX->T[340].periodic);
+				getch();
 
 				cuSyst_host.InvokeHost();
 				cuSyst_host.PopulateFromTriMesh(pX);
@@ -1799,6 +1777,13 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			{
 				cuSyst_host.PopulateTriMesh(pX);
 				printf("pulled back to host\n");
+				printf("tri 340: %d %d %d \n%1.14E %1.14E \n%1.14E %1.14E \n%1.14E %1.14E\n",
+					pX->T[340].cornerptr[0] - pX->X, pX->T[340].cornerptr[1] - pX->X, pX->T[340].cornerptr[2] - pX->X,
+					pX->T[340].cornerptr[0]->pos.x, pX->T[340].cornerptr[0]->pos.y,
+					pX->T[340].cornerptr[1]->pos.x, pX->T[340].cornerptr[1]->pos.y,
+					pX->T[340].cornerptr[2]->pos.x, pX->T[340].cornerptr[2]->pos.y);
+				printf("tri 340 periodic %d \n", pX->T[340].periodic);
+				getch();
 			}
 		}
 		else {
@@ -1856,23 +1841,37 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 		{
 			pX->RefreshVertexNeighboursOfVerticesOrdered();
 			pX->Redelaunerize(true, true);
+			pX->RefreshVertexNeighboursOfVerticesOrdered();
+			// We must also ensure that n,T,v,A,Adot values are updated to the best of our ability.
+			
 			// Send back to GPU:
 			pX->EnsureAnticlockwiseTriangleCornerSequences_SetupTriMinorNeighboursLists();
-//
-//			printf("tri 340: %d %d %d \n%1.14E %1.14E \n%1.14E %1.14E \n%1.14E %1.14E\n",
-//				pX->T[340].cornerptr[0] - pX->X, pX->T[340].cornerptr[1] - pX->X, pX->T[340].cornerptr[2] - pX->X,
-//				pX->T[340].cornerptr[0]->pos.x, pX->T[340].cornerptr[0]->pos.y,
-//				pX->T[340].cornerptr[1]->pos.x, pX->T[340].cornerptr[1]->pos.y,
-//				pX->T[340].cornerptr[2]->pos.x, pX->T[340].cornerptr[2]->pos.y);
-//			printf("tri 340 periodic %d \n", pX->T[340].periodic);
-			
-			//	pX->Average_n_T_to_tris_and_calc_centroids_and_minorpos(); // Obviates some of our flip calcs to replace tri n,T 
+
+			printf("tri 340: %d %d %d \n%1.14E %1.14E \n%1.14E %1.14E \n%1.14E %1.14E\n",
+				pX->T[340].cornerptr[0] - pX->X, pX->T[340].cornerptr[1] - pX->X, pX->T[340].cornerptr[2] - pX->X,
+				pX->T[340].cornerptr[0]->pos.x, pX->T[340].cornerptr[0]->pos.y,
+				pX->T[340].cornerptr[1]->pos.x, pX->T[340].cornerptr[1]->pos.y,
+				pX->T[340].cornerptr[2]->pos.x, pX->T[340].cornerptr[2]->pos.y);
+			printf("tri 340 periodic %d \n", pX->T[340].periodic);
+			getch();
+
+			// see that many triangles change corner sequence -- doesn't seem possible.
+
+
+		//	pX->Average_n_T_to_tris_and_calc_centroids_and_minorpos(); // Obviates some of our flip calcs to replace tri n,T 
 			// not sure if needed .. just for calc centroid .. they do soon get wiped out anyway.
 			
-			cuSyst_host.PopulateFromTriMesh(pX);// 1. Does it update lists? --- some had to be updated on CPU first.
-			//cuSyst1.SendToHost(cuSyst_host2);
-			//cuSyst_host.ReportDifferencesHost(cuSyst_host2);
-			cuSyst_host.SendToDevice(cuSyst1); 
+			cuSyst_host.PopulateFromTriMesh(pX);
+			// check what this does: 
+			// 1. Does it update lists? --- some had to be updated on CPU first.
+			// 2. How corrupted is data? 
+			
+			cuSyst1.SendToHost(cuSyst_host2);
+			cuSyst_host.ReportDifferencesHost(cuSyst_host2);
+		
+			getch(); getch();
+
+			cuSyst_host.SendToDevice(cuSyst1); // check this is right
 			cuSyst2.CopyStructuralDetailsFrom(cuSyst1);
 			cuSyst3.CopyStructuralDetailsFrom(cuSyst1);
 			// Let's assume these always carry through during GPU runs.

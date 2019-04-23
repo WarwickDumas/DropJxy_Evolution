@@ -1,13 +1,25 @@
 #pragma once
 #include "cuda_struct.h"
 
+//__global__ void kernelCalculateOverallVelocitiesVertices(
+//	structural * __restrict__ p_info_major,
+//	v4 * __restrict__ p_vie_major,
+//	f64_vec3 * __restrict__ p_v_n_major,
+//	nvals * __restrict__ p_n_major,
+//	f64_vec2 * __restrict__ p_v_overall_major);
+
 __global__ void kernelCalculateOverallVelocitiesVertices(
-	structural * __restrict__ p_info_major,
+	structural * __restrict__ p_info_minor,
 	v4 * __restrict__ p_vie_major,
 	f64_vec3 * __restrict__ p_v_n_major,
 	nvals * __restrict__ p_n_major,
-	f64_vec2 * __restrict__ p_v_overall_major);
+	f64_vec2 * __restrict__ p_v_overall_major,
 
+	ShardModel * __restrict__ p_shards_n,
+	ShardModel * __restrict__ p_shards_n_n,
+	long * __restrict__ p_izTri,
+	char * __restrict__ p_szPBCtri_verts
+);
 
 __global__ void kernelAverageOverallVelocitiesTriangles(
 	f64_vec2 * __restrict__ p_v_overall_minor_major,
@@ -125,7 +137,9 @@ __global__ void kernelCalculateUpwindDensity_tris(
 	LONG3 * __restrict__ p_trineighindex,
 	LONG3 * __restrict__ p_which_iTri_number_am_I,
 	CHAR4 * __restrict__ p_szPBCneigh_tris, 
-	nvals * __restrict__ p_n_upwind_minor // result
+	nvals * __restrict__ p_n_upwind_minor ,// result
+	T3 * __restrict__ p_T_minor,
+	T3 * __restrict__ p_T_upwind_minor
 );
 
 __global__ void Estimate_Effect_on_Integral_Azdot_from_Jz_and_LapAz(
@@ -161,7 +175,7 @@ __global__ void kernelAccumulateAdvectiveMassHeatRate(
 	v4 * __restrict__ p_vie_minor,
 	f64_vec3 * __restrict__ p_v_n_minor,
 	f64_vec2 * __restrict__ p_v_overall_minor,
-	T3 * __restrict__ p_T_minor, // may or may not overlap source: don't we only use from tris? so not overlap
+	T3 * __restrict__ p_T_upwind_minor, // may or may not overlap source: don't we only use from tris? so not overlap
 
 	NTrates * __restrict__ p_NTadditionrates,
 	f64 * __restrict__ p_div_v,
@@ -342,12 +356,13 @@ __global__ void kernelResetFrillsAz_II(
 	AAdot * __restrict__ p_Az);
 
 
-__global__ void kernelReset_v_in_outer_frill 
+__global__ void kernelReset_v_in_outer_frill_and_outermost 
 (
 	structural * __restrict__ p_info,
 	v4 * __restrict__ p_vie,
 	f64_vec3 * __restrict__ p_v_n,
-	LONG3 * __restrict__ trineighbourindex
+	LONG3 * __restrict__ trineighbourindex,
+	long * __restrict__ p_izNeigh_vert
 	);
 
 __global__ void kernelCreateEpsilonAndJacobi(

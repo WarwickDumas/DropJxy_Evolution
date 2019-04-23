@@ -2278,19 +2278,19 @@ VOID surfacegraph::Render(const char * szTitle, bool RenderTriLabels,
 					}
 					if (GlobalWhichLabels == 1) {
 						
-						sprintf(buffer,"%1.2E",999.0);
+						sprintf(buffer,"%1.2E", pX->pData[iVertex + BEGINNING_OF_CENTRAL].n);
 						RenderLabel2(buffer,  // text
 							pVertex->pos.x*xzscale,
 							0.00001f+zeroplane,
 							pVertex->pos.y*xzscale,0); 
 					};
 					if (GlobalWhichLabels == 2) {
-						sprintf(buffer,"%d",iVertex);
+						sprintf(buffer,"%d", pX->pData[iVertex + BEGINNING_OF_CENTRAL].vxy.x);
 						RenderLabel2(buffer,  // text
 							pVertex->pos.x*xzscale,
 							0.00001f+zeroplane,
 							pVertex->pos.y*xzscale,0); 
-						sprintf(buffer,"%1.1E",999.0);
+						sprintf(buffer,"%1.1E",pX->pData[iVertex+ BEGINNING_OF_CENTRAL].vxy.y);
 						strip_0(buffer);
 						RenderLabel2(buffer,  // text
 							pVertex->pos.x*xzscale,
@@ -2299,13 +2299,13 @@ VOID surfacegraph::Render(const char * szTitle, bool RenderTriLabels,
 					};
 					
 					if (GlobalWhichLabels == 3) {
-						sprintf(buffer,"%1.1E",0.0);
+						sprintf(buffer,"%1.1E", pX->pData[iVertex + BEGINNING_OF_CENTRAL].pos.x);
 						strip_0(buffer);
 						RenderLabel2(buffer,  // text
 							pVertex->pos.x*xzscale,
 							0.00001f+zeroplane,
 							pVertex->pos.y*xzscale,0); 
-						sprintf(buffer,"%1.1E",999.0);
+						sprintf(buffer,"%1.1E", pX->pData[iVertex + BEGINNING_OF_CENTRAL].pos.y);
 						strip_0(buffer);
 						RenderLabel2(buffer,  // text
 							pVertex->pos.x*xzscale,
@@ -2319,7 +2319,7 @@ VOID surfacegraph::Render(const char * szTitle, bool RenderTriLabels,
 							pVertex->pos.x*xzscale,
 							0.00001f+zeroplane,
 							pVertex->pos.y*xzscale,0); 
-						sprintf(buffer, "%1.1E", 9999.0); // pVertex->phi);
+						sprintf(buffer, "%1.1E", pX->pData[iVertex + BEGINNING_OF_CENTRAL].Te); // pVertex->phi);
 						strip_0(buffer);
 						RenderLabel2(buffer,  // text
 							pVertex->pos.x*xzscale,
