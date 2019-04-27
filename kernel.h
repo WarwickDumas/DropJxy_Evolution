@@ -228,6 +228,47 @@ __global__ void kernelPopulateOhmsLaw(
 	bool const bUse_dest_n_for_Iz,
 	nvals * __restrict__ p_n_dest_minor);
 
+__global__ void kernelPopulateOhmsLaw_dbg2(
+	f64 h_use,
+	structural * __restrict__ p_info_minor,
+	f64_vec3 * __restrict__ p_MAR_neut,
+	f64_vec3 * __restrict__ p_MAR_ion,
+	f64_vec3 * __restrict__ p_MAR_elec,
+	f64_vec3 * __restrict__ p_B,
+	f64 * __restrict__ p_LapAz,
+	f64_vec2 * __restrict__ p_GradAz,
+	f64_vec2 * __restrict__ p_GradTe,
+
+	nvals * __restrict__ p_n_minor_use,
+	T3 * __restrict__ p_T_minor_use,
+	v4 * __restrict__ p_vie_src,
+	f64_vec3 * __restrict__ p_v_n_src,
+	AAdot * __restrict__ p_AAdot_src,
+	f64 * __restrict__ p_AreaMinor,
+	f64 * __restrict__ ROCAzdotduetoAdvection,
+
+	f64_vec3 * __restrict__ p_vn0_dest,
+	v4 * __restrict__ p_v0_dest,
+	OhmsCoeffs * __restrict__ p_OhmsCoeffs_dest,
+	AAdot * __restrict__ p_AAdot_intermediate,
+
+	f64 * __restrict__ p_Iz0,
+	f64 * __restrict__ p_sigma_zz,
+
+	f64 * __restrict__ p_denom_i,
+	f64 * __restrict__ p_denom_e,
+
+	f64 * __restrict__ p_effect_of_viz0_on_vez0,
+	f64 * __restrict__ p_beta_ie_z,
+
+	bool const bSwitchSave,
+	bool const bUse_dest_n_for_Iz,
+	nvals * __restrict__ p_n_dest_minor,
+	f64 * __restrict__ p_debug,
+	f64 * __restrict__ p_debug2,
+	f64 * __restrict__ p_debug3
+		);
+
 
 __global__ void kernelCalculate_ita_visc(
 	structural * __restrict__ p_info_minor,
@@ -241,12 +282,21 @@ __global__ void kernelCalculate_ita_visc(
 	f64 * __restrict__ p_ita_par_elec_minor,
 	f64 * __restrict__ p_ita_neutral_minor);
 
-__global__ void kernelTransmitHeatToVerts (
+__global__ void kernelTransmitHeatToVerts(
 	structural * __restrict__ p_info,
 	long * __restrict__ p_izTri,
+	nvals * __restrict__ p_n_minor,
+	f64 * __restrict__ p_AreaMajor, // populated?
+	f64 * __restrict__ p_Nsum,
 	NTrates * __restrict__ NT_addition_rates,
-	NTrates * __restrict__ NT_addition_tri
-	);
+	NTrates * __restrict__ NT_addition_tri);
+
+__global__ void Collect_Nsum_at_tris(
+	structural * __restrict__ p_info,
+	nvals * __restrict__ p_n_minor,
+	LONG3 * __restrict__ p_tricornerindex,
+	f64 * __restrict__ p_AreaMajor, // populated?
+	f64 * __restrict__ p_Nsum);
 
 __global__ void kernelCreate_viscous_contrib_to_MAR_and_NT(
 	structural * __restrict__ p_info_minor,
@@ -284,6 +334,22 @@ __global__ void kernelCalculateVelocityAndAzdot_debug(
 	v4 * __restrict__ p_vie_out,
 	f64_vec3 * __restrict__ p_vn_out,
 	bool * __restrict__ p_alertflag);
+
+__global__ void kernelCalculateVelocityAndAzdot_dbg2(
+	f64 h_use,
+	structural * p_info_minor,
+	f64_vec3 * __restrict__ p_vn0,
+	v4 * __restrict__ p_v0,
+	OhmsCoeffs * __restrict__ p_OhmsCoeffs,
+	AAdot * __restrict__ p_AAzdot_intermediate,
+	nvals * __restrict__ p_n_minor,
+	f64 * __restrict__ p_AreaMinor,
+
+	AAdot * __restrict__ p_AAzdot_out,
+	v4 * __restrict__ p_vie_out,
+	f64_vec3 * __restrict__ p_vn_out,
+	f64 * __restrict__ p_debug,
+	f64 * __restrict__ p_debug2);
 
 __global__ void kernelCalculateVelocityAndAzdot(
 	f64 h_use,
@@ -417,6 +483,24 @@ __global__ void kernelGetLapCoeffs_and_min(
 	f64 * __restrict__ p_LapCoeffSelf,
 	f64 * __restrict__ p_min_array,
 	long * __restrict__ p_min_index);
+
+
+__global__ void kernelGetLap_minor_debug(
+	structural * __restrict__ p_info,
+	f64 * __restrict__ p_Az,
+
+	long * __restrict__ p_izTri,
+	long * __restrict__ p_izNeighMinor,
+	char * __restrict__ p_szPBCtri_vertex,
+	char * __restrict__ p_szPBCtriminor,
+
+	f64 * __restrict__ p_LapAz,
+
+	f64 * __restrict__ p_Integratedconts_fromtri,
+	f64 * __restrict__ p_Integratedconts_fromvert,
+	f64 * __restrict__ p_Integratedconts_vert,
+	
+	f64 * __restrict__ p_AreaMinor);
 
 
 __global__ void kernelGetLap_minor(

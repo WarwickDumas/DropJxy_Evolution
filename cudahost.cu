@@ -9,8 +9,8 @@
 #define CHOSEN 100085495   // Why is Te different to chosen1??
 #define CHOSEN1 1000110301
 #define CHOSEN2 1000110497 
-#define VERTCHOSEN 14790
-   
+#define VERTCHOSEN 15403
+    
 #include <math.h>
 #include <time.h>
 #include <stdio.h>
@@ -20,7 +20,7 @@
 #include "flags.h"
 #include "kernel.h"
 #include "mesh.h"
-
+ 
 // This is the file for CUDA host code.
 #include "simulation.cu"
 FILE * fp_trajectory;
@@ -32,7 +32,7 @@ __constant__ long NumInnerFrills_d, FirstOuterFrill_d;
 __constant__ long nBlocks, Nverts, uDataLen_d; // Nverts == numVertices
  
 __constant__ f64_tens2 Anticlockwise_d, Clockwise_d; // use this to do rotation.
- 
+   
 __constant__ f64 kB, c, q, m_e, m_ion, m_i, m_n, 
 eoverm, qoverM, moverM, qovermc, qoverMc,
 FOURPI_Q_OVER_C, FOURPI_Q, FOURPI_OVER_C,
@@ -209,7 +209,7 @@ int Compare_n_shards(ShardModel * p1, ShardModel * p2, const cuSyst * p_cuSyst_h
 	};
 	return 0;
 }
-
+ 
 int Compare_f64(f64 * p1, f64 * p2, long N);
 int Compare_NTrates(NTrates * p1, NTrates * p2)
 {
@@ -226,7 +226,7 @@ int Compare_NTrates(NTrates * p1, NTrates * p2)
 	{
 		temp1[iVertex] = p1[iVertex].Nn;
 		temp2[iVertex] = p2[iVertex].Nn;
-	}
+	}  
 	printf("Nn:\n");
 	Compare_f64(temp1, temp2, NUMVERTICES);
 	for (iVertex = 0; iVertex < NUMVERTICES; iVertex++)
@@ -408,7 +408,7 @@ int Compare_structural(structural * p1, structural * p2, long N)
 	if (bFailflag) printf("Start of inconsistent flag: %d end : %d\n",
 		iFailflag, iFailflag_start);
 }
-
+ 
 int Compare_f64_vec2(f64_vec2 * p1, f64_vec2 * p2, long N)
 {
 	f64 maxdiff = 0.0;
@@ -3254,8 +3254,8 @@ void cuSyst::PerformCUDA_Advance(//const
 		p_Integrated_div_v_overall);
 	Call(cudaThreadSynchronize(), "cudaTS AccumulateAdvectiveMassHeatRate");
 
-	cudaMemcpy(&tempf64, &(NT_addition_rates_d[13445].NiTi), sizeof(f64), cudaMemcpyDeviceToHost);
-	printf("\nNT_addition_rates_d[13445].NiTi %1.14E \n\n", tempf64);
+	cudaMemcpy(&tempf64, &(NT_addition_rates_d[VERTCHOSEN].NeTe), sizeof(f64), cudaMemcpyDeviceToHost);
+	printf("\nNT_addition_rates_d[VERTCHOSEN].NeTe %1.14E \n\n", tempf64);
 	
 	//this->SendToHost(cuSyst_host);
 	//printf("14790: n %1.10E nn %1.10E \nTn %1.10E Ti %1.10E Te %1.10E \n"
@@ -3435,7 +3435,11 @@ void cuSyst::PerformCUDA_Advance(//const
 	Call(cudaThreadSynchronize(), "cudaTS CalculateNu");
 	 // 12  =  red
 	SetConsoleTextAttribute(hConsole, 11);
-	printf("\nbefore1: NT_addition_rates_d[13445].NiTi %1.14E \n\n", tempf64);
+
+
+	cudaMemcpy(&tempf64, &(NT_addition_rates_d[VERTCHOSEN].NeTe), sizeof(f64), cudaMemcpyDeviceToHost);
+	printf("\nNT_addition_rates_d[VERTCHOSEN].NeTe %1.14E \n\n", tempf64);
+
 	long i;
 /*	fprintf(fp_traj, " | n ");
 	for (i = 11765; i < 11770; i++) {
@@ -3489,9 +3493,10 @@ void cuSyst::PerformCUDA_Advance(//const
 		);
 	Call(cudaThreadSynchronize(), "cudaTS AccumulateDiffusiveHeatRate");
 	// To increase the efficiency we want to make a clever 2nd set of major tiles of size 192. Also try 256, 384.
-	cudaMemcpy(&tempf64, &(NT_addition_rates_d[13445].NiTi), sizeof(f64), cudaMemcpyDeviceToHost);
-	printf("\nafter1: NT_addition_rates_d[13445].NiTi %1.14E \n\n", tempf64);
-	 
+
+	cudaMemcpy(&tempf64, &(NT_addition_rates_d[VERTCHOSEN].NeTe), sizeof(f64), cudaMemcpyDeviceToHost);
+	printf("\nNT_addition_rates_d[VERTCHOSEN].NeTe %1.14E \n\n", tempf64);
+
 
 	kernelReset_v_in_outer_frill_and_outermost << <numTilesMinor, threadsPerTileMinor >> >
 		(
@@ -3568,9 +3573,20 @@ void cuSyst::PerformCUDA_Advance(//const
 		NT_addition_tri_d);
 	Call(cudaThreadSynchronize(), "cudaTS visccontrib 1"); 
 	 
+	Collect_Nsum_at_tris << <numTriTiles, threadsPerTileMinor >> >(
+		this->p_info,
+		this->p_n_minor,
+		this->p_tri_corner_index,
+		this->p_AreaMajor, // populated?
+		p_temp4);
+	Call(cudaThreadSynchronize(), "cudaTS Nsum");
+
 	kernelTransmitHeatToVerts << <numTilesMajor, threadsPerTileMajor >> > (
 		this->p_info,
 		this->p_izTri_vert,
+		this->p_n_minor,
+		this->p_AreaMajor,
+		p_temp4,
 		NT_addition_rates_d,
 		NT_addition_tri_d
 		);
@@ -3937,9 +3953,10 @@ void cuSyst::PerformCUDA_Advance(//const
 	cudaMemset(p_Div_v_neut, 0, sizeof(f64)*NUMVERTICES);
 	cudaMemset(p_Div_v, 0, sizeof(f64)*NUMVERTICES);
 	cudaMemset(NT_addition_rates_d, 0, sizeof(NTrates)*NUMVERTICES);
-
-	cudaMemcpy(&tempf64, &(NT_addition_rates_d[13445].NiTi), sizeof(f64), cudaMemcpyDeviceToHost);
-	printf("\nNT_addition_rates_d[13445].NiTi %1.10E\n\n", tempf64);
+	
+	cudaMemcpy(&tempf64, &(NT_addition_rates_d[VERTCHOSEN].NeTe), sizeof(f64), cudaMemcpyDeviceToHost);
+	printf("\nNT_addition_rates_d[VERTCHOSEN].NeTe %1.14E \n\n", tempf64);
+	
 	kernelAccumulateAdvectiveMassHeatRate << <numTilesMajor, threadsPerTileMajor >> >(
 		TIMESTEP,
 		pX_half->p_info,
@@ -3961,8 +3978,9 @@ void cuSyst::PerformCUDA_Advance(//const
 		p_Integrated_div_v_overall);
 	Call(cudaThreadSynchronize(), "cudaTS AccumulateAdvectiveMassHeatRate pX_half");
 
-	cudaMemcpy(&tempf64, &(NT_addition_rates_d[13445].NiTi), sizeof(f64), cudaMemcpyDeviceToHost);
-	printf("\nNT_addition_rates_d[13445].NiTi %1.10E\n\n", tempf64);
+
+	cudaMemcpy(&tempf64, &(NT_addition_rates_d[VERTCHOSEN].NeTe), sizeof(f64), cudaMemcpyDeviceToHost);
+	printf("\nNT_addition_rates_d[VERTCHOSEN].NeTe %1.14E \n\n", tempf64);
 	// [ do Az advance above when we advance Azdot. ]
 
 	CallMAC(cudaMemset(p_MAR_neut, 0, sizeof(f64_vec3)*NMINOR));
@@ -4052,9 +4070,10 @@ void cuSyst::PerformCUDA_Advance(//const
 	Call(cudaThreadSynchronize(), "cudaTS CalculateNu pX_half");
 
 
-	cudaMemcpy(&tempf64, &(NT_addition_rates_d[13445].NiTi), sizeof(f64), cudaMemcpyDeviceToHost);
-	printf("\nNT_addition_rates_d[13445].NiTi %1.10E\n\n", tempf64);
-	cudaMemcpy(&tempf64, &(NT_addition_rates_d[13445].N), sizeof(f64), cudaMemcpyDeviceToHost);
+
+	cudaMemcpy(&tempf64, &(NT_addition_rates_d[VERTCHOSEN].NeTe), sizeof(f64), cudaMemcpyDeviceToHost);
+	printf("\nNT_addition_rates_d[VERTCHOSEN].NeTe %1.14E \n\n", tempf64);
+	cudaMemcpy(&tempf64, &(NT_addition_rates_d[VERTCHOSEN].N), sizeof(f64), cudaMemcpyDeviceToHost);
 	printf("N rate %1.14E \n\n", tempf64);
 
 	/*
@@ -4185,18 +4204,29 @@ void cuSyst::PerformCUDA_Advance(//const
 		p_MAR_elec,
 		NT_addition_rates_d,
 		NT_addition_tri_d);
-	Call(cudaThreadSynchronize(), "cudaTS visccontrib");
+	Call(cudaThreadSynchronize(), "cudaTS visccontrib 2");
 
 	//cudaMemcpy(&tempf64, &(NT_addition_rates_d[11797].NeTe), sizeof(f64), cudaMemcpyDeviceToHost);
 	//printf("\nNT_addition_rates_d[11797].NeTe %1.10E\n\n", tempf64);
 
+	Collect_Nsum_at_tris << <numTriTiles, threadsPerTileMinor >> >(
+		pX_half->p_info,
+		pX_half->p_n_minor,
+		pX_half->p_tri_corner_index,
+		pX_half->p_AreaMajor, // populated?
+		p_temp4);
+	Call(cudaThreadSynchronize(), "cudaTS Nsum 2");
+
 	kernelTransmitHeatToVerts << <numTilesMajor, threadsPerTileMajor >> > (
 		pX_half->p_info,
 		pX_half->p_izTri_vert,
+		pX_half->p_n_minor,
+		pX_half->p_AreaMajor,
+		p_temp4,
 		NT_addition_rates_d,
 		NT_addition_tri_d
 		);
-	Call(cudaThreadSynchronize(), "cudaTS sum up heat 1");
+	Call(cudaThreadSynchronize(), "cudaTS sum up heat 2");
 
 	//cudaMemcpy(&tempf64, &(NT_addition_rates_d[11797].NeTe), sizeof(f64), cudaMemcpyDeviceToHost);
 	//printf("\nNT_addition_rates_d[11797].NeTe %1.10E\n\n", tempf64);
@@ -4445,8 +4475,8 @@ void cuSyst::PerformCUDA_Advance(//const
 				p_temp1); // Iz_k
 			Call(cudaThreadSynchronize(), "cudaTS Estimate Iz_k");
 
-			cudaMemcpy(&tempf64, &(p_MAR_elec[11653 + BEGINNING_OF_CENTRAL].y), sizeof(f64), cudaMemcpyDeviceToHost);
-			printf("MAR.y 11653 %1.8E", tempf64);
+	//		cudaMemcpy(&tempf64, &(p_MAR_elec[11653 + BEGINNING_OF_CENTRAL].y), sizeof(f64), cudaMemcpyDeviceToHost);
+	//		printf("MAR.y 11653 %1.8E", tempf64);
 
 			kernelPopulateOhmsLaw << <numTilesMinor, threadsPerTileMinor >> > (
 				hsub,// ROCAzdotduetoAdvection, 

@@ -69,7 +69,7 @@ long const NUMVERTICES = numTilesMajor*threadsPerTileMajor;//36864; //36000; // 
 											 // = 288*128
 long const NMINOR = threadsPerTileMinor * numTilesMinor;
 long const NUMTRIANGLES = NMINOR - NUMVERTICES;
-
+  
 
 // Model parameters:
 //===============================
@@ -175,7 +175,8 @@ real const PLANE_Z = 1.0;
 
 
 //real const INSULATOR_RADIUS_SQ = DEVICE_RADIUS_INSULATOR_OUTER*DEVICE_RADIUS_INSULATOR_OUTER;
-real const PPN_CIRCLE = 1.0/16.0;  // the proportion of a circle for this simulation
+#define PPN_CIRCLE   (1.0/16.0) 
+// the proportion of a circle for this simulation
 
 //real const HALFANGLE = PI*PPN_CIRCLE; // half the base angle of the slice
 #define HALFANGLE 0.196349541
@@ -190,11 +191,11 @@ real const CUTAWAYANGLE = -0.005;//-GRADIENT_X_PER_Y * 0.5;
 // **Clearly need dimensioned index array to achieve some overlap.**
 // **Fix problem by going to look for numTrianglesTotal[ **
 
-real const n_INITIAL_SD = 0.04; // 400 micron
-real const INITIALnSD = n_INITIAL_SD; // 400 micron
-real const INITIALTSD = 0.035; // if n is Gaussian then T is a cone. So make n more spread out than T (?)
+real const n_INITIAL_SD = 0.08; // 800 micron
+real const INITIALnSD = n_INITIAL_SD; 
+real const INITIALTSD = 0.08; // if n is Gaussian then T is a cone. So make n more spread out than T (?)
 
-real const FILAMENT_OWN_PEAK_n = 9.9e17;
+real const FILAMENT_OWN_PEAK_n = 1.0e15;
 real const UNIFORM_n = 1.0e12;  // ionisation fraction at room temp would be tiny;
 							// this is here to help avoid density = zero which causes division issues
 real const FILAMENT_OWN_PEAK_T = 4.8e-12;
