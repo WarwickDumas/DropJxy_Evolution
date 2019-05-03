@@ -1,4 +1,4 @@
-
+ 
 #include "cuda_struct.h"
 #pragma once
 #ifndef CUSYSTCU

@@ -92,16 +92,18 @@ __global__ void kernelCalculateNu_eHeartNu_iHeart_nu_nn_visc(
 
 __global__ void kernelAccumulateDiffusiveHeatRateAndCalcIonisation(
 	f64 const h_use,
-	structural * __restrict__ p_info_sharing,
+	structural * __restrict__ p_info_minor,
 	long * __restrict__ pIndexNeigh,
 	char * __restrict__ pPBCNeigh,
+	long * __restrict__ izTri_verts,
+	char * __restrict__ szPBCtri_verts,
 
 	nvals * __restrict__ p_n_major,
 	T3 * __restrict__ p_T_major,
 	f64_vec3 * __restrict__ p_B_major,
 	species3 * __restrict__ p_nu_major,
 
-	NTrates * __restrict__ NTadditionrate,
+	NTrates * __restrict__ NTadditionrates,
 	f64 * __restrict__ p_AreaMajor);
 
 __global__ void kernelAdvanceDensityAndTemperature(
