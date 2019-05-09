@@ -42,6 +42,7 @@ __global__ void kernelAverage_n_T_x_to_tris  (
 	nvals * __restrict__ p_n_major,
 	T3 * __restrict__ p_T_minor,
 	structural * __restrict__ p_info,
+	f64_vec2 * __restrict__ p_cc,
 	LONG3 * __restrict__ p_tri_corner_index,
 	CHAR4 * __restrict__ p_tri_periodic_corner_flags
 	);
@@ -93,6 +94,7 @@ __global__ void kernelCalculateNu_eHeartNu_iHeart_nu_nn_visc(
 __global__ void kernelAccumulateDiffusiveHeatRateAndCalcIonisation(
 	f64 const h_use,
 	structural * __restrict__ p_info_minor,
+	f64_vec2 * __restrict__ p_cc,
 	long * __restrict__ pIndexNeigh,
 	char * __restrict__ pPBCNeigh,
 	long * __restrict__ izTri_verts,

@@ -67,6 +67,7 @@ int cuSyst::Invoke()
 						
 			&& (!CallMAC(cudaMalloc((void**)&p_AreaMinor, Nminor * sizeof(f64))))
 			&& (!CallMAC(cudaMalloc((void**)&p_AreaMajor, Nverts * sizeof(f64))))
+			&& (!CallMAC(cudaMalloc((void**)&p_cc, Nminor*sizeof(f64_vec2))))
 			)
 		{
 			bInvoked = true;
@@ -122,7 +123,8 @@ int cuSyst::InvokeHost()
 	p_AreaMinor = (f64 * )malloc(Nminor * sizeof(f64));
 	p_AreaMajor = (f64 * )malloc(Nverts * sizeof(f64));
 
-	if (p_AreaMajor == 0) {
+	p_cc = (f64_vec2 *)malloc(Nminor * sizeof(f64));
+	if (p_cc == 0) {
 		printf("failed to invokeHost the cusyst.\n");
 		getch();
 		return 1;
@@ -160,6 +162,7 @@ cuSyst::~cuSyst(){
 		cudaFree(p_v_overall_minor);
 		cudaFree(p_AreaMinor);
 		cudaFree(p_AreaMajor);
+		cudaFree(p_cc);
 
 	}
 	if (bInvokedHost) {
@@ -188,7 +191,7 @@ free(p_Lap_Az);
 free(p_v_overall_minor);
 free(p_AreaMinor);
 free(p_AreaMajor);
-
+free(p_cc);
 	};
 }
 

@@ -850,13 +850,27 @@ OutputVS VelocityVS( float3 posL : POSITION0,
         // x^2 hue.r^2 0.299 + x^2 hue.g^2 0.587 + x^2 hue.b^2 0.114
         
         // Aim lumsq = 0.5:
-        // x^2 = 0.5 / existing lumsq
-        
+        // x^2 = 0.5 / existing lumsq        
         float x = sqrt(0.5/(WT.r*hue.r*hue.r+WT.g*hue.g*hue.g+WT.b*hue.b*hue.b));
-        hue.r = hue.r*x;
-        hue.g = hue.g*x;
-        hue.b = hue.b*x;
-			
+
+		//hue.r = hue.r*x;
+		//hue.g = hue.g*x;
+		//hue.b = hue.b*x;
+
+		// Different idea:
+		// Gamma correction.
+		// Brightness = r ^ 2.2 + g ^ 2.2 + b ^ 2.2
+		// Want brightness of max v ring = 1 all round
+
+		// New brightness = r ^ 2.2 factor ^ 2.2 + g ^ 2.2 factor ^ 2.2 + b^ 2.2 factor ^ 2.2
+
+		float brightness = pow(hue.r,2.2) + pow(hue.b,2.2) + pow(hue.g,2.2);
+		// new brightness = factor^2.2*existing_brightness
+		float factor = pow(1.0/brightness,1.0/2.2);
+		hue.r *= factor;
+		hue.g *= factor;
+		hue.b *= factor;
+
 		// probably is a neater command:
 		outVS.graphcolor.r = (1.0f-darkness) + hue.r*darkness;
 		outVS.graphcolor.g = (1.0f-darkness) + hue.g*darkness;

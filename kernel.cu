@@ -9,7 +9,7 @@
 
 #define VERT1 14639
 
-#define TEST  (0)
+#define TEST  (iVertex == VERTCHOSEN)
 // if we change this to iVertex == VERTCHOSEN some bugs will appear with 'index' but we can correct it
 
 // Change log. 090419: Change upwind density routine to just use n from the lowest cell that is upwind for at least 1 side.
@@ -169,6 +169,86 @@ __global__ void kernelCalculateOverallVelocitiesVertices(
 }
 
 __global__ void kernelAverageOverallVelocitiesTriangles(
+	f64_vec2 * __restrict__ p_overall_v_major,
+	f64_vec2 * __restrict__ p_overall_v_minor,
+	structural * __restrict__ p_info,
+	LONG3 * __restrict__ p_tri_corner_index,
+	CHAR4 * __restrict__ p_tri_periodic_corner_flags
+)
+{
+	__shared__ f64_vec2 shared_v[threadsPerTileMajor];
+
+	long const index = threadIdx.x + blockIdx.x * blockDim.x; // INDEX OF VERTEX
+	if (threadIdx.x < threadsPerTileMajor)
+	{
+		long getindex = blockIdx.x * threadsPerTileMajor + threadIdx.x;
+		shared_v[threadIdx.x] = p_overall_v_major[getindex];
+	};
+	long const StartMajor = blockIdx.x*threadsPerTileMajor;
+	long const EndMajor = StartMajor + threadsPerTileMajor;
+	LONG3 const tri_corner_index = p_tri_corner_index[index];
+	CHAR4 const tri_corner_per_flag = p_tri_periodic_corner_flags[index];
+	structural info = p_info[index];
+
+	__syncthreads();
+
+	f64_vec2 v(0.0, 0.0);
+
+	if ((info.flag == DOMAIN_TRIANGLE) || (info.flag == CROSSING_INS)) {
+
+		f64_vec2 vcorner;
+		if ((tri_corner_index.i1 >= StartMajor) && (tri_corner_index.i1 < EndMajor))
+		{
+			vcorner = THIRD*shared_v[tri_corner_index.i1 - StartMajor];
+		}
+		else {
+			vcorner = THIRD*p_overall_v_major[tri_corner_index.i1];
+		};
+		if (tri_corner_per_flag.per0 == ROTATE_ME_CLOCKWISE) vcorner = Clockwise_d*vcorner;
+		if (tri_corner_per_flag.per0 == ROTATE_ME_ANTICLOCKWISE) vcorner = Anticlockwise_d*vcorner;
+		v += vcorner;
+
+		if ((tri_corner_index.i2 >= StartMajor) && (tri_corner_index.i2 < EndMajor))
+		{
+			vcorner = THIRD*shared_v[tri_corner_index.i2 - StartMajor];
+		}
+		else {
+			vcorner = THIRD*p_overall_v_major[tri_corner_index.i2];
+		};
+		if (tri_corner_per_flag.per1 == ROTATE_ME_CLOCKWISE) vcorner = Clockwise_d*vcorner;
+		if (tri_corner_per_flag.per1 == ROTATE_ME_ANTICLOCKWISE) vcorner = Anticlockwise_d*vcorner;
+		v += vcorner;
+
+		if ((tri_corner_index.i3 >= StartMajor) && (tri_corner_index.i3 < EndMajor))
+		{
+			vcorner = THIRD*shared_v[tri_corner_index.i3 - StartMajor];
+		}
+		else {
+			vcorner = THIRD*p_overall_v_major[tri_corner_index.i3];
+		};
+		if (tri_corner_per_flag.per2 == ROTATE_ME_CLOCKWISE) vcorner = Clockwise_d*vcorner;
+		if (tri_corner_per_flag.per2 == ROTATE_ME_ANTICLOCKWISE) vcorner = Anticlockwise_d*vcorner;
+		v += vcorner;
+
+		if (info.flag == CROSSING_INS) {
+			// Position is equal to 1/3 avg, projected to ins.				
+			// So if we are moving 2 points to the right, it only moves 2/3 as much.
+
+			// Now remove the radial component:
+			f64_vec2 r = info.pos;
+			//rhat = r / r.modulus();
+			//p_v[iMinor] -= rhat.dot(p_v[iMinor])*rhat;
+			v = v - r*(r.dot(v)) / (r.x*r.x + r.y*r.y);
+
+		};
+	}
+	else {
+		// leave it == 0		
+	};
+	p_overall_v_minor[index] = v;
+}
+
+__global__ void kernelAverageOverallVelocitiesTriangles_circumcenters(
 	f64_vec2 * __restrict__ p_overall_v_major,
 	f64_vec2 * __restrict__ p_overall_v_minor,
 	structural * __restrict__ p_info,
@@ -337,7 +417,254 @@ __global__ void kernelAdvectPositions(
 
 }
 
+
 __global__ void kernelAverage_n_T_x_to_tris(
+	nvals * __restrict__ p_n_minor,
+	nvals * __restrict__ p_n_major,
+	T3 * __restrict__ p_T_minor,
+	structural * __restrict__ p_info,
+	f64_vec2 * __restrict__ p_cc,
+	LONG3 * __restrict__ p_tri_corner_index,
+	CHAR4 * __restrict__ p_tri_periodic_corner_flags
+)
+{
+	__shared__ nvals shared_n[threadsPerTileMajor];
+	__shared__ T3 shared_T[threadsPerTileMajor];
+	__shared__ f64_vec2 shared_pos[threadsPerTileMajor];
+
+	long const index = threadIdx.x + blockIdx.x * blockDim.x; // INDEX OF VERTEX
+	if (threadIdx.x < threadsPerTileMajor)
+	{
+		long getindex = blockIdx.x * threadsPerTileMajor + threadIdx.x;
+		shared_n[threadIdx.x] = p_n_major[getindex];
+		shared_T[threadIdx.x] = p_T_minor[BEGINNING_OF_CENTRAL + getindex];
+		shared_pos[threadIdx.x] = p_info[BEGINNING_OF_CENTRAL + getindex].pos;
+	};
+	long const StartMajor = blockIdx.x*threadsPerTileMajor; // vertex index
+	long const EndMajor = StartMajor + threadsPerTileMajor;
+	LONG3 const tri_corner_index = p_tri_corner_index[index];
+	CHAR4 const tri_corner_per_flag = p_tri_periodic_corner_flags[index];
+	structural info = p_info[index];
+
+	__syncthreads();
+
+	T3 T(0.0, 0.0, 0.0);
+	nvals n(0.0, 0.0);
+	f64_vec2 pos(0.0, 0.0);
+	f64_vec2 cc(0.0, 0.0);
+
+	// New plan for this routine: go through position code for all cases except frills.
+	// Then compute averaging coefficients for domain and crossing_ins, and use them.
+
+	// 
+	n.n = 0.0;
+	n.n_n = 0.0;
+	T.Te = 0.0; T.Ti = 0.0; T.Tn = 0.0;
+
+	f64_vec2 poscorner0, poscorner1, poscorner2;
+	if ((tri_corner_index.i1 >= StartMajor) && (tri_corner_index.i1 < EndMajor))
+	{
+		poscorner0 = shared_pos[tri_corner_index.i1 - StartMajor];
+	}
+	else {
+		poscorner0 = p_info[tri_corner_index.i1 + BEGINNING_OF_CENTRAL].pos;
+	};
+	if (tri_corner_per_flag.per0 == ROTATE_ME_CLOCKWISE) poscorner0 = Clockwise_d*poscorner0;
+	if (tri_corner_per_flag.per0 == ROTATE_ME_ANTICLOCKWISE) poscorner0 = Anticlockwise_d*poscorner0;
+
+	if ((tri_corner_index.i2 >= StartMajor) && (tri_corner_index.i2 < EndMajor))
+	{
+		poscorner1 = shared_pos[tri_corner_index.i2 - StartMajor];
+	}
+	else {
+		poscorner1 = p_info[tri_corner_index.i2 + BEGINNING_OF_CENTRAL].pos;
+	};
+	if (tri_corner_per_flag.per1 == ROTATE_ME_CLOCKWISE) poscorner1 = Clockwise_d*poscorner1;
+	if (tri_corner_per_flag.per1 == ROTATE_ME_ANTICLOCKWISE) poscorner1 = Anticlockwise_d*poscorner1;
+
+	if ((info.flag != INNER_FRILL) && (info.flag != OUTER_FRILL))
+	{
+		if ((tri_corner_index.i3 >= StartMajor) && (tri_corner_index.i3 < EndMajor))
+		{
+			poscorner2 = shared_pos[tri_corner_index.i3 - StartMajor];
+		}
+		else {
+			poscorner2 = p_info[tri_corner_index.i3 + BEGINNING_OF_CENTRAL].pos;
+		};
+		if (tri_corner_per_flag.per2 == ROTATE_ME_CLOCKWISE) poscorner2 = Clockwise_d*poscorner2;
+		if (tri_corner_per_flag.per2 == ROTATE_ME_ANTICLOCKWISE) poscorner2 = Anticlockwise_d*poscorner2;
+
+		pos.x = THIRD*(poscorner0.x + poscorner1.x + poscorner2.x);
+		pos.y = THIRD*(poscorner0.y + poscorner1.y + poscorner2.y);
+
+		// Set cc:
+
+		f64_vec2 Bb = poscorner1 - poscorner0;
+		f64_vec2 C = poscorner2 - poscorner0;
+		f64 D = 2.0*(Bb.x*C.y - Bb.y*C.x);
+		f64 modB = Bb.x*Bb.x + Bb.y*Bb.y;
+		f64 modC = C.x*C.x + C.y*C.y;
+		cc.x = (C.y*modB - Bb.y*modC) / D + poscorner0.x;
+		cc.y = (Bb.x*modC - C.x*modB) / D + poscorner0.y;
+		
+
+	}
+	else {
+		// FRILL
+		pos = 0.5*(poscorner1 + poscorner0);
+		f64_vec2 pos2 = pos;
+		if (info.flag == INNER_FRILL) {
+			pos2.project_to_radius(pos, FRILL_CENTROID_INNER_RADIUS_d);
+		}
+		else {
+			pos2.project_to_radius(pos, FRILL_CENTROID_OUTER_RADIUS_d);
+		};
+		cc = pos;
+	}
+
+	// Now set up averaging coefficients and set n,T.
+	// Outer frills it is thus set to n=0,T=0.
+	// Well, circumcenter is equidistant so 1/3 is still reasonable average.
+
+	// I think I prefer linear interpolation, making this a point estimate of n. The masses are saved
+	// in the vertcells.
+
+	if (info.flag == DOMAIN_TRIANGLE) {
+		f64 lambda1, lambda2, lambda3;
+		{
+			f64_vec2 x0 = poscorner0, x1 = poscorner1, x2 = poscorner2;
+			f64_vec2 a1, a2;
+			f64 b1, b2;
+			a1.x = (x1.y - x2.y) / ((x0.x - x2.x)*(x1.y - x2.y) - (x1.x - x2.x)*(x0.y - x2.y));
+			a1.y = (x2.x - x1.x) / ((x0.x - x2.x)*(x1.y - x2.y) - (x1.x - x2.x)*(x0.y - x2.y));
+			b1 = -a1.x*x2.x - a1.y*x2.y;
+			a2.x = (x0.y - x2.y) / ((x1.x - x2.x)*(x0.y - x2.y) - (x1.y - x2.y)*(x0.x - x2.x));
+			a2.y = (x2.x - x0.x) / ((x1.x - x2.x)*(x0.y - x2.y) - (x1.y - x2.y)*(x0.x - x2.x));
+			b2 = -a2.x*x2.x - a2.y*x2.y;
+			lambda1 = a1.x*pos.x + a1.y*pos.y + b1;
+			lambda2 = a2.x*pos.x + a2.y*pos.y + b2;
+			lambda3 = 1.0 - lambda1 - lambda2;
+		}
+		
+		// should all come out 1/3 anyway.
+
+		if ((tri_corner_index.i1 >= StartMajor) && (tri_corner_index.i1 < EndMajor))
+		{
+			n += lambda1*shared_n[tri_corner_index.i1 - StartMajor];
+			T += lambda1*shared_T[tri_corner_index.i1 - StartMajor];
+		}
+		else {
+			n += lambda1*p_n_major[tri_corner_index.i1];
+			T += lambda1*p_T_minor[tri_corner_index.i1 + BEGINNING_OF_CENTRAL];
+		};
+
+		if ((tri_corner_index.i2 >= StartMajor) && (tri_corner_index.i2 < EndMajor))
+		{
+			n += lambda2*shared_n[tri_corner_index.i2 - StartMajor];
+			T += lambda2*shared_T[tri_corner_index.i2 - StartMajor];
+		}
+		else {
+			n += lambda2*p_n_major[tri_corner_index.i2];
+			T += lambda2*p_T_minor[tri_corner_index.i2 + BEGINNING_OF_CENTRAL];
+		};
+
+		if ((tri_corner_index.i3 >= StartMajor) && (tri_corner_index.i3 < EndMajor))
+		{
+			n += lambda3*shared_n[tri_corner_index.i3 - StartMajor];
+			T += lambda3*shared_T[tri_corner_index.i3 - StartMajor];
+		}
+		else {
+			n += lambda3*p_n_major[tri_corner_index.i3];
+			T += lambda3*p_T_minor[tri_corner_index.i3 + BEGINNING_OF_CENTRAL];
+		};
+
+	}
+	else {
+		// What else?
+		if (info.flag == CROSSING_INS)
+		{
+			int iAbove = 0;
+			if ((tri_corner_index.i1 >= StartMajor) && (tri_corner_index.i1 < EndMajor))
+			{
+				if (poscorner0.dot(poscorner0) > DEVICE_RADIUS_INSULATOR_OUTER*DEVICE_RADIUS_INSULATOR_OUTER)
+				{
+					n += shared_n[tri_corner_index.i1 - StartMajor];
+					T += shared_T[tri_corner_index.i1 - StartMajor];
+					iAbove++;
+				};
+
+			}
+			else {
+				if (poscorner0.dot(poscorner0) > DEVICE_RADIUS_INSULATOR_OUTER*DEVICE_RADIUS_INSULATOR_OUTER)
+				{
+					n += p_n_major[tri_corner_index.i1];
+					T += p_T_minor[tri_corner_index.i1 + BEGINNING_OF_CENTRAL];
+					iAbove++;
+				}
+			};
+
+			if ((tri_corner_index.i2 >= StartMajor) && (tri_corner_index.i2 < EndMajor))
+			{
+				if (poscorner1.dot(poscorner1) > DEVICE_RADIUS_INSULATOR_OUTER*DEVICE_RADIUS_INSULATOR_OUTER)
+				{
+					n += shared_n[tri_corner_index.i2 - StartMajor];
+					T += shared_T[tri_corner_index.i2 - StartMajor];
+					iAbove++;
+				};
+			}
+			else {
+				if (poscorner1.dot(poscorner1) > DEVICE_RADIUS_INSULATOR_OUTER*DEVICE_RADIUS_INSULATOR_OUTER)
+				{
+					n += p_n_major[tri_corner_index.i2];
+					T += p_T_minor[tri_corner_index.i2 + BEGINNING_OF_CENTRAL];
+					iAbove++;
+				};
+			};
+
+			if ((tri_corner_index.i3 >= StartMajor) && (tri_corner_index.i3 < EndMajor))
+			{
+				if (poscorner2.dot(poscorner2) > DEVICE_RADIUS_INSULATOR_OUTER*DEVICE_RADIUS_INSULATOR_OUTER)
+				{
+					n += shared_n[tri_corner_index.i3 - StartMajor];
+					T += shared_T[tri_corner_index.i3 - StartMajor];
+					iAbove++;
+				};
+			}
+			else {
+				if (poscorner2.dot(poscorner2) > DEVICE_RADIUS_INSULATOR_OUTER*DEVICE_RADIUS_INSULATOR_OUTER)
+				{
+					n += p_n_major[tri_corner_index.i3];
+					T += p_T_minor[tri_corner_index.i3 + BEGINNING_OF_CENTRAL];
+					iAbove++;
+				};
+			};
+
+			f64_vec2 pos2 = pos;
+			pos2.project_to_radius(pos, DEVICE_RADIUS_INSULATOR_OUTER);
+			f64 divide = 1.0 / (f64)iAbove;
+			n.n *= divide;
+			n.n_n *= divide;
+			T.Tn *= divide;
+			T.Ti *= divide;
+			T.Te *= divide;
+
+		}
+		else {
+			n.n = 0.0;
+			n.n_n = 0.0;
+			T.Te = 0.0; T.Ti = 0.0; T.Tn = 0.0;
+		};
+		// Outer frills it is thus set to n=0,T=0.
+	};
+
+	p_n_minor[index] = n;
+	p_T_minor[index] = T;
+	info.pos = pos;
+	p_info[index] = info;
+	p_cc[index] = cc;
+}
+
+__global__ void kernelAverage_n_T_x_to_tris_circumcenters_vers(
 	nvals * __restrict__ p_n_minor,
 	nvals * __restrict__ p_n_major,
 	T3 * __restrict__ p_T_minor,
@@ -1913,6 +2240,7 @@ __global__ void kernelCalculate_ita_visc(
 __global__ void kernelAccumulateDiffusiveHeatRateAndCalcIonisation(
 	f64 const h_use,
 	structural * __restrict__ p_info_minor,
+	f64_vec2 * __restrict__ p_cc,
 	long * __restrict__ pIndexNeigh,
 	char * __restrict__ pPBCNeigh,
 	long * __restrict__ izTri_verts,
@@ -2105,7 +2433,7 @@ __global__ void kernelAccumulateDiffusiveHeatRateAndCalcIonisation(
 			};
 	//		if (iVertex == CHOSEN) printf("pos_out %1.12E %1.12E\n", pos_out.x, pos_out.y);
 
-			f64_vec2 endpt_clock = p_info_minor[izTri[info.neigh_len-1]].pos;
+			f64_vec2 endpt_clock = p_cc[izTri[info.neigh_len-1]];
 			PBC = PBCtri[MAXNEIGH_d*threadIdx.x + info.neigh_len-1];
 			if (PBC == ROTATE_ME_CLOCKWISE) endpt_clock = Clockwise_d*endpt_clock;
 			if (PBC == ROTATE_ME_ANTICLOCKWISE) endpt_clock = Anticlockwise_d*endpt_clock;
@@ -2163,7 +2491,7 @@ __global__ void kernelAccumulateDiffusiveHeatRateAndCalcIonisation(
 				f64_vec2 edge_normal;
 				// Now let's see
 				// tri 0 has neighs 0 and 1 I'm pretty sure (check....) CHECK
-				f64_vec2 endpt_anti = p_info_minor[izTri[iNeigh]].pos;
+				f64_vec2 endpt_anti = p_cc[izTri[iNeigh]];
 				PBC = PBCtri[MAXNEIGH_d*threadIdx.x + iNeigh];
 				if (PBC == ROTATE_ME_CLOCKWISE) endpt_anti = Clockwise_d*endpt_anti;
 				if (PBC == ROTATE_ME_ANTICLOCKWISE) endpt_anti = Anticlockwise_d*endpt_anti;

@@ -2,14 +2,14 @@
 // Version 1.0 23/04/19:
 // Changing to use upwind T for advection. We could do better in future. Interp gives negative T sometimes.
 // Corrected ionisation rate.
-
+ 
 
 #pragma once 
   // 11653:
 #define CHOSEN 100085495   // Why is Te different to chosen1??
 #define CHOSEN1 1000110301
 #define CHOSEN2 1000110497 
-#define VERTCHOSEN 21386
+#define VERTCHOSEN 15403
     
 #include <math.h>
 #include <time.h>
@@ -1003,6 +1003,7 @@ void cuSyst::PerformCUDA_Advance_Debug(const cuSyst * pX_target, const cuSyst * 
 		this->p_n_major,
 		this->p_T_minor,
 		this->p_info,
+		this->p_cc,
 		this->p_tri_corner_index,
 		this->p_tri_periodic_corner_flags
 		); // call before CreateShardModel 
@@ -1338,6 +1339,7 @@ void cuSyst::PerformCUDA_Advance_Debug(const cuSyst * pX_target, const cuSyst * 
 	kernelAccumulateDiffusiveHeatRateAndCalcIonisation << <numTilesMajorClever, threadsPerTileMajorClever >> >(
 		0.5*TIMESTEP,
 		this->p_info,
+		this->p_cc,
 		this->p_izNeigh_vert,
 		this->p_szPBCneigh_vert,
 		this->p_izTri_vert,
@@ -1398,6 +1400,7 @@ void cuSyst::PerformCUDA_Advance_Debug(const cuSyst * pX_target, const cuSyst * 
 		pX_half->p_n_major,
 		pX_half->p_T_minor,
 		pX_half->p_info,
+		pX_half->p_cc,
 		pX_half->p_tri_corner_index,
 		pX_half->p_tri_periodic_corner_flags
 		); // call before CreateShardModel 
@@ -1897,6 +1900,7 @@ void cuSyst::PerformCUDA_Advance_Debug(const cuSyst * pX_target, const cuSyst * 
 	kernelAccumulateDiffusiveHeatRateAndCalcIonisation << <numTilesMajorClever, threadsPerTileMajorClever >> >(
 		TIMESTEP,
 		pX_half->p_info,
+		pX_half->p_cc,
 		pX_half->p_izNeigh_vert,
 		pX_half->p_szPBCneigh_vert,
 		pX_half->p_izTri_vert,
@@ -1980,6 +1984,7 @@ void cuSyst::PerformCUDA_Advance_Debug(const cuSyst * pX_target, const cuSyst * 
 		pX_target->p_n_major,
 		pX_target->p_T_minor,
 		pX_target->p_info,
+		pX_target->p_cc,
 		pX_target->p_tri_corner_index,
 		pX_target->p_tri_periodic_corner_flags
 		); // call before CreateShardModel 
@@ -3158,6 +3163,7 @@ void cuSyst::PerformCUDA_Advance(//const
 		this->p_n_major,
 		this->p_T_minor,
 		this->p_info,
+		this->p_cc,
 		this->p_tri_corner_index,
 		this->p_tri_periodic_corner_flags
 		); // call before CreateShardModel 
@@ -3528,6 +3534,7 @@ void cuSyst::PerformCUDA_Advance(//const
 	kernelAccumulateDiffusiveHeatRateAndCalcIonisation << <numTilesMajorClever, threadsPerTileMajorClever >> >(
 		0.5*TIMESTEP,
 		this->p_info,
+		this->p_cc,
 		this->p_izNeigh_vert,
 		this->p_szPBCneigh_vert,
 		this->p_izTri_vert,
@@ -3704,6 +3711,7 @@ void cuSyst::PerformCUDA_Advance(//const
 		pX_half->p_n_major,
 		pX_half->p_T_minor,
 		pX_half->p_info,
+		pX_half->p_cc,
 		pX_half->p_tri_corner_index,
 		pX_half->p_tri_periodic_corner_flags
 		); // call before CreateShardModel 
@@ -4239,6 +4247,7 @@ SetConsoleTextAttribute(hConsole, 15);
 	kernelAccumulateDiffusiveHeatRateAndCalcIonisation << <numTilesMajorClever, threadsPerTileMajorClever >> >(
 		TIMESTEP,
 		pX_half->p_info,
+		pX_half->p_cc,
 		pX_half->p_izNeigh_vert,
 		pX_half->p_szPBCneigh_vert,
 
@@ -4412,12 +4421,6 @@ SetConsoleTextAttribute(hConsole, 15);
 		pX_target->p_T_minor + BEGINNING_OF_CENTRAL
 		);
 	Call(cudaThreadSynchronize(), "cudaTS Advance_n_and_T 2330");
-	  
-	//DEBUG:
-	cudaMemcpy(&tempf64, &(pX_target->p_T_minor[85495].Te), sizeof(f64), cudaMemcpyDeviceToHost);
-	printf("pX_target->p_T_minor[85495].Te %1.10E\n", tempf64);
-	
-	if (tempf64 < 0.0) while (1) getch();
 	
 	// QUESTION QUESTION : What should params be there?
 
@@ -4426,6 +4429,7 @@ SetConsoleTextAttribute(hConsole, 15);
 		pX_target->p_n_major,
 		pX_target->p_T_minor,
 		pX_target->p_info,
+		pX_target->p_cc,
 		pX_target->p_tri_corner_index,
 		pX_target->p_tri_periodic_corner_flags
 		); // call before CreateShardModel 
@@ -4482,8 +4486,8 @@ SetConsoleTextAttribute(hConsole, 15);
 	cudaMemcpy(p_temphost1, p_temp1, sizeof(f64)*numTriTiles, cudaMemcpyDeviceToHost);
 	cudaMemcpy(p_longtemphost, p_longtemp, sizeof(long)*numTriTiles, cudaMemcpyDeviceToHost);
 	
-	cudaMemcpy(&tempf64, &(pX_target->p_T_minor[85495].Te), sizeof(f64), cudaMemcpyDeviceToHost);
-	printf("pX_target->p_T_minor[85495].Te %1.10E\n", tempf64);
+	//cudaMemcpy(&tempf64, &(pX_target->p_T_minor[85495].Te), sizeof(f64), cudaMemcpyDeviceToHost);
+	//printf("pX_target->p_T_minor[85495].Te %1.10E\n", tempf64);
 
 
 	// It should be universally true that coeffself is negative. Higher self = more negative Lap.
@@ -4504,8 +4508,6 @@ SetConsoleTextAttribute(hConsole, 15);
 	printf("\nMin coeffself %1.12E iMin %d 1.0/(c sqrt(-mcs)) %1.12E\n", mincoeffself, iMin,
 		h_sub_max);
 	// Comes out with sensible values for max abs coeff ~~ delta squared?
-
-	getch(); getch();
 
 	// Add in factor to inflate timestep when we want to play around.
 
