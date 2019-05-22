@@ -43,10 +43,25 @@ __global__ void kernelAverage_n_T_x_to_tris  (
 	T3 * __restrict__ p_T_minor,
 	structural * __restrict__ p_info,
 	f64_vec2 * __restrict__ p_cc,
+
 	LONG3 * __restrict__ p_tri_corner_index,
-	CHAR4 * __restrict__ p_tri_periodic_corner_flags
+	CHAR4 * __restrict__ p_tri_periodic_corner_flags,
+
+	bool bCalculateOnCircumcenters
 	);
 
+
+__global__ void kernelCalculate_kappa_nu(
+	structural * __restrict__ p_info_minor,
+	nvals * __restrict__ p_n_minor,
+	T3 * __restrict__ p_T_minor,
+
+	f64 * __restrict__ p_kappa_n,
+	f64 * __restrict__ p_kappa_i,
+	f64 * __restrict__ p_kappa_e,
+	f64 * __restrict__ p_nu_i,
+	f64 * __restrict__ p_nu_e
+);
 
 __global__ void kernelCreateShardModelOfDensities_And_SetMajorArea_Debug(
 	structural * __restrict__ p_info_minor,
@@ -69,11 +84,13 @@ __global__ void kernelCreateShardModelOfDensities_And_SetMajorArea(
 
 	long * __restrict__ p_izTri_vert,
 	char * __restrict__ p_szPBCtri_vert,
+	f64_vec2 * __restrict__ p_cc,
 	ShardModel * __restrict__ p_n_shards,
 	ShardModel * __restrict__ p_n_n_shards,
 //	long * __restrict__ Tri_n_lists,
 //	long * __restrict__ Tri_n_n_lists,
-	f64 * __restrict__ p_AreaMajor);
+	f64 * __restrict__ p_AreaMajor,
+	bool bUseCircumcenter);
 
 __global__ void kernelInferMinorDensitiesFromShardModel(
 	structural * __restrict__ p_info,
@@ -90,6 +107,38 @@ __global__ void kernelCalculateNu_eHeartNu_iHeart_nu_nn_visc(
 	T3 * __restrict__ p_T,
 	species3 * __restrict__ p_nu);
 
+
+__global__ void kernelAccumulateDiffusiveHeatRate_new(
+	f64 const h_use,
+	structural * __restrict__ p_info_minor,
+	long * __restrict__ pIndexNeigh,
+	char * __restrict__ pPBCNeigh,
+	long * __restrict__ izTri_verts,
+	char * __restrict__ szPBCtri_verts,
+	f64_vec2 * __restrict__ p_cc,
+
+	nvals * __restrict__ p_n_major,
+	T3 * __restrict__ p_T_major,
+	f64_vec3 * __restrict__ p_B_major,
+
+	f64 * __restrict__ p_kappa_n,
+	f64 * __restrict__ p_kappa_i,
+	f64 * __restrict__ p_kappa_e,
+
+	f64 * __restrict__ p_nu_i,
+	f64 * __restrict__ p_nu_e,
+
+	NTrates * __restrict__ NTadditionrates,
+	f64 * __restrict__ p_AreaMajor);
+
+__global__ void kernelIonisationRates(
+	f64 const h_use,
+	structural * __restrict__ p_info_minor,
+	T3 * __restrict__ p_T_major,
+	nvals * __restrict__ p_n_major,
+	f64 * __restrict__ p_AreaMajor,
+	NTrates * __restrict__ NTadditionrates
+);
 
 __global__ void kernelAccumulateDiffusiveHeatRateAndCalcIonisation(
 	f64 const h_use,
