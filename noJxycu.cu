@@ -38,7 +38,7 @@ INT_PTR CALLBACK	SetupBox(HWND, UINT, WPARAM, LPARAM);
 extern f64 GetEzShape__(f64 r);
 cudaError_t addWithCuda(int *c, const int *a, const int *b, unsigned int size);
 
-
+extern f64 * temp_array_host;
 
 // Global variables:
 // =================
@@ -93,7 +93,6 @@ char Functionalfilename[1024];
 int GlobalGraphSetting[7];
 surfacegraph Graph[7]; // why was it 5? // 5th one can be whole thing.
 
-
 float Historic_max[100][HISTORY]; // if max is falling, use historic maximum for graph.
 float Historic_min[100][HISTORY];
 int Historic_powermax[200];
@@ -102,11 +101,10 @@ int Historic_powermin[200]; // just store previous value only.
 bool boolGlobalHistory, GlobalboolDisplayMeshWireframe;
 
 // avi file -oriented variables
-int const NUMAVI = 6;
+int const NUMAVI = 3;
 HAVI hAvi[NUMAVI + 1];
-int const GraphFlags[6] = { SPECIES_ION, VIZVEZJZAZDOT, SPECIES_ELECTRON, 
-							JZAZBXYEZ, SPECIES_NEUTRAL, TOTAL};
-char szAvi[NUMAVI][128] = { "Ion","VIZVEZ","Elec","JzAzBxyEz","Neut", "Total" };
+int const GraphFlags[3] = { SPECIES_ION, SPECIES_NEUTRAL, JZAZBXYEZ};
+char szAvi[NUMAVI][128] = { "Elec","Tot","JzAzBxy" };
 
 AVICOMPRESSOPTIONS opts;
 int counter;
@@ -114,8 +112,6 @@ HBITMAP surfbit, dib;
 HDC surfdc, dibdc;
 LPVOID lpvBits;
 BITMAPINFO bitmapinfo;
-
-
 
 char * report_time(int action)
 {
@@ -472,29 +468,93 @@ void RefreshGraphs(TriMesh & X, // only not const because of such as Reset_verte
 	case SPECIES_NEUTRAL:
 
 
-		Graph[0].DrawSurface("Neutral n",
+		pVertex = X.X;
+		pdata = X.pData + BEGINNING_OF_CENTRAL;
+		for (iVertex = 0; iVertex < NUMVERTICES; iVertex++)
+		{
+			if ((pVertex->flags == DOMAIN_VERTEX) || (pVertex->flags == OUTERMOST))
+			{
+				pdata->temp.x = pdata->n + pdata->n_n;
+				pdata->temp.y = pdata->n / pdata->temp.x;
+			}
+			++pVertex;
+			++pdata;
+		}
+		
+		Graph[0].DrawSurface("n_n + n_ion",
+			DATA_HEIGHT, (real *)(&(X.pData[0].temp.x)),
+			IONISE_COLOUR, (real *)(&(X.pData[0].temp.y)),
+			false,
+			GRAPH_TOTAL_N, &X);
+
+
+		pVertex = X.X;
+		pdata = X.pData + BEGINNING_OF_CENTRAL;
+		for (iVertex = 0; iVertex < NUMVERTICES; iVertex++)
+		{
+			if ((pVertex->flags == DOMAIN_VERTEX) || (pVertex->flags == OUTERMOST))
+			{
+				pdata->temp.x = (m_neutral_*pdata->n_n*pdata->v_n.x
+					+ (m_ion_ + m_e_) * pdata->n*pdata->vxy.x) /
+					(m_neutral_*pdata->n_n + (m_ion_ + m_e_)*pdata->n);
+				pdata->temp.y = (m_neutral_*pdata->n_n*pdata->v_n.y
+					+ (m_ion_ + m_e_) * pdata->n*pdata->vxy.y) /
+					(m_neutral_*pdata->n_n + (m_ion_ + m_e_)*pdata->n);
+			}
+			++pVertex;
+			++pdata;
+		}
+		Graph[1].DrawSurface("sum[n_s v_s m_s]/sum[n_s m_s]",
+			VELOCITY_HEIGHT, (real *)(&(X.pData[0].temp.x)),
+			VELOCITY_COLOUR, (real *)(&(X.pData[0].temp.x)),
+			false, // no inner mesh display
+			GRAPH_TOTAL_V, &X);
+
+		pVertex = X.X;
+		pdata = X.pData + BEGINNING_OF_CENTRAL;
+		for (iVertex = 0; iVertex < NUMVERTICES; iVertex++)
+		{
+			if ((pVertex->flags == DOMAIN_VERTEX) || (pVertex->flags == OUTERMOST))
+			{
+				pdata->temp.x = (pdata->n_n*pdata->Tn
+					+ pdata->n*(pdata->Ti + pdata->Te)) /
+					(pdata->n_n + pdata->n + pdata->n);
+			}
+			++pVertex;
+			++pdata;
+		}
+		Graph[3].TickRescaling = 1.0 / kB_;
+		Graph[3].DrawSurface("sum[n_s T_s]/sum[n_s]",
+			DATA_HEIGHT, (real *)(&(X.pData[0].temp.x)),
+			SEGUE_COLOUR, (real *)(&(X.pData[0].temp.x)),
+			false,
+			GRAPH_TOTAL_T, &X);
+		Graph[3].TickRescaling = 1.0;
+
+
+		Graph[2].DrawSurface("Neutral n",
 			DATA_HEIGHT, (real *)(&(X.pData[0].n_n)),
 			VELOCITY_COLOUR, (real *)(&(X.pData[0].v_n)),
 			false, // no inner mesh display
 			GRAPH_NEUT_N, &X);
-		Graph[1].DrawSurface("Neutral v",
+		Graph[4].DrawSurface("Neutral v",
 			VELOCITY_HEIGHT, (real *)(&(X.pData[0].v_n)),
 			VELOCITY_COLOUR, (real *)(&(X.pData[0].v_n)),
 			false, // no inner mesh display
 			GRAPH_NEUT_V, &X);
-		Graph[3].TickRescaling = 1.0 / kB_;
-		Graph[3].DrawSurface("Neutral T",
+
+
+		Graph[5].TickRescaling = 1.0 / kB_;
+		Graph[5].DrawSurface("Neutral T",
 			DATA_HEIGHT, (real *)(&(X.pData[0].Tn)),
 			SEGUE_COLOUR, (real *)(&(X.pData[0].Tn)),
 			false, // no inner mesh display
 			GRAPH_NEUT_T, &X);
-		Graph[3].TickRescaling = 1.0;
-		// How to handle Graph[2] ?
-
+		Graph[5].TickRescaling = 1.0;
+		
 		break;
 	case SPECIES_ION:
-
-
+		
 		Graph[3].TickRescaling = 1.0 / kB_;
 		Graph[3].DrawSurface("Ion T",
 			DATA_HEIGHT, (real *)(&(X.pData[0].Ti)),
@@ -516,9 +576,19 @@ void RefreshGraphs(TriMesh & X, // only not const because of such as Reset_verte
 			false, // no inner mesh display
 			GRAPH_ION_V, &X);
 
+		// These are same so double up with elec.
+
+		Graph[5].TickRescaling = 1.0 / kB_;
+		Graph[5].DrawSurface("Elec T",
+			DATA_HEIGHT, (real *)(&(X.pData[0].Te)),
+			SEGUE_COLOUR, (real *)(&(X.pData[0].Te)),
+			false, // no inner mesh display
+			GRAPH_ELEC_T, &X);
+		Graph[5].TickRescaling = 1.0;
+
 		break;
 
-	case SPECIES_ELEC:
+/*	case SPECIES_ELEC:
 
 		Graph[0].DrawSurface("Elec n",
 			DATA_HEIGHT, (real *)(&(X.pData[0].n)),
@@ -534,19 +604,12 @@ void RefreshGraphs(TriMesh & X, // only not const because of such as Reset_verte
 			VELOCITY_COLOUR, (real *)(&(X.pData[0].vxy)),
 			false, // no inner mesh display
 			GRAPH_ELEC_V, &X);
-		Graph[3].TickRescaling = 1.0 / kB_;
-		Graph[3].DrawSurface("Elec T",
-			DATA_HEIGHT, (real *)(&(X.pData[0].Te)),
-			SEGUE_COLOUR, (real *)(&(X.pData[0].Te)),
-			false, // no inner mesh display
-			GRAPH_ELEC_T, &X);
-		Graph[3].TickRescaling = 1.0;
 		break;
 
 		// In other cases, (and even for the above),
 		// here is a good place to call the 
 		// setup routines for temp variables.
-
+		*/
 	case OVERALL:
 		break;
 
@@ -593,8 +656,24 @@ void RefreshGraphs(TriMesh & X, // only not const because of such as Reset_verte
 		VELOCITY_COLOUR, (real *)(&(X.pData[0].B.x)),
 		false,
 		GRAPH_BXY, &X);
-		
+
+		Graph[5].DrawSurface("vez",
+			DATA_HEIGHT, (real *)(&(X.pData[0].vez)),
+			AZSEGUE_COLOUR, (real *)(&(X.pData[0].temp.x)),
+			false, GRAPH_VEZ, &X);
+
+		pdata = X.pData + BEGINNING_OF_CENTRAL;
+		for (iVertex = 0; iVertex < NUMVERTICES; iVertex++)
+		{
+			pdata->temp.x = temp_array_host[iVertex + BEGINNING_OF_CENTRAL];
+			++pdata;
+		};
+		Graph[4].DrawSurface("Lap Az",
+			DATA_HEIGHT, (real *)(&(X.pData[0].temp.x)),
+			AZSEGUE_COLOUR, (real *)(&(X.pData[0].temp.x)),
+			true, GRAPH_LAPAZ, &X);
 		break;
+
 	case VIZVEZJZAZDOT:
 
 		// Set Jz:
@@ -953,13 +1032,13 @@ void RefreshGraphs(TriMesh & X, // only not const because of such as Reset_verte
 		
 	};
 
-	// Graph 2, in case of species graphs:
+	// Graph 2 and 4, in case of species graphs:
 
 	switch (iGraphsFlag) {
-	case SPECIES_NEUTRAL:
+	//case SPECIES_NEUTRAL:
 	case SPECIES_ION:
-	case SPECIES_ELEC:
-	case TOTAL:
+	//case SPECIES_ELEC:
+	//case TOTAL:
 
 		int offset_v, offset_T;
 		offset_v = (real *)(&(X.pData[0].vxy)) - (real *)(&(X.pData[0]));
@@ -980,8 +1059,7 @@ void RefreshGraphs(TriMesh & X, // only not const because of such as Reset_verte
 				GRAPH_FLAT_WIRE_MESH);
 			Graph[2].Render(buff, GlobalRenderLabels, &X);
 
-		}
-		else {
+		} else {
 			// Tell SDWC not to mess with colourmax if it's a flat mesh.
 
 			if (GlobalColoursPlanView == 1)
@@ -993,19 +1071,35 @@ void RefreshGraphs(TriMesh & X, // only not const because of such as Reset_verte
 				Graph[2].SetDataWithColour(X, FLAG_VELOCITY_COLOUR, FLAG_FLAT_MESH, offset_v, offset_v,
 					GRAPH_FLAT_WIRE_MESH);
 				Graph[2].Render(buff, GlobalRenderLabels, &X);
-			}
-			else {
-				// temperature
-				Graph[2].mhTech = Graph[2].mFX->GetTechniqueByName("SegueTech");
-				// SegueVS should take maximum as a parameter;
-				// at least for colours we should prefer an absolute scale for T
-				// Is it ever used for anything else? Not so far? eps?
-
-				Graph[2].SetDataWithColour(X, FLAG_SEGUE_COLOUR, FLAG_FLAT_MESH, offset_T, offset_T,
-					GRAPH_FLAT_WIRE_MESH);
-				Graph[2].Render(buff, GlobalRenderLabels, &X);
 			};
+			////else {
+			////	// temperature
+			////	Graph[2].mhTech = Graph[2].mFX->GetTechniqueByName("SegueTech");
+			////	// SegueVS should take maximum as a parameter;
+			////	// at least for colours we should prefer an absolute scale for T
+			////	// Is it ever used for anything else? Not so far? eps?
+
+			////	Graph[2].SetDataWithColour(X, FLAG_SEGUE_COLOUR, FLAG_FLAT_MESH, offset_T, offset_T,
+			////		GRAPH_FLAT_WIRE_MESH);
+			////	Graph[2].Render(buff, GlobalRenderLabels, &X);
+			////};
 		};
+
+		// =================================================================================
+
+		Graph[4].SetEyePlan(GlobalPlanEye);
+		Graph[4].boolDisplayMeshWireframe = true;
+		Graph[4].boolClearZBufferBeforeWireframe = true;
+		Graph[4].boolDisplayMainMesh = true;
+		Graph[4].boolDisplayInnerMesh = false;
+		Graph[4].boolDisplayScales = false;
+
+		Graph[4].mhTech = Graph[4].mFX->GetTechniqueByName("SegueTech");
+		
+		Graph[4].SetDataWithColour(X, FLAG_SEGUE_COLOUR, FLAG_FLAT_MESH, offset_T, offset_T,
+					GRAPH_FLAT_WIRE_MESH);
+		Graph[4].Render(buff, GlobalRenderLabels, &X);
+				
 		break;
 	}
 }
@@ -1131,7 +1225,7 @@ int main()
 	DXChk(Direct3D.Initialise(hWnd, hInstance, VIDEO_WIDTH, VIDEO_HEIGHT));
 
 	// With Field Of View = PI/4 used this:
-
+	/*
 	GlobalEye.x = 0.0f;
 	GlobalEye.y = 12.4f;  //7.2f;
 	GlobalEye.z = -18.0f + 2.5*xzscale;//DEVICE_RADIUS_INSULATOR_OUTER*xzscale;//-17.8f+
@@ -1154,7 +1248,32 @@ int main()
 
 	GlobalPlanLookat2.x = GlobalPlanEye2.x;
 	GlobalPlanLookat2.y = 0.0f;
+	GlobalPlanLookat2.z = GlobalPlanEye2.z + 0.0001;*/
+
+	GlobalEye.x = -10.4f;
+	GlobalEye.y = 16.4f;  //7.2f;
+	GlobalEye.z = 44.0f;
+
+	GlobalLookat.x = 1.20f;
+	GlobalLookat.y = 3.0f;
+	GlobalLookat.z = 72.2f;
+
+	GlobalPlanEye.x = 2.9f;
+	GlobalPlanEye.y = 17.97f;
+	GlobalPlanEye.z = 71.95f;
+
+	GlobalPlanEye2.x = -0.1f;
+	GlobalPlanEye2.y = 19.5f;
+	GlobalPlanEye2.z = 2.8*xzscale;
+
+	GlobalPlanLookat.x = GlobalPlanEye.x;
+	GlobalPlanLookat.y = 0.0f;
+	GlobalPlanLookat.z = GlobalPlanEye.z + 0.0001;
+
+	GlobalPlanLookat2.x = GlobalPlanEye2.x;
+	GlobalPlanLookat2.y = 0.0f;
 	GlobalPlanLookat2.z = GlobalPlanEye2.z + 0.0001;
+
 
 						 // Add vectors in parallel.
 	cudaError_t cudaStatus = addWithCuda(c, a, b, arraySize);
@@ -1197,7 +1316,7 @@ int main()
 			PostQuitMessage(204);
 		};
 
-		if (DXChk(Graph[5].InitialiseWithoutBuffers(GRAPH_WIDTH * 2, GRAPH_HEIGHT, GRAPH_WIDTH, GRAPH_HEIGHT, GlobalPlanEye, GlobalPlanLookat)) +
+		if (DXChk(Graph[5].InitialiseWithoutBuffers(GRAPH_WIDTH * 2, GRAPH_HEIGHT, GRAPH_WIDTH, GRAPH_HEIGHT, GlobalEye, GlobalLookat)) +
 			DXChk(Graph[5].InitialiseBuffers(X1))
 			)
 		{
@@ -1207,9 +1326,9 @@ int main()
 
 	Graph[0].bDisplayTimestamp = false;
 	Graph[1].bDisplayTimestamp = false;
-	Graph[2].bDisplayTimestamp = true;
+	Graph[2].bDisplayTimestamp = false;
 	Graph[3].bDisplayTimestamp = false;
-	Graph[4].bDisplayTimestamp = false;
+	Graph[4].bDisplayTimestamp = true;
 	Graph[5].bDisplayTimestamp = false;
 
 	Direct3D.pd3dDevice->GetBackBuffer(0, 0, D3DBACKBUFFER_TYPE_MONO, &p_backbuffer_surface);

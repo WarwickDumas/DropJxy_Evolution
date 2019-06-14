@@ -21,6 +21,15 @@ __global__ void kernelCalculateOverallVelocitiesVertices(
 	char * __restrict__ p_szPBCtri_verts
 );
 
+__global__ void kernelAdvectPositionsVertex(
+	f64 h_use,
+	structural * __restrict__ p_info_src_major,
+	structural * __restrict__ p_info_dest_major,
+	f64_vec2 * __restrict__ p_v_overall_major,
+	nvals * __restrict__ p_n_major,
+	long * __restrict__ p_izNeigh_vert,
+	char * __restrict__ p_szPBCneigh_vert);
+
 __global__ void kernelAverageOverallVelocitiesTriangles(
 	f64_vec2 * __restrict__ p_v_overall_minor_major,
 	f64_vec2 * __restrict__ p_v_overall_minor_minor,
@@ -29,8 +38,7 @@ __global__ void kernelAverageOverallVelocitiesTriangles(
 	CHAR4 * __restrict__ p_tri_periodic_corner_flags
 );
 
-
-__global__ void kernelAdvectPositions (
+__global__ void kernelAdvectPositionsTris (
 	f64 h_use,
 	structural * __restrict__ p_info_src,
 	structural * __restrict__ p_info_dest,
@@ -50,7 +58,31 @@ __global__ void kernelAverage_n_T_x_to_tris  (
 	bool bCalculateOnCircumcenters
 	);
 
+__global__ void kernelCalc_SelfCoefficient_for_HeatConduction(
+	structural * __restrict__ p_info_minor,
+	long * __restrict__ pIndexNeigh,
+	char * __restrict__ pPBCNeigh,
+	long * __restrict__ izTri_verts,
+	char * __restrict__ szPBCtri_verts,
+	f64_vec2 * __restrict__ p_cc,
 
+	nvals * __restrict__ p_n_major,
+	f64_vec3 * __restrict__ p_B_major,
+
+	f64 * __restrict__ p_kappa_n,
+	f64 * __restrict__ p_kappa_i,
+	f64 * __restrict__ p_kappa_e,
+
+	f64 * __restrict__ p_nu_i,
+	f64 * __restrict__ p_nu_e,
+
+	f64 * __restrict__ p_coeff_self,
+	f64 * __restrict__ p_AreaMajor);
+
+__global__ void kernelTileMaxMajor(
+	f64 * __restrict__ p_z,
+	f64 * __restrict__ p_max
+);
 __global__ void kernelCalculate_kappa_nu(
 	structural * __restrict__ p_info_minor,
 	nvals * __restrict__ p_n_minor,
@@ -98,7 +130,8 @@ __global__ void kernelInferMinorDensitiesFromShardModel(
 	ShardModel * __restrict__ p_n_shards,
 	ShardModel * __restrict__ p_n_shards_n,
 	LONG3 * __restrict__ p_tri_corner_index,
-	LONG3 * __restrict__ p_who_am_I_to_corner
+	LONG3 * __restrict__ p_who_am_I_to_corner,
+	nvals * __restrict__ p_one_over_n
 ); 
 
 __global__ void kernelCalculateNu_eHeartNu_iHeart_nu_nn_visc(
@@ -256,6 +289,7 @@ __global__ void kernelPopulateOhmsLaw(
 	f64_vec2 * __restrict__ p_GradTe,
 
 	nvals * __restrict__ p_n_minor_use,
+	nvals * __restrict__ p_one_over_n,
 	T3 * __restrict__ p_T_minor_use,
 	v4 * __restrict__ p_vie_src,
 	f64_vec3 * __restrict__ p_v_n_src,

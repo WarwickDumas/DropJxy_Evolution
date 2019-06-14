@@ -76,7 +76,7 @@ f64 Tri_n_lists[NMINOR][6];
 real inline TriMesh::GetIzPrescribed(real const t)
 {
 
-	real Iz = -PEAKCURRENT_STATCOULOMB * sin((t + ZCURRENTBASETIME) * PIOVERPEAKTIME);
+	real Iz = -PEAKCURRENT_STATCOULOMB * sin((t + ZCURRENTBASETIME) * 0.5*PIOVERPEAKTIME); // t/peaktime * pi/2
 
 	printf("\nGetIzPrescribed called with t+ZCURRENTBASETIME = %1.5E : %1.5E\n", t + ZCURRENTBASETIME, Iz);
 	

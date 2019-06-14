@@ -4535,7 +4535,7 @@ void TriMesh::InitialPopulate(void)
 		memset(&ourdata, 0, sizeof(plasma_data)); // v= 0
 		ourdata.n_n = n_neut;
 		ourdata.n = n_ion;
-		ourdata.Tn = T_ion;
+		ourdata.Tn = UNIFORM_T;
 		ourdata.Ti = T_ion;
 		ourdata.Te = T_ion;
 		// Az = Azdot = 0 since J=0

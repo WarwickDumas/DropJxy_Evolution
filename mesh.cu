@@ -7,6 +7,8 @@
 
 extern long steps_remaining;
 
+#define CHOSEN 28516  
+
 int GlobalWedgeSwitch; 
 smartlong GlobalAffectedTriIndexList;
 
@@ -1899,6 +1901,10 @@ void TriMesh::Redelaunerize(bool exhaustion, bool bReplace)
 					
 				for (int iNeigh = 0; iNeigh < 3; iNeigh++)
 				{
+					if (iTri == CHOSEN) {
+						iNeigh = iNeigh;
+					}
+
 					pTri2 = pTri->neighbours[iNeigh];
 					
 					if (	(pTri2 != pTri) 

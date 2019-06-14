@@ -31,9 +31,9 @@ bool const bScrewPinch = false;
 
 #define STEPS_PER_LOOP               1    // soon change to 500
 // frames between file pinch-offs:
-#define AVI_FILE_PINCHOFF_FREQUENCY     75
+#define AVI_FILE_PINCHOFF_FREQUENCY     150
 // milliseconds between frames:
-#define AVIFRAMEPERIOD         50 // 20 fps which is ok with our setting of 25 frames/ns [running 2e-11 x 2 = 4e-11 per frame]
+#define AVIFRAMEPERIOD         100 // 50 = 20 fps which is ok with our setting of 25 frames/ns [running 2e-11 x 2 = 4e-11 per frame]
 
 #define DATA_SAVE_FREQUENCY					  10
 
@@ -194,12 +194,12 @@ real const CUTAWAYANGLE = -0.005;//-GRADIENT_X_PER_Y * 0.5;
 real const n_INITIAL_SD = 0.08; // 800 micron
 real const INITIALnSD = n_INITIAL_SD; 
 real const INITIALTSD = 0.08; // if n is Gaussian then T is a cone. So make n more spread out than T (?)
-
+ 
 real const FILAMENT_OWN_PEAK_n = 1.0e15;
-real const UNIFORM_n = 1.0e12;  // ionisation fraction at room temp would be tiny;
+real const UNIFORM_n = 1.0e8;  // ionisation fraction at room temp would be tiny;
 							// this is here to help avoid density = zero which causes division issues
 real const FILAMENT_OWN_PEAK_T = 4.8e-12;
-real const UNIFORM_T= 4.0e-14; // 300K
+real const UNIFORM_T = 4.0e-14; // 300K
 
 #define BZ_CONSTANT     2.7  
 							   // Constant Bz before any plasma Bz:
@@ -207,12 +207,13 @@ real const UNIFORM_T= 4.0e-14; // 300K
 real const RELATIVEINITIALJZUNIFORM = 0.0; 
 // note it is not wise to have uniform current w/o uniform ion density - can revisit this
 
-real const  ZCURRENTBASETIME = 0.0;//18.0e-9; // start from 0 -- 16/10/17
+real const  ZCURRENTBASETIME = 0.0;      //18.0e-9; // start from 0 -- 16/10/17
 real const  PEAKCURRENT_AMP = 88000.0;   // 88000 Amp - 2 filaments
 // Note that the current is negative from this.
 real const  PEAKCURRENT_STATCOULOMB = PEAKCURRENT_AMP * sC_;
 real const  PEAKTIME  = 18.0e-7;
 real const  PIOVERPEAKTIME = PI/PEAKTIME;
+// should have mapped peak to pi/2
 
 real const SimArea = PI*(DOMAIN_OUTER_RADIUS*DOMAIN_OUTER_RADIUS-DEVICE_RADIUS_INSULATOR_OUTER*DEVICE_RADIUS_INSULATOR_OUTER)/16.0; // pi r^2 -- note to self pls do not keep adding a 2.
 real const FULLANGLE = 2.0*PI/16.0;
@@ -293,9 +294,9 @@ long const VIDEO_HEIGHT = 1050;  // the client area size; used for 4 graphs(at p
 long const SCREEN_WIDTH = 1920;//1440;
 long const SCREEN_HEIGHT = 1080;//900; // affects how window and console are placed
 
-long const GRAPH_WIDTH = VIDEO_WIDTH/2; // /3
+long const GRAPH_WIDTH = VIDEO_WIDTH / 3;
 long const GRAPH_HEIGHT = VIDEO_HEIGHT/2;
-long const NUMGRAPHS = 4;
+long const NUMGRAPHS = 6;
 
 float const GRAPHIC_MIN_Y = 0.0;
 float const GRAPHIC_MAX_Y = 4.5;
