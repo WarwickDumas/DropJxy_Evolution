@@ -16,17 +16,12 @@
 //#include "cppconst.h"
 #include "cuda_struct.h"
 #include "constant.h"
-
 #include "d3d.h"    
 #include <d3dx9.h> 
 #include <dxerr.h>
-
 #include <commdlg.h>    // probably used by avi_utils
-
 #include "surfacegraph_tri.h"
-
 #include "avi_utils.cpp"     // for making .avi
-
 
 //=======================================================
 // Declarations of functions:
@@ -39,6 +34,7 @@ extern f64 GetEzShape__(f64 r);
 cudaError_t addWithCuda(int *c, const int *a, const int *b, unsigned int size);
 
 extern f64 * temp_array_host;
+extern OhmsCoeffs * p_OhmsCoeffs_host;
 
 // Global variables:
 // =================
@@ -46,6 +42,8 @@ extern f64 * temp_array_host;
 extern f64 EzStrength_;
 extern cuSyst cuSyst1, cuSyst2, cuSyst3;
 extern D3D Direct3D;
+extern f64 * p_temphost1, *p_temphost2,
+*p_temphost3, *p_temphost4, *p_temphost5, *p_temphost6;
 
 float xzscale;
 
@@ -56,7 +54,7 @@ int iGlobalScratch;
 
 real GlobalHeightScale;
 
-int GlobalSpeciesToGraph = SPECIES_ELECTRON;
+int GlobalSpeciesToGraph = SPECIES_ION;
 int GlobalWhichLabels = 0;
 bool GlobalRenderLabels = false;
 int GlobalColoursPlanView = 0;
@@ -72,6 +70,9 @@ cuSyst cuSyst_host, cuSyst_host2;
 
 D3DXVECTOR3 GlobalEye, GlobalLookat, GlobalPlanEye, GlobalPlanEye2, GlobalPlanLookat,
 GlobalPlanLookat2, GlobalEye2, GlobalLookat2;
+
+D3DXVECTOR3 newEye;
+D3DXVECTOR3 newLookat;
 
 IDirect3DSurface9* p_backbuffer_surface;
 
@@ -101,10 +102,10 @@ int Historic_powermin[200]; // just store previous value only.
 bool boolGlobalHistory, GlobalboolDisplayMeshWireframe;
 
 // avi file -oriented variables
-int const NUMAVI = 3;
+int const NUMAVI = 5;
 HAVI hAvi[NUMAVI + 1];
-int const GraphFlags[3] = { SPECIES_ION, SPECIES_NEUTRAL, JZAZBXYEZ};
-char szAvi[NUMAVI][128] = { "Elec","Tot","JzAzBxy" };
+int const GraphFlags[NUMAVI] = { SPECIES_ION, OVERALL, JZAZBXYEZ, OHMSLAW, ONE_D};
+char szAvi[NUMAVI][128] = { "Elec","Total","JzAzBxy","Ohms","Test"};
 
 AVICOMPRESSOPTIONS opts;
 int counter;
@@ -112,6 +113,13 @@ HBITMAP surfbit, dib;
 HDC surfdc, dibdc;
 LPVOID lpvBits;
 BITMAPINFO bitmapinfo;
+
+f64 graphdata[4][10000]; // 40000*8=320 KB
+f64 graph_r[10000];
+int numgraphs = 4;
+int num_graph_data_points = 10000;
+f64 maximum[4];
+
 
 char * report_time(int action)
 {
@@ -137,14 +145,12 @@ char * report_time(int action)
 	return &(timebuffer[0]);
 };
 
-
 f64 GetTriangleArea(f64_vec2 pos0, f64_vec2 pos1, f64_vec2 pos2)
 {
 	f64 area = 0.5*((pos0.x + pos1.x)*(pos1.y - pos0.y) + (pos1.x + pos2.x)*(pos2.y - pos1.y)
 		+ (pos0.x + pos2.x)*(pos0.y - pos2.y));
 	return fabs(area);
 }
-
 
 void TriMesh::CalculateTotalGraphingData()
 {
@@ -218,6 +224,9 @@ void surfacegraph::DrawSurface(const char * szname,
 	case IONISE_COLOUR:
 		mhTech = mFX->GetTechniqueByName("IoniseTech");
 		break;
+	case PPN_COLOUR:
+		mhTech = mFX->GetTechniqueByName("ProportionTech"); // 1 = blue
+		break;
 	};
 
 	// Usual settings:
@@ -262,14 +271,144 @@ void surfacegraph::DrawSurface(const char * szname,
 	};
 }
 
-// Here we make a function that we can call to tidy up graph calling code:
 
-// How we are going to do graphs:
-// Use plasma_data objects from BEGINNING_OF_CENTRAL.
+void Create1DGraphingData(TriMesh * pX)
+{
+	// Takes p_temphost3,4,5,6 and turns them into graphdata[iGraph=0,1,2,3][]
+
+	Vertex * pVertex, * pVert2;
+	f64_vec2 pos, pos0, pos1, pos2;
+	f64 dist0, dist1, dist2, wt0, wt1, wt2, wttotal, y0, y1, y2;
+	int iGraph, asdf, iWhich, iCorner, tri_len, i;
+	bool has_more, has_less, has_grad;
+	Triangle * pTri;
+	long izTri[MAXNEIGH];
+
+	long VertexIndexArray[10000];
+
+	num_graph_data_points = pX->GetVertsRightOfCutawayLine_Sorted(VertexIndexArray, graph_r);
+	maximum[0] = 0.0;
+	maximum[1] = 0.0;
+	maximum[2] = 0.0;
+	maximum[3] = 0.0;
+
+	// Method used in Render routine looks quite reasonable: find tri that crosses cutaway,
+	// use some kind of interp on tri. But we need to use values from p_temphost array not a graph position.
+
+	for (asdf = 0; asdf < num_graph_data_points; asdf++)
+	{
+		pVertex = pX->X + VertexIndexArray[asdf];
+
+		// We want the tri directly to the left of it, through which (-1,0) passes.
+		// 1.Get these vertex indices
+		// which tri contains a point which is further and a point less far?
+
+		real rr = pVertex->pos.x*pVertex->pos.x + pVertex->pos.y*pVertex->pos.y;
+		iWhich = -1;
+		tri_len = pVertex->GetTriIndexArray(izTri);
+		for (i = 0; i < tri_len; i++)
+		{
+			pTri = pX->T + izTri[i];
+			has_more = false; has_less = false; has_grad = false;
+			for (iCorner = 0; iCorner < 3; iCorner++)
+			{
+				pVert2 = pTri->cornerptr[iCorner];
+				if (pVert2 != pVertex)
+				{
+					if (pVert2->pos.x*pVert2->pos.x + pVert2->pos.y*pVert2->pos.y > rr)
+					{
+						has_more = true;
+					}
+					else {
+						has_less = true;
+					};
+				};
+				if (pVert2->pos.x / pVert2->pos.y < pVertex->pos.x / pVertex->pos.y)
+					has_grad = true;
+			};
+
+			if (has_more && has_less && has_grad)
+			{
+				iWhich = i;
+			}
+		};
+
+		if (iWhich == -1) {// give up, do nothing} 
+			printf("gave up. %d \n", VertexIndexArray[asdf]);
+			graphdata[0][asdf] = 0.0;
+			graphdata[1][asdf] = 0.0;
+			graphdata[2][asdf] = 0.0;
+			graphdata[3][asdf] = 0.0;
+		}
+		else {
+			pTri = pX->T + izTri[iWhich];
+			while ((pTri->u8domain_flag != DOMAIN_TRIANGLE) && (iWhich >= 0)) {
+				pTri = pX->T + izTri[iWhich];
+				iWhich--;
+			};
+			iWhich++;
+
+			// we are needing to adjust graph_r and interp graphdata
+
+			pos.y = pVertex->pos.y;
+			pos.x = pVertex->pos.x*CUTAWAYANGLE; // can leave graph_r undisturbed
+
+			pos0 = pTri->cornerptr[0]->pos;
+			pos1 = pTri->cornerptr[1]->pos;
+			pos2 = pTri->cornerptr[2]->pos;
+
+			dist0 = sqrt((pos0 - pos).dot(pos0 - pos));
+			dist1 = sqrt((pos1 - pos).dot(pos1 - pos));
+			dist2 = sqrt((pos2 - pos).dot(pos2 - pos));
+
+			wt0 = 1.0f / dist0;
+			wt1 = 1.0f / dist1;
+			wt2 = 1.0f / dist2;
+			wttotal = wt0 + wt1 + wt2;
+			wt0 /= wttotal;
+			wt1 /= wttotal;
+			wt2 /= wttotal;
+			// Not a great way it has to be said.
+
+			y0 = p_temphost3[(pTri->cornerptr[0] - pX->X) + BEGINNING_OF_CENTRAL];
+			y1 = p_temphost3[(pTri->cornerptr[1] - pX->X) + BEGINNING_OF_CENTRAL];
+			y2 = p_temphost3[(pTri->cornerptr[2] - pX->X) + BEGINNING_OF_CENTRAL];
+			graphdata[0][asdf] = wt0*y0 + wt1*y1 + wt2*y2;
+			if (fabs(graphdata[0][asdf]) > maximum[0]) maximum[0] = fabs(graphdata[0][asdf]);
+
+			if (numgraphs > 1) {
+				y0 = p_temphost4[(pTri->cornerptr[0] - pX->X) + BEGINNING_OF_CENTRAL];
+				y1 = p_temphost4[(pTri->cornerptr[1] - pX->X) + BEGINNING_OF_CENTRAL];
+				y2 = p_temphost4[(pTri->cornerptr[2] - pX->X) + BEGINNING_OF_CENTRAL];
+				graphdata[1][asdf] = wt0*y0 + wt1*y1 + wt2*y2;
+				if (fabs(graphdata[1][asdf]) > maximum[1]) maximum[1] = fabs(graphdata[1][asdf]);
+			};
+			
+			if (numgraphs > 2) {
+				y0 = p_temphost5[(pTri->cornerptr[0] - pX->X) + BEGINNING_OF_CENTRAL];
+				y1 = p_temphost5[(pTri->cornerptr[1] - pX->X) + BEGINNING_OF_CENTRAL];
+				y2 = p_temphost5[(pTri->cornerptr[2] - pX->X) + BEGINNING_OF_CENTRAL];
+				graphdata[2][asdf] = wt0*y0 + wt1*y1 + wt2*y2;
+				if (fabs(graphdata[2][asdf]) > maximum[2]) maximum[2] = fabs(graphdata[2][asdf]);
+			};
+			if (numgraphs > 3) {
+				y0 = p_temphost6[(pTri->cornerptr[0] - pX->X) + BEGINNING_OF_CENTRAL];
+				y1 = p_temphost6[(pTri->cornerptr[1] - pX->X) + BEGINNING_OF_CENTRAL];
+				y2 = p_temphost6[(pTri->cornerptr[2] - pX->X) + BEGINNING_OF_CENTRAL];
+				graphdata[3][asdf] = wt0*y0 + wt1*y1 + wt2*y2;
+				if (fabs(graphdata[3][asdf]) > maximum[3]) maximum[3] = fabs(graphdata[3][asdf]);
+			}
+		}; // found triangle
+		
+	}; // asdf	
+}
+
+
 
 void RefreshGraphs(TriMesh & X, // only not const because of such as Reset_vertex_nvT
 	const int iGraphsFlag)
 {
+	D3DXMATRIXA16 matWorld;
 	Vertex * pVertex;
 	long iVertex;
 	plasma_data * pdata;
@@ -277,8 +416,240 @@ void RefreshGraphs(TriMesh & X, // only not const because of such as Reset_verte
 	char buff[256];
 	sprintf(buff, "%5.2f ns", evaltime*1.0e9);
 	f64 overc;
+	char buffer[256];
+	overc = 1.0 / c_;
+	float x, y, z;
+	float zeroplane = 0.0f;
+	int i;
+	int iGraph;
+	char graphname[4][128] = { "Azdot","Azdotdot","Lap Az","Jz" };
+
+	float const MAXX = 11.0f;
+	float const MAXY = 6.0f;
+
+	vertex1 linedata[10000];
+	vertex1 linedata2[12];
 
 	switch (iGraphsFlag) {
+		
+	case ONE_D:
+
+		// We are going to have to think about using LineTo the way it is done in RenderGraphs
+		// let's start by rendering in the x-y plane and we can let the present camera look at it
+		printf("\n\nGot to here: ONE_D\n\n");
+		
+		// Create data:
+		Create1DGraphingData(&X);
+		
+		Graph[6].SetEyeAndLookat(newEye, newLookat); // sets matView not matProj
+		printf("Eye %f %f %f\n", newEye.x, newEye.y, newEye.z);
+		Direct3D.pd3dDevice->SetViewport(&(Graph[6].vp));
+
+		D3DXMatrixIdentity(&matWorld);
+		//D3DXMatrixIdentity(&Graph[6].matProj); // ???????????????
+		Direct3D.pd3dDevice->SetTransform(D3DTS_WORLD, &matWorld);
+		Direct3D.pd3dDevice->SetTransform(D3DTS_VIEW, &(Graph[6].matView));
+		Direct3D.pd3dDevice->SetTransform(D3DTS_PROJECTION, &(Graph[6].matProj));
+		
+		Direct3D.pd3dDevice->Clear(0, NULL, D3DCLEAR_TARGET | D3DCLEAR_ZBUFFER,
+			D3DCOLOR_XRGB(250, 255, 250), 1.0f, 0);
+
+		if (SUCCEEDED(Direct3D.pd3dDevice->BeginScene()))
+		{			
+//			x = (float)(-sin(HALFANGLE)*DEVICE_RADIUS_INSULATOR_OUTER)*xzscale;
+//			z = (float)(cos(HALFANGLE)*DEVICE_RADIUS_INSULATOR_OUTER)*xzscale;
+//			y = zeroplane;
+//			linedata[0].x = x; linedata[0].y = y; linedata[0].z = z;
+//			x = (float)(-sin(HALFANGLE)*DOMAIN_OUTER_RADIUS)*xzscale;
+//			z = (float)(cos(HALFANGLE)*DOMAIN_OUTER_RADIUS)*xzscale;
+//			linedata[1].x = x; linedata[1].y = y; linedata[1].z = z;
+//			for (i = 0; i < 12; i++)
+//				linedata[i].colour = 0xff000000;
+//			Direct3D.pd3dDevice->SetFVF(point_fvf);
+//			Direct3D.pd3dDevice->DrawPrimitiveUP(D3DPT_LINESTRIP, 1, linedata, sizeof(vertex1));
+//
+//			x = (float)(sin(HALFANGLE)*DEVICE_RADIUS_INSULATOR_OUTER)*xzscale;
+//			z = (float)(cos(HALFANGLE)*DEVICE_RADIUS_INSULATOR_OUTER)*xzscale;
+//			y = zeroplane;
+//			linedata[0].x = x; linedata[0].y = y; linedata[0].z = z;
+//			x = (float)(sin(HALFANGLE)*DOMAIN_OUTER_RADIUS)*xzscale;
+//			z = (float)(cos(HALFANGLE)*DOMAIN_OUTER_RADIUS)*xzscale;
+//			linedata[1].x = x; linedata[1].y = y; linedata[1].z = z;
+//			for (i = 0; i < 12; i++)
+//				linedata[i].colour = 0;
+//			Direct3D.pd3dDevice->SetFVF(point_fvf);
+//			Direct3D.pd3dDevice->DrawPrimitiveUP(D3DPT_LINESTRIP, 1, linedata, sizeof(vertex1));
+			Direct3D.pd3dDevice->SetFVF(point_fvf);
+
+			real theta = -HALFANGLE;
+			real r = 3.44;
+
+			linedata[0].x = -MAXX;
+			linedata[0].z = 3.44*xzscale;
+			linedata[0].y = 0.0f;
+			linedata[0].colour = 0xff888888; // grey
+			
+			linedata[1].x = -linedata[0].x;
+			linedata[1].y = 0.0f;
+			linedata[1].z = linedata[0].z;
+			linedata[1].colour = linedata[0].colour;
+
+			Direct3D.pd3dDevice->DrawPrimitiveUP(D3DPT_LINESTRIP, 1, linedata, sizeof(vertex1));
+			
+			for (iGraph = 0; iGraph < numgraphs; iGraph++)
+			{			
+				linedata[0].x = -MAXX;
+				linedata[0].z = 3.44*xzscale;
+				linedata[0].y = MAXY + 4.0f-0.9f*(float)iGraph;
+				int asdf = 0;
+				linedata[asdf].colour = 0xff000000;
+				if (iGraph == 1) linedata[asdf].colour = 0xff0022ff;
+				if (iGraph == 2) linedata[asdf].colour = 0xffff0055;
+				if (iGraph == 3) linedata[asdf].colour = 0xff22ff00;
+				linedata[1].x = linedata[0].x + 1.0f;
+				linedata[1].y = linedata[0].y;
+				linedata[1].z = linedata[0].z;
+				linedata[1].colour = linedata[0].colour;
+				Direct3D.pd3dDevice->DrawPrimitiveUP(D3DPT_LINESTRIP, 1, linedata, sizeof(vertex1));
+				
+				Graph[6].RenderLabel2(graphname[iGraph], linedata[1].x + 0.2f, linedata[1].y, linedata[1].z,0);
+
+				for (asdf = 0; asdf < num_graph_data_points; asdf++)
+				{
+					linedata[asdf].x = (float)(MAXX - 2.0*MAXX*((graph_r[asdf] - INNER_A_BOUNDARY) /
+						(DOMAIN_OUTER_RADIUS - INNER_A_BOUNDARY)));
+					
+					// map 0 to 0.0f, maximum[iGraph] to MAXY and -maximum[iGraph] to MINY
+					// Decide on graph scales maximum[] in preceding bit of code
+					linedata[asdf].y = (float)( MAXY*graphdata[iGraph][asdf] / maximum[iGraph]);					
+					linedata[asdf].z = 3.44f*xzscale;					
+					linedata[asdf].colour = 0xff000000;
+					if (iGraph == 1) linedata[asdf].colour = 0xff0022ff;
+					if (iGraph == 2) linedata[asdf].colour = 0xffff0055;
+					if (iGraph == 3) linedata[asdf].colour = 0xff22ff00;
+				};
+				Direct3D.pd3dDevice->DrawPrimitiveUP(D3DPT_LINESTRIP, num_graph_data_points-1, linedata, sizeof(vertex1));
+
+				sprintf(buffer, "%2.2E", maximum[iGraph]);
+				Graph[6].RenderLabel2(buffer,  // text
+					MAXX*0.66f+0.8f*(float)iGraph,
+					MAXY,
+					linedata[0].z, 0, linedata[0].colour);
+				sprintf(buffer, "0.0");
+				Graph[6].RenderLabel2(buffer,  // text
+					MAXX*0.66f+0.8f*(float)iGraph,
+					0.0f,
+					linedata[0].z, 0, linedata[0].colour);
+				sprintf(buffer, "-%2.2E", maximum[iGraph]);
+				Graph[6].RenderLabel2(buffer,  // text
+					MAXX*0.66f + 0.8f*(float)iGraph,
+					-MAXY,
+					linedata[0].z, 0, linedata[0].colour);
+			};
+			
+
+			// Vertical lines:
+			for (int i = 0; i < 9; i++)
+			{
+				x = 0.16*(-r*xzscale + 2.0*r*xzscale*(((real)i) / 8.0));
+				z = 3.44*xzscale;// (float)(cos(HALFANGLE)*DEVICE_RADIUS_INSULATOR_OUTER)*xzscale;
+				
+				linedata[0].x = x; linedata[0].z = z;
+				linedata[1].x = x; linedata[1].z = z;
+				linedata[0].colour = 0xff220011;
+				linedata[1].colour = 0xff220011;
+				linedata[0].y = -6.8f;// GRAPHIC_MIN_Y - 1.0f;  
+				linedata[1].y = ((i == 0) || (i == 8)) ? 6.0f:0.0f;// GRAPHIC_MAX_Y + 2.5f;
+
+				Direct3D.pd3dDevice->DrawPrimitiveUP(D3DPT_LINESTRIP, 1, linedata, sizeof(vertex1));
+
+				sprintf(buffer, "%5.2f", INNER_A_BOUNDARY + (1.0-((real)i) / 8.0)*(DOMAIN_OUTER_RADIUS-INNER_A_BOUNDARY));
+				Graph[6].RenderLabel2(buffer,  // text
+					linedata[0].x,
+					-7.4f,
+					linedata[0].z, 0);
+
+			};
+			//DXChk(mFX->SetValue(mhEyePos, &Eye, sizeof(D3DXVECTOR3)));
+
+			linedata[0].x = -0.16*r*xzscale;
+			linedata[0].y = 0.0f;
+			linedata[0].z = 3.44*xzscale;
+			linedata[0].colour = 0xff000000; // 
+
+			linedata[1].x = 0.16*r*xzscale;
+			linedata[1].y = 0.0f;
+			linedata[1].z = linedata[0].z;
+			linedata[1].colour = linedata[0].colour;
+
+			Direct3D.pd3dDevice->DrawPrimitiveUP(D3DPT_LINESTRIP, 1, linedata, sizeof(vertex1));
+			
+			Direct3D.pd3dDevice->EndScene();
+		} else {
+			printf("BeginScene failed!\n\n");
+			getch();
+		}
+
+		pVertex = X.X;
+		pdata = X.pData + BEGINNING_OF_CENTRAL;
+		for (iVertex = 0; iVertex < NUMVERTICES; iVertex++)
+		{
+			pdata->temp.x = p_temphost3[iVertex+BEGINNING_OF_CENTRAL];
+			++pVertex;
+			++pdata;
+		}
+		Graph[4].DrawSurface("Azdot",
+			DATA_HEIGHT, (real *)(&(X.pData[0].temp.x)),
+			AZSEGUE_COLOUR, (real *)(&(X.pData[0].temp.x)),
+			true,
+			GRAPH_AZDOT, &X);
+
+		pVertex = X.X;
+		pdata = X.pData + BEGINNING_OF_CENTRAL;
+		for (iVertex = 0; iVertex < NUMVERTICES; iVertex++)
+		{
+			pdata->temp.x = p_temphost4[iVertex + BEGINNING_OF_CENTRAL];
+			++pVertex;
+			++pdata;
+		}
+		Graph[1].DrawSurface("Azdotdot",
+			DATA_HEIGHT, (real *)(&(X.pData[0].temp.x)),
+			AZSEGUE_COLOUR, (real *)(&(X.pData[0].temp.x)),
+			true,
+			GRAPH_AZDOT, &X);
+
+		pdata = X.pData + BEGINNING_OF_CENTRAL;
+		for (iVertex = 0; iVertex < NUMVERTICES; iVertex++)
+		{
+			pdata->temp.x = p_temphost5[iVertex + BEGINNING_OF_CENTRAL];
+			++pdata;
+		}
+		Graph[3].DrawSurface("Lap Az",
+			DATA_HEIGHT, (real *)(&(X.pData[0].temp.x)),
+			AZSEGUE_COLOUR, (real *)(&(X.pData[0].temp.x)),
+			true,
+			GRAPH_LAPAZ, &X);
+
+		pdata = X.pData + BEGINNING_OF_CENTRAL;
+		for (iVertex = 0; iVertex < NUMVERTICES; iVertex++)
+		{
+			if ((pVertex->flags == DOMAIN_VERTEX) || (pVertex->flags == OUTERMOST))
+			{
+				pdata->temp.x = p_temphost6[iVertex + BEGINNING_OF_CENTRAL];
+			}
+			else {
+				pdata->temp.x = 0.0;
+			}
+			++pdata;
+		}
+		Graph[5].DrawSurface("Jz",
+			DATA_HEIGHT, (real *)(&(X.pData[0].temp.x)),
+			AZSEGUE_COLOUR, (real *)(&(X.pData[0].temp.x)),
+			true,
+			GRAPH_JZ, &X);
+		
+		break;
+
 		/*
 		case JXY_RHO_EXY_GRADPHI_AXYDOTOC_AXY:
 
@@ -465,9 +836,8 @@ void RefreshGraphs(TriMesh & X, // only not const because of such as Reset_verte
 
 		break;
 		*/
-	case SPECIES_NEUTRAL:
-
-
+	case OVERALL:
+		
 		pVertex = X.X;
 		pdata = X.pData + BEGINNING_OF_CENTRAL;
 		for (iVertex = 0; iVertex < NUMVERTICES; iVertex++)
@@ -475,7 +845,10 @@ void RefreshGraphs(TriMesh & X, // only not const because of such as Reset_verte
 			if ((pVertex->flags == DOMAIN_VERTEX) || (pVertex->flags == OUTERMOST))
 			{
 				pdata->temp.x = pdata->n + pdata->n_n;
-				pdata->temp.y = pdata->n / pdata->temp.x;
+				pdata->temp.y = pdata->n / (1.0 + pdata->temp.x);
+			} else {
+				pdata->temp.x = 0.0;
+				pdata->temp.y = 0.0;
 			}
 			++pVertex;
 			++pdata;
@@ -486,8 +859,7 @@ void RefreshGraphs(TriMesh & X, // only not const because of such as Reset_verte
 			IONISE_COLOUR, (real *)(&(X.pData[0].temp.y)),
 			false,
 			GRAPH_TOTAL_N, &X);
-
-
+		
 		pVertex = X.X;
 		pdata = X.pData + BEGINNING_OF_CENTRAL;
 		for (iVertex = 0; iVertex < NUMVERTICES; iVertex++)
@@ -500,6 +872,8 @@ void RefreshGraphs(TriMesh & X, // only not const because of such as Reset_verte
 				pdata->temp.y = (m_neutral_*pdata->n_n*pdata->v_n.y
 					+ (m_ion_ + m_e_) * pdata->n*pdata->vxy.y) /
 					(m_neutral_*pdata->n_n + (m_ion_ + m_e_)*pdata->n);
+			} else {
+				pdata->temp.x = 0.0; pdata->temp.y = 0.0;
 			}
 			++pVertex;
 			++pdata;
@@ -519,6 +893,8 @@ void RefreshGraphs(TriMesh & X, // only not const because of such as Reset_verte
 				pdata->temp.x = (pdata->n_n*pdata->Tn
 					+ pdata->n*(pdata->Ti + pdata->Te)) /
 					(pdata->n_n + pdata->n + pdata->n);
+			} else {
+				pdata->temp.x = 0.0; pdata->temp.y = 0.0;
 			}
 			++pVertex;
 			++pdata;
@@ -610,11 +986,116 @@ void RefreshGraphs(TriMesh & X, // only not const because of such as Reset_verte
 		// here is a good place to call the 
 		// setup routines for temp variables.
 		*/
-	case OVERALL:
+
+case OHMSLAW:
+
+		// 0. q/ m_e nu_sum 
+		// 1. qn / m_e nu_sum
+		// 2. nu_sum
+		// 3. prediction of Jz from uniform Ez
+		// 4. prediction of Jz from actual Ez
+		// 5. Actual Jz
+		
+		// Let temphost1 = nu_en + nu_ei_effective
+		// Let temphost2 = nu_en/temphost1
+
+
+	// Cannot explain why, that comes out black and this doesn't.
+	// Oh because colourmax has been set to 1 or not?
+
+	// Yet the following crashes it. Bizarre? Maybe dividing by 0?
+	
+	overc = 1.0 / c_;
+		pdata = X.pData + BEGINNING_OF_CENTRAL;
+		for (iVertex = 0; iVertex < NUMVERTICES; iVertex++)
+		{
+			pdata->temp.x = q_ / (m_e_ * (1.0 + p_temphost1[iVertex + BEGINNING_OF_CENTRAL]));
+			pdata->temp.y = p_temphost2[iVertex + BEGINNING_OF_CENTRAL]; // colour
+			++pdata;
+		};
+		Graph[0].DrawSurface("q over m nu_effective",
+			DATA_HEIGHT, (real *)(&(X.pData[0].temp.x)),
+			PPN_COLOUR, (real *)(&(X.pData[0].temp.y)),
+			false, // no inner mesh display.
+			GRAPH_VRESPONSEOHMS, &X);
+
+		
+		pdata = X.pData + BEGINNING_OF_CENTRAL;
+		for (iVertex = 0; iVertex < NUMVERTICES; iVertex++)
+		{
+			pdata->temp.x = q_*X.pData[iVertex + BEGINNING_OF_CENTRAL].n /
+				(m_e_ * (1.0+p_temphost1[iVertex + BEGINNING_OF_CENTRAL]));
+
+			pdata->temp.y = p_temphost2[iVertex + BEGINNING_OF_CENTRAL]; // colour
+			++pdata;
+		};
+		Graph[1].DrawSurface("qn / m nu_effective",
+			DATA_HEIGHT, (real *)(&(X.pData[0].temp.x)),
+			PPN_COLOUR, (real *)(&(X.pData[0].temp.y)),
+			false, // no inner mesh display.
+			GRAPH_CONDUCTIVITYOHMS, &X);
+			
+
+		pdata = X.pData + BEGINNING_OF_CENTRAL;
+		for (iVertex = 0; iVertex < NUMVERTICES; iVertex++)
+		{
+			pdata->temp.x = p_temphost1[iVertex + BEGINNING_OF_CENTRAL];
+			pdata->temp.y = p_temphost2[iVertex + BEGINNING_OF_CENTRAL]; // colour
+			++pdata;
+		};
+		Graph[2].DrawSurface("nu_effective (blue=neut dominates)",
+			DATA_HEIGHT, (real *)(&(X.pData[0].temp.x)),
+			PPN_COLOUR, (real *)(&(X.pData[0].temp.y)),
+			false, // no inner mesh display.
+			GRAPH_NU_EFFECTIVE, &X);
+			
+		
+		pdata = X.pData + BEGINNING_OF_CENTRAL;
+		for (iVertex = 0; iVertex < NUMVERTICES; iVertex++)
+		{
+			pdata->temp.x =  EzStrength_*q_*q_*X.pData[iVertex + BEGINNING_OF_CENTRAL].n /
+				(m_e_ * (1.0+p_temphost1[iVertex + BEGINNING_OF_CENTRAL]));
+			++pdata;
+		};
+		Graph[3].DrawSurface("predict Jz (uniform Ez)",
+			DATA_HEIGHT, (real *)(&(X.pData[0].temp.x)),
+			AZSEGUE_COLOUR, (real *)(&(X.pData[0].temp.x)),			
+			false, // no inner mesh display.
+			GRAPH_JZ, &X);
+					
+		pdata = X.pData + BEGINNING_OF_CENTRAL;
+		for (iVertex = 0; iVertex < NUMVERTICES; iVertex++)
+		{
+			pdata->temp.x = (EzStrength_
+				- X.pData[iVertex + BEGINNING_OF_CENTRAL].Azdot*overc
+				)*q_*q_*X.pData[iVertex + BEGINNING_OF_CENTRAL].n /
+				(m_e_ * (1.0+p_temphost1[iVertex + BEGINNING_OF_CENTRAL]));
+
+			++pdata;
+		};
+		Graph[4].DrawSurface("predict Jz (Ez)",
+			DATA_HEIGHT, (real *)(&(X.pData[0].temp.x)),
+			AZSEGUE_COLOUR, (real *)(&(X.pData[0].temp.x)),
+			false, // no inner mesh display.
+			GRAPH_JZ, &X);
+			
+		pdata = X.pData + BEGINNING_OF_CENTRAL;
+		for (iVertex = 0; iVertex < NUMVERTICES; iVertex++)
+		{
+			pdata->temp.x = q_*X.pData[iVertex + BEGINNING_OF_CENTRAL].n*
+				(X.pData[iVertex + BEGINNING_OF_CENTRAL].viz - X.pData[iVertex + BEGINNING_OF_CENTRAL].vez);
+
+			++pdata;
+		};
+		Graph[5].DrawSurface("actual Jz",
+			DATA_HEIGHT, (real *)(&(X.pData[0].temp.x)),
+			AZSEGUE_COLOUR, (real *)(&(X.pData[0].temp.x)),
+			false, // no inner mesh display.
+			GRAPH_JZ, &X);
+
 		break;
 
 	case JZAZBXYEZ:
-		 
 		pdata = X.pData + BEGINNING_OF_CENTRAL;
 		for (iVertex = 0; iVertex < NUMVERTICES; iVertex++)
 		{
@@ -659,7 +1140,7 @@ void RefreshGraphs(TriMesh & X, // only not const because of such as Reset_verte
 
 		Graph[5].DrawSurface("vez",
 			DATA_HEIGHT, (real *)(&(X.pData[0].vez)),
-			AZSEGUE_COLOUR, (real *)(&(X.pData[0].temp.x)),
+			AZSEGUE_COLOUR, (real *)(&(X.pData[0].temp.x)), // colour is for Jz?
 			false, GRAPH_VEZ, &X);
 
 		pdata = X.pData + BEGINNING_OF_CENTRAL;
@@ -705,6 +1186,100 @@ void RefreshGraphs(TriMesh & X, // only not const because of such as Reset_verte
 			false, GRAPH_JZ, &X);
 
 		break;
+		/*
+	case NEWSTUFF:
+
+		// Too bad substep is not stated. We should divide by substep to give anything meaningful
+		// in these graphs.
+
+		// Let temphost3 = vez0
+		pdata = X.pData + BEGINNING_OF_CENTRAL;
+		for (iVertex = 0; iVertex < NUMVERTICES; iVertex++)
+		{
+		pdata->temp.x = p_temphost3[iVertex + BEGINNING_OF_CENTRAL];
+		++pdata;
+		};
+		Graph[0].DrawSurface("vez0 : vez = vez0 + sigma Ez",
+		DATA_HEIGHT, (real *)(&(X.pData[0].temp.x)),
+		AZSEGUE_COLOUR, (real *)(&(X.pData[0].temp.x)),
+		false, // no inner mesh display.
+		GRAPH_VEZ0, &X);
+
+		pdata = X.pData + BEGINNING_OF_CENTRAL;
+		for (iVertex = 0; iVertex < NUMVERTICES; iVertex++)
+		{
+		pdata->temp.x = p_OhmsCoeffs_host[iVertex + BEGINNING_OF_CENTRAL].sigma_e_zz;
+		++pdata;
+		};
+		Graph[1].DrawSurface("sigma : vez = vez0 + sigma Ez",
+		DATA_HEIGHT, (real *)(&(X.pData[0].temp.x)),
+		AZSEGUE_COLOUR, (real *)(&(X.pData[0].temp.x)),
+		false, // no inner mesh display.
+		GRAPH_RESPONSE, &X);
+
+		pdata = X.pData + BEGINNING_OF_CENTRAL;
+		for (iVertex = 0; iVertex < NUMVERTICES; iVertex++)
+		{
+		pdata->temp.x = q_*X.pData[iVertex + BEGINNING_OF_CENTRAL].n*
+		(p_OhmsCoeffs_host[iVertex + BEGINNING_OF_CENTRAL].sigma_i_zz
+		- p_OhmsCoeffs_host[iVertex + BEGINNING_OF_CENTRAL].sigma_e_zz);
+
+		// Will show something not very useful ---- in a brief instant there
+		// isn't much time for second-order (frictional) effects.
+		++pdata;
+		};
+		Graph[2].DrawSurface("Ez=0 v addition: vez0-vez",
+		DATA_HEIGHT, (real *)(&(X.pData[0].temp.x)),
+		AZSEGUE_COLOUR, (real *)(&(X.pData[0].temp.x)),
+		false, // no inner mesh display.
+		GRAPH_DECEL, &X);
+		// Too bad substep is not stated. We should divide by substep to give anything meaningful
+		// in these graphs.
+
+		pdata = X.pData + BEGINNING_OF_CENTRAL;
+		for (iVertex = 0; iVertex < NUMVERTICES; iVertex++)
+		{
+		pdata->temp.x = q_*X.pData[iVertex + BEGINNING_OF_CENTRAL].n*
+		(p_OhmsCoeffs_host[iVertex + BEGINNING_OF_CENTRAL].sigma_i_zz
+		- p_OhmsCoeffs_host[iVertex + BEGINNING_OF_CENTRAL].sigma_e_zz);
+
+		// Will show something not very useful ---- in a brief instant there
+		// isn't much time for second-order (frictional) effects.
+		++pdata;
+		};
+		Graph[3].DrawSurface("dynamic conductivity q n sigma : vez = vez0 + sigma Ez",
+		DATA_HEIGHT, (real *)(&(X.pData[0].temp.x)),
+		AZSEGUE_COLOUR, (real *)(&(X.pData[0].temp.x)),
+		false, // no inner mesh display.
+		GRAPH_DYNCONDUCTIVITY, &X);
+
+		// create graph data for Ez : add Ez_strength*Ezshape to -Azdot/c
+		overc = 1.0 / c_;
+		for (iVertex = 0; iVertex < NUMVERTICES; iVertex++)
+		{
+		X.pData[iVertex + BEGINNING_OF_CENTRAL].temp.y =
+		-X.pData[iVertex + BEGINNING_OF_CENTRAL].Azdot*overc
+		+ GetEzShape__(X.pData[iVertex + BEGINNING_OF_CENTRAL].pos.modulus())*EzStrength_;
+		}
+		Graph[4].DrawSurface("Ez",
+		DATA_HEIGHT, (real *)(&(X.pData[0].temp.y)),
+		AZSEGUE_COLOUR, (real *)(&(X.pData[0].temp.x)), // use Jz's colour
+		false,
+		GRAPH_EZ, &X);
+
+		pdata = X.pData + BEGINNING_OF_CENTRAL;
+		for (iVertex = 0; iVertex < NUMVERTICES; iVertex++)
+		{
+		pdata->temp.x = q_ * pdata->n*(pdata->viz - pdata->vez);
+		++pdata;
+		};
+		Graph[5].DrawSurface("Jz",
+		DATA_HEIGHT, (real *)(&(X.pData[0].temp.x)),
+		AZSEGUE_COLOUR, (real *)(&(X.pData[0].temp.x)),
+		false, // no inner mesh display.
+		GRAPH_JZ, &X);
+
+		break;*/
 	case LAPAZ_AZ:
 		// Assume temp.x contains Lap Az
 		Graph[0].DrawSurface("Lap Az",
@@ -902,7 +1477,7 @@ void RefreshGraphs(TriMesh & X, // only not const because of such as Reset_verte
 		*/
 		break;
 
-	case SIGMA_E_J:
+	//case SIGMA_E_J:
 		/*
 		X.Setup_J(); // the others can already exist.
 
@@ -931,7 +1506,8 @@ void RefreshGraphs(TriMesh & X, // only not const because of such as Reset_verte
 		false, // no inner mesh display.
 		GRAPH_JZ, &X);
 		*/
-		break;
+	//	break;
+
 
 	case TOTAL:
 		
@@ -1273,7 +1849,13 @@ int main()
 	GlobalPlanLookat2.x = GlobalPlanEye2.x;
 	GlobalPlanLookat2.y = 0.0f;
 	GlobalPlanLookat2.z = GlobalPlanEye2.z + 0.0001;
-
+	
+	newEye.x = 0.0f;
+	newEye.y = 0.1f;
+	newEye.z = 40.0f;
+	newLookat.x = 0.0f;
+	newLookat.y = 0.0f;
+	newLookat.z = 72.0f;
 
 						 // Add vectors in parallel.
 	cudaError_t cudaStatus = addWithCuda(c, a, b, arraySize);
@@ -1322,6 +1904,12 @@ int main()
 		{
 			PostQuitMessage(204);
 		};
+		if (DXChk(Graph[6].InitialiseWithoutBuffers(0, 0, GRAPH_WIDTH*2, GRAPH_HEIGHT, newEye, GlobalLookat, true)) +
+			DXChk(Graph[6].InitialiseBuffers(X1))
+			)
+		{
+			PostQuitMessage(204);
+		};
 	};
 
 	Graph[0].bDisplayTimestamp = false;
@@ -1330,6 +1918,7 @@ int main()
 	Graph[3].bDisplayTimestamp = false;
 	Graph[4].bDisplayTimestamp = true;
 	Graph[5].bDisplayTimestamp = false;
+	Graph[6].bDisplayTimestamp = true;
 
 	Direct3D.pd3dDevice->GetBackBuffer(0, 0, D3DBACKBUFFER_TYPE_MONO, &p_backbuffer_surface);
 
@@ -1542,25 +2131,31 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 		// That should be done manually from the menus.		
 
 		break;
-
+		 
 	case WM_COMMAND:
 		wmId = LOWORD(wParam);
 		wmEvent = HIWORD(wParam);
+
+		printf("wmId %d\n", wmId);
 
 		// Ensure that display menu items are consecutive IDs.
 		// Parse the menu selections:
 		switch (wmId)
 		{
-		case ID_DISPLAY_NEUT:
-		case ID_DISPLAY_ELECTRON:
+			
+		case 40024: // ID_DISPLAY_ONE_D
+			printf("\a\n");
+			// Don't know why resource.h is not working;
+			// Maybe some #define overwrites it with 40024.
+			wmId += 50007 - 40024;
+
 		case ID_DISPLAY_ION:
 		case ID_DISPLAY_TOTAL:
 		case ID_DISPLAY_JZAZBXYEZ:
-		case ID_DISPLAY_VIZVEZJZAZDOT:
-
-			GlobalSpeciesToGraph = wmId;
+		case ID_DISPLAY_SIGMAEJ:
 
 			i = wmId - ID_DISPLAY_NEUT;
+			GlobalSpeciesToGraph = i;
 			printf("\nGraph: %d %s", i, szAvi[i]);
 			RefreshGraphs(*pX, i);
 			Direct3D.pd3dDevice->Present(NULL, NULL, NULL, NULL);
@@ -2112,22 +2707,22 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			printf("GlobalEye %f %f %f  GlobalLookat %f %f %f\n",
 				GlobalEye.x, GlobalEye.y, GlobalEye.z, GlobalLookat.x, GlobalLookat.y, GlobalLookat.z);
 			break;
-		case 'G':
-			GlobalLookat.x += 0.4f;
-			printf("GlobalEye %f %f %f  GlobalLookat %f %f %f\n",
-				GlobalEye.x, GlobalEye.y, GlobalEye.z, GlobalLookat.x, GlobalLookat.y, GlobalLookat.z);
-			break;
-		case 'T':
-			GlobalLookat.y += 0.4f;
-			printf("GlobalLookat %f %f %f\n",
-				GlobalLookat.x, GlobalLookat.y, GlobalLookat.z);
-			break;
-		case 'B':
-			GlobalLookat.y -= 0.4f;
-			printf("GlobalLookat %f %f %f\n",
-				GlobalLookat.x, GlobalLookat.y, GlobalLookat.z);
-			break;
-		case 'Q':
+	//	case 'G':
+	//		GlobalLookat.x += 0.4f;
+	//		printf("GlobalEye %f %f %f  GlobalLookat %f %f %f\n",
+	//			GlobalEye.x, GlobalEye.y, GlobalEye.z, GlobalLookat.x, GlobalLookat.y, GlobalLookat.z);
+	//		break;
+	//	case 'T':
+	//		GlobalLookat.y += 0.4f;
+	//		printf("GlobalLookat %f %f %f\n",
+	//			GlobalLookat.x, GlobalLookat.y, GlobalLookat.z);
+	//		break;
+	//	case 'B':
+	//		GlobalLookat.y -= 0.4f;
+	//		printf("GlobalLookat %f %f %f\n",
+	//			GlobalLookat.x, GlobalLookat.y, GlobalLookat.z);
+	//		break;
+		case '+':
 			GlobalCutaway = !GlobalCutaway;
 			break;
 		case 'Y':
@@ -2214,6 +2809,34 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			break;
 		case '0':
 			steps_remaining = 0;
+			break;
+
+
+
+		case 'Q':
+			newEye.z += 5.0f;
+			printf("newEye.z %1.9E\n", newEye.z);
+			break;
+		case 'P':
+			newEye.z -= 5.0f;
+			printf("newEye.z %1.9E\n", newEye.z);
+			break;
+
+		case 'T':
+			newEye.y += 5.0f;			
+			printf("newEye.y %1.9E\n", newEye.y);
+			break;
+		case 'Z':
+			newEye.y -= 5.0f;
+			printf("newEye.y %1.9E\n", newEye.y);
+			break;
+		case 'B':
+			newLookat.z -= 3.0f;
+			printf("newLookat.z %1.9E\n", newLookat.z);
+			break;
+		case 'G':
+			newLookat.z += 3.0f;
+			printf("newLookat.z %1.9E\n", newLookat.z);
 			break;
 
 		default:

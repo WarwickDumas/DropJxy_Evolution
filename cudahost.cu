@@ -17,7 +17,7 @@
 #define CHOSEN1 1000110301
 #define CHOSEN2 1000110497 
 #define VERTCHOSEN 15252
-
+ 
 #include <math.h>
 #include <time.h>
 #include <stdio.h>
@@ -69,7 +69,6 @@ __constant__ long numStartZCurrentTriangles, numEndZCurrentTriangles;
 extern real FRILL_CENTROID_OUTER_RADIUS, FRILL_CENTROID_INNER_RADIUS;
 
 cuSyst cuSyst1, cuSyst2, cuSyst3;
-
 extern cuSyst cuSyst_host;
 // Given our restructure, we are going to need to dimension
 // a cuSyst type thing that lives on the host??
@@ -90,6 +89,7 @@ f64_vec3 * p_B_host, *p_MAR_ion_host, *p_MAR_elec_host, *p_MAR_ion_compare, *p_M
 *p_MAR_neut_host,*p_MAR_neut_compare;
 __device__ nn *p_nn_ionrec_minor;
 __device__ OhmsCoeffs * p_OhmsCoeffs;
+OhmsCoeffs * p_OhmsCoeffs_host; // for display
 __device__ f64 * p_Iz0, *p_sigma_Izz;
 __device__ f64_vec3 * p_vn0;
 __device__ v4 * p_v0;
@@ -775,6 +775,8 @@ void PerformCUDA_Invoke_Populate(
 	else { printf("p6 != 0"); };
 	temp_array_host = (f64 *)malloc(NMINOR * sizeof(f64));
 
+	p_OhmsCoeffs_host = (OhmsCoeffs *)malloc(NMINOR * sizeof(OhmsCoeffs));
+
 	p_summands_host = (f64 *)malloc(numTilesMinor * sizeof(f64));
 	p_Iz0_summands_host = (f64 *)malloc(numTilesMinor * sizeof(f64));
 	p_Iz0_initial_host = (f64 *)malloc(numTilesMinor * sizeof(f64));
@@ -960,8 +962,34 @@ void PerformCUDA_RunStepsAndReturnSystem(cuSyst * pX_host)
 
 	pX1->SendToHost(*pX_host);
 	
-	// Why is it that when we load a system and run 1 step we come out with rubbish?
+	// Now store for 1D graphs: temphost3 = n, temphost4 = vr, temphost5 = vez
 
+	f64 Integral_Azdotdot = 0.0;
+	f64 Integral_fabsAzdotdot = 0.0;
+	f64 Integral_Azdot = 0.0;
+	f64 Integral_fabsAzdot = 0.0;
+	for (long i = 0; i < NMINOR; i++)
+	{
+		p_temphost3[i] = pX_host->p_AAdot[i].Azdot;
+		p_temphost5[i] = temp_array_host[i]; 
+		p_temphost6[i] = q_*pX_host->p_n_minor[i].n*
+			(pX_host->p_vie[i].viz - pX_host->p_vie[i].vez);
+		p_temphost4[i] = c_*c_*temp_array_host[i] + FOURPI_*c_*p_temphost6[i];
+		Integral_Azdotdot += p_temphost4[i] * pX_host->p_AreaMinor[i];
+		Integral_fabsAzdotdot += fabs(p_temphost4[i] * pX_host->p_AreaMinor[i]);
+		Integral_Azdot += p_temphost3[i] * pX_host->p_AreaMinor[i];
+		Integral_fabsAzdot += fabs(p_temphost3[i] * pX_host->p_AreaMinor[i]);
+	}
+	printf("Integral Azdotdot %1.10E fabs %1.10E \n", Integral_Azdotdot, Integral_fabsAzdotdot);
+	printf("Integral Azdot %1.10E fabs %1.10E \n", Integral_Azdot, Integral_fabsAzdot);
+	
+	// Here we go .. Azdotdot doesn't say anything sensible because we are missing the +Jz contrib.
+	// Azdot however doesn't show near 0 either.
+	// That is bad.
+	// Next: We should find that the actual change in Azdot sums to zero.
+	// We should also therefore be finding that Azdot sums to zero.
+
+	
 }
 
 f64_vec3 *vn_compare;
@@ -3288,7 +3316,7 @@ void cuSyst::PerformCUDA_Advance(//const
 	 
 	// See how far we get with this as timestep.
 	
-	Timestep = 0.25 / maxcoeff; // This we shall use.
+	Timestep = min(0.25 / maxcoeff, TIMESTEP); 
 
 	// Alternative:
 	//#ifndef USE_N_MAJOR_FOR_VERTEX	 
@@ -4842,7 +4870,7 @@ SetConsoleTextAttribute(hConsole, 15);
 	hsub = Timestep / (real)iSubcycles;
 		
 	printf("hsub = %1.14E subcycles %d \n", hsub, iSubcycles);
-	
+
 	FILE * fptr = fopen("hsub.txt","a");
 	fprintf(fptr, "GlobalStepsCounter %d runs %d hsub %1.14E iSubcycles %d backward %d h_sub_max %1.14E mincoeffself %1.14E \n",
 		GlobalStepsCounter, runs, hsub, iSubcycles, (runs % 10 == 0)?1:0, h_sub_max, mincoeffself);
@@ -5294,7 +5322,7 @@ SetConsoleTextAttribute(hConsole, 15);
 									// .....................................................
 				p_Iz0_summands,
 				p_sigma_Izz,
-
+				 
 				p_denom_i,
 				p_denom_e, p_coeff_of_vez_upon_viz, p_beta_ie_z,
 				false,
@@ -5304,8 +5332,13 @@ SetConsoleTextAttribute(hConsole, 15);
 				// correct input into reverse current.
 				pX_target->p_n_minor);
 
-			// But if we use it to set Iz
+			// #########################################################################################################
+			// DEBUG: pass graphing parameters through these.
+			// #########################################################################################################
+			cudaMemcpy(p_temphost1, p_denom_i, sizeof(f64)*NMINOR, cudaMemcpyDeviceToHost);
+			cudaMemcpy(p_temphost2, p_denom_e, sizeof(f64)*NMINOR, cudaMemcpyDeviceToHost);
 
+			// But if we use it to set Iz
 			// We do get an imbalance of + & -.
 			// That would be because the Ez we picked does not deliver Iz_presc
 			// according to n_used at the final time.
@@ -5493,6 +5526,8 @@ SetConsoleTextAttribute(hConsole, 15);
 		// This should be experimented with, once it matches CPU output.
 	} else {
 
+		// Leapfrog:
+
 		kernelPopulateArrayAz << <numTilesMinor, threadsPerTileMinor >> >(
 			0.5*hsub,
 			this->p_AAdot,
@@ -5679,6 +5714,10 @@ SetConsoleTextAttribute(hConsole, 15);
 
 	}; // whether Backward or Leapfrog
 
+
+
+
+
 	SetConsoleTextAttribute(hConsole, 14);
 	cudaMemcpy(&tempf64, &(pX_target->p_vie[42940].vez), sizeof(f64), cudaMemcpyDeviceToHost);
 	printf("\npX_target->vez[42940] %1.14E\n\n", tempf64);
@@ -5741,9 +5780,40 @@ SetConsoleTextAttribute(hConsole, 15);
 
 	printf("Done step %d from time %1.8E length %1.2E\n\n", runs, evaltime, Timestep);
 
-	// For graphing Lap Az:
+	// For graphing :
 	cudaMemcpy(temp_array_host, p_LapAz, sizeof(f64)*NMINOR, cudaMemcpyDeviceToHost);
+	cudaMemcpy(p_OhmsCoeffs_host, p_OhmsCoeffs, sizeof(OhmsCoeffs)*NMINOR, cudaMemcpyDeviceToHost);
 
+	cudaMemcpy(p_temphost3, pX_half->p_AreaMinor, sizeof(f64)*NMINOR, cudaMemcpyDeviceToHost);
+	f64 integral_lap = 0.0;
+	f64 integral_L1 = 0.0;
+	for (iMinor = 0; iMinor < NMINOR; iMinor++)
+	{
+		integral_lap += temp_array_host[iMinor] * p_temphost3[iMinor];
+		integral_L1 += fabs(temp_array_host[iMinor] * p_temphost3[iMinor]);
+	}
+	printf("Integral Lap Az %1.10E integ |Lap| %1.10E \n", integral_lap, integral_L1);
+	integral_lap = 0.0;
+	integral_L1 = 0.0;
+	for (iMinor = BEGINNING_OF_CENTRAL; iMinor < NMINOR; iMinor++)
+	{
+		integral_lap += temp_array_host[iMinor] * p_temphost3[iMinor];
+		integral_L1 += fabs(temp_array_host[iMinor] * p_temphost3[iMinor]);
+	}
+	printf("Verts Integral Lap Az %1.10E integ |Lap| %1.10E \n", integral_lap, integral_L1);
+	integral_lap = 0.0;
+	integral_L1 = 0.0;
+	for (iMinor = BEGINNING_OF_CENTRAL+11000; iMinor < NMINOR; iMinor++)
+	{
+		integral_lap += temp_array_host[iMinor] * p_temphost3[iMinor];
+		integral_L1 += fabs(temp_array_host[iMinor] * p_temphost3[iMinor]);
+	}
+	printf("Verts 11000+ Integral Lap Az %1.10E integ |Lap| %1.10E \n", integral_lap, integral_L1);
+
+	// Reveals that vertices only have the positive (in domain?) contributions.
+	// Negative is on triangles.
+	// What gives? Need to spit .. 
+	// Can we intersplice tris and verts on graph? could be good.
 
 	fp = fopen("elapsed.txt", "a");
 	SetConsoleTextAttribute(hConsole, 13);
@@ -5835,6 +5905,7 @@ void PerformCUDA_Revoke()
 	free(p_MAR_ion_compare);
 	free(p_MAR_elec_compare);
 	free(p_MAR_neut_compare);
+	free(p_OhmsCoeffs_host);
 }
 
 #include "kernel.cu"

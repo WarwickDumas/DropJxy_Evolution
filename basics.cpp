@@ -4194,7 +4194,7 @@ int Triangle::GetCentreOfIntersectionWithInsulator(Vector2 & cc)
 		};
 		// Now plane is
 		// y1 + dbyd12*((x-r1) dot x12) + dbydperp*((x-r1) dot x12perp)
-		
+		 
 		// evaluate planar variable at all corners
 		for (int i = 0; i < numCoords; i++)
 		{

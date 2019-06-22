@@ -76,6 +76,14 @@ int const EZTUNING = 5;
 int const FEINT = 1;
 int const REAL = 2;
 
+#define ID_DISPLAY_ION                  50001
+#define ID_DISPLAY_TOTAL                50003
+#define ID_DISPLAY_JZAZBXYEZ            50004
+#define ID_DISPLAY_SIGMAEJ              50005
+#define ID_DISPLAY_VIZVEZJZAZDOT        50006		
+#define ID_DISPLAY_ONE_D                50007
+#define ID_DISPLAY_JILL                 50008
+
 #define SPECIES_NEUT         0
 #define SPECIES_NEUTRAL      0
 #define SPECIES_ION          1
@@ -84,7 +92,10 @@ int const REAL = 2;
 #define OVERALL              3
 #define JZAZBXYEZ                 4
 #define SIGMA_E_J                 5
+#define OHMSLAW                   5
 #define VIZVEZJZAZDOT             6
+#define ONE_D                     7
+
 #define LAPAZ_AZ                  10000
 
 #define JXYAXYBZEXY               500
@@ -198,6 +209,9 @@ int const REAL = 2;
 #define					SPECIES_ELECTRON2  107
 	
 #define GRAPH_LAPAZ  108
+#define GRAPH_VRESPONSEOHMS  109
+#define GRAPH_CONDUCTIVITYOHMS  110
+#define GRAPH_NU_EFFECTIVE  111
 
 // Number of vars used to produce heights:
 int const FLAG_FLAT_MESH = 0;
@@ -216,6 +230,7 @@ int const FLAG_VELOCITY_COLOUR = 2;
 int const FLAG_CURRENT_COLOUR = 3;
 int const FLAG_AZSEGUE_COLOUR = 4;
 int const FLAG_IONISE_COLOUR = 5;
+int const FLAG_PPN_COLOUR = 6;
 
 int const COLOUR_MESH = 0;
 int const SEGUE_COLOUR = 1;
@@ -223,4 +238,5 @@ int const VELOCITY_COLOUR = 2;
 int const CURRENT_COLOUR = 3;
 int const AZSEGUE_COLOUR = 4;
 int const IONISE_COLOUR = 5;
+int const PPN_COLOUR = 6;
 #endif

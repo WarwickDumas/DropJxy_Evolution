@@ -9477,7 +9477,7 @@ int TriMesh::Advance(TriMesh * pDestMesh)
 		++pTri;
 	};
 	evaltime += h;
-	GlobalIzPrescribed = -PEAKCURRENT_STATCOULOMB * sin ((evaltime + ZCURRENTBASETIME) * PIOVERPEAKTIME );
+	GlobalIzPrescribed = -PEAKCURRENT_STATCOULOMB * sin ((evaltime + ZCURRENTBASETIME) * 0.5*PIOVERPEAKTIME );
 		
 	pTri = pDestMesh->T;
 	for (iTri = 0; iTri < pDestMesh->numTriangles; iTri++)
@@ -12393,7 +12393,7 @@ void TriMesh::EstimateInitialEandJz(void)
 	};
 	// 2. Calculate Ez for the prescribed current
 
-	real Iz_prescribed = PEAKCURRENT_STATCOULOMB * sin ((evaltime + ZCURRENTBASETIME) * PIOVERPEAKTIME );
+	real Iz_prescribed = PEAKCURRENT_STATCOULOMB * sin ((evaltime + ZCURRENTBASETIME) * 0.5*PIOVERPEAKTIME );
 	real Ez = Iz_prescribed/dIzbydEz; // ASSUME existing velocity is zero coming into this routine.
 
 	// 3. Infer v_i, v_e 

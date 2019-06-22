@@ -1552,6 +1552,9 @@
 #define ID_RUN_STOP                     40020
 #define ID_RUN_CPUSTEP                  40021
 #define ID_FILE_LOADGPU                 40022
+#define ID_DISPLAY_1D                   40023
+#define ID_DISPLAY_ONE_D                40024
+#define ID_DISPLAY_JILL                 40025
 #define ID_RUN_SIMULATIONSTEPS_CPU      40030
 #define ID_DISPLAY_NEUT                 50000
 #define ID_DISPLAY_ION                  50001
@@ -1585,7 +1588,6 @@
 #define LVS_TYPESTYLEMASK               0xfc00
 #define SPVERSION_MASK                  0x0000FF00
 #define HTERROR                         -2
-#define IDC_STATIC                      -1
 #define PWR_FAIL                        -1
 #define UNICODE_NOCHAR                  0xFFFF
 #define HTTRANSPARENT                   -1
@@ -1595,7 +1597,7 @@
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NEXT_RESOURCE_VALUE        102
-#define _APS_NEXT_COMMAND_VALUE         40023
+#define _APS_NEXT_COMMAND_VALUE         40026
 #define _APS_NEXT_CONTROL_VALUE         1001
 #define _APS_NEXT_SYMED_VALUE           101
 #endif

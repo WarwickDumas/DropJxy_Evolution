@@ -183,7 +183,8 @@ void D3D::DestroyAllVertexDeclarations()
 
 
 HRESULT surfacegraph::InitialiseWithoutBuffers(int vpleft, int vptop, int vpwidth, int vpheight,
-											   D3DXVECTOR3 in_Eye, D3DXVECTOR3 in_Lookat)
+											   D3DXVECTOR3 in_Eye, D3DXVECTOR3 in_Lookat,
+	bool bOrtho)
 {
 	
 	_controlfp_s(&cw, _EM_INEXACT | _EM_UNDERFLOW | _EM_ZERODIVIDE , _MCW_EM);
@@ -327,7 +328,8 @@ HRESULT surfacegraph::InitialiseWithoutBuffers(int vpleft, int vptop, int vpwidt
 
 	D3DXMatrixPerspectiveFovLH( &matProj, D3DX_PI / 6.0f, AspectRatio, NEAR_CLIPPING_PLANE, FAR_CLIPPING_PLANE );
 	// apparently in rel coords - DO NOT set near clipping plane value to be negative
-	
+
+	if (bOrtho) D3DXMatrixOrthoLH(&matProj, 25.0f, 25.0f, NEAR_CLIPPING_PLANE, FAR_CLIPPING_PLANE);
 	
 	// So here we have set:
 	// matWorld, matView, matProj
@@ -358,7 +360,7 @@ HRESULT surfacegraph::InitialiseWithoutBuffers(int vpleft, int vptop, int vpwidt
 	D3DXMATRIX lightLens;
 	float lightFOV = D3DX_PI*0.25f; // see if this changes anything
 	D3DXMatrixPerspectiveFovLH(&lightLens, lightFOV, AspectRatio, NEAR_CLIPPING_PLANE, FAR_CLIPPING_PLANE);
-	D3DXMatrixOrthoLH(&lightLens,25.0f,25.0f,NEAR_CLIPPING_PLANE,FAR_CLIPPING_PLANE);
+	if (bOrtho) D3DXMatrixOrthoLH(&lightLens,25.0f,25.0f,NEAR_CLIPPING_PLANE,FAR_CLIPPING_PLANE);
 	// 10,10 ?
 	mLightVP = lightView*lightLens;
 	mLight.dirW = lightTargetW-lightPosW;
@@ -946,7 +948,7 @@ HRESULT surfacegraph::Initialise(int nperRow, // data points per row if square g
 }
 */
 
-
+ 
 HRESULT surfacegraph::SetDataWithColour(const TriMesh & X, 
 										int colourflag, int heightflag, 
 										int offset_data, int offset_vcolour,
@@ -1118,6 +1120,7 @@ HRESULT surfacegraph::SetDataWithColour(const TriMesh & X,
 		break;
 		case FLAG_SEGUE_COLOUR:
 		case FLAG_IONISE_COLOUR:
+		case FLAG_PPN_COLOUR:
 			// For temperature want the following absolute scale;
 			colourmax = 1.0;
 			// use code to determine if this is temperature or what.
@@ -2185,7 +2188,13 @@ VOID surfacegraph::Render(const char * szTitle, bool RenderTriLabels,
 					int asdf = 0;			
 					real r = 3.439999999;
 					for (i = 0; i < 6; i++) {
-						while (radiusArray8000[asdf] < r) asdf++;	
+
+						while ((asdf < 8000) && (radiusArray8000[asdf] < r)) asdf++;	
+						if (asdf == 8000) {
+							printf("asdf==8000 r %1.10E\nradiusArray[0] %1.10E [100] %1.10E [1000] %1.10E \n",
+								r, radiusArray8000[0], radiusArray8000[100], radiusArray8000[1000]);
+							while (1) getch(); // on debug we get here & it's unpopulated.
+						}
 
 						if (this->boolDisplayInnerMesh)
 						{
@@ -2208,7 +2217,7 @@ VOID surfacegraph::Render(const char * szTitle, bool RenderTriLabels,
 						RenderLabel(buffer, CUTAWAYANGLE*pPNT->pos.z,zeroplane,pPNT->pos.z);
 						if (i == 0) r = 3.45;
 						r += 0.15;
-					};
+					}; 
 					// line underneath:
 					linedata[0].x = sin(CUTAWAYANGLE)*DEVICE_RADIUS_INSULATOR_OUTER*xzscale;
 					linedata[0].y = zeroplane;
@@ -2355,7 +2364,8 @@ VOID surfacegraph::Render(const char * szTitle, bool RenderTriLabels,
 		printf("BeginScene (1) failed !!\n\n");
 		getch();
 	};
-	
+
+	printf("Render done. %s \n", szTitle);
 }
 
 
@@ -2496,7 +2506,7 @@ void inline surfacegraph::RenderLabel (char * text, float x, float y, float z,
 		
 	}
 
-void inline surfacegraph::RenderLabel2 (char * text, float x, float y, float z, int whichline)
+void inline surfacegraph::RenderLabel2 (char * text, float x, float y, float z, int whichline, unsigned int color)
 	{
 		RECT rect;
 		D3DXVECTOR3 position(x,y,z);
@@ -2528,7 +2538,7 @@ void inline surfacegraph::RenderLabel2 (char * text, float x, float y, float z, 
 		rect.bottom=rect.top+30;
 		rect.left=rect.right-200;
 
-		Direct3D.g_pFontsmall->DrawText(NULL,text,strlen(text),&rect,DT_CENTER|DT_VCENTER,0xff000000);
+		Direct3D.g_pFontsmall->DrawText(NULL,text,strlen(text),&rect,DT_CENTER|DT_VCENTER,color);
 		
 		rect.top += 1;
 		rect.bottom += 1;

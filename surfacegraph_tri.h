@@ -127,7 +127,8 @@ public:
 	
 	//Call both of these:
 	HRESULT InitialiseWithoutBuffers(int vpleft, int vpright, int vpwidth, int vpheight,
-											    D3DXVECTOR3 in_Eye, D3DXVECTOR3 Lookat);
+											    D3DXVECTOR3 in_Eye, D3DXVECTOR3 Lookat,
+		bool bOrtho = false);
 
 	// This one may need things re-dimensioning after
 	HRESULT InitialiseBuffers(const TriMesh & X);
@@ -172,7 +173,7 @@ public:
 	// helper function:
 	
 	void inline RenderLabel (char * text, float x, float y, float z, bool extrainfo = false);
-	void inline RenderLabel2 (char * text, float x, float y, float z, int whichline);
+	void inline RenderLabel2 (char * text, float x, float y, float z, int whichline, unsigned int color = 0xff000000);
 	void inline RenderText (const char * text,int lines_down);
 
 	~surfacegraph();

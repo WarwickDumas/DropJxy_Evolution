@@ -24,26 +24,25 @@
 #define ID_RUN_STOP                     40020
 #define ID_RUN_SIMULATIONSTEPS_CPU      40030
 #define ID_DISPLAY_NEUT                 50000
-#define ID_DISPLAY_ION                  50001
 #define ID_DISPLAY_ELECTRON             50002
+#define ID_DISPLAY_ION                  50001
 #define ID_DISPLAY_TOTAL                50003
 #define ID_DISPLAY_JZAZBXYEZ            50004
 #define ID_DISPLAY_SIGMAEJ              50005
-#define ID_DISPLAY_VIZVEZJZAZDOT        50006
-		
-#define ID_DISPLAY_JXYAXYBZEXY          50007
-#define ID_DISPLAY_EXYRHOPHIJXY         50008
+#define ID_DISPLAY_VIZVEZJZAZDOT        50006		
+#define ID_DISPLAY_ONE_D                50007
+#define ID_DISPLAY_JILL                 50008
 #define IDC_STATIC                      -1
 #define ID_RUN_CPUSTEP                  40021
 #define ID_FILE_LOADGPU                 40022
 
 // Next default values for new objects
 // 
-#ifdef APSTUDIO_INVOKED
-#ifndef APSTUDIO_READONLY_SYMBOLS
-#define _APS_NEXT_RESOURCE_VALUE        102
-#define _APS_NEXT_COMMAND_VALUE         40021
-#define _APS_NEXT_CONTROL_VALUE         1001
-#define _APS_NEXT_SYMED_VALUE           101
-#endif
-#endif
+//#ifdef APSTUDIO_INVOKED
+//#ifndef APSTUDIO_READONLY_SYMBOLS
+//#define _APS_NEXT_RESOURCE_VALUE        102
+//#define _APS_NEXT_COMMAND_VALUE         40023
+//#define _APS_NEXT_CONTROL_VALUE         1001
+//#define _APS_NEXT_SYMED_VALUE           101
+//#endif
+//#endif

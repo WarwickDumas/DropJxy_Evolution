@@ -17,7 +17,7 @@ bool const bScrewPinch = false;
 
 #define FOLDER "C:/outputs/"
 #define INITIALAVI "start.avi"		
-
+  
 #define FUNCTIONALFILE_START FOLDER "functionals"
 #define DATAFILENAME FOLDER "Data_"
 #define AUTOSAVE_FILENAME FOLDER "autosave.dat"
@@ -35,7 +35,7 @@ bool const bScrewPinch = false;
 // milliseconds between frames:
 #define AVIFRAMEPERIOD         100 // 50 = 20 fps which is ok with our setting of 25 frames/ns [running 2e-11 x 2 = 4e-11 per frame]
 
-#define DATA_SAVE_FREQUENCY					  10
+#define DATA_SAVE_FREQUENCY					  20
 
 // Program Mechanics:
 // ==================
@@ -185,7 +185,11 @@ real const PLANE_Z = 1.0;
 #define GRADIENT_X_PER_Y    0.198912367
 
 real const GRADIENT_Y_PER_X = 1.0/GRADIENT_X_PER_Y;
-real const CUTAWAYANGLE = -0.005;//-GRADIENT_X_PER_Y * 0.5;
+real const CUTAWAYANGLE = -0.005;
+//-GRADIENT_X_PER_Y * 0.5;
+
+// putted -0.005   --- it fails at -0.001 and we don't know why
+
 // reality: cathode rod is 0.47625 cm radius, at 5cm device radius
 // IT DOES NOT LIKE 0!!
 // **Clearly need dimensioned index array to achieve some overlap.**

@@ -5523,9 +5523,15 @@ void SetVertexColour(VertexPNT3 * pPNT, const plasma_data * pdata, int colourfla
 			
 			break;
 
+		case FLAG_PPN_COLOUR:
+
+			ptr = ((real *)pdata) + offset_vcolour;
+			pPNT->tex0.x = (float)(*ptr);
+			
+			break;
 		case FLAG_SEGUE_COLOUR:
 		case FLAG_AZSEGUE_COLOUR:
-			
+
 			ptr = ((real *)pdata) + offset_data;
 			pPNT->tex0.x = (float)(*ptr);
 
@@ -6286,7 +6292,7 @@ void TriMesh::SetVerticesAndIndices(VertexPNT3 * vertices[],			// better to do i
 					vec1.y = zeroplane + (float)((data1-data0)*(real)yscale);
 					vec2.y = zeroplane + (float)((data2-data0)*(real)yscale);  
 					// does putting in brackets get rid of FP overflow? Adding (real)?
-
+					// Think the issue here is converting e+61 (undefined double) to float.
 					break;
 				case FLAG_VELOCITY_HEIGHT:
 					ptr = (real *)pdata1 + offset_data;
@@ -6680,12 +6686,15 @@ long TriMesh::GetVertsRightOfCutawayLine_Sorted(long * VertexIndexArray,
 	long neigh_len;
 	long izNeighs[128];
 
+	printf("made it here..\n");
+
 	pVertex = X;
 
 	if (radiusArray == NULL) {
 		printf("ADJSA???");
 		getch();
 	}
+	printf("numVertices %d \n", numVertices);
 
 	for (iVertex = 0; iVertex < numVertices; iVertex++)
 	{
@@ -6693,7 +6702,11 @@ long TriMesh::GetVertsRightOfCutawayLine_Sorted(long * VertexIndexArray,
 		// cutaway line but has neighbours to the left of it.
 		
 		if ((pVertex->pos.x/pVertex->pos.y > CUTAWAYANGLE)
-			&& (pVertex->pos.x < 0.0)) {
+			&& (pVertex->pos.x < 0.0)) { // Obvious why this fails if CUTAWAYANGLE is too large.
+			// We should probably look for those > CUTAWAYANGLE and such that they have a neighbour < CUTAWAYANGLE
+			// Not sure what the crude pre-test ought to be.
+
+		//	printf("\nYES iVertex %d --- ", iVertex);
 
 			neigh_len = pVertex->GetNeighIndexArray(izNeighs);
 			for (int i = 0; i < neigh_len; i++)
@@ -6705,16 +6718,31 @@ long TriMesh::GetVertsRightOfCutawayLine_Sorted(long * VertexIndexArray,
 					radiusArray[iCaret] = pVertex->pos.modulus();
 					iCaret++;
 					i = 100000; // skip out
-				};
+			//		printf("%d tick %1.9E", izNeighs[i], pNeigh->pos.x / pNeigh->pos.y);
+				}
+				else {
+					//printf("%d NO %1.9E | ", izNeighs[i], pNeigh->pos.x / pNeigh->pos.y);
+				}
 			};
-		};
+		//	printf("\n");
+
+		} else {
+			
+		}
 
 		++pVertex;
 	};
 
 	// Now sort them!
 	// No way round this.
-
+	FILE * debuglist = fopen("debuglist.txt", "w");
+	fprintf(debuglist, "iCaret %d \n", iCaret);
+	for (iVertex = 0; iVertex < iCaret; iVertex++)
+	{
+		fprintf(debuglist, "%d VertIndex %d radius %d\n",  iVertex, VertexIndexArray[iVertex], radiusArray[iVertex]);		
+	}
+	fclose(debuglist);
+	printf("\niCaret %d \n", iCaret);
 
 	QuickSort (VertexIndexArray, radiusArray,
 		0,iCaret-1); // lowest and highest elements to be sorted

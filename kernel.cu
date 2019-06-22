@@ -7,7 +7,9 @@
 
 #define FOUR_PI 12.5663706143592
 #define TEST  (0)
-#define TESTTRI (0)
+#define TESTTRI (iMinor == CHOSEN)
+
+#define VISCMAG 1
 
 // Change log. 090419: Change upwind density routine to just use n from the lowest cell that is upwind for at least 1 side.
 // 230419: Change nu_n used in kappa_neut to be a lc of collision frequencies.
@@ -7207,6 +7209,7 @@ __global__ void kernelPopulateOhmsLaw(
 					+ 0.5*FOURPI_Q_OVER_C*n_use.n*(vie_k.viz + v0.viz - vie_k.vez))) // ?????????????????
 			+ 0.5*h_use*qovermc*(vie_k.vxy + v0.vxy + v0.viz * ohm.beta_xy_z).dot(grad_Az[threadIdx.x]);
 
+
 		if (((TESTTRI))) 
 			printf(" %d v0.vez %1.14E Azdotctb %1.14E antiadvect %1.14E LapAzctb %1.14E \n"
 				"%d JviaAzdot %1.14E lorenzmag %1.14E \n",
@@ -7216,17 +7219,13 @@ __global__ void kernelPopulateOhmsLaw(
 				iMinor,
 				h_use * 0.5*qovermc*h_use * c*c* 0.5*FOURPI_Q_OVER_C*n_use.n*(vie_k.viz + v0.viz - vie_k.vez),
 				0.5*h_use*qovermc*(vie_k.vxy + v0.vxy + v0.viz * ohm.beta_xy_z).dot(grad_Az[threadIdx.x])
-				);
-		
+				);		
 
 		// implies:
-		f64 effect_of_viz0_on_vez0 = 
-			
-			h_use * 0.5*qovermc*h_use * c*c*0.5*FOURPI_Q_OVER_C*n_use.n
-			
+		f64 effect_of_viz0_on_vez0 = 			
+			h_use * 0.5*qovermc*h_use * c*c*0.5*FOURPI_Q_OVER_C*n_use.n			
 			+ 0.5*h_use*qovermc*( ohm.beta_xy_z.dot(grad_Az[threadIdx.x]));
-
-
+		
 		v0.vez -=
 			1.5*h_use*nu_eiBar*((omega[threadIdx.x].x*qovermc*BZ_CONSTANT - nu_eHeart * omega[threadIdx.x].y)*gradTe[threadIdx.x].x +
 			(omega[threadIdx.x].y*qovermc*BZ_CONSTANT + nu_eHeart * omega[threadIdx.x].x)*gradTe[threadIdx.x].y) /
@@ -7250,7 +7249,7 @@ __global__ void kernelPopulateOhmsLaw(
 		// implies:
 		effect_of_viz0_on_vez0 += 
 			0.5*h_use*M_n_over_ne*(cross_section_times_thermal_en*n_use.n_n) *ohm.beta_ni + 0.5*h_use*nu_ei_effective;
-
+		
 
 
 		if (
@@ -7264,8 +7263,7 @@ __global__ void kernelPopulateOhmsLaw(
 				vie_k.vez, v0.vez,
 				M_n_over_ne, nu_ei_effective);
 		}
-
-
+		
 		if (((TESTTRI))) 
 			printf("v0.vez contribs e-n e-i: %1.14E %1.14E v0.viz %1.14E\n", 
 				-0.5*h_use*M_n_over_ne*(cross_section_times_thermal_en*n_use.n_n) *(vie_k.vez - v_n_src.z - vn0.z - ohm.beta_ni * v0.viz),
@@ -7279,8 +7277,7 @@ __global__ void kernelPopulateOhmsLaw(
 
 		//		vez0_coeff_on_Lap_Az = h_use * h_use*0.5*qovermc* c*c / denom; 
 
-		ohm.sigma_e_zz = 
-			
+		ohm.sigma_e_zz = 			
 			(-h_use * eoverm
 			+ h_use * h_use*M_PI*q*eoverm*n_use.n*ohm.sigma_i_zz
 			+ h_use * 0.5*qovermc*(grad_Az[threadIdx.x].dot(ohm.beta_xy_z))*ohm.sigma_i_zz
@@ -7323,16 +7320,21 @@ __global__ void kernelPopulateOhmsLaw(
 				(0.5*h_use*qovermc*(grad_Az[threadIdx.x].dot(ohm.beta_xy_z)))*(1.0 - beta_ie_z),
 				0.5*h_use*M_n_over_ne*(cross_section_times_thermal_en*n_use.n_n) *(1.0 - ohm.beta_ne - ohm.beta_ni * beta_ie_z),
 				0.5*h_use*nu_ei_effective*(1.0 - beta_ie_z)
-			);
-		
-		
+			);	
 
 		if (bSwitchSave) {
 			p_denom_e[iMinor] = denom;
 			p_effect_of_viz0_on_vez0[iMinor] = effect_of_viz0_on_vez0;
 			p_beta_ie_z[iMinor] = beta_ie_z; // see that doing it this way was not best.
-		}
-
+		} else {
+			// #########################################################################################################
+			// DEBUG: pass graphing parameters through these.
+			// #########################################################################################################
+			p_denom_i[iMinor] = M_n_over_ne*cross_section_times_thermal_en*n_use.n_n + nu_ei_effective;
+			p_denom_e[iMinor] = M_n_over_ne*cross_section_times_thermal_en*n_use.n_n /
+				(M_n_over_ne*cross_section_times_thermal_en*n_use.n_n + nu_ei_effective);
+		};
+		
 		// Now update viz(Ez):
 		v0.viz += beta_ie_z * v0.vez;
 		ohm.sigma_i_zz += beta_ie_z * ohm.sigma_e_zz;
@@ -12466,7 +12468,7 @@ __global__ void kernelCreate_viscous_contrib_to_MAR_and_NT(
 					omega_ci = 0.5*qoverMc*(Make3(opp_B + shared_B_verts[threadIdx.x], BZ_CONSTANT)); // NOTE BENE qoverMc
 				} // Guaranteed DOMAIN_VERTEX never needs to skip an edge; we include CROSSING_INS in viscosity.
 
-				if (omega_ci.dot(omega_ci) < 0.01*0.1*nu*nu)
+				if ((VISCMAG == 0) || (omega_ci.dot(omega_ci) < 0.01*0.1*nu*nu))
 				{
 					// run unmagnetised case
 					f64 Pi_xx, Pi_xy, Pi_yx, Pi_yy, Pi_zx, Pi_zy;
@@ -12941,7 +12943,7 @@ __global__ void kernelCreate_viscous_contrib_to_MAR_and_NT(
 						) / area_quadrilateral;
 
 
-					if (omega_ci.dot(omega_ci) < 0.01*0.1*nu*nu)
+					if ((VISCMAG == 0) || (omega_ci.dot(omega_ci) < 0.01*0.1*nu*nu))
 					{
 						// run unmagnetised case
 						f64 Pi_xx, Pi_xy, Pi_yx, Pi_yy, Pi_zx, Pi_zy;
@@ -13396,7 +13398,7 @@ __global__ void kernelCreate_viscous_contrib_to_MAR_and_NT(
 				}
 
 				f64_vec2 endpt1 = THIRD * (nextpos + info.pos + opppos);
-				if (omega_ce.dot(omega_ce) < 0.01*0.1*nu*nu)
+				if ((VISCMAG == 0) || (omega_ce.dot(omega_ce) < 0.01*0.1*nu*nu))
 				{
 					// run unmagnetised case
 					f64 Pi_xx, Pi_xy, Pi_yx, Pi_yy, Pi_zx, Pi_zy;
@@ -13863,7 +13865,7 @@ __global__ void kernelCreate_viscous_contrib_to_MAR_and_NT(
 						) / area_quadrilateral;
 
 
-					if (omega_ce.dot(omega_ce) < 0.01*0.01*nu*nu)
+					if ((VISCMAG == 0) || (omega_ce.dot(omega_ce) < 0.01*0.01*nu*nu))
 					{
 						// run unmagnetised case
 						f64 Pi_xx, Pi_xy, Pi_yx, Pi_yy, Pi_zx, Pi_zy;

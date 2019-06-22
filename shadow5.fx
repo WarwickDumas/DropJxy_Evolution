@@ -352,6 +352,72 @@ OutputVS Ionise_VS( float3 posL : POSITION0,
     return outVS;
 }
 
+OutputVS ProportionVS(float3 posL : POSITION0,
+	float3 normal1 : NORMAL0,
+	float3 colvarxy : TEXCOORD0
+) {
+	float colvar = colvarxy.x;
+
+	// change abruptly from white to blue where it goes beneath 0.
+
+	// Zero out our output.
+	OutputVS outVS = (OutputVS)0;
+
+	// Transform to homogeneous clip space.
+	outVS.posH = mul(float4(posL, 1.0f), gWVP);
+
+	float3 normalW = normalize(normal1);
+
+	outVS.ambient = AmbientMtrl*LightAmbientColor;
+
+	float s = max(dot(LightVecW, normalW), 0.0f);
+	outVS.diffuse = s*DiffuseMtrl*LightDiffuseColor;
+
+	float3 ToEye = normalize(gEyePosW - posL);
+	float3 r = reflect(-LightVecW, normalW);
+	float3 t = pow(max(dot(r, ToEye), 0.0f), SpecularPower);
+	float3 spec = t*(SpecularMtrl*LightSpecularColor).rgb;
+	outVS.spec = float4(spec, 0.0f);
+
+	// generate projective texture coordinates to project shadow map on to scene
+	outVS.oProjTex = mul(float4(posL, 1.0f), gLightWVP);
+
+	float3 hue;
+	if (colvar < 0.0f) {
+		outVS.graphcolor.r = 0.0;
+		outVS.graphcolor.g = 0.77;  // < 0
+		outVS.graphcolor.b = 0.0;
+	} else {
+
+		// 1 = blue
+		hue.b = colvar;
+		hue.r = 1.0f - colvar;
+		hue.g = (0.5f + colvar)*(1.0f - colvar)*2.0f; // 0 at 1, 1 at 0.5
+		
+		// We'll want to add a colour strip.
+
+		float brightness = pow(abs(hue.r), 2.2) + pow(abs(hue.b), 2.2) + pow(abs(hue.g), 2.2);
+		// new brightness = factor^2.2*existing_brightness
+		float factor = pow(abs(1.0 / brightness), 1.0 / 2.2);
+		hue.r *= factor;
+		hue.g *= factor;
+		hue.b *= factor;
+
+		if (colvar > 1.0f) {
+			hue.r = 0.8f; hue.g = 0.0f; hue.b = 0.0f; // > 1
+		}
+
+		outVS.graphcolor.r = hue.r;
+		outVS.graphcolor.g = hue.g;
+		outVS.graphcolor.b = hue.b;
+	}
+	
+	outVS.graphcolor.a = 1.0f;
+	if (bTransparent) outVS.graphcolor.a = fTransparentAlpha;
+
+	return outVS;
+}
+
 OutputVS SegueVS( float3 posL : POSITION0,
 					 float3 normal1 : NORMAL0,
 					 float3 colvarxy : TEXCOORD0
@@ -864,9 +930,9 @@ OutputVS VelocityVS( float3 posL : POSITION0,
 
 		// New brightness = r ^ 2.2 factor ^ 2.2 + g ^ 2.2 factor ^ 2.2 + b^ 2.2 factor ^ 2.2
 
-		float brightness = pow(hue.r,2.2) + pow(hue.b,2.2) + pow(hue.g,2.2);
+		float brightness = pow(abs(hue.r),2.2) + pow(abs(hue.b),2.2) + pow(abs(hue.g),2.2);
 		// new brightness = factor^2.2*existing_brightness
-		float factor = pow(1.0/brightness,1.0/2.2);
+		float factor = pow(abs(1.0/brightness),1.0/2.2);
 		hue.r *= factor;
 		hue.g *= factor;
 		hue.b *= factor;
@@ -1285,10 +1351,8 @@ technique SegueTech
 
         // can't seem to get to point of just taking cross-section
         // going to have to resort to doing in cpp program.
-        
-
-
-        // Overall problem is that when opaque is drawn after, it thinks transparent
+     
+		// Overall problem is that when opaque is drawn after, it thinks transparent
         // is in front and therefore hiding it.
 
         // Cannot be addressed by setting alpha = 0; instead we will have
@@ -1329,4 +1393,15 @@ technique AzSegueTech
         vertexShader = compile vs_2_0 AzSegueVS();
         pixelShader  = compile ps_2_0 ApplyShadowPS();
     }
+}
+
+technique ProportionTech
+{
+	pass P0
+	{
+		vertexShader = compile vs_2_0 ProportionVS();
+		pixelShader = compile ps_2_0 ApplyShadowPS();
+
+		// What happens now? --> Still doesn't work. Why is that?
+	}
 }
