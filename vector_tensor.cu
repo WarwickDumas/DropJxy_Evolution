@@ -549,7 +549,6 @@ QUALIFIERS Tensor3 operator* (const real hh,const Tensor3 &X)
 		return result;
 	}
 
-
 // Not clear to me : do we want the following for NVCC to be here?
 // It actually makes sense to keep "matrix" here!
 
@@ -557,49 +556,54 @@ struct Matrix3
 {
 	real a[3][3];
 
-QUALIFIERS void Inverse(Matrix3 & result)
-{
-	// find+replace on the above
-
-	real det =	  a[0][0]*(a[1][1]*a[2][2]-a[1][2]*a[2][1])
-				+ a[0][1]*(a[2][0]*a[1][2]-a[1][0]*a[2][2])
-				+ a[0][2]*(a[1][0]*a[2][1]-a[1][1]*a[2][0]);
-
-	// Fill in matrix of minor determinants; 
-	// transposed with applied cofactors (signs)
-	
-	result.a[0][0] = a[1][1]*a[2][2]-a[1][2]*a[2][1];
-	result.a[1][0] = a[2][0]*a[1][2]-a[1][0]*a[2][2]; 
-	result.a[2][0] = a[1][0]*a[2][1]-a[1][1]*a[2][0];
-	result.a[0][1] = a[2][1]*a[0][2]-a[0][1]*a[2][2];
-	result.a[1][1] = a[0][0]*a[2][2]-a[0][2]*a[2][0];
-	result.a[2][1] = a[2][0]*a[0][1]-a[0][0]*a[2][1];
-	result.a[0][2] = a[0][1]*a[1][2]-a[0][2]*a[1][1];
-	result.a[1][2] = a[1][0]*a[0][2]-a[0][0]*a[1][2];
-	result.a[2][2] = a[0][0]*a[1][1]-a[1][0]*a[0][1];
-
-	//real * ptr = (real *)(result.a);
-	for (int i = 0; i < 3; i++)
-	for (int j = 0; j < 3; j++)
+	QUALIFIERS void Inverse(Matrix3 & result)
 	{
-		result.a[i][j] /= det; // 99% sure static array elems are contiguous but hey.
-	}
+		// find+replace on the above
+
+		real det =	  a[0][0]*(a[1][1]*a[2][2]-a[1][2]*a[2][1])
+					+ a[0][1]*(a[2][0]*a[1][2]-a[1][0]*a[2][2])
+					+ a[0][2]*(a[1][0]*a[2][1]-a[1][1]*a[2][0]);
+
+		// Fill in matrix of minor determinants; 
+		// transposed with applied cofactors (signs)
 	
-};
+		result.a[0][0] = a[1][1]*a[2][2]-a[1][2]*a[2][1];
+		result.a[1][0] = a[2][0]*a[1][2]-a[1][0]*a[2][2]; 
+		result.a[2][0] = a[1][0]*a[2][1]-a[1][1]*a[2][0];
+		result.a[0][1] = a[2][1]*a[0][2]-a[0][1]*a[2][2];
+		result.a[1][1] = a[0][0]*a[2][2]-a[0][2]*a[2][0];
+		result.a[2][1] = a[2][0]*a[0][1]-a[0][0]*a[2][1];
+		result.a[0][2] = a[0][1]*a[1][2]-a[0][2]*a[1][1];
+		result.a[1][2] = a[1][0]*a[0][2]-a[0][0]*a[1][2];
+		result.a[2][2] = a[0][0]*a[1][1]-a[1][0]*a[0][1];
 
-QUALIFIERS void multiply(real RHS[3], real output[3])
-{
-	output[0] = a[0][0]*RHS[0] + a[0][1]*RHS[1] + a[0][2]*RHS[2];
-	output[1] = a[1][0]*RHS[0] + a[1][1]*RHS[1] + a[1][2]*RHS[2];
-	output[2] = a[2][0]*RHS[0] + a[2][1]*RHS[1] + a[2][2]*RHS[2];
-};
+		//real * ptr = (real *)(result.a);
+		for (int i = 0; i < 3; i++)
+		for (int j = 0; j < 3; j++)
+		{
+			result.a[i][j] /= det; // 99% sure static array elems are contiguous but hey.
+		}
+	
+	};
 
-
+	QUALIFIERS void multiply(real RHS[3], real output[3])
+	{
+		output[0] = a[0][0]*RHS[0] + a[0][1]*RHS[1] + a[0][2]*RHS[2];
+		output[1] = a[1][0]*RHS[0] + a[1][1]*RHS[1] + a[1][2]*RHS[2];
+		output[2] = a[2][0]*RHS[0] + a[2][1]*RHS[1] + a[2][2]*RHS[2];
+	};
+	
 };
 
 extern Tensor3 ID3x3;
 extern Tensor3 zero3x3;
 
+struct f64_tens3mag {
+	real bx, by, bz, Px, Py, Pz, Hx, Hy, Hz;
+};
+struct f64_vec3mag {
+	real b, P, H;
+};
 Vector3 QUALS Make3(const Vector2 & v, const real scalar)
 {
 	Vector3 result;
