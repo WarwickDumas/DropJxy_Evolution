@@ -680,6 +680,10 @@ struct species_vec3
 	f64_vec3 neut, ion, elec;
 };
 
+struct f64_vec4
+{
+	f64 x[4];
+};
 #endif
 
 

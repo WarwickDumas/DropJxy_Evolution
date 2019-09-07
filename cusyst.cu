@@ -68,6 +68,9 @@ int cuSyst::Invoke()
 			&& (!CallMAC(cudaMalloc((void**)&p_AreaMinor, Nminor * sizeof(f64))))
 			&& (!CallMAC(cudaMalloc((void**)&p_AreaMajor, Nverts * sizeof(f64))))
 			&& (!CallMAC(cudaMalloc((void**)&p_cc, Nminor*sizeof(f64_vec2))))
+			
+			&& (!CallMAC(cudaMalloc((void**)&p_iVolley, Nverts * sizeof(char))))
+
 			)
 		{
 			bInvoked = true;
@@ -124,6 +127,10 @@ int cuSyst::InvokeHost()
 	p_AreaMajor = (f64 * )malloc(Nverts * sizeof(f64));
 
 	p_cc = (f64_vec2 *)malloc(Nminor * sizeof(f64));
+	
+	p_iVolley = (char *)malloc(Nverts * sizeof(char));
+
+	
 	if (p_cc == 0) {
 		printf("failed to invokeHost the cusyst.\n");
 		getch();
@@ -163,6 +170,7 @@ cuSyst::~cuSyst(){
 		cudaFree(p_AreaMinor);
 		cudaFree(p_AreaMajor);
 		cudaFree(p_cc);
+		cudaFree(p_iVolley);
 
 	}
 	if (bInvokedHost) {
@@ -192,6 +200,7 @@ free(p_v_overall_minor);
 free(p_AreaMinor);
 free(p_AreaMajor);
 free(p_cc);
+free(p_iVolley);
 	};
 }
 
@@ -224,6 +233,8 @@ void cuSyst::Save(const char filename[])
 	fwrite(p_tri_neigh_index, sizeof(LONG3), Ntris , fp);
 	fwrite(p_tri_periodic_neigh_flags, sizeof(CHAR4), Ntris , fp);
 	fwrite(p_who_am_I_to_corner, sizeof(LONG3), Ntris, fp);
+
+	fwrite(p_iVolley, sizeof(char), Nverts, fp); // Not changed yet in load.
 
 	fwrite(p_n_major, sizeof(nvals), Nverts, fp);
 	fwrite(p_n_minor, sizeof(nvals), Nminor,fp);
@@ -280,6 +291,9 @@ void cuSyst::Load(const char filename[])
 	fread(p_tri_periodic_neigh_flags, sizeof(CHAR4), Ntris, fp);
 	fread(p_who_am_I_to_corner, sizeof(LONG3), Ntris, fp);
 
+	// p_iVolley
+	fread(p_iVolley, sizeof(char), Nverts, fp);
+
 	fread(p_n_major, sizeof(nvals), Nverts, fp);
 	fread(p_n_minor, sizeof(nvals), NMINOR, fp);
 	fread(p_T_minor, sizeof(T3), NMINOR, fp);
@@ -320,6 +334,8 @@ void cuSyst::SendToHost(cuSyst & Xhost)
 		&& (!CallMAC(cudaMemcpy(Xhost.p_tri_periodic_neigh_flags, p_tri_periodic_neigh_flags, Ntris * sizeof(CHAR4), cudaMemcpyDeviceToHost)))
 
 		&& (!CallMAC(cudaMemcpy(Xhost.p_who_am_I_to_corner, p_who_am_I_to_corner, Ntris * sizeof(LONG3), cudaMemcpyDeviceToHost)))
+
+		&& (!CallMAC(cudaMemcpy(Xhost.p_iVolley, p_iVolley, Nverts * sizeof(char), cudaMemcpyDeviceToHost)))
 
 		&& (!CallMAC(cudaMemcpy(Xhost.p_n_major, p_n_major, Nverts * sizeof(nvals), cudaMemcpyDeviceToHost)))
 		&& (!CallMAC(cudaMemcpy(Xhost.p_n_minor, p_n_minor, Nminor * sizeof(nvals), cudaMemcpyDeviceToHost)))
@@ -366,6 +382,8 @@ void cuSyst::SendToDevice(cuSyst & Xdevice)
 		&& (!CallMAC(cudaMemcpy(Xdevice.p_tri_neigh_index, p_tri_neigh_index, Ntris * sizeof(LONG3), cudaMemcpyHostToDevice)))
 		&& (!CallMAC(cudaMemcpy(Xdevice.p_tri_periodic_neigh_flags, p_tri_periodic_neigh_flags, Ntris * sizeof(CHAR4), cudaMemcpyHostToDevice)))
 		&& (!CallMAC(cudaMemcpy(Xdevice.p_who_am_I_to_corner, p_who_am_I_to_corner, Ntris * sizeof(LONG3), cudaMemcpyHostToDevice)))
+
+		&& (!CallMAC(cudaMemcpy(Xdevice.p_iVolley, p_iVolley, Nverts * sizeof(char), cudaMemcpyHostToDevice)))
 
 		&& (!CallMAC(cudaMemcpy(Xdevice.p_n_major, p_n_major, Nverts * sizeof(nvals), cudaMemcpyHostToDevice)))
 		&& (!CallMAC(cudaMemcpy(Xdevice.p_n_minor, p_n_minor, Nminor * sizeof(nvals), cudaMemcpyHostToDevice)))
@@ -535,6 +553,7 @@ void cuSyst::PopulateFromTriMesh(TriMesh * pX)
 		if (iMinor >= BEGINNING_OF_CENTRAL) {
 			p_n_major[iMinor - BEGINNING_OF_CENTRAL].n = data.n;
 			p_n_major[iMinor - BEGINNING_OF_CENTRAL].n_n = data.n_n;
+
 		}
 		p_T_minor[iMinor].Tn = data.Tn;
 		p_T_minor[iMinor].Ti = data.Ti;
@@ -594,6 +613,8 @@ void cuSyst::PopulateFromTriMesh(TriMesh * pX)
 		info.flag = pVertex->flags;
 		info.pos = pVertex->pos;
 		p_info[iVertex + BEGINNING_OF_CENTRAL] = info;
+
+		p_iVolley[iVertex] = (char)(pVertex->iVolley);
 		++pVertex;
 	};
 	
@@ -689,7 +710,7 @@ void cuSyst::CopyStructuralDetailsFrom(cuSyst & src) // this assume both live on
 	cudaMemcpy(p_tri_neigh_index, src.p_tri_neigh_index, sizeof(LONG3) * Ntris, cudaMemcpyDeviceToDevice);
 	cudaMemcpy(p_tri_periodic_neigh_flags, src.p_tri_periodic_neigh_flags, sizeof(CHAR4) * Ntris, cudaMemcpyDeviceToDevice);
 	cudaMemcpy(p_who_am_I_to_corner, src.p_who_am_I_to_corner, sizeof(LONG3) * Ntris, cudaMemcpyDeviceToDevice);
-
+	cudaMemcpy(p_iVolley, src.p_iVolley, sizeof(char)*Nverts, cudaMemcpyDeviceToDevice);
 	// find another way would be better. Just a waste of memory and processing having duplicate info, creates unnecessary risks.
 
 }
@@ -758,7 +779,8 @@ void cuSyst::PopulateTriMesh(TriMesh * pX)
 		//memcpy(szPBCtri, pX->MajorTriPBC[iVertex], sizeof(char)*tri_len);
 		memcpy(szPBCtri, p_szPBCtri_vert + iVertex*MAXNEIGH, sizeof(char)*MAXNEIGH);
 		memcpy(pX->MajorTriPBC[iVertex], szPBCtri, sizeof(char)*MAXNEIGH);
-		
+		pVertex->iVolley = p_iVolley[iVertex];
+
 		++pVertex;
 	}
 	

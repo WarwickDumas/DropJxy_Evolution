@@ -65,7 +65,7 @@ bool GlobalCutaway = true;
 unsigned int cw; // control word for floating point hardware exception hiding
 
 TriMesh * pX, *pXnew;
-TriMesh X1, X2, X3;
+TriMesh X1, X2, X3, X4;
 cuSyst cuSyst_host, cuSyst_host2;
 
 D3DXVECTOR3 GlobalEye, GlobalLookat, GlobalPlanEye, GlobalPlanEye2, GlobalPlanLookat,
@@ -119,6 +119,10 @@ f64 graph_r[10000];
 int numgraphs = 4;
 int num_graph_data_points = 10000;
 f64 maximum[4];
+
+extern TriMesh * pTriMesh;
+
+
 
 
 char * report_time(int action)
@@ -398,11 +402,11 @@ void Create1DGraphingData(TriMesh * pX)
 				graphdata[3][asdf] = wt0*y0 + wt1*y1 + wt2*y2;
 				if (fabs(graphdata[3][asdf]) > maximum[3]) maximum[3] = fabs(graphdata[3][asdf]);
 			}
-		}; // found triangle
-		
+		}; // found triangle		
 	}; // asdf	
+	maximum[3] = max(maximum[3], maximum[2]);
+	maximum[2] = maximum[3];
 }
-
 
 
 void RefreshGraphs(TriMesh & X, // only not const because of such as Reset_vertex_nvT
@@ -422,7 +426,7 @@ void RefreshGraphs(TriMesh & X, // only not const because of such as Reset_verte
 	float zeroplane = 0.0f;
 	int i;
 	int iGraph;
-	char graphname[4][128] = { "Azdot","Azdotdot","Lap Az","Jz" };
+	char graphname[4][128] = { "Azdot","Azdotdot","Lap Az","-4pi/c Jz" };
 
 	float const MAXX = 11.0f;
 	float const MAXY = 6.0f;
@@ -512,7 +516,7 @@ void RefreshGraphs(TriMesh & X, // only not const because of such as Reset_verte
 				linedata[1].colour = linedata[0].colour;
 				Direct3D.pd3dDevice->DrawPrimitiveUP(D3DPT_LINESTRIP, 1, linedata, sizeof(vertex1));
 				
-				Graph[6].RenderLabel2(graphname[iGraph], linedata[1].x + 0.2f, linedata[1].y, linedata[1].z,0);
+				Graph[6].RenderLabel2(graphname[iGraph], linedata[1].x + 1.0f, linedata[1].y-0.3f, linedata[1].z,0);
 
 				for (asdf = 0; asdf < num_graph_data_points; asdf++)
 				{
@@ -532,17 +536,17 @@ void RefreshGraphs(TriMesh & X, // only not const because of such as Reset_verte
 
 				sprintf(buffer, "%2.2E", maximum[iGraph]);
 				Graph[6].RenderLabel2(buffer,  // text
-					MAXX*0.66f+0.8f*(float)iGraph,
+					MAXX*0.66f+1.2f*(float)iGraph,
 					MAXY,
 					linedata[0].z, 0, linedata[0].colour);
 				sprintf(buffer, "0.0");
 				Graph[6].RenderLabel2(buffer,  // text
-					MAXX*0.66f+0.8f*(float)iGraph,
+					MAXX*0.66f+1.2f*(float)iGraph,
 					0.0f,
 					linedata[0].z, 0, linedata[0].colour);
 				sprintf(buffer, "-%2.2E", maximum[iGraph]);
 				Graph[6].RenderLabel2(buffer,  // text
-					MAXX*0.66f + 0.8f*(float)iGraph,
+					MAXX*0.66f + 1.2f*(float)iGraph,
 					-MAXY,
 					linedata[0].z, 0, linedata[0].colour);
 			};
@@ -566,7 +570,7 @@ void RefreshGraphs(TriMesh & X, // only not const because of such as Reset_verte
 				sprintf(buffer, "%5.2f", INNER_A_BOUNDARY + (1.0-((real)i) / 8.0)*(DOMAIN_OUTER_RADIUS-INNER_A_BOUNDARY));
 				Graph[6].RenderLabel2(buffer,  // text
 					linedata[0].x,
-					-7.4f,
+					-7.6f,
 					linedata[0].z, 0);
 
 			};
@@ -1744,21 +1748,53 @@ int main()
 		" neut.vr neut.vth neut.vz  ion.vr ion.vth ion.vz elec.vr elec.vth elec.vz neut.heat ion.heat elec.heat neut.T ion.T elec.T "
 		" neut.mnvv/3 ion.mnvv/3 elec.mnvv/3 elec.force(vxB)r within3.6 elec.Bth EE BB Heatings and dT changes - see code \n");
 	fclose(fp);
-
+	
 	X1.Initialise(1); // Set evaltime first
 	X2.Initialise(2);
 	X3.Initialise(3);
+	printf("Got to here 1\n");
+	   
+	{
+	//	X4.Initialise(4);
+	//	printf("Got to here 2\n");
+	//	X4.CreateTilingAndResequence(&X1);
+	//	X4.CreateTilingAndResequence(&X2);
+	//	X4.CreateTilingAndResequence(&X3);
+	//	printf("Got to here 3\n");
+
+		// 
+		// Dropping it for now so we can pursue solving equations first.
+		// 
+	}
+	X1.Recalculate_TriCentroids_VertexCellAreas_And_Centroids();
+	X1.EnsureAnticlockwiseTriangleCornerSequences_SetupTriMinorNeighboursLists();
+	X1.SetupMajorPBCTriArrays();
+	X2.Recalculate_TriCentroids_VertexCellAreas_And_Centroids();
+	X2.EnsureAnticlockwiseTriangleCornerSequences_SetupTriMinorNeighboursLists();
+	X2.SetupMajorPBCTriArrays();
+	X3.Recalculate_TriCentroids_VertexCellAreas_And_Centroids();
+	X3.EnsureAnticlockwiseTriangleCornerSequences_SetupTriMinorNeighboursLists();
+	X3.SetupMajorPBCTriArrays();
+	printf("Got to here 4\n");
+	X1.InitialPopulate();
+	X2.InitialPopulate();
+	X3.InitialPopulate();
+
+	X1.Create4Volleys();
+	X2.Create4Volleys();
+	X3.Create4Volleys();
+
+	pTriMesh = &X1;
+
 	pX = &X1;
 	pXnew = &X2;
-
+	
 	GlobalBothSystemsInUse = 0;
 
 	printf(report_time(1));
 	printf("\n");
 	report_time(0);
-
-
-
+	
 	// Window setup
 	LoadString(hInstance, IDS_APP_TITLE, szTitle, 1024);
 	LoadString(hInstance, IDC_F2DVALS, szWindowClass, 1024);
@@ -1778,7 +1814,6 @@ int main()
 		char buff[128];
 		MessageBox(NULL, "RegisterClassEx failed", itoa(GetLastError(), buff, 10), MB_OK);
 	};
-
 
 	printf("SCREEN_WIDTH %d VIDEO_WIDTH %d VIDEO_HEIGHT %d \n",
 		SCREEN_WIDTH, VIDEO_WIDTH, VIDEO_HEIGHT);
@@ -1841,7 +1876,7 @@ int main()
 	GlobalPlanEye2.x = -0.1f;
 	GlobalPlanEye2.y = 19.5f;
 	GlobalPlanEye2.z = 2.8*xzscale;
-
+	 
 	GlobalPlanLookat.x = GlobalPlanEye.x;
 	GlobalPlanLookat.y = 0.0f;
 	GlobalPlanLookat.z = GlobalPlanEye.z + 0.0001;
@@ -1888,7 +1923,7 @@ int main()
 	{
 		PostQuitMessage(203);
 	};
-
+	   
 	if (NUMGRAPHS > 4) {
 
 		if (DXChk(Graph[4].InitialiseWithoutBuffers(GRAPH_WIDTH * 2, 0, GRAPH_WIDTH, GRAPH_HEIGHT, GlobalPlanEye, GlobalPlanLookat)) +
@@ -2277,11 +2312,15 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 					pX->EnsureAnticlockwiseTriangleCornerSequences_SetupTriMinorNeighboursLists();
 					pX->Average_n_T_to_tris_and_calc_centroids_and_minorpos();
 
+					pX->Create4Volleys(); // THIS SHOULD NOT ALWAYS BE HERE !!
+					printf("Called Create4Volleys! This should be removed in favour of loaded iVolley.\n");
+
 					cuSyst_host.InvokeHost();
 					cuSyst_host.PopulateFromTriMesh(pX);
 					cuSyst_host2.InvokeHost();
 					cuSyst_host2.PopulateFromTriMesh(pX);
-					
+					// transfer information.
+
 					PerformCUDA_Invoke_Populate(
 						&cuSyst_host,
 						NUMVERTICES,

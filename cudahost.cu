@@ -16,7 +16,7 @@
 #define CHOSEN  29734 
 #define CHOSEN1 1000110301
 #define CHOSEN2 1000110497 
-#define VERTCHOSEN 14790
+#define VERTCHOSEN 15253
   
 #include <math.h>
 #include <time.h>
@@ -27,9 +27,14 @@
 #include "flags.h"
 #include "kernel.h"
 #include "mesh.h"
+#include "matrix_real.h"
     
 // This is the file for CUDA host code.
 #include "simulation.cu"
+
+extern surfacegraph Graph[7];
+extern D3D Direct3D;
+
 FILE * fp_trajectory;
 FILE * fp_dbg;
  
@@ -58,6 +63,8 @@ FRILL_CENTROID_OUTER_RADIUS_d, FRILL_CENTROID_INNER_RADIUS_d;
 
 __constant__ f64 cross_s_vals_viscosity_ni_d[10], cross_s_vals_viscosity_nn_d[10],
                  cross_T_vals_d[10], cross_s_vals_MT_ni_d[10];
+__constant__ f64 beta_n_c[8], beta_i_c[8], beta_e_c[8];
+
 __device__ __constant__ f64 billericay;
 __constant__ f64 Ez_strength;
 f64 EzStrength_;
@@ -81,6 +88,9 @@ f64 * p_summands_host, *p_Iz0_summands_host, *p_Iz0_initial_host;
 __device__ f64 * p_temp1, *p_temp2, *p_temp3, *p_temp4,*p_temp5, *p_temp6, *p_denom_i, *p_denom_e, *p_coeff_of_vez_upon_viz, *p_beta_ie_z;
 __device__ long * p_longtemp;
 __device__ bool * p_bool;
+__device__ f64 * p_opti_n, *p_opti_i, *p_opti_e, *p_Effect_self_n, *p_Effect_self_i, *p_Effect_self_e,
+*d_eps_by_dx_neigh_n, *d_eps_by_dx_neigh_i, *d_eps_by_dx_neigh_e;
+
 bool * p_boolhost;
 f64 * p_temphost1, *p_temphost2, *p_temphost3, *p_temphost4, *p_temphost5, *p_temphost6;
 long * p_longtemphost;
@@ -106,6 +116,14 @@ __device__ bool * p_bFailed;
 __device__ f64 * p_epsilon_heat, *p_Jacobi_heat,
 				*p_sum_eps_deps_by_dbeta_heat, *p_sum_depsbydbeta_sq_heat, *p_sum_eps_eps_heat;
 f64  *p_sum_eps_deps_by_dbeta_host_heat, *p_sum_depsbydbeta_sq_host_heat, *p_sum_eps_eps_host_heat;
+
+__device__ f64_vec4 * p_d_eps_by_dbetaJ_n_x4, *p_d_eps_by_dbetaJ_i_x4, *p_d_eps_by_dbetaJ_e_x4,
+*p_d_eps_by_dbetaR_n_x4, *p_d_eps_by_dbetaR_i_x4, *p_d_eps_by_dbetaR_e_x4,
+*p_sum_eps_deps_by_dbeta_J_x4, *p_sum_eps_deps_by_dbeta_R_x4;
+__device__ f64 * p_sum_depsbydbeta_8x8;
+f64 * p_sum_depsbydbeta_8x8_host;
+f64_vec4 *p_sum_eps_deps_by_dbeta_J_x4_host, *p_sum_eps_deps_by_dbeta_R_x4_host;
+
 
 __device__ species3 *p_nu_major;
 __device__ f64_vec2 * p_GradAz, *p_GradTe;
@@ -138,6 +156,7 @@ __device__ f64 *p_sum_eps_deps_by_dbeta_J, *p_sum_eps_deps_by_dbeta_R, *p_sum_de
 f64 * p_sum_eps_deps_by_dbeta_J_host, *p_sum_eps_deps_by_dbeta_R_host, *p_sum_depsbydbeta_J_times_J_host,
 *p_sum_depsbydbeta_R_times_R_host, *p_sum_depsbydbeta_J_times_R_host;
 
+TriMesh * pTriMesh;
 
 f64 * temp_array_host;
 f64 tempf64;
@@ -150,6 +169,7 @@ long * address;
 f64 * f64address;
 size_t uFree, uTotal;
 extern real evaltime;
+extern cuSyst cuSyst_host;
 
 void RunBackwardJLSForHeat(T3 * p_T_k, T3 * p_T, f64 hsub, cuSyst * pX_use)
 {
@@ -170,23 +190,77 @@ void RunBackwardJLSForHeat(T3 * p_T_k, T3 * p_T, f64 hsub, cuSyst * pX_use)
 	f64 beta_eJ, beta_iJ, beta_nJ, beta_eR, beta_iR, beta_nR;
 	long iTile;
 
-	// seed: just set T to T_k.
-	cudaMemcpy(p_T, p_T_k, sizeof(T3)*NUMVERTICES, cudaMemcpyDeviceToDevice);
-
-	// JLS:
+	Matrix_real sum_ROC_products, sum_products_i, sum_products_e;
+	f64 sum_eps_deps_by_dbeta_vector[8];
+	f64 beta[8];
 
 	f64 sum_eps_deps_by_dbeta_J, sum_eps_deps_by_dbeta_R,
 		sum_depsbydbeta_J_times_J, sum_depsbydbeta_R_times_R, sum_depsbydbeta_J_times_R,
 		sum_eps_eps;
+	
+	Vertex * pVertex;
+	long iVertex;
+	plasma_data * pdata;
+
+	// seed: just set T to T_k.
+	cudaMemcpy(p_T, p_T_k, sizeof(T3)*NUMVERTICES, cudaMemcpyDeviceToDevice);
+
 	printf("\nJRLS for heat: ");
 	//long iMinor;
-	f64 beta, L2eps_elec, L2eps_neut, L2eps_ion;
+	f64 L2eps;// _elec, L2eps_neut, L2eps_ion;
 	bool bFailedTest;
 	Triangle * pTri;
+	f64_vec4 tempf64vec4;
+	f64 tempf64;
 	int iIteration = 0;
 	do {
 		printf("\nITERATION %d \n\n", iIteration);
+		if ((iIteration > 1000) && (iIteration % 10 == 0))
+		{
+	 		// draw a graph:
 
+			cudaMemcpy(p_temphost1, p_epsilon_e, sizeof(f64)*NUMVERTICES, cudaMemcpyDeviceToHost);
+			cudaMemcpy(cuSyst_host.p_iVolley, pX_use->p_iVolley, sizeof(char)*NUMVERTICES, cudaMemcpyDeviceToHost);
+			
+			pVertex = pTriMesh->X;
+			pdata = pTriMesh->pData + BEGINNING_OF_CENTRAL;
+			for (iVertex = 0; iVertex < NUMVERTICES; iVertex++)
+			{
+				pdata->temp.x = p_temphost1[iVertex];
+				pdata->temp.y = p_temphost1[iVertex];
+
+				if (p_temphost1[iVertex] > 1.0e-15) {
+					printf("iVertex %d epsilon %1.10E iVolley %d ", iVertex, p_temphost1[iVertex],
+						cuSyst_host.p_iVolley[iVertex]);
+
+					cudaMemcpy(&tempf64vec4, &(p_d_eps_by_dbetaJ_e_x4[iVertex]), sizeof(f64_vec4), cudaMemcpyDeviceToHost);
+					printf("deps/dJ %1.6E %1.6E %1.6E %1.6E ", tempf64vec4.x[0], tempf64vec4.x[1], tempf64vec4.x[2], tempf64vec4.x[3]);
+
+					cudaMemcpy(&tempf64, &(p_Jacobi_e[iVertex]), sizeof(f64), cudaMemcpyDeviceToHost);
+					printf("Jac %1.8E\n", tempf64);
+				};
+				//if ((pVertex->flags == DOMAIN_VERTEX) || (pVertex->flags == OUTERMOST))
+				//{
+					
+			//	} else {
+			//		pdata->temp.x = 0.0;
+			//		pdata->temp.y = 0.0;
+			//	}
+				++pVertex;
+				++pdata;
+			}
+
+			Graph[0].DrawSurface("epsilon",
+				DATA_HEIGHT, (real *)(&((pTriMesh->pData[0]).temp.x)),
+				AZSEGUE_COLOUR, (real *)(&((pTriMesh->pData[0]).temp.y)),
+				false,
+				GRAPH_EPSILON, pTriMesh);
+
+			Direct3D.pd3dDevice->Present(NULL, NULL, NULL, NULL);
+
+			printf("done graph");
+			getch();
+		}
 		// 2. Calculate epsilon: given the est of T, eps = T - (T_k +- h sum kappa dot grad T)
 		// 3. Calculate Jacobi: for each point, Jacobi = eps/(deps/dT)
 
@@ -271,17 +345,75 @@ void RunBackwardJLSForHeat(T3 * p_T_k, T3 * p_T, f64 hsub, cuSyst * pX_use)
 			);
 		Call(cudaThreadSynchronize(), "cudaTS Create epsilon heat");
 
+
+		memset(d_eps_by_dx_neigh_n,0,sizeof(f64)*NUMVERTICES*MAXNEIGH);
+		memset(d_eps_by_dx_neigh_i, 0, sizeof(f64)*NUMVERTICES*MAXNEIGH);
+		memset(d_eps_by_dx_neigh_e, 0, sizeof(f64)*NUMVERTICES*MAXNEIGH);
+		memset(p_Effect_self_n, 0, sizeof(f64)*NUMVERTICES);
+		memset(p_Effect_self_i, 0, sizeof(f64)*NUMVERTICES);
+		memset(p_Effect_self_e, 0, sizeof(f64)*NUMVERTICES);
+
+		kernelCalculateArray_ROCwrt_my_neighbours << <numTilesMajorClever, threadsPerTileMajorClever >> >(
+			hsub,
+			pX_use->p_info + BEGINNING_OF_CENTRAL,
+			pX_use->p_izNeigh_vert,
+			pX_use->p_szPBCneigh_vert,
+			pX_use->p_izTri_vert,
+			pX_use->p_szPBCtri_vert,
+			pX_use->p_cc,
+			pX_use->p_n_major,
+			pX_use->p_B + BEGINNING_OF_CENTRAL, // NEED POPULATED
+			p_kappa_n,
+			p_kappa_i,
+			p_kappa_e,
+			p_nu_i,
+			p_nu_e,
+			pX_use->p_AreaMajor,
+
+			// Output:
+			d_eps_by_dx_neigh_n, // save an array of MAXNEIGH f64 values at this location
+			d_eps_by_dx_neigh_i,
+			d_eps_by_dx_neigh_e,
+			p_Effect_self_n,
+			p_Effect_self_i,
+			p_Effect_self_e
+		);
+		Call(cudaThreadSynchronize(), "cudaTS kernelCalculateArray_ROCwrt_my_neighbours");
+
+		kernelCalculateOptimalMove<<<numTilesMajorClever, threadsPerTileMajorClever>>>(
+			pX_use->p_info + BEGINNING_OF_CENTRAL,
+			d_eps_by_dx_neigh_n,
+			d_eps_by_dx_neigh_i,
+			d_eps_by_dx_neigh_e,
+			p_Effect_self_n,
+			p_Effect_self_i,
+			p_Effect_self_e,
+			pX_use->p_izNeigh_vert,
+
+			p_epsilon_n,
+			p_epsilon_i,
+			p_epsilon_e,
+			// output:
+			p_opti_n,
+			p_opti_i,
+			p_opti_e
+		);
+		Call(cudaThreadSynchronize(), "cudaTS kernelCalculateOptimalMove");
+
+		
 		// 4. To determine deps/dbeta, ie the change in eps for an addition of delta Jacobi_heat to T,
 
 		// eps = T - (T_k + h dT/dt)
 		// deps/dbeta[index] = Jacobi[index] - h d(dT/dt)/d [increment whole field by Jacobi]
 		// ####################################
 		// Note this last, it's very important.
-
+		
 		cudaMemset(p_d_eps_by_dbeta_n, 0, sizeof(f64)*NUMVERTICES);
 		cudaMemset(p_d_eps_by_dbeta_i, 0, sizeof(f64)*NUMVERTICES);
 		cudaMemset(p_d_eps_by_dbeta_e, 0, sizeof(f64)*NUMVERTICES);
 
+
+		/*
 		kernelCalculateROCepsWRTregressorT << < numTilesMajorClever, threadsPerTileMajorClever >> > (
 			hsub,
 			pX_use->p_info, // THIS WAS USED OK
@@ -301,14 +433,14 @@ void RunBackwardJLSForHeat(T3 * p_T_k, T3 * p_T, f64 hsub, cuSyst * pX_use)
 
 			pX_use->p_AreaMajor, // got this -> N, Nn
 
-//			p_iVolley,
+//			pX_use->p_iVolley,
 
-p_Jacobi_n,
-p_Jacobi_i,
-p_Jacobi_e,
-p_d_eps_by_dbeta_n,
-p_d_eps_by_dbeta_i,
-p_d_eps_by_dbeta_e
+			p_Jacobi_n,
+			p_Jacobi_i,
+			p_Jacobi_e,
+			p_d_eps_by_dbeta_n,
+			p_d_eps_by_dbeta_i,
+			p_d_eps_by_dbeta_e
 
 /*
 p_d_eps_by_dbetaJ1_n,
@@ -320,11 +452,51 @@ p_d_eps_by_dbetaJ2_e,
 p_d_eps_by_dbetaJ3_n,
 p_d_eps_by_dbetaJ3_i,
 p_d_eps_by_dbetaJ3_e*/
-);
+/*);
+		Call(cudaThreadSynchronize(), "cudaTS kernelCalculateROCepsWRTregressorT WW");
+		*/
+
+		cudaMemset(p_d_eps_by_dbetaJ_n_x4, 0, sizeof(f64_vec4)*NUMVERTICES);
+		cudaMemset(p_d_eps_by_dbetaJ_i_x4, 0, sizeof(f64_vec4)*NUMVERTICES);
+		cudaMemset(p_d_eps_by_dbetaJ_e_x4, 0, sizeof(f64_vec4)*NUMVERTICES);
+		cudaMemset(p_d_eps_by_dbetaR_n_x4, 0, sizeof(f64_vec4)*NUMVERTICES);
+		cudaMemset(p_d_eps_by_dbetaR_i_x4, 0, sizeof(f64_vec4)*NUMVERTICES);
+		cudaMemset(p_d_eps_by_dbetaR_e_x4, 0, sizeof(f64_vec4)*NUMVERTICES);
+
+
+		kernelCalculateROCepsWRTregressorT_volleys << < numTilesMajorClever, threadsPerTileMajorClever >> > (
+			hsub,
+			pX_use->p_info, // THIS WAS USED OK
+			pX_use->p_izNeigh_vert,
+			pX_use->p_szPBCneigh_vert,
+			pX_use->p_izTri_vert,
+			pX_use->p_szPBCtri_vert,
+			pX_use->p_cc,
+			pX_use->p_n_major, // got this
+			p_T,
+			pX_use->p_B + BEGINNING_OF_CENTRAL, // NEED POPULATED
+			p_kappa_n,
+			p_kappa_i,
+			p_kappa_e,
+			p_nu_i,
+			p_nu_e,
+
+			pX_use->p_AreaMajor, // got this -> N, Nn
+			pX_use->p_iVolley,
+
+			p_Jacobi_n,
+			p_Jacobi_i,
+			p_Jacobi_e,
+
+			p_d_eps_by_dbetaJ_n_x4,
+			p_d_eps_by_dbetaJ_i_x4,
+			p_d_eps_by_dbetaJ_e_x4  // 4 dimensional
+
+			);
 		Call(cudaThreadSynchronize(), "cudaTS kernelCalculateROCepsWRTregressorT WW");
 
 
-		kernelCalculateROCepsWRTregressorT << < numTilesMajorClever, threadsPerTileMajorClever >> > (
+		kernelCalculateROCepsWRTregressorT_volleys << < numTilesMajorClever, threadsPerTileMajorClever >> > (
 			hsub,
 			pX_use->p_info,
 			pX_use->p_izNeigh_vert,
@@ -343,15 +515,17 @@ p_d_eps_by_dbetaJ3_e*/
 
 			pX_use->p_AreaMajor, // got this -> N, Nn
 
-	//		p_iVolley,
+			pX_use->p_iVolley,
 
-			p_epsilon_n,
-			p_epsilon_i,
-			p_epsilon_e,
-			p_d_eps_by_dbetaR_n,
-			p_d_eps_by_dbetaR_i,
-			p_d_eps_by_dbetaR_e);
+			p_opti_n,
+			p_opti_i,
+			p_opti_e,
+			p_d_eps_by_dbetaR_n_x4,
+			p_d_eps_by_dbetaR_i_x4,
+			p_d_eps_by_dbetaR_e_x4
+			);
 		Call(cudaThreadSynchronize(), "cudaTS kernelCalculateROCepsWRTregressorT Richardson");
+
 
 		//kernelCalculateROCepsWRTregressorT << < numTilesMajorClever, threadsPerTileMajorClever >> > (
 		//	hsub,
@@ -394,7 +568,6 @@ p_d_eps_by_dbetaJ3_e*/
 		// So then we get 6x6 to solve LU per species. 
 
 
-
 		// 5. Do JLS calcs and update T
 		// But we have to do for 3 species: do separately, so scalar arrays.
 
@@ -407,99 +580,336 @@ p_d_eps_by_dbetaJ3_e*/
 //			p_sum_eps_eps);
 //		Call(cudaThreadSynchronize(), "cudaTS AccumulateSummands OOA");
 
-		kernelAccumulateSummands4 << <numTilesMajor, threadsPerTileMajor >> > (
+		kernelAccumulateSummands6 << <numTilesMajor, threadsPerTileMajor >> > (
 
 			// We don't need to test for domain, we need to make sure the summands are zero otherwise.
 			p_epsilon_n,
 
-			p_d_eps_by_dbeta_n,
-			p_d_eps_by_dbetaR_n,
+			p_d_eps_by_dbetaJ_n_x4,
+			p_d_eps_by_dbetaR_n_x4,
 
 			// 6 outputs:
-			p_sum_eps_deps_by_dbeta_J,
-			p_sum_eps_deps_by_dbeta_R,
-			p_sum_depsbydbeta_J_times_J,
-			p_sum_depsbydbeta_R_times_R,
-			p_sum_depsbydbeta_J_times_R,
-			p_sum_eps_eps);
+			p_sum_eps_deps_by_dbeta_J_x4,
+			p_sum_eps_deps_by_dbeta_R_x4,
+			p_sum_depsbydbeta_8x8,  // not sure if we want to store 64 things in memory?
+			p_sum_eps_eps);			// L1 48K --> divide by 256 --> 24 doubles/thread in L1.
+		// Better off running through multiple times and doing 4 saves. But it's optimization.
 		Call(cudaThreadSynchronize(), "cudaTS AccumulateSummands neut");
 
+		cudaMemcpy(p_sum_eps_deps_by_dbeta_J_x4_host, p_sum_eps_deps_by_dbeta_J_x4, sizeof(f64) * 4 * numTilesMajor, cudaMemcpyDeviceToHost);
+		cudaMemcpy(p_sum_eps_deps_by_dbeta_R_x4_host, p_sum_eps_deps_by_dbeta_R_x4, sizeof(f64) * 4 * numTilesMajor, cudaMemcpyDeviceToHost);
+		cudaMemcpy(p_sum_depsbydbeta_8x8_host, p_sum_depsbydbeta_8x8, sizeof(f64) * 8 * 8 * numTilesMajor, cudaMemcpyDeviceToHost);
+		cudaMemcpy(p_sum_eps_eps_host, p_sum_eps_eps, sizeof(f64)*numTilesMajor, cudaMemcpyDeviceToHost);
 
-		//kernelAccumulateSummands6 << <numTilesMajor, threadsPerTileMajor >> > (
-		//	pX_use->p_info,
-		//	p_epsilon_n,
-		//	p_d_eps_by_dbetaJ1_n,
-		//	p_d_eps_by_dbetaJ2_n,
-		//	p_d_eps_by_dbetaJ3_n,
-		//	p_d_eps_by_dbetaR1_n,
-		//	p_d_eps_by_dbetaR2_n,
-		//	p_d_eps_by_dbetaR3_n,
-		//	p_sum_eps_deps_by_dbetaJ1,
-		//	p_sum_eps_deps_by_dbetaJ2,
-		//	p_sum_eps_deps_by_dbetaJ3,
-		//	p_sum_eps_deps_by_dbetaR1,
-		//	p_sum_eps_deps_by_dbetaR2,
-		//	p_sum_eps_deps_by_dbetaR3,
-		//	p_sum_depsbydbeta_J1J1,
-		//	p_sum_depsbydbeta_J2J1,
-		//	p_sum_depsbydbeta_J3J1,
-		//	p_sum_depsbydbeta_R1J1,
-		//	p_sum_depsbydbeta_R2J1,
-		//	p_sum_depsbydbeta_R3J1,
-		//	p_sum_depsbydbeta_J2J2,
-		//	p_sum_depsbydbeta_J3J2,
-		//	p_sum_depsbydbeta_R1J2,
-		//	p_sum_depsbydbeta_R2J2,
-		//	p_sum_depsbydbeta_R3J2,
-		//	p_sum_depsbydbeta_J3J3,
-		//	p_sum_depsbydbeta_R1J3,
-		//	p_sum_depsbydbeta_R2J3,
-		//	p_sum_depsbydbeta_R3J3,
-		//	p_sum_depsbydbeta_R1R1,
-		//	p_sum_depsbydbeta_R2R1,
-		//	p_sum_depsbydbeta_R3R1,
-		//	p_sum_depsbydbeta_R2R2,
-		//	p_sum_depsbydbeta_R3R2,
-		//	p_sum_depsbydbeta_R2R1,
-		//	p_sum_depsbydbeta_R3R3,
-		//	p_sum_eps_eps);
-		// Call(cudaThreadSynchronize(), "cudaTS AccumulateSummands6 OOA");
-		//// Obviously needs to be stored as half of 6x6 matrix.
-		//// That is a lot of storing. Can we get away with just JRLS?
-
-		cudaMemcpy(p_sum_eps_deps_by_dbeta_J_host, p_sum_eps_deps_by_dbeta_J, sizeof(f64)*numTilesMinor, cudaMemcpyDeviceToHost);
-		cudaMemcpy(p_sum_eps_deps_by_dbeta_R_host, p_sum_eps_deps_by_dbeta_R, sizeof(f64)*numTilesMinor, cudaMemcpyDeviceToHost);
-		cudaMemcpy(p_sum_depsbydbeta_J_times_J_host, p_sum_depsbydbeta_J_times_J, sizeof(f64)*numTilesMinor, cudaMemcpyDeviceToHost);
-		cudaMemcpy(p_sum_depsbydbeta_R_times_R_host, p_sum_depsbydbeta_R_times_R, sizeof(f64)*numTilesMinor, cudaMemcpyDeviceToHost);
-		cudaMemcpy(p_sum_depsbydbeta_J_times_R_host, p_sum_depsbydbeta_J_times_R, sizeof(f64)*numTilesMinor, cudaMemcpyDeviceToHost);
-		cudaMemcpy(p_sum_eps_eps_host, p_sum_eps_eps, sizeof(f64)*numTilesMinor, cudaMemcpyDeviceToHost);
-
-		sum_eps_deps_by_dbeta_J = 0.0;
-		sum_eps_deps_by_dbeta_R = 0.0;
-		sum_depsbydbeta_J_times_J = 0.0;
-		sum_depsbydbeta_R_times_R = 0.0;
-		sum_depsbydbeta_J_times_R = 0.0;
+		sum_ROC_products.Invoke(8); // does set to zero
+		
+		memset(&sum_eps_deps_by_dbeta_vector, 0, 8 * sizeof(f64));
+		//memset(&sum_ROC_products, 0, 8 * 8 * sizeof(f64));
 		sum_eps_eps = 0.0;
+		
+		int i, j;
+
+		for (i = 0; i < 8; i++)
+			for (j = 0; j < 8; j++)
+				for (iTile = 0; iTile < numTilesMajor; iTile++)
+					sum_ROC_products.LU[i][j] += p_sum_depsbydbeta_8x8_host[iTile*8*8+i*8+j];
+
 		for (iTile = 0; iTile < numTilesMajor; iTile++)
 		{
-			sum_eps_deps_by_dbeta_J += p_sum_eps_deps_by_dbeta_J_host[iTile];
-			sum_eps_deps_by_dbeta_R += p_sum_eps_deps_by_dbeta_R_host[iTile];
-			sum_depsbydbeta_J_times_J += p_sum_depsbydbeta_J_times_J_host[iTile];
-			sum_depsbydbeta_R_times_R += p_sum_depsbydbeta_R_times_R_host[iTile];
-			sum_depsbydbeta_J_times_R += p_sum_depsbydbeta_J_times_R_host[iTile];
+			sum_eps_deps_by_dbeta_vector[0] -= p_sum_eps_deps_by_dbeta_J_x4_host[iTile].x[0];
+			sum_eps_deps_by_dbeta_vector[1] -= p_sum_eps_deps_by_dbeta_J_x4_host[iTile].x[1];
+			sum_eps_deps_by_dbeta_vector[2] -= p_sum_eps_deps_by_dbeta_J_x4_host[iTile].x[2];
+			sum_eps_deps_by_dbeta_vector[3] -= p_sum_eps_deps_by_dbeta_J_x4_host[iTile].x[3];
+			sum_eps_deps_by_dbeta_vector[4] -= p_sum_eps_deps_by_dbeta_R_x4_host[iTile].x[0];
+			sum_eps_deps_by_dbeta_vector[5] -= p_sum_eps_deps_by_dbeta_R_x4_host[iTile].x[1];
+			sum_eps_deps_by_dbeta_vector[6] -= p_sum_eps_deps_by_dbeta_R_x4_host[iTile].x[2];
+			sum_eps_deps_by_dbeta_vector[7] -= p_sum_eps_deps_by_dbeta_R_x4_host[iTile].x[3];
 			sum_eps_eps += p_sum_eps_eps_host[iTile];
+		};
+
+		L2eps = sqrt(sum_eps_eps / (real)NUMVERTICES);
+		printf("\n for neutral [ L2eps %1.10E ] \n", L2eps);
+
+		for (i = 0; i < 8; i++) {
+			printf("{ ");
+			for (j = 0; j < 8; j++)
+				printf("\t%1.6E ", sum_ROC_products.LU[i][j]);
+			printf("\t} { beta%d } ", i);
+			if (i == 3) { printf(" = "); }
+			else { printf("   "); };
+			printf("{ %1.8E }\n", sum_eps_deps_by_dbeta_vector[i]);
+			// Or is it minus??
+		};
+
+		memset(beta, 0, sizeof(f64) * 8);
+		if (L2eps > 1.0e-28) { // otherwise just STOP !
+			// 1e-30 is reasonable because 1e-15 * typical temperature 1e-14 = 1e-29.
+
+			// Test for a zero row:
+			bool zero_present = false;
+			for (i = 0; i < 8; i++)
+			{
+				f64 sum = 0.0;
+				for (j = 0; j < 8; j++)
+					sum += sum_ROC_products.LU[i][j];
+				if (sum == 0.0) zero_present = true;
+			}
+			if (zero_present == false) {
+				// LU solve:
+				sum_ROC_products.LUdecomp();
+				// Now ask: 
+				// IS THAT MATRIX THE SAME EVERY ITERATION?
+				// As long as we do not adjust kappa it is same, right? For each species.
+
+				sum_ROC_products.LUSolve(sum_eps_deps_by_dbeta_vector, beta);
+			}
+		} else {
+			printf("beta === 0\n");
+		};
+		printf("\n beta: ");
+		for (i = 0; i < 8; i++) 
+			printf(" %1.8E ", beta[i]);
+		printf("\n\n");
+
+		CallMAC(cudaMemcpyToSymbol(beta_n_c, beta, 8 * sizeof(f64)));
+
+		// ======================================================================================================================
+
+		kernelAccumulateSummands6 << <numTilesMajor, threadsPerTileMajor >> > (
+
+			// We don't need to test for domain, we need to make sure the summands are zero otherwise.
+			p_epsilon_i,
+
+			p_d_eps_by_dbetaJ_i_x4,
+			p_d_eps_by_dbetaR_i_x4,
+
+			// 6 outputs:
+			p_sum_eps_deps_by_dbeta_J_x4,
+			p_sum_eps_deps_by_dbeta_R_x4,
+			p_sum_depsbydbeta_8x8,  // not sure if we want to store 64 things in memory?
+			p_sum_eps_eps);			// L1 48K --> divide by 256 --> 24 doubles/thread in L1.
+									// Better off running through multiple times and doing 4 saves. But it's optimization.
+		Call(cudaThreadSynchronize(), "cudaTS AccumulateSummands neut");
+
+		cudaMemcpy(p_sum_eps_deps_by_dbeta_J_x4_host, p_sum_eps_deps_by_dbeta_J_x4, sizeof(f64) * 4 * numTilesMajor, cudaMemcpyDeviceToHost);
+		cudaMemcpy(p_sum_eps_deps_by_dbeta_R_x4_host, p_sum_eps_deps_by_dbeta_R_x4, sizeof(f64) * 4 * numTilesMajor, cudaMemcpyDeviceToHost);
+		cudaMemcpy(p_sum_depsbydbeta_8x8_host, p_sum_depsbydbeta_8x8, sizeof(f64) * 8 * 8 * numTilesMajor, cudaMemcpyDeviceToHost);
+		cudaMemcpy(p_sum_eps_eps_host, p_sum_eps_eps, sizeof(f64)*numTilesMajor, cudaMemcpyDeviceToHost);
+
+		sum_products_i.Invoke(8); // does set to zero
+
+		memset(&sum_eps_deps_by_dbeta_vector, 0, 8 * sizeof(f64));
+		sum_eps_eps = 0.0;
+
+		for (i = 0; i < 8; i++)
+			for (j = 0; j < 8; j++)
+				for (iTile = 0; iTile < numTilesMajor; iTile++)
+					sum_products_i.LU[i][j] += p_sum_depsbydbeta_8x8_host[iTile * 8 * 8 + i * 8 + j];
+
+		for (iTile = 0; iTile < numTilesMajor; iTile++)
+		{
+			sum_eps_deps_by_dbeta_vector[0] -= p_sum_eps_deps_by_dbeta_J_x4_host[iTile].x[0];
+			sum_eps_deps_by_dbeta_vector[1] -= p_sum_eps_deps_by_dbeta_J_x4_host[iTile].x[1];
+			sum_eps_deps_by_dbeta_vector[2] -= p_sum_eps_deps_by_dbeta_J_x4_host[iTile].x[2];
+			sum_eps_deps_by_dbeta_vector[3] -= p_sum_eps_deps_by_dbeta_J_x4_host[iTile].x[3];
+			sum_eps_deps_by_dbeta_vector[4] -= p_sum_eps_deps_by_dbeta_R_x4_host[iTile].x[0];
+			sum_eps_deps_by_dbeta_vector[5] -= p_sum_eps_deps_by_dbeta_R_x4_host[iTile].x[1];
+			sum_eps_deps_by_dbeta_vector[6] -= p_sum_eps_deps_by_dbeta_R_x4_host[iTile].x[2];
+			sum_eps_deps_by_dbeta_vector[7] -= p_sum_eps_deps_by_dbeta_R_x4_host[iTile].x[3];
+			sum_eps_eps += p_sum_eps_eps_host[iTile];
+		};
+
+		L2eps = sqrt(sum_eps_eps / (real)NUMVERTICES);
+		printf("\n for ion [ L2eps %1.10E  ]\n ", L2eps);
+		
+		for (i = 0; i < 8; i++) {
+			printf("{ ");
+			for (j = 0; j < 8; j++)
+				printf("\t%1.6E ", sum_products_i.LU[i][j]);
+			printf("\t} { beta%d } ", i);
+			if (i == 3) { printf(" = "); }
+			else { printf("   "); };
+			printf("{ %1.8E }\n", sum_eps_deps_by_dbeta_vector[i]);
+			// Or is it minus??
+		}; 
+		memset(beta, 0, sizeof(f64) * 8);
+		if (L2eps > 1.0e-28) { // otherwise just STOP !
+
+		   // Test for a zero row:
+			bool zero_present = false;
+			for (i = 0; i < 8; i++)
+			{
+				f64 sum = 0.0;
+				for (j = 0; j < 8; j++)
+					sum += sum_products_i.LU[i][j];
+				if (sum == 0.0) zero_present = true;
+			}
+			if (zero_present == false) {
+				// LU solve:
+				sum_products_i.LUdecomp();
+				// Now ask: 
+				// IS THAT MATRIX THE SAME EVERY ITERATION?
+				// As long as we do not adjust kappa it is same, right? For each species.
+				sum_products_i.LUSolve(sum_eps_deps_by_dbeta_vector, beta);
+			}
+		} else {
+			printf("beta === 0\n");
 		}
+		printf("\n beta: ");
+		for (i = 0; i < 8; i++)
+			printf(" %1.8E ", beta[i]);
+		printf("\n\n");
 
-		f64 tempf64 = (real)NUMVERTICES;
-		//printf("sum_depsbydbeta_sq %1.10E (real)NUMVERTICES %1.10E sum_eps_eps %1.10E \n", sum_depsbydbeta_sq, tempf64);
+		CallMAC(cudaMemcpyToSymbol(beta_i_c, beta, 8 * sizeof(f64)));
 
-//		if (sum_depsbydbeta_sq == 0.0) {
-//			beta_n = 1.0;
-//		} else {
-//			beta_n = -sum_eps_deps_by_dbeta / sum_depsbydbeta_sq;
-			// Why should it be equal to 0 though? Unless regressor is 0 ?
-//		}
 
+		// ======================================================================================================================
+
+		kernelAccumulateSummands6 << <numTilesMajor, threadsPerTileMajor >> > (
+
+			// We don't need to test for domain, we need to make sure the summands are zero otherwise.
+			p_epsilon_e,
+
+			p_d_eps_by_dbetaJ_e_x4,
+			p_d_eps_by_dbetaR_e_x4,
+
+			// 6 outputs:
+			p_sum_eps_deps_by_dbeta_J_x4,
+			p_sum_eps_deps_by_dbeta_R_x4,
+			p_sum_depsbydbeta_8x8,  // not sure if we want to store 64 things in memory?
+			p_sum_eps_eps);			// L1 48K --> divide by 256 --> 24 doubles/thread in L1.
+									// Better off running through multiple times and doing 4 saves. But it's optimization.
+		Call(cudaThreadSynchronize(), "cudaTS AccumulateSummands e");
+
+		cudaMemcpy(p_sum_eps_deps_by_dbeta_J_x4_host, p_sum_eps_deps_by_dbeta_J_x4, sizeof(f64) * 4 * numTilesMajor, cudaMemcpyDeviceToHost);
+		cudaMemcpy(p_sum_eps_deps_by_dbeta_R_x4_host, p_sum_eps_deps_by_dbeta_R_x4, sizeof(f64) * 4 * numTilesMajor, cudaMemcpyDeviceToHost);
+		cudaMemcpy(p_sum_depsbydbeta_8x8_host, p_sum_depsbydbeta_8x8, sizeof(f64) * 8 * 8 * numTilesMajor, cudaMemcpyDeviceToHost);
+		cudaMemcpy(p_sum_eps_eps_host, p_sum_eps_eps, sizeof(f64)*numTilesMajor, cudaMemcpyDeviceToHost);
+
+		if (iIteration > 1000) {
+
+			cudaMemcpy(p_temphost1, p_epsilon_e, sizeof(f64)*NUMVERTICES, cudaMemcpyDeviceToHost);
+			cudaMemcpy(cuSyst_host.p_iVolley, pX_use->p_iVolley, sizeof(char)*NUMVERTICES, cudaMemcpyDeviceToHost);
+			FILE * filedbg = fopen("dbg_sum.txt", "w");
+			for (iVertex = 0; iVertex < NUMVERTICES; iVertex++)
+			{
+				cudaMemcpy(&tempf64vec4, &(p_d_eps_by_dbetaJ_e_x4[iVertex]), sizeof(f64_vec4), cudaMemcpyDeviceToHost);
+
+				fprintf(filedbg, "iVertex %d eps %1.12E iVolley %d d_eps_by_dbeta_J0 %1.12E \n", iVertex, p_temphost1[iVertex], cuSyst_host.p_iVolley[iVertex], tempf64vec4.x[0]);
+			};
+			fclose(filedbg);
+			printf("outputted to file\n");
+		};
+
+		sum_products_e.Invoke(8); // does set to zero
+
+		memset(&sum_eps_deps_by_dbeta_vector, 0, 8 * sizeof(f64));
+		sum_eps_eps = 0.0;
+
+		for (i = 0; i < 8; i++)
+			for (j = 0; j < 8; j++)
+				for (iTile = 0; iTile < numTilesMajor; iTile++)
+					sum_products_e.LU[i][j] += p_sum_depsbydbeta_8x8_host[iTile * 8 * 8 + i * 8 + j];
+
+		if (iIteration > 1000) {
+			FILE * filedbg = fopen("tiles_sums.txt", "w");
+			for (iTile = 0; iTile < numTilesMajor; iTile++)
+				fprintf(filedbg, "iTile %d sum %1.10E \n",iTile, p_sum_eps_deps_by_dbeta_J_x4_host[iTile].x[0]);
+			fclose(filedbg);
+		};
+
+		for (iTile = 0; iTile < numTilesMajor; iTile++)
+		{
+			sum_eps_deps_by_dbeta_vector[0] -= p_sum_eps_deps_by_dbeta_J_x4_host[iTile].x[0];
+			sum_eps_deps_by_dbeta_vector[1] -= p_sum_eps_deps_by_dbeta_J_x4_host[iTile].x[1];
+			sum_eps_deps_by_dbeta_vector[2] -= p_sum_eps_deps_by_dbeta_J_x4_host[iTile].x[2];
+			sum_eps_deps_by_dbeta_vector[3] -= p_sum_eps_deps_by_dbeta_J_x4_host[iTile].x[3];
+			sum_eps_deps_by_dbeta_vector[4] -= p_sum_eps_deps_by_dbeta_R_x4_host[iTile].x[0];
+			sum_eps_deps_by_dbeta_vector[5] -= p_sum_eps_deps_by_dbeta_R_x4_host[iTile].x[1];
+			sum_eps_deps_by_dbeta_vector[6] -= p_sum_eps_deps_by_dbeta_R_x4_host[iTile].x[2];
+			sum_eps_deps_by_dbeta_vector[7] -= p_sum_eps_deps_by_dbeta_R_x4_host[iTile].x[3];
+			sum_eps_eps += p_sum_eps_eps_host[iTile];
+		};
+
+		L2eps = sqrt(sum_eps_eps / (real)NUMVERTICES);
+		printf("\n for elec [ L2eps %1.10E  ]\n ", L2eps);
+
+		for (i = 0; i < 8; i++) {
+			printf("{ ");
+			for (j = 0; j < 8; j++)
+				printf("\t%1.6E ", sum_products_e.LU[i][j]);
+			printf("\t} { beta%d } ", i);
+			if (i == 3) { printf(" = "); }
+			else { printf("   "); };
+			printf("{ %1.8E }\n", sum_eps_deps_by_dbeta_vector[i]);
+			// Or is it minus??
+		};
+		memset(beta, 0, sizeof(f64) * 8);
+		if (L2eps > 1.0e-28) {
+
+			// Test for a zero row:
+			bool zero_present = false;
+			for (i = 0; i < 8; i++)
+			{
+				f64 sum = 0.0;
+				for (j = 0; j < 8; j++)
+					sum += sum_products_e.LU[i][j];
+				if (sum == 0.0) zero_present = true;
+			}
+			if (zero_present == false) {
+				// LU solve:
+
+//				f64 storedbg[8][8];
+//				memcpy(storedbg, sum_products_e.LU, sizeof(f64) * 8 * 8);
+//
+//				FILE * fpdebug = fopen("matrix_e_result.txt", "w");
+//				fprintf(fpdebug, "\n");
+//				for (i = 0; i < 8; i++)
+//				{
+//					for (j = 0; j < 8; j++)
+//						fprintf(fpdebug, "%1.14E ", sum_products_e.LU[i][j]);
+//
+//					fprintf(fpdebug, "   |  %1.14E  \n", sum_eps_deps_by_dbeta_vector[i]);
+//				};
+				sum_products_e.LUdecomp();
+				// Now ask: 
+				// IS THAT MATRIX THE SAME EVERY ITERATION?
+
+				// As long as we do not adjust kappa it is same, right? For each species.
+
+				sum_products_e.LUSolve(sum_eps_deps_by_dbeta_vector, beta);
+
+				// Compute test vector:
+//				f64 result[8];
+//				for (i = 0; i < 8; i++)
+	//			{
+	//				result[i] = 0.0;
+	//				for (j = 0; j < 8; j++)
+	//					result[i] += storedbg[i][j] * beta[j];
+	//			}
+
+		//		for (i = 0; i < 8; i++)
+		//			fprintf(fpdebug, " beta %1.14E result %1.14E \n", beta[i], result[i]);
+		//		fprintf(fpdebug, "\n");
+		//		fclose(fpdebug); // Test
+			};
+		} else {
+			printf("beta === 0\n");
+		};
+
+		printf("\n beta: ");
+		for (i = 0; i < 8; i++)
+			printf(" %1.8E ", beta[i]);
+		printf("\n\n");
+
+		CallMAC(cudaMemcpyToSymbol(beta_e_c, beta, 8 * sizeof(f64)));
+
+		kernelAddtoT_volleys << <numTilesMajor, threadsPerTileMajor >> > (
+			p_T, pX_use->p_iVolley,
+			p_Jacobi_n, p_Jacobi_i, p_Jacobi_e,
+			p_opti_n, p_opti_i, p_opti_e);
+
+		/*
 		if ((sum_depsbydbeta_J_times_J*sum_depsbydbeta_R_times_R - sum_depsbydbeta_J_times_R*sum_depsbydbeta_J_times_R == 0.0)
 			|| (sum_depsbydbeta_R_times_R*sum_depsbydbeta_J_times_J - sum_depsbydbeta_J_times_R*sum_depsbydbeta_J_times_R == 0.0))
 		{
@@ -512,7 +922,6 @@ p_d_eps_by_dbetaJ3_e*/
 			beta_nR = -(sum_eps_deps_by_dbeta_R*sum_depsbydbeta_J_times_J - sum_eps_deps_by_dbeta_J*sum_depsbydbeta_J_times_R) /
 				(sum_depsbydbeta_R_times_R*sum_depsbydbeta_J_times_J - sum_depsbydbeta_J_times_R*sum_depsbydbeta_J_times_R);
 		}
-		L2eps_neut = sqrt(sum_eps_eps / (real)NUMVERTICES);
 		printf("\n for neutral [ BetaJacobi %1.10E BetaRichardson %1.10E L2eps %1.10E ] ", beta_nJ, beta_nR, L2eps_neut);
 
 
@@ -629,6 +1038,8 @@ p_d_eps_by_dbetaJ3_e*/
 
 		printf("\n for Electron [ BetaJacobi %1.10E BetaRichardson %1.10E L2eps %1.10E ] ", beta_eJ, beta_eR, L2eps_elec);
 		
+		*/
+
 
 
 		/*
@@ -717,7 +1128,9 @@ p_d_eps_by_dbetaJ3_e*/
 		printf("\n for elec [ %1.14E %1.14E ] ", beta_e, L2eps_elec);
 		*/
 		// maybe do the add after we calc beta_n, beta_i, beta_e.
-		kernelAddtoT << <numTilesMajor, threadsPerTileMajor >> > (
+		
+/*
+kernelAddtoT << <numTilesMajor, threadsPerTileMajor >> > (
 			p_T, beta_nJ, beta_nR, beta_iJ, beta_iR, beta_eJ, beta_eR, 
 			p_Jacobi_n, p_Jacobi_i, p_Jacobi_e,
 			p_epsilon_n, p_epsilon_i, p_epsilon_e);
@@ -727,6 +1140,7 @@ p_d_eps_by_dbetaJ3_e*/
 		// That's probably what it is? Ought to verify.
 
 		Call(cudaThreadSynchronize(), "cudaTS AddtoT ___");
+		*/
 
 		iIteration++;
 
@@ -1566,6 +1980,21 @@ void PerformCUDA_Invoke_Populate(
 	// and aggregation arrays...
 	// ____________________________________________________
 
+	CallMAC(cudaMalloc((void **)&p_opti_n, NUMVERTICES * sizeof(f64)));
+	CallMAC(cudaMalloc((void **)&p_opti_i, NUMVERTICES * sizeof(f64)));
+	CallMAC(cudaMalloc((void **)&p_opti_e, NUMVERTICES * sizeof(f64)));
+
+
+	CallMAC(cudaMalloc((void **)&p_Effect_self_n, NUMVERTICES * sizeof(f64)));
+	CallMAC(cudaMalloc((void **)&p_Effect_self_i, NUMVERTICES * sizeof(f64)));
+	CallMAC(cudaMalloc((void **)&p_Effect_self_e, NUMVERTICES * sizeof(f64)));
+
+
+	CallMAC(cudaMalloc((void **)&d_eps_by_dx_neigh_n, NUMVERTICES * MAXNEIGH * sizeof(f64)));
+	CallMAC(cudaMalloc((void **)&d_eps_by_dx_neigh_i, NUMVERTICES * MAXNEIGH * sizeof(f64)));
+	CallMAC(cudaMalloc((void **)&d_eps_by_dx_neigh_e, NUMVERTICES * MAXNEIGH * sizeof(f64)));
+	
+
 	CallMAC(cudaMalloc((void **)&p_nu_major, NUMVERTICES * sizeof(species3)));
 	CallMAC(cudaMalloc((void **)&p_was_vertex_rotated, NUMVERTICES * sizeof(char)));
 	CallMAC(cudaMalloc((void **)&p_triPBClistaffected, NUMVERTICES * sizeof(char)));
@@ -1686,6 +2115,21 @@ void PerformCUDA_Invoke_Populate(
 	CallMAC(cudaMalloc((void **)&p_sum_depsbydbeta_R_times_R, numTilesMinor * sizeof(f64)));
 	CallMAC(cudaMalloc((void **)&p_sum_depsbydbeta_J_times_R, numTilesMinor * sizeof(f64)));
 
+	CallMAC(cudaMalloc((void **)&p_d_eps_by_dbetaJ_n_x4, NMINOR * sizeof(f64_vec4)));
+	CallMAC(cudaMalloc((void **)&p_d_eps_by_dbetaJ_i_x4, NMINOR * sizeof(f64_vec4)));
+	CallMAC(cudaMalloc((void **)&p_d_eps_by_dbetaJ_e_x4, NMINOR * sizeof(f64_vec4)));
+	CallMAC(cudaMalloc((void **)&p_d_eps_by_dbetaR_n_x4, NMINOR * sizeof(f64_vec4)));
+	CallMAC(cudaMalloc((void **)&p_d_eps_by_dbetaR_i_x4, NMINOR * sizeof(f64_vec4)));
+	CallMAC(cudaMalloc((void **)&p_d_eps_by_dbetaR_e_x4, NMINOR * sizeof(f64_vec4)));
+
+	CallMAC(cudaMalloc((void **)&p_sum_eps_deps_by_dbeta_J_x4, numTilesMinor*sizeof(f64_vec4)));
+	CallMAC(cudaMalloc((void **)&p_sum_eps_deps_by_dbeta_R_x4, numTilesMinor * sizeof(f64_vec4)));
+	CallMAC(cudaMalloc((void **)&p_sum_depsbydbeta_8x8, numTilesMinor * sizeof(f64) * 8 * 8));
+	
+	p_sum_eps_deps_by_dbeta_J_x4_host = (f64_vec4 *) malloc(numTilesMinor * sizeof(f64_vec4));
+	p_sum_eps_deps_by_dbeta_R_x4_host = (f64_vec4 *)malloc(numTilesMinor * sizeof(f64_vec4));
+	p_sum_depsbydbeta_8x8_host = (f64 *)malloc(numTilesMinor * 8 * 8 * sizeof(f64));
+
 	p_GradTe_host = (f64_vec2 *)malloc(NMINOR * sizeof(f64_vec2));
 	p_GradAz_host = (f64_vec2 *)malloc(NMINOR * sizeof(f64_vec2));
 	p_B_host = (f64_vec3 *)malloc(NMINOR * sizeof(f64_vec3));
@@ -1751,10 +2195,10 @@ void PerformCUDA_Invoke_Populate(
 	// info contains both pos and flag so that's not constant under advection; only neigh lists are.
 
 	printf("Done main cudaMemcpy to video memory.\n");
-
+	 
 	// Set up kernel L1/shared:
 	 
-	cudaDeviceSetCacheConfig(cudaFuncCachePreferShared);
+	cudaDeviceSetCacheConfig(cudaFuncCachePreferShared); // default!
 
 	cudaFuncSetCacheConfig(kernelCreateShardModelOfDensities_And_SetMajorArea,
 		cudaFuncCachePreferL1);
@@ -6887,6 +7331,17 @@ SetConsoleTextAttribute(hConsole, 15);
 
 void PerformCUDA_Revoke()
 {
+	CallMAC(cudaFree(d_eps_by_dx_neigh_n));
+	CallMAC(cudaFree(d_eps_by_dx_neigh_i));
+	CallMAC(cudaFree(d_eps_by_dx_neigh_e));
+	CallMAC(cudaFree(p_opti_n));
+	CallMAC(cudaFree(p_opti_i));
+	CallMAC(cudaFree(p_opti_e));
+	CallMAC(cudaFree(p_Effect_self_n));
+	CallMAC(cudaFree(p_Effect_self_i));
+	CallMAC(cudaFree(p_Effect_self_e));
+
+
 	CallMAC(cudaFree(p_T_upwind_minor));
 	CallMAC(cudaFree(p_bool));
 	CallMAC(cudaFree(p_nu_major));
@@ -6992,6 +7447,21 @@ void PerformCUDA_Revoke()
 	CallMAC(cudaFree(p_sum_depsbydbeta_J_times_J));
 	CallMAC(cudaFree(p_sum_depsbydbeta_R_times_R));
 	CallMAC(cudaFree(p_sum_depsbydbeta_J_times_R));
+
+	CallMAC(cudaFree(p_d_eps_by_dbetaJ_n_x4));
+	CallMAC(cudaFree(p_d_eps_by_dbetaJ_i_x4));
+	CallMAC(cudaFree(p_d_eps_by_dbetaJ_e_x4));
+	CallMAC(cudaFree(p_d_eps_by_dbetaR_n_x4));
+	CallMAC(cudaFree(p_d_eps_by_dbetaR_i_x4));
+	CallMAC(cudaFree(p_d_eps_by_dbetaR_e_x4));
+
+	CallMAC(cudaFree(p_sum_eps_deps_by_dbeta_J_x4));
+	CallMAC(cudaFree(p_sum_eps_deps_by_dbeta_R_x4));
+	CallMAC(cudaFree(p_sum_depsbydbeta_8x8));
+
+	free(p_sum_eps_deps_by_dbeta_J_x4_host);
+	free(p_sum_eps_deps_by_dbeta_R_x4_host);
+	free(p_sum_depsbydbeta_8x8_host);
 
 	free(p_boolhost);
 	free(p_longtemphost);

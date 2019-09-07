@@ -1016,7 +1016,7 @@ HRESULT surfacegraph::SetDataWithColour(const TriMesh & X,
 				this->boolDisplayInnerMesh);		
 			store_max = X.ReturnMaximumVelocity(offset_data,
 				this->boolDisplayInnerMesh);
-				
+			
 			minimum = 0.0;
 			this->store_min = 0.0f;
 		} else {
