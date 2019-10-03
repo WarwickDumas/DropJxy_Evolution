@@ -212,6 +212,7 @@ int const REAL = 2;
 #define GRAPH_VRESPONSEOHMS  109
 #define GRAPH_CONDUCTIVITYOHMS  110
 #define GRAPH_NU_EFFECTIVE  111
+#define GRAPH_OPTI         112
 
 // Number of vars used to produce heights:
 int const FLAG_FLAT_MESH = 0;

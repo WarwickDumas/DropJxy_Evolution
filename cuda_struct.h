@@ -248,6 +248,8 @@ public:
 	 f64 * p_AreaMajor;
 	 f64_vec2 * p_cc;
 
+	 char * p_iVolley;
+
 	cuSyst();
 	int Invoke();
 	int InvokeHost();

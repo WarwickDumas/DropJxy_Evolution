@@ -326,6 +326,22 @@ __global__ void kernelDummy(
 	f64 * __restrict__ p_d_eps_by_d_beta_n
 );
 
+__global__ void kernelCreateEpsilonHeat
+(
+	f64 const hsub,
+	structural * __restrict__ p_info_major,
+	f64 * __restrict__ p_eps_n,
+	f64 * __restrict__ p_eps_i,
+	f64 * __restrict__ p_eps_e,
+	f64 * __restrict__ p_T_n,
+	f64 * __restrict__ p_T_i,
+	f64 * __restrict__ p_T_e,
+	T3 * __restrict__ p_T_k,
+	f64 * __restrict__ p_AreaMajor,
+	nvals * __restrict__ p_n_major,
+	NTrates * __restrict__ NTadditionrates // it's especially silly having a whole struct of 5 instead of 3 here.
+);
+
 __global__ void kernelCreateEpsilonAndJacobi_Heat
 (
 	f64 const h_sub,
@@ -440,7 +456,17 @@ __global__ void kernelCalculateNu_eHeartNu_iHeart_nu_nn_visc(
 	species3 * __restrict__ p_nu);
 
 
-__global__ void kernelAccumulateDiffusiveHeatRate_new(
+__global__ void kernelCreatePutativeT(
+	f64 hsub,
+	structural * __restrict__ p_info_minor,
+	T3 * __restrict__ p_T_k,
+	T3 * __restrict__ p_T_putative,
+	nvals * __restrict__ p_n_major,
+	f64 * __restrict__ p_AreaMajor,
+	NTrates * __restrict__ NTadditionrates
+	);
+
+__global__ void kernelAccumulateDiffusiveHeatRate_new_Longitudinalonly(
 	f64 const h_use,
 	structural * __restrict__ p_info_minor,
 	long * __restrict__ pIndexNeigh,
@@ -451,6 +477,7 @@ __global__ void kernelAccumulateDiffusiveHeatRate_new(
 
 	nvals * __restrict__ p_n_major,
 	T3 * __restrict__ p_T_major,
+	T3 * __restrict__ p_T_k,
 	f64_vec3 * __restrict__ p_B_major,
 
 	f64 * __restrict__ p_kappa_n,
@@ -463,6 +490,138 @@ __global__ void kernelAccumulateDiffusiveHeatRate_new(
 	NTrates * __restrict__ NTadditionrates,
 	f64 * __restrict__ p_AreaMajor);
 
+__global__ void kernelCreateEpsilonHeatOriginalScaling
+(
+	f64 const hsub,
+	structural * __restrict__ p_info_major,
+	f64 * __restrict__ p_eps_n,
+	f64 * __restrict__ p_eps_i,
+	f64 * __restrict__ p_eps_e,
+	f64 * __restrict__ p_T_n,
+	f64 * __restrict__ p_T_i,
+	f64 * __restrict__ p_T_e,
+	T3 * __restrict__ p_T_k,
+	f64 * __restrict__ p_AreaMajor,
+	nvals * __restrict__ p_n_major,
+	NTrates * __restrict__ NTadditionrates,// it's especially silly having a whole struct of 5 instead of 3 here.
+	bool * __restrict__ bTest
+);
+
+__global__ void kernelUnpacktorootNT(
+	f64 * __restrict__ pNnTn,
+	f64 * __restrict__ pNTi,
+	f64 * __restrict__ pNTe,
+	T3 * __restrict__ pT,
+	f64 * __restrict__ p_AreaMajor,
+	nvals * __restrict__ p_n_major);
+
+
+__global__ void kernelUnpack(f64 * __restrict__ pTn,
+	f64 * __restrict__ pTi,
+	f64 * __restrict__ pTe,
+	T3 * __restrict__ pT);
+__global__ void kernelUnpacktoNT(
+	f64 * __restrict__ pNnTn,
+	f64 * __restrict__ pNTi,
+	f64 * __restrict__ pNTe,
+	T3 * __restrict__ pT,
+	f64 * __restrict__ p_AreaMajor,
+	nvals * __restrict__ p_n_major);
+__global__ void NegateVectors(
+	f64 * __restrict__ p_x1, f64 * __restrict__ p_x2, f64 * __restrict__ p_x3);
+
+__global__ void kernelAccumulateSumOfSquares(
+	f64 * __restrict__ p_eps_n,
+	f64 * __restrict__ p_eps_i,
+	f64 * __restrict__ p_eps_e,
+	f64 * __restrict__ p_SS_n,
+	f64 * __restrict__ p_SS_i,
+	f64 * __restrict__ p_SS_e);
+
+__global__ void kernelRegressorUpdate
+(
+	f64 * __restrict__ p_x_n,
+	f64 * __restrict__ p_x_i,
+	f64 * __restrict__ p_x_e,
+	f64 * __restrict__ p_a_n, f64 * __restrict__ p_a_i, f64 * __restrict__ p_a_e,
+	f64 const ratio1, f64 const ratio2, f64 const ratio3);
+
+__global__ void VectorAddMultiple(
+	f64 * __restrict__ p_T1, f64 const alpha1, f64 * __restrict__ p_x1,
+	f64 * __restrict__ p_T2, f64 const alpha2, f64 * __restrict__ p_x2,
+	f64 * __restrict__ p_T3, f64 const alpha3, f64 * __restrict__ p_x3);
+
+__global__ void kernelPackupT3(
+	T3 * __restrict__ p_T,
+	f64 * __restrict__ p_Tn, f64 * __restrict__ p_Ti, f64 * __restrict__ p_Te);
+
+__global__ void kernelAccumulateDotProducts(
+	f64 * __restrict__ p_x1, f64 * __restrict__ p_y1,
+	f64 * __restrict__ p_x2, f64 * __restrict__ p_y2,
+	f64 * __restrict__ p_x3, f64 * __restrict__ p_y3,
+	f64 * __restrict__ p_dot1,
+	f64 * __restrict__ p_dot2,
+	f64 * __restrict__ p_dot3);
+
+
+__global__ void kernelCreateTfromNTbydividing(
+	f64 * __restrict__ p_T_n,
+	f64 * __restrict__ p_T_i,
+	f64 * __restrict__ p_T_e,
+	f64 * __restrict__ p_Nn_Tn,
+	f64 * __restrict__ p_N_Ti,
+	f64 * __restrict__ p_N_Te,
+	f64 * __restrict__ p_AreaMajor,
+	nvals * __restrict__ p_n_major);
+
+__global__ void kernelAccumulateDiffusiveHeatRate_new_Longitudinalonly_scalarT(
+	structural * __restrict__ p_info_minor,
+	long * __restrict__ pIndexNeigh,
+	char * __restrict__ pPBCNeigh,
+	long * __restrict__ izTri_verts,
+	char * __restrict__ szPBCtri_verts,
+	f64_vec2 * __restrict__ p_cc,
+
+	nvals * __restrict__ p_n_major,
+	f64 * __restrict__ p_T_n, f64 * __restrict__ p_T_i, f64 * __restrict__ p_T_e,
+	T3 * __restrict__ p_T_k,
+	f64_vec3 * __restrict__ p_B_major,
+
+	f64 * __restrict__ p_kappa_n,
+	f64 * __restrict__ p_kappa_i,
+	f64 * __restrict__ p_kappa_e,
+
+	f64 * __restrict__ p_nu_i,
+	f64 * __restrict__ p_nu_e,
+
+	NTrates * __restrict__ NTadditionrates,
+	f64 * __restrict__ p_AreaMajor);
+
+__global__ void kernelAccumulateDiffusiveHeatRate_new_Full(
+	f64 const h_use,
+	structural * __restrict__ p_info_minor,
+	long * __restrict__ pIndexNeigh,
+	char * __restrict__ pPBCNeigh,
+	long * __restrict__ izTri_verts,
+	char * __restrict__ szPBCtri_verts,
+	f64_vec2 * __restrict__ p_cc,
+
+	nvals * __restrict__ p_n_major,
+	T3 * __restrict__ p_T_major,
+	T3 * __restrict__ p_T_putative,
+	f64_vec3 * __restrict__ p_B_major,
+
+	f64 * __restrict__ p_kappa_n,
+	f64 * __restrict__ p_kappa_i,
+	f64 * __restrict__ p_kappa_e,
+
+	f64 * __restrict__ p_nu_i,
+	f64 * __restrict__ p_nu_e,
+
+	NTrates * __restrict__ NTadditionrates,
+	f64 * __restrict__ p_AreaMajor,
+
+	bool bCheckWhetherToDoctorUp);
 __global__ void kernelIonisationRates(
 	f64 const h_use,
 	structural * __restrict__ p_info_minor,

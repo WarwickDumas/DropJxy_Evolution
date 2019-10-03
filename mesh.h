@@ -563,7 +563,7 @@ public:
 //	Vector2 a_pressure_ion, a_pressure_neut_or_overall, a_pressure_elec; 
 	// adding for now. See later if we can get rid of. 
 	
-	long iVolley; // also used for showing if it is selected to submesh 
+	int iVolley; // also used for showing if it is selected to submesh 
 	long iScratch; // can be used to index coarse vertex above in submesh
 	long iIndicator; // used in searches
 	// better look again at automatic submesh routine: how it worked?
@@ -1441,6 +1441,7 @@ public:
 	void SurveyCellMassStats(real * pAvgMass, real * pMassSD, real * pMinMass, real * pMaxMass, int * piMin);
 	
 
+	void Create4Volleys();
 	
 	// *******************************************************************
 	// *****                                                         *****

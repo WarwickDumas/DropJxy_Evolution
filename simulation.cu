@@ -390,6 +390,7 @@ void TriMesh::SetupMajorPBCTriArrays()
 		++pVertex;
 	};
 }
+
 void TriMesh::EnsureAnticlockwiseTriangleCornerSequences_SetupTriMinorNeighboursLists()
 {
 	EnsureAnticlockwiseTriangleCornerSequences();

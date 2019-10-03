@@ -1352,13 +1352,12 @@ int TriMesh::Initialise(int token)
 	// assumes u8EdgeFlag populated: 
 	RefreshVertexNeighboursOfVerticesOrdered();  // -- ?
 	this->Recalculate_TriCentroids_VertexCellAreas_And_Centroids();
+	
+	// Do this after resequence:
 
-	// 
-
-	EnsureAnticlockwiseTriangleCornerSequences_SetupTriMinorNeighboursLists();
-	SetupMajorPBCTriArrays();
-
-	InitialPopulate();
+	//EnsureAnticlockwiseTriangleCornerSequences_SetupTriMinorNeighboursLists();
+	//SetupMajorPBCTriArrays();
+	//InitialPopulate();
 
 	//==========================================================================================
 
@@ -1994,14 +1993,13 @@ int TriMesh::InitialiseOriginal(int token)
 	
 	// assumes u8EdgeFlag populated: 
 	RefreshVertexNeighboursOfVerticesOrdered();  // -- ?
-	this->Recalculate_TriCentroids_VertexCellAreas_And_Centroids();
+	
+	// REMOVED:
+	// this->Recalculate_TriCentroids_VertexCellAreas_And_Centroids();
+	// EnsureAnticlockwiseTriangleCornerSequences_SetupTriMinorNeighboursLists();
+	// SetupMajorPBCTriArrays();
 
-	// 
-
-	EnsureAnticlockwiseTriangleCornerSequences_SetupTriMinorNeighboursLists();
-	SetupMajorPBCTriArrays();
-
-	InitialPopulate(); 
+	InitialPopulate();
 
 	//==========================================================================================
 
@@ -2026,6 +2024,174 @@ int TriMesh::InitialiseOriginal(int token)
 #endif
 	return 0;
 } 
+
+
+void TriMesh::Create4Volleys()
+{
+	long numVolley[4];
+	long izNeigh[128];
+	short neigh_len;
+	Vertex * pVertex;
+	long iVertex, i, iprev;
+	int ii, iVolley1, iVolley2, iVolley3, iVolleyStartRow, iVolley;
+
+	/*pVertex = X;
+	for (iVertex = 0; iVertex < numVertices; iVertex++)
+	{
+		pVertex->iVolley = 0;
+		++pVertex;
+	};
+	iVolley = 0;
+	pVertex = X;
+	for (iVertex = 0; iVertex < numVertices; iVertex++)
+	{
+		if (pVertex->iVolley == iVolley)
+		{
+			neigh_len = pVertex->GetNeighbourIndexList(izNeigh);
+			// If any neighbours are assigned to this volley, send them to the next volley
+			for (i = 0; i < neigh_len; i++)
+			{
+				pNeigh = X + izNeigh[i];
+				pNeigh->iVolley = 1;
+			};
+		};
+		++pVertex;
+	};
+
+	iVolley = 1;
+	pVertex = X;
+	for (iVertex = 0; iVertex < numVertices; iVertex++)
+	{
+		if (pVertex->iVolley == iVolley)
+		{
+			neigh_len = pVertex->GetNeighbourIndexList(izNeigh);
+			// If any neighbours are assigned to this volley, send them to the next volley
+			for (i = 0; i < neigh_len; i++)
+			{
+				pNeigh = X + izNeigh[i];
+				if (pNeigh->iVolley == iVolley) pNeigh->iVolley = 2;
+			};
+		};
+		++pVertex;
+	};*/
+
+	// That is the simplest way to create. However we created very many 2's.
+	// We can then go over 2's and test if there is benefit in changing to 0 or 1?
+	// Worst way. Get
+	//     2   2   2   2    2
+	//    0  1   0   1    0
+
+	// Initially things are near equilateral so pick this way:
+	// First rotate 0 1 2 0 1 2 the bottom row, then each subsequent row infer from the two neighbours nearest in the row below.
+
+	// Maybe use 4 volleys? To deal with case when we have 2 verts in row above, between 2 on row below, we choose the most distant
+	// value for any point that now has existing neighs 0,1,2. 
+	// If we have only 1 existing neigh value because of duplicate 0 0 on row below, then choose to not agree with anticlockwise neighbour.
+
+	// OK, reasonable plan.
+
+	// When done let's colour in volleys to see how it turns out.
+
+	// This is part 1a. Do volleys.
+	// 1b. Create volley regressors of Jacobi & Richardson.
+	// Part 2: add optimization regressor. At least it's not as bad as doing LU on patches. Let's hope it works.
+	
+	numVolley[0] = 0;
+	numVolley[1] = 0;
+	numVolley[2] = 0;
+	numVolley[3] = 0;
+
+	pVertex = X;
+	iVertex = 0;
+	for (i = 0; i < numRow[0]; i++)
+	{
+		pVertex->iVolley = i % 3; // 0 1 2 0 1 2 0 1 2 0 1 2
+		numVolley[pVertex->iVolley]++;
+
+		++pVertex;
+		++iVertex;
+	}
+	for (long iRow = 1; iRow < numRows - 1; iRow++)
+	{
+		// We have to be careful how to start off the row. Might not find a triangle beneath without duplicate volley.
+
+		// 3 neighbours have been set and we choose the lowest value that is not covered by these 3.
+		
+		// Start off: can we assume that start of row is directly over an interval? Check above.
+
+		neigh_len = pVertex->GetNeighIndexArray(izNeigh);
+		// Find lowest 2 neigh indices:
+		long iMin = 100000000;
+		int iiMin1;
+		for (ii = 0; ii < neigh_len; ii++)
+			if (izNeigh[ii] < iMin) {
+				iMin = izNeigh[ii]; iiMin1 = ii;};
+		long iMin2 = 100000000;
+		for (ii = 0; ii < neigh_len; ii++)
+			if ((ii != iiMin1) && (izNeigh[ii] < iMin2)) iMin2 = izNeigh[ii];
+	
+		iVolley1 = (X + iMin)->iVolley;
+		iVolley2 = (X + iMin2)->iVolley;
+
+		iVolley = 0;
+		while ((iVolley1 == iVolley) || (iVolley2 == iVolley)) iVolley++;
+		pVertex->iVolley = iVolley;
+		numVolley[iVolley]++;
+
+		iVolleyStartRow = iVolley;
+		++pVertex;
+		++iVertex;
+
+		for (i = 1; i < numRow[iRow]; i++)
+		{
+			// what are the neighbours?
+
+			// The previous point plus one below that they share.
+			// Since neighs are ordered anticlockwise, that is the next neigh after the previous point!
+
+			// Didn't use this efficiency though.
+			neigh_len = pVertex->GetNeighIndexArray(izNeigh);
+			long iMin = 100000000;
+			int iiMin1;
+			for (ii = 0; ii < neigh_len; ii++)
+				if (izNeigh[ii] < iMin) {
+					iMin = izNeigh[ii]; iiMin1 = ii;
+				};
+			long iMin2 = 100000000;
+			for (ii = 0; ii < neigh_len; ii++)
+				if ((ii != iiMin1) && (izNeigh[ii] < iMin2)) iMin2 = izNeigh[ii];
+			
+			iprev = iVertex - 1;
+			iVolley1 = (X + iMin)->iVolley;
+			iVolley2 = (X + iMin2)->iVolley;
+			iVolley3 = (X + iprev)->iVolley;
+			
+			if (i == numRow[iRow] - 1) {
+				iVolley = 0;
+				while ((iVolley1 == iVolley) || (iVolley2 == iVolley) || (iVolley3 == iVolley) || (iVolleyStartRow == iVolley)) iVolley++;
+				// This is no good - we really don't want to end up with it saying 4. We could easily have dup between non-adjacent neighs so it may well not say 4.
+				if (iVolley == 4) {
+					// then the rest must all be unequal so set it to 0.
+					iVolley = 0;
+					printf("oh dear || %d | ",iVertex);
+				}
+			}
+			else {
+				iVolley = 0;
+				while ((iVolley1 == iVolley) || (iVolley2 == iVolley) || (iVolley3 == iVolley)) iVolley++;
+			}
+			pVertex->iVolley = iVolley;
+			numVolley[iVolley]++;
+
+			++pVertex;
+			++iVertex;
+		};
+	};
+	printf("num in volleys: %d %d %d %d \n", numVolley[0], numVolley[1], numVolley[2], numVolley[3]);
+}
+
+
+
 /*int TriMesh::CreateEquilateralAuxMeshScrewPinch(int iLevel)
 {
 	// For now start with always equilateral aux mesh, no following fine mesh.
@@ -6747,6 +6913,8 @@ long TriMesh::GetVertsRightOfCutawayLine_Sorted(long * VertexIndexArray,
 	QuickSort (VertexIndexArray, radiusArray,
 		0,iCaret-1); // lowest and highest elements to be sorted
 			
+	printf("got to here!! \n");
+
 	return iCaret;
 }
 
@@ -8079,12 +8247,14 @@ void TriMesh::CreateTilingAndResequence(TriMesh * pDestMesh) {
 		};
 	};
 	
+
 	Vertex * pDestvert;
 	for (iTile = 0; iTile < numTilesMajor; iTile++)
 	for (iThread = 0; iThread < threadsPerTileMajor; iThread++)
 	{
-		pVertex = X + index[iTile][iThread];
+		pVertex = X + index[iTile][iThread];  // index[iTile][iThread] is what should be mapped to :
 		pVertex->iIndicator = iTile*threadsPerTileMajor + iThread;
+		
 		
 	//	pDestvert = pDestMesh->X + iTile*threadsPerTileMajor + iThread;
 	//	memcpy(pDestvert,pVertex,sizeof(Vertex)); // This means no dynamic arrays can be involved. Are they?
@@ -8110,9 +8280,19 @@ void TriMesh::CreateTilingAndResequence(TriMesh * pDestMesh) {
 		pDestvert->p*/
 
 	}
+
+	//FILE * dbg_seq = fopen("dbg_seq.txt", "w");
+	//pVertex = X;
+	//for (iVertex = 0; iVertex < NUMVERTICES; iVertex++)
+	//{
+	//	fprintf(dbg_seq, "iVertex %d iVolley %d iIndicator %d\n", iVertex, pVertex->iVolley, pVertex->iIndicator);
+	//	++pVertex;
+	//}
+	//fclose(dbg_seq);
+	printf("Reseq : vertex mapping done.\n"); // All we have done is set indicator though
 	
-	printf("Reseq : vertex mapping done.\n");
-	
+	// This WORKED. iVolley and iIndicator are populated, we got some halfway sensible values in there. Now what?:
+
 	
 	// ===============================================================================	
 	// -------------------------------------------------------------------------------
@@ -8820,8 +9000,6 @@ void TriMesh::CreateTilingAndResequence(TriMesh * pDestMesh) {
 		iPass++;
 	} while (numUnassigned > 0);
 	*/
-	printf("Tri resequence done...\n");
-	getch();
 		// Now turn 'volley' information into a sequence.
 	// WE CHANGE WHAT indicator MEANS :
 	
@@ -8830,11 +9008,20 @@ void TriMesh::CreateTilingAndResequence(TriMesh * pDestMesh) {
 	for (iTri = 0; iTri < numTriangles; iTri++)
 	{
 		int iWhich = pTri->indicator;
-		pTri->indicator = iWhich*threadsPerTileMinor + tris_assigned[iWhich];
+		pTri->indicator = iWhich*threadsPerTileMinor + tris_assigned[iWhich]; // new index for triangle
 		tris_assigned[iWhich]++;
 		++pTri;
 	};
 	
+	for (iTile = 0; iTile < numTriTiles; iTile++) {
+		printf("%d : %d  ||", iTile, tris_assigned[iTile]);
+		if (iTile % 4 == 0) printf("\n");
+	}
+
+	printf("Tri resequence done...\n");
+	getch();
+
+
 	// We then can set the new sequence and try to resequence the triangles, and affect the
 	// triangle index lists.
 	//  - Create 2nd system:
@@ -8849,7 +9036,7 @@ void TriMesh::CreateTilingAndResequence(TriMesh * pDestMesh) {
 		// at the moment we are using hard arrays in Vertex not pointers
 		memcpy(pVertdest, pVertex, sizeof(Vertex));
 
-		pVertdest->CopyLists(pVertex);
+		/*  pVertdest->CopyLists(pVertex);
 		// but now we need to change them:
 		
 		// Only neighbour list is relevant so far...
@@ -8860,6 +9047,22 @@ void TriMesh::CreateTilingAndResequence(TriMesh * pDestMesh) {
 			pVertdest->AddNeighbourIndex((X + izNeigh[i])->iIndicator);
 		};
 		
+		pVertdest->ClearTris();
+		// Only neighbour list is relevant so far...
+		int tri_len = pVertex->GetTriIndexArray(izTri);
+		for (i = 0; i < tri_len; i++)
+		{
+			pVertdest->AddTriIndex((T + izTri[i])->indicator);
+		};*/
+		
+		// Only neighbour list is relevant so far...
+		pVertdest->ClearNeighs();
+		int neigh_len = pVertex->GetNeighIndexArray(izNeigh);
+		for (i = 0; i < neigh_len; i++)
+		{
+			pVertdest->AddNeighbourIndex((X + izNeigh[i])->iIndicator);
+		};
+
 		pVertdest->ClearTris();
 		// Only neighbour list is relevant so far...
 		int tri_len = pVertex->GetTriIndexArray(izTri);
