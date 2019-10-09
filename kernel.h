@@ -333,13 +333,14 @@ __global__ void kernelCreateEpsilonHeat
 	f64 * __restrict__ p_eps_n,
 	f64 * __restrict__ p_eps_i,
 	f64 * __restrict__ p_eps_e,
-	f64 * __restrict__ p_T_n,
-	f64 * __restrict__ p_T_i,
-	f64 * __restrict__ p_T_e,
+	f64 * __restrict__ p_NT_n,
+	f64 * __restrict__ p_NT_i,
+	f64 * __restrict__ p_NT_e,
 	T3 * __restrict__ p_T_k,
 	f64 * __restrict__ p_AreaMajor,
 	nvals * __restrict__ p_n_major,
-	NTrates * __restrict__ NTadditionrates // it's especially silly having a whole struct of 5 instead of 3 here.
+	NTrates * __restrict__ NTadditionrates, // it's especially silly having a whole struct of 5 instead of 3 here.
+	bool * __restrict__ p_b_Failed
 );
 
 __global__ void kernelCreateEpsilonAndJacobi_Heat
@@ -902,9 +903,11 @@ __global__ void kernelCalculateVelocityAndAzdot(
 	f64_vec3 * __restrict__ p_vn0,
 	v4 * __restrict__ p_v0,
 	OhmsCoeffs * __restrict__ p_OhmsCoeffs,
-	AAdot * __restrict__ p_AAzdot_intermediate,
-	nvals * __restrict__ p_n_minor, 
+	AAdot * __restrict__ p_AAzdot_src,
+	nvals * __restrict__ p_n_minor,
 	f64 * __restrict__ p_AreaMinor,
+	f64 * __restrict__ p_LapAz, // would it be better just to be loading the Azdot0 relation?
+	f64 * __restrict__ p_ROCAzdotantiadvect,
 
 	AAdot * __restrict__ p_AAzdot_out,
 	v4 * __restrict__ p_vie_out,
@@ -970,6 +973,63 @@ __global__ void kernelResetFrillsAz_II(
 	LONG3 * __restrict__ trineighbourindex,
 	AAdot * __restrict__ p_Az);
 
+__global__ void kernelCreateLinearRelationshipBwd(
+	f64 const h_use,
+	structural * __restrict__ p_info,
+	OhmsCoeffs* __restrict__ p_Ohms,
+	v4 * __restrict__ p_v0,
+	f64 * __restrict__ p_Lap_Az_use,
+	nvals * __restrict__ p_n_minor,
+	f64 * __restrict__ p_denom_e,
+	f64 * __restrict__ p_denom_i,
+	f64 * __restrict__ p_coeff_of_vez_upon_viz,
+	f64 * __restrict__ p_beta_ie_z,
+	AAdot * __restrict__ p_AAdot_k,
+	f64 * __restrict__ p_AreaMinor,
+	f64 * __restrict__ p_Azdot0,
+	f64 * __restrict__ p_gamma,
+	f64 * __restrict__ ROCAzdotduetoAdvection
+);
+
+__global__ void kernelAdvanceAzBwdEuler(
+	f64 const h_use,
+	AAdot * __restrict__ p_AAdot_use,
+	AAdot * __restrict__ p_AAdot_dest,
+	f64 * __restrict__ p_ROCAzduetoAdvection);
+
+__global__ void kernelPopulateBackwardOhmsLaw(
+	f64 h_use,
+	structural * __restrict__ p_info_minor,
+	f64_vec3 * __restrict__ p_MAR_neut,
+	f64_vec3 * __restrict__ p_MAR_ion,
+	f64_vec3 * __restrict__ p_MAR_elec,
+	f64_vec3 * __restrict__ p_B,
+	f64 * __restrict__ p_LapAz,
+	f64_vec2 * __restrict__ p_GradAz,
+	f64_vec2 * __restrict__ p_GradTe,
+	nvals * __restrict__ p_n_minor_use,
+	T3 * __restrict__ p_T_minor_use,
+	v4 * __restrict__ p_vie_src,
+	f64_vec3 * __restrict__ p_v_n_src,
+	AAdot * __restrict__ p_AAdot_src,
+	f64 * __restrict__ p_AreaMinor,
+	f64 * __restrict__ ROCAzdotduetoAdvection,
+	// Now going to need to go through and see this set 0 or sensible every time.
+
+	f64_vec3 * __restrict__ p_vn0_dest,
+	v4 * __restrict__ p_v0_dest,
+	OhmsCoeffs * __restrict__ p_OhmsCoeffs_dest,
+	//AAdot * __restrict__ p_AAdot_intermediate,
+
+	f64 * __restrict__ p_Iz0,
+	f64 * __restrict__ p_sigma_zz,
+
+	f64 * __restrict__ p_denom_i,
+	f64 * __restrict__ p_denom_e,
+	f64 * __restrict__ p_effect_of_viz0_on_vez0,
+	f64 * __restrict__ p_beta_ie_z,
+
+	bool const bSwitchSave);
 
 __global__ void kernelReset_v_in_outer_frill_and_outermost 
 (
@@ -979,6 +1039,15 @@ __global__ void kernelReset_v_in_outer_frill_and_outermost
 	LONG3 * __restrict__ trineighbourindex,
 	long * __restrict__ p_izNeigh_vert
 	);
+
+
+__global__ void kernelCreateSeedAz(
+	f64 const h_use,
+	f64 * __restrict__ p_Az_k,
+	f64 * __restrict__ p_Azdot0,
+	f64 * __restrict__ p_gamma,
+	f64 * __restrict__ p_LapAz,
+	f64 * __restrict__ p_AzNext);
 
 __global__ void kernelCreateEpsilonAndJacobi(
 	f64 const h_use,
@@ -991,8 +1060,8 @@ __global__ void kernelCreateEpsilonAndJacobi(
 	f64 * __restrict__ p_Lap_Aznext,
 	f64 * __restrict__ p_epsilon,
 	f64 * __restrict__ p_Jacobi_x,
-	AAdot * __restrict__ p_AAdot_k);
-
+	AAdot * __restrict__ p_AAdot_k,
+	bool * __restrict__ p_bFail);
 
 __global__ void kernelAccumulateSummands(
 	structural * __restrict__ p_info,

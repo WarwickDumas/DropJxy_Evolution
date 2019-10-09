@@ -6,12 +6,12 @@
 
 extern real evaltime;
 extern long GlobalStepsCounter;
-
+extern bool GlobalSuppressSuccessVerbosity;
 __host__ bool Call(cudaError_t cudaStatus, char str[])
 {
 	if (cudaStatus == cudaSuccess) {
 		if (strncmp(str,"cudaMemcpy",8) != 0)
-			printf("\tSuccess: %s ||| \n",str);
+			if (GlobalSuppressSuccessVerbosity == false) printf("\tSuccess: %s ||| \n",str);
 		return false;
 	} else {
 		printf("Error: %s\nReturned %d : %s\n",

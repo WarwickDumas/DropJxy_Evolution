@@ -1704,7 +1704,8 @@ public:
 	void ReturnMaxMinData(int offset, real * pmax, real * pmin, bool bDisplayInner) const;
 	void ReturnL5Data(int offset, real * pmax, real * pmin, bool bDisplayInner) const;
 	void ReturnMaxMinDataAux(int iLevel, int offset, real * pmax, real * pmin);
-	
+	void Return3rdmaxData(int offset, real * pmax, real * pmin, bool bDisplayInner) const;
+
 	void Setup_J() ;
 	void Reset_vertex_nvT(int species) ;
 

@@ -7156,6 +7156,113 @@ void TriMesh::ReturnMaxMinData(int offset, real * pmax, real * pmin, bool bDispl
 	printf("Min %1.8E found at vertex %d \n",*pmin,iVertMin);
 //	printf("value at 11830: %1.8E \n",*((real *)(X+11830)+offset));
 }
+
+void TriMesh::Return3rdmaxData(int offset, real * pmax, real * pmin, bool bDisplayInner) const
+{
+	const plasma_data *pdata;
+	real maxA2z[3] = { -1.0e100,-1.0e100,-1.0e100 };
+	real minA2z[3] = { 1.0e100, 1.0e100, 1.0e100 };
+	
+	long iVertMax = 0;
+	long iVertMin = 0;
+	f64 z;
+
+	pdata = pData + BEGINNING_OF_CENTRAL;
+	if (bDisplayInner) {
+
+		for (long iVert = 0; iVert < numVertices; iVert++)
+		{
+			z = *((real *)pdata + offset);
+			if (z > maxA2z[2])
+			{
+				if (z > maxA2z[1])
+				{
+					maxA2z[2] = maxA2z[1];
+					if (z > maxA2z[0])
+					{
+						maxA2z[1] = maxA2z[0];
+						maxA2z[0] = z;
+					} else {
+						maxA2z[1] = z;
+					};
+				} else {
+					maxA2z[2] = z;
+					iVertMax = iVert;
+				};
+			};
+			if (z < minA2z[2])
+			{
+				if (z < minA2z[1]) {
+					minA2z[2] = minA2z[1];
+					if (z < minA2z[0]) {
+						minA2z[1] = minA2z[0];
+						minA2z[0] = z;
+					} else {
+						minA2z[1] = z;
+					};
+				} else {
+					minA2z[2] = z;
+					iVertMin = iVert;
+				};
+			};
+			++pdata;
+		};
+	}
+	else {
+		// debug:
+		printf("Xdomain-X %d offset %d \n",
+			(long)(Xdomain - X), offset);
+
+		pdata += Xdomain - X;
+		for (long iVert = 0; iVert < numDomainVertices; iVert++)
+		{
+			z = *((real *)pdata + offset);
+			if (z > maxA2z[2])
+			{
+				if (z > maxA2z[1])
+				{
+					maxA2z[2] = maxA2z[1];
+					if (z > maxA2z[0])
+					{
+						maxA2z[1] = maxA2z[0];
+						maxA2z[0] = z;
+					}
+					else {
+						maxA2z[1] = z;
+					};
+				}
+				else {
+					maxA2z[2] = z;
+					iVertMax = iVert;
+				};
+			};
+			if (z < minA2z[2])
+			{
+				if (z < minA2z[1]) {
+					minA2z[2] = minA2z[1];
+					if (z < minA2z[0]) {
+						minA2z[1] = minA2z[0];
+						minA2z[0] = z;
+					}
+					else {
+						minA2z[1] = z;
+					};
+				}
+				else {
+					minA2z[2] = z;
+					iVertMin = iVert;
+				};
+			};
+			++pdata;
+		};
+	};
+	*pmax = maxA2z[2];
+	*pmin = minA2z[2];
+	//printf("Max %1.8E found at vertex %d \n", *pmax, iVertMax);
+	//printf("Min %1.8E found at vertex %d \n", *pmin, iVertMin);
+	//	printf("value at 11830: %1.8E \n",*((real *)(X+11830)+offset));
+}
+
 /*
 void TriMesh::ReturnMaxMinDataAux(int iLevel, int offset, real * pmax, real * pmin)
 {

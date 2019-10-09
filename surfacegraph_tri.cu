@@ -996,7 +996,7 @@ HRESULT surfacegraph::SetDataWithColour(const TriMesh & X,
 				X.ReturnMaxMinData(offset_data, &store_max, &store_min,
 					this->boolDisplayInnerMesh);
 				
-				X.ReturnL5Data(offset_data, &maximum, &minimum,
+				X.Return3rdmaxData(offset_data, &maximum, &minimum,
 					this->boolDisplayInnerMesh);
 
 	//			printf("*****+++++++\ncode %d minimum %1.3E maximum %1.3E store_max %1.3E store_min %1.4E \n",
