@@ -333,13 +333,14 @@ __global__ void kernelCreateEpsilonHeat
 	f64 * __restrict__ p_eps_n,
 	f64 * __restrict__ p_eps_i,
 	f64 * __restrict__ p_eps_e,
-	f64 * __restrict__ p_T_n,
-	f64 * __restrict__ p_T_i,
-	f64 * __restrict__ p_T_e,
+	f64 * __restrict__ p_NT_n,
+	f64 * __restrict__ p_NT_i,
+	f64 * __restrict__ p_NT_e,
 	T3 * __restrict__ p_T_k,
 	f64 * __restrict__ p_AreaMajor,
 	nvals * __restrict__ p_n_major,
-	NTrates * __restrict__ NTadditionrates // it's especially silly having a whole struct of 5 instead of 3 here.
+	NTrates * __restrict__ NTadditionrates, // it's especially silly having a whole struct of 5 instead of 3 here.
+	bool * __restrict__ p_b_Failed
 );
 
 __global__ void kernelCreateEpsilonAndJacobi_Heat
@@ -896,15 +897,31 @@ __global__ void kernelCalculateVelocityAndAzdot_dbg2(
 	f64 * __restrict__ p_debug,
 	f64 * __restrict__ p_debug2);
 
+__global__ void kernelCreateEpsilonAndJacobiDebug(
+	f64 const h_use,
+	structural * __restrict__ p_info,
+	f64 * __restrict__ p_Az_array_next,
+	f64 * __restrict__ p_Az_array,
+	f64 * __restrict__ p_Azdot0,
+	f64 * __restrict__ p_gamma,
+	f64 * __restrict__ p_LapCoeffself,
+	f64 * __restrict__ p_Lap_Aznext,
+	f64 * __restrict__ p_epsilon,
+	f64 * __restrict__ p_Jacobi_x,
+	AAdot * __restrict__ p_AAdot_k,
+	bool * __restrict__ p_bFail);
+
 __global__ void kernelCalculateVelocityAndAzdot(
 	f64 h_use,
 	structural * p_info_minor,
 	f64_vec3 * __restrict__ p_vn0,
 	v4 * __restrict__ p_v0,
 	OhmsCoeffs * __restrict__ p_OhmsCoeffs,
-	AAdot * __restrict__ p_AAzdot_intermediate,
-	nvals * __restrict__ p_n_minor, 
+	AAdot * __restrict__ p_AAzdot_src,
+	nvals * __restrict__ p_n_minor,
 	f64 * __restrict__ p_AreaMinor,
+	f64 * __restrict__ p_LapAz, // would it be better just to be loading the Azdot0 relation?
+	f64 * __restrict__ p_ROCAzdotantiadvect,
 
 	AAdot * __restrict__ p_AAzdot_out,
 	v4 * __restrict__ p_vie_out,
@@ -970,6 +987,63 @@ __global__ void kernelResetFrillsAz_II(
 	LONG3 * __restrict__ trineighbourindex,
 	AAdot * __restrict__ p_Az);
 
+__global__ void kernelCreateLinearRelationshipBwd(
+	f64 const h_use,
+	structural * __restrict__ p_info,
+	OhmsCoeffs* __restrict__ p_Ohms,
+	v4 * __restrict__ p_v0,
+	f64 * __restrict__ p_Lap_Az_use,
+	nvals * __restrict__ p_n_minor,
+	f64 * __restrict__ p_denom_e,
+	f64 * __restrict__ p_denom_i,
+	f64 * __restrict__ p_coeff_of_vez_upon_viz,
+	f64 * __restrict__ p_beta_ie_z,
+	AAdot * __restrict__ p_AAdot_k,
+	f64 * __restrict__ p_AreaMinor,
+	f64 * __restrict__ p_Azdot0,
+	f64 * __restrict__ p_gamma,
+	f64 * __restrict__ ROCAzdotduetoAdvection
+);
+
+__global__ void kernelAdvanceAzBwdEuler(
+	f64 const h_use,
+	AAdot * __restrict__ p_AAdot_use,
+	AAdot * __restrict__ p_AAdot_dest,
+	f64 * __restrict__ p_ROCAzduetoAdvection);
+
+__global__ void kernelPopulateBackwardOhmsLaw(
+	f64 h_use,
+	structural * __restrict__ p_info_minor,
+	f64_vec3 * __restrict__ p_MAR_neut,
+	f64_vec3 * __restrict__ p_MAR_ion,
+	f64_vec3 * __restrict__ p_MAR_elec,
+	f64_vec3 * __restrict__ p_B,
+	f64 * __restrict__ p_LapAz,
+	f64_vec2 * __restrict__ p_GradAz,
+	f64_vec2 * __restrict__ p_GradTe,
+	nvals * __restrict__ p_n_minor_use,
+	T3 * __restrict__ p_T_minor_use,
+	v4 * __restrict__ p_vie_src,
+	f64_vec3 * __restrict__ p_v_n_src,
+	AAdot * __restrict__ p_AAdot_src,
+	f64 * __restrict__ p_AreaMinor,
+	f64 * __restrict__ ROCAzdotduetoAdvection,
+	// Now going to need to go through and see this set 0 or sensible every time.
+
+	f64_vec3 * __restrict__ p_vn0_dest,
+	v4 * __restrict__ p_v0_dest,
+	OhmsCoeffs * __restrict__ p_OhmsCoeffs_dest,
+	//AAdot * __restrict__ p_AAdot_intermediate,
+
+	f64 * __restrict__ p_Iz0,
+	f64 * __restrict__ p_sigma_zz,
+
+	f64 * __restrict__ p_denom_i,
+	f64 * __restrict__ p_denom_e,
+	f64 * __restrict__ p_effect_of_viz0_on_vez0,
+	f64 * __restrict__ p_beta_ie_z,
+
+	bool const bSwitchSave);
 
 __global__ void kernelReset_v_in_outer_frill_and_outermost 
 (
@@ -979,6 +1053,95 @@ __global__ void kernelReset_v_in_outer_frill_and_outermost
 	LONG3 * __restrict__ trineighbourindex,
 	long * __restrict__ p_izNeigh_vert
 	);
+
+__global__ void kernelAddRegressors(
+	f64 * __restrict__ p_AzNext,
+	f64 const beta0, f64 const beta1, f64 const beta2,
+	f64 * __restrict__ p_reg1,
+	f64 * __restrict__ p_reg2,
+	f64 * __restrict__ p_reg3
+	);
+
+__global__ void kernelAccumulateMatrix_debug(
+	structural * __restrict__ p_info,
+	f64 const h_use,
+	f64 * __restrict__ p_epsilon,
+	f64 * __restrict__ p_regressor1,
+	f64 * __restrict__ p_regressor2,
+	f64 * __restrict__ p_regressor3,
+	f64 * __restrict__ p_LapReg1,
+	f64 * __restrict__ p_LapReg2,
+	f64 * __restrict__ p_LapReg3,
+	f64 * __restrict__ p_gamma,
+	f64 * __restrict__ p_deps_matrix,
+	f64_vec3 * __restrict__ p_eps_against_deps,
+
+	f64 * __restrict__ p_deps_1,
+	f64 * __restrict__ p_deps_2,
+	f64 * __restrict__ p_deps_3
+
+);
+
+__global__ void kernelAccumulateMatrix(
+	structural * __restrict__ p_info,
+	f64 const h_use,
+	f64 * __restrict__ p_epsilon,
+	f64 * __restrict__ p_regressor1,
+	f64 * __restrict__ p_regressor2,
+	f64 * __restrict__ p_regressor3,
+	f64 * __restrict__ p_LapReg1,
+	f64 * __restrict__ p_LapReg2,
+	f64 * __restrict__ p_LapReg3,
+	f64 * __restrict__ p_gamma,
+	f64 * __restrict__ p_deps_matrix,
+	f64_vec3 * __restrict__ p_eps_against_deps
+	);
+
+__global__ void kernelCreate_further_regressor(
+	structural * __restrict__ p_info,
+	f64 h_use,
+	f64 * __restrict__ p_regressor,
+	f64 * __restrict__ p_Lap_regressor,
+	f64 * __restrict__ p_LapCoeffself,
+	f64 * __restrict__ p_gamma,
+	f64 * __restrict__ p_regressor2);
+
+__global__ void NegateVector(
+	f64 * __restrict__ p_x1);
+
+__global__ void kernelCreateAzbymultiplying(
+	f64 * __restrict__ p_Az,
+	f64 * __restrict__ p_scaledAz,
+	f64 const h_use,
+	f64 * __restrict__ p_gamma
+);
+
+__global__ void kernelAccumulateSumOfSquares1(
+	f64 * __restrict__ p_eps,
+	f64 * __restrict__ p_SS);
+
+__global__ void kernelAccumulateDotProduct(
+	f64 * __restrict__ p_x1, f64 * __restrict__ p_y1,
+	f64 * __restrict__ p_dot1);
+
+__global__ void VectorAddMultiple1(
+	f64 * __restrict__ p_T1, f64 const alpha1, f64 * __restrict__ p_x1);
+
+__global__ void kernelDividebyroothgamma
+(
+	f64 * __restrict__ result,
+	f64 * __restrict__ Az,
+	f64 const hsub,
+	f64 * __restrict__ p_gamma
+);
+
+__global__ void kernelCreateSeedAz(
+	f64 const h_use,
+	f64 * __restrict__ p_Az_k,
+	f64 * __restrict__ p_Azdot0,
+	f64 * __restrict__ p_gamma,
+	f64 * __restrict__ p_LapAz,
+	f64 * __restrict__ p_AzNext);
 
 __global__ void kernelCreateEpsilonAndJacobi(
 	f64 const h_use,
@@ -991,8 +1154,7 @@ __global__ void kernelCreateEpsilonAndJacobi(
 	f64 * __restrict__ p_Lap_Aznext,
 	f64 * __restrict__ p_epsilon,
 	f64 * __restrict__ p_Jacobi_x,
-	AAdot * __restrict__ p_AAdot_k);
-
+	bool * __restrict__ p_bFail);
 
 __global__ void kernelAccumulateSummands(
 	structural * __restrict__ p_info,
@@ -1051,6 +1213,19 @@ __global__ void kernelGetLap_minor_debug(
 	f64 * __restrict__ p_Integratedconts_vert,
 	
 	f64 * __restrict__ p_AreaMinor);
+
+
+__global__ void kernelCreateEpsilon_Az_CG(
+	f64 const h_use,
+	structural * __restrict__ p_info,
+	f64 * __restrict__ p_Az_plus,
+	f64 * __restrict__ p_Az_k,
+	f64 * __restrict__ p_Azdot0,
+	f64 * __restrict__ p_gamma,
+	f64 * __restrict__ p_Lap_Az,
+	f64 * __restrict__ p_epsilon,
+	bool * __restrict__ p_bFail,
+	bool const bSaveFail);
 
 
 __global__ void kernelGetLap_minor(

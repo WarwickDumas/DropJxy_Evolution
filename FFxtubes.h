@@ -26,16 +26,16 @@ bool const bScrewPinch = false;
 #define DELAY_MILLISECS      100 // pause
 
 // steps per frame
-#define GRAPHICS_FREQUENCY				5
-#define REDELAUN_FREQUENCY				30
+#define GRAPHICS_FREQUENCY				5 // 1e-11
+#define REDELAUN_FREQUENCY				40
 
 #define STEPS_PER_LOOP               1    // soon change to 500
 // frames between file pinch-offs:
-#define AVI_FILE_PINCHOFF_FREQUENCY     150
+#define AVI_FILE_PINCHOFF_FREQUENCY     40 // 100*10 1e-12 = 1e-9
 // milliseconds between frames:
 #define AVIFRAMEPERIOD         100 // 50 = 20 fps which is ok with our setting of 25 frames/ns [running 2e-11 x 2 = 4e-11 per frame]
 
-#define DATA_SAVE_FREQUENCY					  20
+#define DATA_SAVE_FREQUENCY					  40
 
 // Program Mechanics:
 // ==================
@@ -235,9 +235,9 @@ long const INNERMOST_STEPS = 200;
 // Let's assume we do recalculation of parameters as often as we do recalculation of pressure.
 
 // Try reducing below 1e-12 to see if it goes much further.
-real const TIMESTEP = 1.0e-12; // clumsy stupid way to get it to run longer this time: make timestep shorter.
-real const SUBSTEP = 1.0e-13;
-int const SUBCYCLES = 10; // Try instead of 1e-13 and see if different.
+real const TIMESTEP = 2.5e-13; 
+real const SUBSTEP = 2.5e-13;
+int const SUBCYCLES = 1; // Try instead of 1e-13 and see if different.
 
 
 //long const NUM_VERTICES_PER_CM_SQ = 10000; // 60000; //12000; // use 262144 = 2^18. 2^9 = 512
