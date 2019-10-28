@@ -85,6 +85,7 @@ real const CATHODE_ROD_RADIUS = 0.47625;
 real const DEVICE_RADIUS_INITIAL_FILAMENT_CENTRE = 3.61;   
 #define  DEVICE_RADIUS_INSULATOR_OUTER  3.44
 #define  REVERSE_ZCURRENT_RADIUS   2.8
+
 #define  INSULATOR_HEIGHT          2.8
 							// around the edge of the anode
 #define OVER_RADIAL_DIST_ANODE_TO_BACK   0.5434782609
@@ -234,10 +235,11 @@ long const INNERMOST_STEPS = 200;
 // Need to be careful in case of thermal pressure messing up mesh.
 // Let's assume we do recalculation of parameters as often as we do recalculation of pressure.
 
-// Try reducing below 1e-12 to see if it goes much further.
-real const TIMESTEP = 2.5e-13; 
-real const SUBSTEP = 2.5e-13;
-int const SUBCYCLES = 1; // Try instead of 1e-13 and see if different.
+real const TIMESTEP = 2.0e-13; 
+real const SUBSTEP = 2.0e-13;
+int const SUBCYCLES = 1; 
+int const GPU_STEPS = 100;
+int const ADVECT_FREQUENCY = 50; // 1e-11 = 1e-4/1e7
 
 
 //long const NUM_VERTICES_PER_CM_SQ = 10000; // 60000; //12000; // use 262144 = 2^18. 2^9 = 512

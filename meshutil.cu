@@ -6303,15 +6303,17 @@ void TriMesh::SetVerticesAndIndices(VertexPNT3 * vertices[],			// better to do i
 
 	pdata = pData + BEGINNING_OF_CENTRAL; // for now just do vertex data
 
-	if (boolDisplayInnerMesh) {
+	if (1) {// boolDisplayInnerMesh) {
 		pVertex = X; 
 		pBegin = X;
 		numVerticesUse = numVertices;
 	} else {
-		pVertex = Xdomain;
-		pBegin = Xdomain;
+		//pVertex = Xdomain;
+		//pBegin = Xdomain;
+		pVertex = X;
+		pBegin = X;
 		numVerticesUse = numDomainVertices;
-		pdata += Xdomain - X;
+	//	pdata += Xdomain - X; 
 	};
 
 	// debug:
@@ -6321,303 +6323,318 @@ void TriMesh::SetVerticesAndIndices(VertexPNT3 * vertices[],			// better to do i
 
 	for (long i = 0; i < numVerticesUse; ++i)
 	{
-		ydata = (float)(*(((real *)pdata) + offset_data));
-
-		pPNT->pos.x = ((float)(pVertex->pos.x))*xzscale;
-		pPNT->pos.z = ((float)(pVertex->pos.y))*xzscale;
-		switch (heightflag)
+		if (1) //(pVertex->flags == DOMAIN_VERTEX) || (pVertex->flags == OUTERMOST)
+			//|| (boolDisplayInnerMesh == true)) {
 		{
-		case FLAG_FLAT_MESH:
-			pPNT->pos.y = 0.0f;//(float)(pVertex->n*nfactor);
-			
-			// set normal: how exactly?
+			ydata = (float)(*(((real *)pdata) + offset_data));
 
-			// clearly it points up but since we have that funny "negate normal" code,
-			// make it point down?:
-			pPNT->normal.x = 0.0f;
-			pPNT->normal.y = 1.0f;     // well, now we shall have a reason to do otherwise...
-			pPNT->normal.z = 0.0f;
-			break;
-		case FLAG_DATA_HEIGHT:
-			pPNT->pos.y = zeroplane + ydata*yscale;
-			break;
-
-		//case FLAG_HEIGHT_T:
-		//	pPNT->pos.y = (float)(pVertex->T*Tfactor);
-		//	break;
-
-/*
-			for (ii = 0; ii < pVertex->triangles.len; ii++)
+			pPNT->pos.x = ((float)(pVertex->pos.x))*xzscale;
+			pPNT->pos.z = ((float)(pVertex->pos.y))*xzscale;
+			switch (heightflag)
 			{
-				pTri = (Triangle *)(pVertex->triangles.ptr[ii]);
-				if (pTri->flags == 0)
+			case FLAG_FLAT_MESH:
+				pPNT->pos.y = 0.0f;//(float)(pVertex->n*nfactor);
+
+				// set normal: how exactly?
+
+				// clearly it points up but since we have that funny "negate normal" code,
+				// make it point down?:
+				pPNT->normal.x = 0.0f;
+				pPNT->normal.y = 1.0f;     // well, now we shall have a reason to do otherwise...
+				pPNT->normal.z = 0.0f;
+				break;
+			case FLAG_DATA_HEIGHT:
+				pPNT->pos.y = zeroplane + ydata*yscale;
+				break;
+
+				//case FLAG_HEIGHT_T:
+				//	pPNT->pos.y = (float)(pVertex->T*Tfactor);
+				//	break;
+
+		/*
+					for (ii = 0; ii < pVertex->triangles.len; ii++)
+					{
+						pTri = (Triangle *)(pVertex->triangles.ptr[ii]);
+						if (pTri->flags == 0)
+						{
+							if (pTri->cornerptr[0] == pVertex){
+								pVert1 = pTri->cornerptr[1];
+								pVert2 = pTri->cornerptr[2];
+							} else {
+								pVert1 = pTri->cornerptr[0];
+								if (pTri->cornerptr[1] == pVertex) {
+									pVert2 = pTri->cornerptr[2];
+								} else {
+									pVert2 = pTri->cornerptr[1];
+								};
+							};
+							vec1.x = pVert1->x-pVertex->x;
+							vec2.x = pVert2->x-pVertex->x;
+							vec1.y = pVert1->y-pVertex->y;
+							vec2.y = pVert2->y-pVertex->y;
+							//D3DXVec3Cross(&(pPNT->normal),&vec1,&vec2);
+							D3DXVec3Cross(&normalnext,&vec1,&vec2);
+							pPNT->normal.x += normalnext.x;
+							pPNT->normal.y += normalnext.y;
+							pPNT->normal.z += normalnext.z;
+						};
+					};*/
+
+					// That was not good enough because we need to account that
+					// maybe corner sequence is different for different triangles.
+				break;
+
+			case FLAG_VELOCITY_HEIGHT:
+				ptr = (real *)pdata + offset_data;
+				doublevx = (*ptr);
+				++ptr;
+				doublevy = (*ptr);
+				pPNT->pos.y = zeroplane + (float)(sqrt(doublevx*doublevx + doublevy*doublevy))*yscale; // zeroplane should be == 0.0
+
+			/*	pTri = (Triangle *)(pVertex->triangles.ptr[0]);
+				if (pTri->flags > 0)
 				{
-					if (pTri->cornerptr[0] == pVertex){
-						pVert1 = pTri->cornerptr[1];
+					pTri = (Triangle *)(pVertex->triangles.ptr[1]);
+					if (pTri->flags > 0)
+						pTri = (Triangle *)(pVertex->triangles.ptr[2]);
+				};
+
+				if (pTri->cornerptr[0] == pVertex){
+					pVert1 = pTri->cornerptr[1];
+					pVert2 = pTri->cornerptr[2];
+				} else {
+					pVert1 = pTri->cornerptr[0];
+					if (pTri->cornerptr[1] == pVertex) {
 						pVert2 = pTri->cornerptr[2];
 					} else {
-						pVert1 = pTri->cornerptr[0];
-						if (pTri->cornerptr[1] == pVertex) {
-							pVert2 = pTri->cornerptr[2];
-						} else {
-							pVert2 = pTri->cornerptr[1];
+						pVert2 = pTri->cornerptr[1];
+					};
+				};
+			*/
+				break;
+			case FLAG_VEC3_HEIGHT:
+				ptr = (real *)pdata + offset_data;
+				doublevx = (*ptr);
+				++ptr;
+				doublevy = (*ptr);
+				++ptr;
+				doublevz = (*ptr);
+				pPNT->pos.y = zeroplane +
+					(float)(sqrt(doublevx*doublevx + doublevy*doublevy + doublevz*doublevz))*yscale;
+				break;
+			};
+
+			if (heightflag != FLAG_FLAT_MESH)
+			{
+				// Now we gotta set the normal.
+				// Technically should take average of x-products
+				//	Can we pass to shader?
+				// For now, just take 1 triangle
+				// Hopefully DX will make its own thread
+				pPNT->normal.x = 0.0f;
+				pPNT->normal.y = 0.0f;
+				pPNT->normal.z = 0.0f;
+
+				neigh_len = pVertex->GetNeighIndexArray(izNeighs);
+				int iinext;
+				for (ii = 0; ii < neigh_len; ii++)
+				{
+					iinext = ii + 1;
+					if (iinext == neigh_len) iinext = 0;
+
+					pVert1 = X + izNeighs[ii];
+					pVert2 = X + izNeighs[iinext];
+					// We might like to use data.pos instead.
+					pdata1 = pData + BEGINNING_OF_CENTRAL + izNeighs[ii];
+					pdata2 = pData + BEGINNING_OF_CENTRAL + izNeighs[iinext];
+
+					vec1.x = pVert1->pos.x - pVertex->pos.x;
+					vec2.x = pVert2->pos.x - pVertex->pos.x;
+
+					vec1.z = pVert1->pos.y - pVertex->pos.y;
+					vec2.z = pVert2->pos.y - pVertex->pos.y;
+
+					switch (heightflag)
+					{
+					case FLAG_DATA_HEIGHT:
+
+						data1 = *(((real *)pdata1) + offset_data);
+						data2 = *(((real *)pdata2) + offset_data);
+						data0 = *(((real *)pdata) + offset_data);
+
+						vec1.y = zeroplane + (float)((data1 - data0)*(real)yscale);
+						vec2.y = zeroplane + (float)((data2 - data0)*(real)yscale);
+						// does putting in brackets get rid of FP overflow? Adding (real)?
+						// Think the issue here is converting e+61 (undefined double) to float.
+						break;
+					case FLAG_VELOCITY_HEIGHT:
+						ptr = (real *)pdata1 + offset_data;
+
+						doublevx = (*ptr);
+						++ptr;
+						doublevy = (*ptr);
+
+						v = (float)sqrt(doublevx*doublevx + doublevy*doublevy)*yscale;
+						// avoids a crash to use double if v^2 > 1e38 
+
+						if (!_finite(v)) {
+							printf("problems vx vy \n");
+							getch();
+							doublevx = doublevx;
+						}
+
+						one = zeroplane + v*yscale;
+
+						ptr = (real *)pdata2 + offset_data;
+						doublevx = (*ptr);
+						++ptr;
+						doublevy = (*ptr);
+						two = zeroplane + (float)(sqrt(doublevx*doublevx + doublevy*doublevy))*yscale;
+
+						// crashed in here; presumably v not finite
+
+						vec1.y = (float)(one - pPNT->pos.y);
+						vec2.y = (float)(two - pPNT->pos.y);
+						break;
+
+					case FLAG_VEC3_HEIGHT:
+
+						ptr = (real *)pdata1 + offset_data;
+						doublevx = (float)(*ptr);
+						++ptr;
+						doublevy = (float)(*ptr);
+						++ptr;
+						doublevz = (float)(*ptr);
+						one = zeroplane + (float)(
+							sqrt(doublevx*doublevx + doublevy*doublevy + doublevz*doublevz))
+							*yscale;
+
+						ptr = (real *)pdata2 + offset_data;
+						doublevx = (float)(*ptr);
+						++ptr;
+						doublevy = (float)(*ptr);
+						++ptr;
+						doublevz = (float)(*ptr);
+						two = zeroplane + (float)(
+							sqrt(doublevx*doublevx + doublevy*doublevy + doublevz*doublevz))
+							*yscale;
+
+						vec1.y = (float)(one - pPNT->pos.y);
+						vec2.y = (float)(two - pPNT->pos.y);
+
+						break;
+					};
+
+					// decide quadrant and gradient for each direction
+
+					if (vec1.x > 0.0) {
+						if (vec1.z > 0.0) {
+							quad1 = 0;
+						}
+						else {
+							quad1 = 3;
+						};
+					}
+					else {
+						if (vec1.z > 0.0) {
+							quad1 = 1;
+						}
+						else {
+							quad1 = 2;
 						};
 					};
-					vec1.x = pVert1->x-pVertex->x;
-					vec2.x = pVert2->x-pVertex->x;
-					vec1.y = pVert1->y-pVertex->y;
-					vec2.y = pVert2->y-pVertex->y;
+					if (vec2.x > 0.0) {
+						if (vec2.z > 0.0) {
+							quad2 = 0;
+						}
+						else {
+							quad2 = 3;
+						};
+					}
+					else {
+						if (vec2.z > 0.0) {
+							quad2 = 1;
+						}
+						else {
+							quad2 = 2;
+						};
+					};
+
+					// cases:
+					// quadrant is +1 or -3 => Anticlockwise
+					// quadrant is same => check gradients
+					// quadrant is opposite => check against negated gradient
+
+					if ((quad2 == quad1 + 1) || (quad2 == quad1 - 3))
+					{
+						pVecAnticlock = &vec2;
+						pVecClock = &vec1;
+					}
+					else {
+						if ((quad1 == quad2 + 1) || (quad1 == quad2 - 3))
+						{
+							pVecAnticlock = &vec1;
+							pVecClock = &vec2;
+						}
+						else {
+
+							grad1 = vec1.z / vec1.x;
+							grad2 = vec2.z / vec2.x;
+
+							// CHECK:
+							if (quad1 == quad2) {
+
+								// Higher gradient is then always Anticlockwise
+
+								if (grad1 > grad2) {
+									pVecAnticlock = &vec1;
+									pVecClock = &vec2;
+								}
+								else {
+									pVecAnticlock = &vec2;
+									pVecClock = &vec1;
+								};
+
+							}
+							else {
+								// opposite quadrants:
+								// Lower gradient grad2 means Anticlockwise 2
+								// regardless of which quadrants
+
+								if (grad2 < grad1) {
+									pVecAnticlock = &vec2;
+									pVecClock = &vec1;
+								}
+								else {
+									pVecAnticlock = &vec1;
+									pVecClock = &vec2;
+								};
+							};
+						};
+					};
+
 					//D3DXVec3Cross(&(pPNT->normal),&vec1,&vec2);
-					D3DXVec3Cross(&normalnext,&vec1,&vec2);
+					D3DXVec3Cross(&normalnext, pVecAnticlock, pVecClock);
 					pPNT->normal.x += normalnext.x;
 					pPNT->normal.y += normalnext.y;
 					pPNT->normal.z += normalnext.z;
 				};
-			};*/
 
-			// That was not good enough because we need to account that
-			// maybe corner sequence is different for different triangles.
-			break;
-
-		case FLAG_VELOCITY_HEIGHT:
-			ptr = (real *)pdata + offset_data;
-			doublevx = (*ptr);
-			++ptr;
-			doublevy = (*ptr);
-			pPNT->pos.y = zeroplane + (float)(sqrt(doublevx*doublevx+doublevy*doublevy))*yscale; // zeroplane should be == 0.0
-
-		/*	pTri = (Triangle *)(pVertex->triangles.ptr[0]);
-			if (pTri->flags > 0)
-			{
-				pTri = (Triangle *)(pVertex->triangles.ptr[1]);
-				if (pTri->flags > 0)
-					pTri = (Triangle *)(pVertex->triangles.ptr[2]);
 			};
-			
-			if (pTri->cornerptr[0] == pVertex){
-				pVert1 = pTri->cornerptr[1];
-				pVert2 = pTri->cornerptr[2];
-			} else {
-				pVert1 = pTri->cornerptr[0];
-				if (pTri->cornerptr[1] == pVertex) {
-					pVert2 = pTri->cornerptr[2];
-				} else {
-					pVert2 = pTri->cornerptr[1];
-				};
-			};
-		*/	
-			break;
-		case FLAG_VEC3_HEIGHT:
-			ptr = (real *)pdata + offset_data;
-			doublevx = (*ptr);
-			++ptr;
-			doublevy = (*ptr);
-			++ptr;
-			doublevz = (*ptr);
-			pPNT->pos.y = zeroplane + 
-				(float)(sqrt(doublevx*doublevx+doublevy*doublevy+doublevz*doublevz))*yscale;
-			break;
+
+			SetVertexColour(pPNT, pdata, colourflag, offset_data, offset_vcolour);
+
+			++pPNT;
+			++pdata;
 		};
-
-		if (heightflag != FLAG_FLAT_MESH)
-		{
-			// Now we gotta set the normal.
-			// Technically should take average of x-products
-			//	Can we pass to shader?
-			// For now, just take 1 triangle
-			// Hopefully DX will make its own thread
-			pPNT->normal.x = 0.0f;
-			pPNT->normal.y = 0.0f;
-			pPNT->normal.z = 0.0f;
-
-			neigh_len = pVertex->GetNeighIndexArray(izNeighs);
-			int iinext;
-			for (ii = 0; ii < neigh_len; ii++)
-			{
-				iinext = ii+1;
-				if (iinext == neigh_len) iinext = 0;
-
-				pVert1 = X+izNeighs[ii];
-				pVert2 = X+izNeighs[iinext];
-				// We might like to use data.pos instead.
-				pdata1 = pData + BEGINNING_OF_CENTRAL + izNeighs[ii];
-				pdata2 = pData + BEGINNING_OF_CENTRAL + izNeighs[iinext];
-
-				vec1.x = pVert1->pos.x-pVertex->pos.x;
-				vec2.x = pVert2->pos.x-pVertex->pos.x;
-
-				vec1.z = pVert1->pos.y-pVertex->pos.y;
-				vec2.z = pVert2->pos.y-pVertex->pos.y;
-
-				switch(heightflag)
-				{
-				case FLAG_DATA_HEIGHT:
-
-					data1 = *(((real *)pdata1) + offset_data);
-					data2 = *(((real *)pdata2) + offset_data);
-					data0 = *(((real *)pdata) + offset_data);
-
-					vec1.y = zeroplane + (float)((data1-data0)*(real)yscale);
-					vec2.y = zeroplane + (float)((data2-data0)*(real)yscale);  
-					// does putting in brackets get rid of FP overflow? Adding (real)?
-					// Think the issue here is converting e+61 (undefined double) to float.
-					break;
-				case FLAG_VELOCITY_HEIGHT:
-					ptr = (real *)pdata1 + offset_data;
-					
-					doublevx = (*ptr);
-					++ptr;
-					doublevy = (*ptr);
-				
-					v = (float)sqrt(doublevx*doublevx+doublevy*doublevy)*yscale;
-					// avoids a crash to use double if v^2 > 1e38 
-
-					if (!_finite(v)) {
-						printf("problems vx vy \n"); 
-						getch();
-						 doublevx = doublevx;
-					}
-
-					one = zeroplane + v*yscale;
-					
-					ptr = (real *)pdata2 + offset_data;
-					doublevx = (*ptr);
-					++ptr;
-					doublevy = (*ptr);
-					two = zeroplane + (float)(sqrt(doublevx*doublevx+doublevy*doublevy))*yscale;
-
-					// crashed in here; presumably v not finite
-
-					vec1.y = (float)(one-pPNT->pos.y);
-					vec2.y = (float)(two-pPNT->pos.y);
-					break;
-
-				case FLAG_VEC3_HEIGHT:
-					
-					ptr = (real *)pdata1 + offset_data;
-					doublevx = (float)(*ptr);
-					++ptr;
-					doublevy = (float)(*ptr);
-					++ptr;
-					doublevz = (float)(*ptr);
-					one = zeroplane + (float)(
-						sqrt(doublevx*doublevx+doublevy*doublevy+doublevz*doublevz))
-									*yscale;
-					
-					ptr = (real *)pdata2 + offset_data;
-					doublevx = (float)(*ptr);
-					++ptr;
-					doublevy = (float)(*ptr);
-					++ptr;
-					doublevz = (float)(*ptr);
-					two = zeroplane + (float)(
-						sqrt(doublevx*doublevx+doublevy*doublevy+doublevz*doublevz))
-									*yscale;
-					
-					vec1.y = (float)(one-pPNT->pos.y);
-					vec2.y = (float)(two-pPNT->pos.y);
-					
-					break;
-				};
-
-				// decide quadrant and gradient for each direction
-
-				if (vec1.x > 0.0){
-					if (vec1.z > 0.0){
-						quad1 = 0;
-					} else {
-						quad1 = 3;
-					};
-				} else {
-					if (vec1.z > 0.0){
-						quad1 = 1;
-					} else {
-						quad1 = 2;
-					};
-				};
-				if (vec2.x > 0.0){						
-					if (vec2.z > 0.0){
-						quad2 = 0;
-					} else {
-						quad2 = 3;
-					};
-				} else {
-					if (vec2.z > 0.0){
-						quad2 = 1;
-					} else {
-						quad2 = 2;
-					};
-				};
-
-				// cases:
-				// quadrant is +1 or -3 => Anticlockwise
-				// quadrant is same => check gradients
-				// quadrant is opposite => check against negated gradient
-
-				if ((quad2 == quad1+1) || (quad2 == quad1-3))
-				{
-					pVecAnticlock = &vec2;
-					pVecClock = &vec1;
-				} else {
-					if ((quad1 == quad2+1) || (quad1 == quad2-3))
-					{
-						pVecAnticlock = &vec1;
-						pVecClock = &vec2;
-					} else {
-						
-						grad1 = vec1.z/vec1.x;
-						grad2 = vec2.z/vec2.x;
-
-						// CHECK:
-						if (quad1 == quad2) {
-							
-							// Higher gradient is then always Anticlockwise
-
-							if (grad1 > grad2) {
-								pVecAnticlock = &vec1;
-								pVecClock = &vec2;
-							} else {
-								pVecAnticlock = &vec2;
-								pVecClock = &vec1;
-							};
-							
-						} else {
-							// opposite quadrants:
-							// Lower gradient grad2 means Anticlockwise 2
-							// regardless of which quadrants
-
-							if (grad2 < grad1) {
-								pVecAnticlock = &vec2;
-								pVecClock = &vec1;
-							} else {
-								pVecAnticlock = &vec1;
-								pVecClock = &vec2;
-							};
-						};
-					};
-				};
-				
-				//D3DXVec3Cross(&(pPNT->normal),&vec1,&vec2);
-				D3DXVec3Cross(&normalnext,pVecAnticlock,pVecClock);
-				pPNT->normal.x += normalnext.x;
-				pPNT->normal.y += normalnext.y;
-				pPNT->normal.z += normalnext.z;
-			};
-
-		};
-
-		SetVertexColour(pPNT,pdata,colourflag,offset_data,offset_vcolour);
-	
-		++pPNT;
 		++pVertex;
-		++pdata;
 	};
 	
 	long totalVertices = numVerticesUse;
 	
 	if (totalVertices > numVerticesMax[1])
 	{
-		printf("problems! vertex array exceeded"); getch();
+		printf("problems! vertex array exceeded"); getch(); getch();
 	}; // surely > not >=
 	
 	long triCount = 0;
@@ -6734,7 +6751,7 @@ void TriMesh::SetVerticesAndIndices(VertexPNT3 * vertices[],			// better to do i
 							++totalVertices;
 							if (totalVertices > numVerticesMax[1])
 							{
-								printf("problems. vertex array exceeded"); getch();
+								printf("problems. vertex count exceeded"); getch();
 							};
 						};
 					};
@@ -6910,7 +6927,7 @@ long TriMesh::GetVertsRightOfCutawayLine_Sorted(long * VertexIndexArray,
 		fprintf(debuglist, "%d VertIndex %d radius %d\n",  iVertex, VertexIndexArray[iVertex], radiusArray[iVertex]);		
 	}
 	fclose(debuglist);
-	printf("\niCaret %d \n", iCaret);
+	printf("\nGetVertsRightofCutawayLineSorted iCaret %d \n", iCaret);
 
 	QuickSort (VertexIndexArray, radiusArray,
 		0,iCaret-1); // lowest and highest elements to be sorted
@@ -7947,24 +7964,25 @@ int TriMesh::SaveText(const char * filename)
 	return 0;
 }
 
+
 void TriMesh::CreateTilingAndResequence(TriMesh * pDestMesh) {
 	// First set Vertex::iVolley to which tile.
 	// Then set Triangle::indicator to which tile. Rule that
 	// if triangle has 2 corners within same tile, it belongs to the corresponding tri tile.
 	// Each tile should have the right number of elements.
 	// This then allows us to create a resequence, which we can put in
-	
+
 	// We then want to do what? Create another TriMesh object into which we pour the
 	// resequenced data, updating all neighbour index etc etc.
 	// ---------
-	
+
 	// 1. Create vertex sequence.
-	
+
 	// When a point is chosen for this block, we identify the point with most
 	// connections to the block and include that next.
 	// And we make this block contiguous to previous ...
 	// To create bottom row simultaneously will prevent just spreading out horizontally.
-	
+
 	// Let's suppose we start by creating all these horizontal blocks, knowing how wide we
 	// want them to be.
 	// Then, suppose we follow on to each of these? Might not always be able to.
@@ -7972,9 +7990,9 @@ void TriMesh::CreateTilingAndResequence(TriMesh * pDestMesh) {
 
 	// We probably MIGHT like the rows of blocks not to end up offset. Or worse, with some blocks squatter than others.
 	// Well, it doesn't really matter if it's offset, so we could actually go with that.
-		
+
 	// ie look to place first point of run where multiple previous blocks meet.
-	
+
 	// *. Make next point of tile, where there are the greatest number of connections.
 	// Given same # of connections to more points, use earliest point of tile.
 	// Or -- using earliest point, choose those with greatest number of connections -- to this tile or to all?
@@ -7985,18 +8003,18 @@ void TriMesh::CreateTilingAndResequence(TriMesh * pDestMesh) {
 
 
 	int numTilesOnGo = 12;
-	int spacing = numInnermostRow/numTilesOnGo;
+	int spacing = numInnermostRow / numTilesOnGo;
 
 	printf("numInnermostRow %d tile width %d remainder %d \n",
-		numInnermostRow,spacing,numInnermostRow % spacing);
-	
+		numInnermostRow, spacing, numInnermostRow % spacing);
+
 	// Distribute remainder through tiles! :
-	int Tileskips_between_remainder_points = numTilesOnGo/(numInnermostRow % spacing);
-	
+	int Tileskips_between_remainder_points = numTilesOnGo / (numInnermostRow % spacing);
+
 	printf("Tileskips between remainder +1's %d remainder %d\n",
-		Tileskips_between_remainder_points, 
+		Tileskips_between_remainder_points,
 		numInnermostRow % Tileskips_between_remainder_points);
-		
+
 	// Note: Using greatest # connections AVOIDS accidental holes.
 	// But so does using the full neighbour-based spread. ??
 	// What if blocks meet... and we never get to do neighbours of those points.
@@ -8005,7 +8023,7 @@ void TriMesh::CreateTilingAndResequence(TriMesh * pDestMesh) {
 	// have chosen wisely which points to use from that list.
 
 	// Take array for resequence:
-	long index[numTilesMajor][threadsPerTileMajor]; 
+	long index[numTilesMajor][threadsPerTileMajor];
 	long caret[numTilesMajor]; // checked up to caret, caret is the first one that can have a free neighbour.
 	long iVertex, i, iTile;
 	// Do we want to do this? Well, 
@@ -8013,27 +8031,27 @@ void TriMesh::CreateTilingAndResequence(TriMesh * pDestMesh) {
 	// Then just hold on to the index of the earliest point for which we did not
 	// exhaust the expansion to neighbours.
 	// So we expand around each point -- remembering initial seq is random ...
-	
+
 	Vertex * pVertex = X;
-	for (iVertex = 0; iVertex < numVertices;iVertex++)
+	for (iVertex = 0; iVertex < numVertices; iVertex++)
 	{
 		pVertex->iVolley = -1; // which tile
 		pVertex->iIndicator = 10000000; // link distance from initial seeds
 		++pVertex;
 	}
-	
-	memset(index,0,sizeof(long)*numTilesMajor*threadsPerTileMajor);
+
+	memset(index, 0, sizeof(long)*numTilesMajor*threadsPerTileMajor);
 	int ctr = 0;
 
 	long izNeigh[128], izNeigh2[128], izTri[128];
-	Vertex * pCaret, * pNeigh, * pNeighNeigh;
+	Vertex * pCaret, *pNeigh, *pNeighNeigh;
 	bool bTilesRemaining = true;
 	int neigh_len, neigh_len2;
 	long iTileStart = 0;
 	long iThread, ii;
 	i = 0; // let PBC go through 1st tile.
 	iTile = 0;
-	for (i = 0; i <= numInnermostRow-spacing;i += spacing)
+	for (i = 0; i <= numInnermostRow - spacing; i += spacing)
 	{
 		index[iTile][0] = i;
 		X[i].iVolley = iTile;
@@ -8044,37 +8062,37 @@ void TriMesh::CreateTilingAndResequence(TriMesh * pDestMesh) {
 			pNeigh = X + izNeigh[ii];
 			pNeigh->iIndicator = 1;
 		}
-		printf("i %d ; ",i);
+		printf("i %d ; ", i);
 		if (iTile % Tileskips_between_remainder_points == 0)
 		{
 			ctr++;
-			if (ctr <= numInnermostRow % spacing) 
+			if (ctr <= numInnermostRow % spacing)
 				i++; // extra move on 1
 		};
 		iTile++;
 	}
 	printf("\n");
-	printf("final distance %d spacing %d \n",numInnermostRow-i+spacing, spacing);
-	
+	printf("final distance %d spacing %d \n", numInnermostRow - i + spacing, spacing);
+
 	// iTile is now number of tiles along innermost row.
 	numTilesOnGo = iTile;
-	
+
 	// What if we seeded whole thing: seeds kind of repel other seeds??
 	// Sounds tricky ... how to know where to place seeds?
 	// Carry on this way instead.
-	
+
 	// Check for greatest connections amongst the neighbours of the latest point ... vs...
 	// check for greatest connections from all so far. 
-	
+
 	// Alternative: geometric sweep. Move sweepline radius out and attribute all within into some block.
 	// According to existing neighbours. Sparser areas will make narrower blocks? Happens with the other way also.
 	// If the sparseness is created by pushing to left and right then it's not so.
 	// If the sparseness is created by upward stretch, block is stretched narrow.
 	// Cannot see way to avoid.
-	
+
 	// Sweepline has its own problems. Makes assignment dependent on small variations in radius to determine
 	// what else is already within sweepline.
-	
+
 	// . When we add a point, look at its neighbours: does one of them now have more connections than the 
 	// otherwise next point??
 
@@ -8088,57 +8106,57 @@ void TriMesh::CreateTilingAndResequence(TriMesh * pDestMesh) {
 	// Refresh it when we get to the end of the tile.
 	long lowestradius;
 	int iWhich;
-	memset(caret,0,sizeof(long)*numTilesMajor);
+	memset(caret, 0, sizeof(long)*numTilesMajor);
 	// storing lowest neigh index for tile won't work:
 	// can be altered if point is used up by another tile.
-	
+
 	while (iTileStart < numTilesMajor - numTilesOnGo) {
-					/*
+		/*
 		// Debug output:
 		FILE * fp;
 		if (iTileStart == 280) {
-			fp = fopen("tiles3.txt","a");
-			for (iTile = 250; iTile < 280; iTile++)
-			{
-					fprintf(fp,"%d I x y   ",iTile);
-			};
-			fprintf(fp,"\n");
-			
-			for (iThread = 0; iThread < threadsPerTileMajor; iThread++)
-			{
-				for (iTile = 250; iTile < 280; iTile++)
-				{
-					fprintf(fp,"%d %d %1.10E %1.10E   ",
-						iTile,index[iTile][iThread],(X + index[iTile][iThread])->pos.x,(X + index[iTile][iThread])->pos.y);
-				};
-				fprintf(fp,"\n");
-			};
-
-				fprintf(fp,"\n");
-			for (long iVertex = 0; iVertex < numVertices; iVertex++)
-			{
-				pVertex = X + iVertex;
-				if (pVertex->iVolley == -1) {
-					fprintf(fp,"%d %1.10E %1.10E %d \n",iVertex,pVertex->pos.x,pVertex->pos.y,pVertex->iIndicator);
-				}
-			};
-
-				fprintf(fp,"\n");
-			fclose(fp);			
+		fp = fopen("tiles3.txt","a");
+		for (iTile = 250; iTile < 280; iTile++)
+		{
+		fprintf(fp,"%d I x y   ",iTile);
 		};
-*/
-		
+		fprintf(fp,"\n");
+
+		for (iThread = 0; iThread < threadsPerTileMajor; iThread++)
+		{
+		for (iTile = 250; iTile < 280; iTile++)
+		{
+		fprintf(fp,"%d %d %1.10E %1.10E   ",
+		iTile,index[iTile][iThread],(X + index[iTile][iThread])->pos.x,(X + index[iTile][iThread])->pos.y);
+		};
+		fprintf(fp,"\n");
+		};
+
+		fprintf(fp,"\n");
+		for (long iVertex = 0; iVertex < numVertices; iVertex++)
+		{
+		pVertex = X + iVertex;
+		if (pVertex->iVolley == -1) {
+		fprintf(fp,"%d %1.10E %1.10E %d \n",iVertex,pVertex->pos.x,pVertex->pos.y,pVertex->iIndicator);
+		}
+		};
+
+		fprintf(fp,"\n");
+		fclose(fp);
+		};
+		*/
+
 		for (iThread = 1; iThread <= threadsPerTileMajor; iThread++)
 		{
-			printf("\n iTileStart %d -- ",iTileStart);
+			printf("\n iTileStart %d -- ", iTileStart);
 			// <= because after the last point, we will set up the 1st point of the next tile.
 			for (iTile = iTileStart; ((iTile < iTileStart + numTilesOnGo) &&
-					 ((iThread < threadsPerTileMajor) || (iTile + numTilesOnGo + numTilesOnGo < numTilesMajor)))
-								; iTile++)
+				((iThread < threadsPerTileMajor) || (iTile + numTilesOnGo + numTilesOnGo < numTilesMajor)))
+				; iTile++)
 			{
-				printf("%d-",iTile);
+				printf("%d-", iTile);
 				// Add 1 to all tiles on the go:
-				
+
 				// For this tile, we want to accumulate one further point.
 				// We always choose a neighbour of the 'caret' that was the first point added
 				// that still has neighbours unallocated.
@@ -8147,50 +8165,50 @@ void TriMesh::CreateTilingAndResequence(TriMesh * pDestMesh) {
 				// However, we do search within the neighbours of the caret point, to find which
 				// has the max connections to this tile.
 				// If there is a tie, choose the earliest index -- although this is meaningless.
-				
+
 				if (caret[iTile] < iThread) {
-					
+
 					// We will choose one of the unallocated neighs of the tile that has the
 					// lowest link radius to the base row.
 					// Within those, choose one which has the max connections to this tile.
 					// Within those, choose the earliest.
 
 					// =====================================================================
-					
+
 					// First increment caret to where there will be any unallocated neighbours.
-					
+
 					int maxconnects, connects, numUnused;
 					int unallocated = 0;
 					// We may have wiped out all connections of caret, by the actions of other tiles if not this one.
 					// Move forward in the list until we have unallocated neighbours or until we run out of list.
-					do {	
+					do {
 						pVertex = X + index[iTile][caret[iTile]];
 						if (pVertex->iVolley != iTile) {
-							printf("(pVertex->iVolley != iTile) \n"); 
+							printf("(pVertex->iVolley != iTile) \n");
 							getch();
 						}; // defensive test
 						neigh_len = pVertex->GetNeighIndexArray(izNeigh);
 						for (i = 0; ((i < neigh_len) && (unallocated == 0)); i++)
 						{
 							pNeigh = X + izNeigh[i];
-							if (pNeigh->iVolley == -1) 
+							if (pNeigh->iVolley == -1)
 								unallocated++;
 						};
-						
+
 						if (unallocated == 0) {
 							caret[iTile]++;
 							if (caret[iTile] >= iThread) {
 								// This means we are going to have to find a different point from which to
 								// start more allocation to this tile.							
 								// This case is going to be a problem even if we just placed the last point.
-								printf("This is bad news! Tile %d covered over.",iTile);
-								getch();							
+								printf("This is bad news! Tile %d covered over.", iTile);
+								getch();
 							};
 						};
 					} while (unallocated == 0);
-					
+
 					lowestradius = 10000000;
-										
+
 					for (iWhich = caret[iTile]; iWhich < iThread; iWhich++)
 					{
 						pVertex = X + index[iTile][iWhich];
@@ -8203,7 +8221,7 @@ void TriMesh::CreateTilingAndResequence(TriMesh * pDestMesh) {
 								lowestradius = pNeigh->iIndicator;
 						};
 					};
-					
+
 					maxconnects = 0;
 					for (iWhich = caret[iTile]; iWhich < iThread; iWhich++)
 					{
@@ -8221,13 +8239,13 @@ void TriMesh::CreateTilingAndResequence(TriMesh * pDestMesh) {
 								for (ii = 0; ii < neigh_len2; ii++)
 								{
 									pNeighNeigh = X + izNeigh2[ii];
-									if (pNeighNeigh->iVolley == iTile) connects++;								
+									if (pNeighNeigh->iVolley == iTile) connects++;
 								};
 								if (connects > maxconnects) maxconnects = connects;
 							};
 						};
 					};
-					
+
 					iWhich = caret[iTile];
 					bool bNotFound = true;
 					do {
@@ -8245,70 +8263,72 @@ void TriMesh::CreateTilingAndResequence(TriMesh * pDestMesh) {
 								for (ii = 0; ii < neigh_len2; ii++)
 								{
 									pNeighNeigh = X + izNeigh2[ii];
-									if (pNeighNeigh->iVolley == iTile) connects++;								
+									if (pNeighNeigh->iVolley == iTile) connects++;
 								};
 								if (connects == maxconnects) bNotFound = false;
 							};
 						};
 						iWhich++;
 					} while (bNotFound);
-					
+
 					// pNeigh is the one to change. (Use pNeigh itself):
 
 					if (iThread < threadsPerTileMajor) {
 
 						pNeigh->iVolley = iTile;
-						index[iTile][iThread] = pNeigh-X; // that will always work
-					} else {
+						index[iTile][iThread] = pNeigh - X; // that will always work
+					}
+					else {
 						// Note: we only ran this in case that
 						// (iTile + numTilesOnGo < numTilesMajor - numTilesOnGo)
 
 						pNeigh->iVolley = iTile + numTilesOnGo;
-						index[iTile + numTilesOnGo][0] = pNeigh-X;
+						index[iTile + numTilesOnGo][0] = pNeigh - X;
 						// Okay, a problem: number of tiles is not divisible by numTilesOnGo?
 						// We need to change that I expect.
 
 						// It would be easier now if it was divisible.
-						
+
 					};
 					neigh_len2 = pNeigh->GetNeighIndexArray(izNeigh2);
 					for (ii = 0; ii < neigh_len2; ii++)
 					{
 						pNeighNeigh = X + izNeigh2[ii];
-						if (pNeighNeigh->iIndicator > lowestradius + 1) 
+						if (pNeighNeigh->iIndicator > lowestradius + 1)
 							pNeighNeigh->iIndicator = lowestradius + 1;
 					};
 
 					// Note that we did not maintain caret[iTile] any more -- maybe it ran out of points, maybe not.
-				} else {
+				}
+				else {
 					// (caret[iTile] >= iThread)
-					
+
 					// The tile points with unused neighbours have been exhausted.
-					
+
 					// We should follow a procedure that is similar to what we do when we first
 					// start off a tile. 
-					
+
 					// If this is first point of tile, prefer we go to the anticlockwise side 
 					// of the "previous" tile, numTilesOnGo less.
 					// So find one of those points; move anticlockwise while on edge as much
 					// as we can.
-					
+
 					// If we got the whole tile covered up by accident, that's a problem!
 					// SO DO WHAT?
 					// Mine our way out from the most anticlockwise point??
 					// This won't be good anyway!
 					// Better to start on the next tile when we run out of one.
-									
+
 					// We accumulate one point at a time so all run out together.
 					// But this could still result in something being covered over?
 					// That sounds nuts. Don't worry about efficiency in this unlikely case.
-					
+
 					// How about we just fail in that case.
-					
+
 					printf("Failed because tile covered over: iTile %d iThread %d numTilesOnGo %d iTileStart %d \n",
-							iTile, iThread, numTilesOnGo, iTileStart);
+						iTile, iThread, numTilesOnGo, iTileStart);
 					getch();
-					
+
 				}; // if (caret[iTile] < iThread)
 			}; // next iThread
 		}; // next iTile
@@ -8316,12 +8336,12 @@ void TriMesh::CreateTilingAndResequence(TriMesh * pDestMesh) {
 		iTileStart += numTilesOnGo;
 		if (numTilesMajor - iTileStart < numTilesOnGo)
 			numTilesOnGo = numTilesMajor - iTileStart;
-		
-	}; // while (iTileStart < numTilesMajor) 
-		
-	// Now we have to do the last row. Do an azimuthal sweep.
 
-	// Sort points.
+	}; // while (iTileStart < numTilesMajor) 
+
+	   // Now we have to do the last row. Do an azimuthal sweep.
+
+	   // Sort points.
 	long thetaindex[2048];
 	real thetaarray[2048];
 	pVertex = X;
@@ -8330,13 +8350,13 @@ void TriMesh::CreateTilingAndResequence(TriMesh * pDestMesh) {
 	{
 		if (pVertex->iVolley == -1) {
 			thetaindex[i] = iVertex;
-			thetaarray[i] = pVertex->pos.x/pVertex->pos.y;
+			thetaarray[i] = pVertex->pos.x / pVertex->pos.y;
 			i++;
 		};
 		pVertex++;
 	}
 	long numUnallocated = i;
-	QuickSort (thetaindex, thetaarray, 0, numUnallocated-1);
+	QuickSort(thetaindex, thetaarray, 0, numUnallocated - 1);
 	printf("number left to fill tiles: %d unallocated %d \n",
 		numTilesOnGo*threadsPerTileMajor, numUnallocated);
 	if (numTilesOnGo*threadsPerTileMajor != numUnallocated)
@@ -8345,8 +8365,8 @@ void TriMesh::CreateTilingAndResequence(TriMesh * pDestMesh) {
 		getch();
 	};
 	i = 0;
-	printf("iTile = %d",iTile);
-	for (iTile = numTilesMajor-numTilesOnGo;iTile < numTilesMajor;iTile++)
+	printf("iTile = %d", iTile);
+	for (iTile = numTilesMajor - numTilesOnGo; iTile < numTilesMajor; iTile++)
 	{
 		for (iThread = 0; iThread < threadsPerTileMajor; iThread++)
 		{
@@ -8355,40 +8375,56 @@ void TriMesh::CreateTilingAndResequence(TriMesh * pDestMesh) {
 			i++;
 		};
 	};
-	
+
+	// The result: it does assign reasonable iVolley to all vertices.
+	// It looks weird and somewhat inefficient.
+
+	// There are surely better tilings.
+	/*
+
+	FILE * dbgfile = fopen("iVolley.txt", "w");
+	for (long iVertex = 0; iVertex < NUMVERTICES; iVertex++)
+	fprintf(dbgfile, "%d %d %1.14E %1.14E\n", iVertex, X[iVertex].iVolley, X[iVertex].pos.x, X[iVertex].pos.y);
+	fclose(dbgfile);
+
+	printf("done to this point.\n");
+	while (1) getch();
+
+	*/
+
 
 	Vertex * pDestvert;
 	for (iTile = 0; iTile < numTilesMajor; iTile++)
-	for (iThread = 0; iThread < threadsPerTileMajor; iThread++)
-	{
-		pVertex = X + index[iTile][iThread];  // index[iTile][iThread] is what should be mapped to :
-		pVertex->iIndicator = iTile*threadsPerTileMajor + iThread;
-		
-		
-	//	pDestvert = pDestMesh->X + iTile*threadsPerTileMajor + iThread;
-	//	memcpy(pDestvert,pVertex,sizeof(Vertex)); // This means no dynamic arrays can be involved. Are they?
-		
-		// Be careful: neighbours izNeigh refer to old indices -- so what to do now?
+		for (iThread = 0; iThread < threadsPerTileMajor; iThread++)
+		{
+			pVertex = X + index[iTile][iThread];  // index[iTile][iThread] is what should be mapped to :
+			pVertex->iIndicator = iTile*threadsPerTileMajor + iThread;
 
-		/*pDestvert->A = pVertex->A;
-		pDestvert->Adot = pVertex->Adot;
-		pDestvert->AreaCell = pVertex->AreaCell;
-		pDestvert->B = pVertex->B;
-		pDestvert->pos = pVertex->pos;
-		pDestvert->E = pVertex->E;
-		pDestvert->Elec = pVertex->Elec;
-		pDestvert->flags = pVertex->flags;
-		pDestvert->has_periodic = pVertex->has_periodic;
-		pDestvert->Ion = pVertex->Ion;
-		pDestvert->izNeigh;
-		pDestvert->izTri;
-		pDestvert->neigh_len = pVertex->neigh_len;
-		pDestvert->Neut = pVertex->Neut;
-		pDestvert->phi = pVertex->phi;
-		pDestvert->pos = pVertex->pos;
-		pDestvert->p*/
 
-	}
+			//	pDestvert = pDestMesh->X + iTile*threadsPerTileMajor + iThread;
+			//	memcpy(pDestvert,pVertex,sizeof(Vertex)); // This means no dynamic arrays can be involved. Are they?
+
+			// Be careful: neighbours izNeigh refer to old indices -- so what to do now?
+
+			/*pDestvert->A = pVertex->A;
+			pDestvert->Adot = pVertex->Adot;
+			pDestvert->AreaCell = pVertex->AreaCell;
+			pDestvert->B = pVertex->B;
+			pDestvert->pos = pVertex->pos;
+			pDestvert->E = pVertex->E;
+			pDestvert->Elec = pVertex->Elec;
+			pDestvert->flags = pVertex->flags;
+			pDestvert->has_periodic = pVertex->has_periodic;
+			pDestvert->Ion = pVertex->Ion;
+			pDestvert->izNeigh;
+			pDestvert->izTri;
+			pDestvert->neigh_len = pVertex->neigh_len;
+			pDestvert->Neut = pVertex->Neut;
+			pDestvert->phi = pVertex->phi;
+			pDestvert->pos = pVertex->pos;
+			pDestvert->p*/
+
+		}
 
 	//FILE * dbg_seq = fopen("dbg_seq.txt", "w");
 	//pVertex = X;
@@ -8399,10 +8435,960 @@ void TriMesh::CreateTilingAndResequence(TriMesh * pDestMesh) {
 	//}
 	//fclose(dbg_seq);
 	printf("Reseq : vertex mapping done.\n"); // All we have done is set indicator though
+
+											  // This WORKED. iVolley and iIndicator are populated, we got some halfway sensible values in there. Now what?:
+
+
+											  // ===============================================================================	
+											  // -------------------------------------------------------------------------------
+
+											  // Now comes the next: assign triangles into blocks also. :-(
+											  // More fiddlinesse :
+
+											  // First preference if triangle has 2 points within a vertex tile then assign it there.
+											  // We then try assigning 3-separate triangles to the tile that has the least assigned.
+											  // Do we end up with an unassignable triangle? In that case we have to see what?
+											  // Keep a record of how many 'negotiables' were attributed to each tile.
+											  // Set the unassignable to the one with the most negotiables.
+											  // Find one of the others and reassign it to a different tile.
+											  // If they all had 0 other negotiables, we fail.
+
+	long tris_assigned[numTriTiles];
+	long negotiables[numTriTiles];
+	memset(tris_assigned, 0, sizeof(long)*numTriTiles);
+	memset(negotiables, 0, sizeof(long)*numTriTiles);
+	long iTri, iVolley0, iVolley1, iVolley2;
+	Triangle * pTri = T;
+	for (iTri = 0; iTri < numTriangles; iTri++)
+	{
+		iVolley0 = pTri->cornerptr[0]->iVolley;
+		iVolley1 = pTri->cornerptr[1]->iVolley;
+		iVolley2 = pTri->cornerptr[2]->iVolley;
+
+		if ((iVolley0 == iVolley1) || (iVolley0 == iVolley2)) {
+			pTri->indicator = iVolley0; // only 1 int available in triangle
+			tris_assigned[iVolley0]++;
+			if (tris_assigned[iVolley0] > threadsPerTileMinor) {
+				printf("oh no - too many tris allocated on 1st pass to tri tile %d\n",
+					iVolley0);
+				getch();
+			};
+		}
+		else {
+			if (iVolley1 == iVolley2)
+			{
+				pTri->indicator = iVolley1;
+				tris_assigned[iVolley1]++;
+				if (tris_assigned[iVolley1] > threadsPerTileMinor) {
+					printf("oh no - too many tris allocated on 1st pass to tri tile %d\n",
+						iVolley1);
+					getch();
+				};
+			}
+			else {
+				pTri->indicator = -1;
+				negotiables[iVolley0]++;
+				negotiables[iVolley1]++;
+				negotiables[iVolley2]++;
+			};
+		};
+		++pTri;
+	}
+	bool bThirdPassNeeded = false;
+	long num0, num1, num2, nego0, nego1, nego2;
+
+	// If tris_assigned + negotiables == threadsPerTileMinor then we
+	// should start by assigning those...
+	// If 1 more, we can go along assigning those, and so on.
+	// Okay, that didn't work.
+
+	// Going with a domain decomposition type of idea instead. For simplicity
+	// let us take individual rows. We want to first try to assign the right number
+	// of negotiables to each row. 
+	// This may eventually break down but hopefully should be good enough initially.
+
+	// Once we have them in a row, if we do not manage to get it right on a first pass,
+	// and once shifting to immediate neighbours is exhausted, we can move extra negotiables
+	// clockwise as long as there are joins. 
+	// It does depend on having adequate shared negotiables for every pair in the row.
+	// That is something to aim for in deciding which to keep for this row -- or, we might find
+	// that it's not even possible to create a correct configuration.
+
+	// Rows in seq since 1st row needs to claim what it can.
+
+	long nego_2feet[numTriTiles]; // number of tris with 2 feet in this row, accessible to this tile.
+
+	long numAttainedRow, numNeededForRow, iRow, numNegotRow;
+	iTileStart = 0;
+	int b0, b1, b2;
+	for (iRow = 0; iRow < numTilesMajor / numTilesOnGo; iRow++)
+	{
+		// Claim ones for this row...
+		Triangle * pTri = T;
+		numNeededForRow = threadsPerTileMinor * numTilesOnGo;
+		numAttainedRow = 0;
+		numNegotRow = 0;
+		for (iTile = iTileStart; iTile < iTileStart + numTilesOnGo; iTile++)
+		{
+			numAttainedRow += tris_assigned[iTile];
+		};
+
+		memset(nego_2feet, 0, sizeof(long)*numTriTiles); // scrap all the other rows - doesn't matter
+		pTri = T;
+		for (iTri = 0; iTri < numTriangles; iTri++)
+		{
+			// Collect nego_2feet so we attribute these as evenly as possible to the tiles in the row.
+			if (pTri->indicator == -1)
+			{
+				iVolley0 = pTri->cornerptr[0]->iVolley;
+				iVolley1 = pTri->cornerptr[1]->iVolley;
+				iVolley2 = pTri->cornerptr[2]->iVolley;
+				b0 = ((iVolley0 >= iTileStart) && (iVolley0 < iTileStart + numTilesOnGo)) ? 1 : 0;
+				b1 = ((iVolley1 >= iTileStart) && (iVolley1 < iTileStart + numTilesOnGo)) ? 1 : 0;
+				b2 = ((iVolley2 >= iTileStart) && (iVolley2 < iTileStart + numTilesOnGo)) ? 1 : 0;
+				if (b0 + b1 + b2 >= 2) {
+					if (b0 != 0) nego_2feet[iVolley0]++;
+					if (b1 != 0) nego_2feet[iVolley1]++;
+					if (b2 != 0) nego_2feet[iVolley2]++;
+				};
+			};
+			++pTri;
+		};
+
+		// Firstly: look for ones with 2 feet in this row:
+
+		bool bEncounterAnything = 0;
+		do { // go back to searching for inequality once chosen on an equality.
+
+			 // Exhaustive passes of INEQUALITY :
+			bEncounterAnything = 0;
+			bool bEncounteredTri = 0;
+
+			do {
+				bEncounteredTri = 0;
+				pTri = T;
+				for (iTri = 0; ((iTri < numTriangles) && (numNegotRow + numAttainedRow < numNeededForRow)); iTri++)
+				{
+					if (pTri->indicator == -1)
+					{
+						iVolley0 = pTri->cornerptr[0]->iVolley;
+						iVolley1 = pTri->cornerptr[1]->iVolley;
+						iVolley2 = pTri->cornerptr[2]->iVolley;
+						b0 = ((iVolley0 >= iTileStart) && (iVolley0 < iTileStart + numTilesOnGo)) ? 1 : 0;
+						b1 = ((iVolley1 >= iTileStart) && (iVolley1 < iTileStart + numTilesOnGo)) ? 1 : 0;
+						b2 = ((iVolley2 >= iTileStart) && (iVolley2 < iTileStart + numTilesOnGo)) ? 1 : 0;
+						if (b0 + b1 + b2 >= 2) {
+							// assign to this row
+							// but which tri?
+							num0 = tris_assigned[iVolley0] + nego_2feet[iVolley0];
+							num1 = tris_assigned[iVolley1] + nego_2feet[iVolley1];
+							num2 = tris_assigned[iVolley2] + nego_2feet[iVolley2];
+
+							if (b0 + b1 + b2 == 3) {
+								if ((num0 < num1) && (num0 < num2)) {
+									tris_assigned[iVolley0]++;
+									pTri->indicator = iVolley0;
+								}
+								else {
+									if (num1 < num2) {
+										tris_assigned[iVolley1]++;
+										pTri->indicator = iVolley1;
+									}
+									else {
+										if (num2 < num1) {
+											tris_assigned[iVolley2]++;
+											pTri->indicator = iVolley2;
+										};
+									};
+								};
+							}
+							else {
+								if (b0 + b1 == 2) {
+									if (num0 < num1) {
+										tris_assigned[iVolley0]++;
+										pTri->indicator = iVolley0;
+									}
+									else {
+										if (num1 < num0) {
+											tris_assigned[iVolley1]++;
+											pTri->indicator = iVolley1;
+										};
+									};
+								}
+								else {
+									if (b0 + b2 == 2) {
+										if (num0 < num2) {
+											tris_assigned[iVolley0]++;
+											pTri->indicator = iVolley0;
+										}
+										else {
+											if (num2 < num0) {
+												tris_assigned[iVolley2]++;
+												pTri->indicator = iVolley2;
+											};
+										};
+									}
+									else {
+										if (num1 < num2) {
+											tris_assigned[iVolley1]++;
+											pTri->indicator = iVolley1;
+										}
+										else {
+											if (num2 < num1) {
+												tris_assigned[iVolley2]++;
+												pTri->indicator = iVolley2;
+											};
+										};
+									};
+								};
+							};
+							if (pTri->indicator != -1) {
+								nego_2feet[iVolley0]--;
+								nego_2feet[iVolley1]--;
+								nego_2feet[iVolley2]--;
+								negotiables[iVolley0]--;
+								negotiables[iVolley1]--;
+								negotiables[iVolley2]--;
+								numNegotRow++;
+								bEncounteredTri = true;
+							};
+							printf("iTri %d b012 %d %d %d : %d %d %d num %d %d %d : Assign to %d\n",
+								iTri, b0, b1, b2, iVolley0, iVolley1, iVolley2, num0, num1, num2, pTri->indicator);
+
+						}; // 2 feet in
+					}	// unallocated	
+					++pTri;
+				}; // next tri
+			} while (bEncounteredTri);
+			if (bEncounteredTri == true) bEncounterAnything = true;
+
+			// equality pass:
+			bool bTookAnAction = 0;
+			pTri = T;
+			for (iTri = 0; ((iTri < numTriangles) && (numNegotRow + numAttainedRow < numNeededForRow)
+				&& (bTookAnAction == 0)); // Added an extra cond: stop if assigned 1 triangle.
+				iTri++)
+			{
+				if (pTri->indicator == -1)
+				{
+					iVolley0 = pTri->cornerptr[0]->iVolley;
+					iVolley1 = pTri->cornerptr[1]->iVolley;
+					iVolley2 = pTri->cornerptr[2]->iVolley;
+					b0 = ((iVolley0 >= iTileStart) && (iVolley0 < iTileStart + numTilesOnGo)) ? 1 : 0;
+					b1 = ((iVolley1 >= iTileStart) && (iVolley1 < iTileStart + numTilesOnGo)) ? 1 : 0;
+					b2 = ((iVolley2 >= iTileStart) && (iVolley2 < iTileStart + numTilesOnGo)) ? 1 : 0;
+					if (b0 + b1 + b2 >= 2) {
+						// assign to this row
+						// but which tri?
+						num0 = tris_assigned[iVolley0] + nego_2feet[iVolley0];
+						num1 = tris_assigned[iVolley1] + nego_2feet[iVolley1];
+						num2 = tris_assigned[iVolley2] + nego_2feet[iVolley2];
+
+						if (b0 + b1 + b2 == 3) {
+							if ((num0 <= num1) && (num0 <= num2)) {
+								tris_assigned[iVolley0]++;
+								pTri->indicator = iVolley0;
+							}
+							else {
+								if (num1 <= num2) {
+									tris_assigned[iVolley1]++;
+									pTri->indicator = iVolley1;
+								}
+								else {
+									tris_assigned[iVolley2]++;
+									pTri->indicator = iVolley2;
+								};
+							};
+						}
+						else {
+							if (b0 + b1 == 2) {
+								if (num0 <= num1) {
+									tris_assigned[iVolley0]++;
+									pTri->indicator = iVolley0;
+								}
+								else {
+									tris_assigned[iVolley1]++;
+									pTri->indicator = iVolley1;
+								};
+							}
+							else {
+								if (b0 + b2 == 2) {
+									if (num0 <= num2) {
+										tris_assigned[iVolley0]++;
+										pTri->indicator = iVolley0;
+									}
+									else {
+										tris_assigned[iVolley2]++;
+										pTri->indicator = iVolley2;
+									};
+								}
+								else {
+									if (num1 <= num2) {
+										tris_assigned[iVolley1]++;
+										pTri->indicator = iVolley1;
+									}
+									else {
+										tris_assigned[iVolley2]++;
+										pTri->indicator = iVolley2;
+									};
+								};
+							};
+						};
+						nego_2feet[iVolley0]--;
+						nego_2feet[iVolley1]--;
+						nego_2feet[iVolley2]--;
+						negotiables[iVolley0]--;
+						negotiables[iVolley1]--;
+						negotiables[iVolley2]--;
+						printf("iTri %d b012 %d %d %d : %d %d %d num %d %d %d : Assign to %d\n",
+							iTri, b0, b1, b2, iVolley0, iVolley1, iVolley2, num0, num1, num2, pTri->indicator);
+						numNegotRow++;
+						bEncounterAnything = true;
+						bTookAnAction = true;
+					};
+				}
+				++pTri;
+			};
+		} while ((bEncounterAnything) && (numNegotRow + numAttainedRow < numNeededForRow));
+
+		// If that did not assign all the ones to this row that we could have wanted,
+		// we need to go again and bring in some more.
+		bool bUsedOnly2Feet;
+		if (numNegotRow + numAttainedRow < numNeededForRow) {
+			printf("iRow %d didn't fill with 2-in triangles.\n", iRow);
+			bUsedOnly2Feet = false;
+		}
+		else {
+			printf("iRow %d done2ft numNegotRow %d numAttainedRow %d numNeeded %d\n", iRow,
+				numNegotRow, numAttainedRow, numNeededForRow);
+			bUsedOnly2Feet = true;
+		};
+
+		// Now we are going to have to use ones with only 1 corner in this row of tiles.
+		// However, find the ones for which the other tris have the highest minimum number of T+N.
+		long highmin, numAssigned;
+
+		while (numNegotRow + numAttainedRow < numNeededForRow) {
+			highmin = 0;
+			for (iTri = 0; ((iTri < numTriangles) && (numNegotRow + numAttainedRow < numNeededForRow)); iTri++)
+			{
+				if (pTri->indicator == -1)
+				{
+					iVolley0 = pTri->cornerptr[0]->iVolley;
+					iVolley1 = pTri->cornerptr[1]->iVolley;
+					iVolley2 = pTri->cornerptr[2]->iVolley;
+					b0 = ((iVolley0 >= iTileStart) && (iVolley0 < iTileStart + numTilesOnGo)) ? 1 : 0;
+					b1 = ((iVolley1 >= iTileStart) && (iVolley1 < iTileStart + numTilesOnGo)) ? 1 : 0;
+					b2 = ((iVolley2 >= iTileStart) && (iVolley2 < iTileStart + numTilesOnGo)) ? 1 : 0;
+					if (b0 + b1 + b2 >= 1) {
+						num0 = tris_assigned[iVolley0] + negotiables[iVolley0];
+						num1 = tris_assigned[iVolley1] + negotiables[iVolley1];
+						num2 = tris_assigned[iVolley2] + negotiables[iVolley2];
+
+						// assign to this row?
+						// Collect highest minimum
+						if (b0 + b1 == 0) {
+							if (min(num0, num1) > highmin) highmin = min(num0, num1);
+							// There were more available here, signifying a better place to steal tri to 'our' row of tiles.
+						};
+						if (b0 + b2 == 0) {
+							if (min(num0, num2) > highmin) highmin = min(num0, num2);
+						};
+						if (b1 + b2 == 0) {
+							if (min(num1, num2) > highmin) highmin = min(num1, num2);
+						};
+					};
+				}; // if unallocated	
+				++pTri;
+			}; // next iTri
+
+			numAssigned = 0;
+			// Now repeat with highmin used as signal to assign.
+			for (iTri = 0; ((iTri < numTriangles) && (numNegotRow + numAttainedRow < numNeededForRow)); iTri++)
+			{
+				if (pTri->indicator == -1)
+				{
+					iVolley0 = pTri->cornerptr[0]->iVolley;
+					iVolley1 = pTri->cornerptr[1]->iVolley;
+					iVolley2 = pTri->cornerptr[2]->iVolley;
+					b0 = ((iVolley0 >= iTileStart) && (iVolley0 < iTileStart + numTilesOnGo)) ? 1 : 0;
+					b1 = ((iVolley1 >= iTileStart) && (iVolley1 < iTileStart + numTilesOnGo)) ? 1 : 0;
+					b2 = ((iVolley2 >= iTileStart) && (iVolley2 < iTileStart + numTilesOnGo)) ? 1 : 0;
+					if (b0 + b1 + b2 >= 1) {
+						// assign to this row?
+						// Collect highest minimum
+						if (((b0 + b1 == 0) && (min(num0, num1) == highmin))
+							||
+							((b0 + b2 == 0) && (min(num0, num2) == highmin))
+							||
+							((b1 + b2 == 0) && (min(num1, num2) == highmin)))
+						{
+							negotiables[iVolley0]--;
+							negotiables[iVolley1]--;
+							negotiables[iVolley2]--;
+							if (b0 != 0) {
+								tris_assigned[iVolley0]++;
+								pTri->indicator = iVolley0;
+							};
+							if (b1 != 0) {
+								tris_assigned[iVolley1]++;
+								pTri->indicator = iVolley1;
+							};
+							if (b2 != 0) {
+								tris_assigned[iVolley2]++;
+								pTri->indicator = iVolley2;
+							};
+							numNegotRow++;
+							numAssigned++;
+						};
+					};
+					// Of course we are giving symmetrical treatment above and below
+					// this row -- which is probably not the correct thing to do.
+				}; // if unallocated	
+				++pTri;
+			}; // next iTri
+
+			printf("Assigned %d to row %d at highmin %d \n", numAssigned, iRow, highmin);
+		}; // wend
+
+		   // Now within this row it's possible that we assigned too few to some triangles and too many
+		   // to others -- so we've got to try and shuttle them along to get it right.
+
+		   // First go for next-door transfers... start with ones that can give/take only from
+		   // one side.
+
+
+		   // Need to put this in.
+
+		bool bChangesOnThisPass, bFound;
+		int inext, iprev, iprevprev, inextnext;
+		do {
+			bChangesOnThisPass = false;
+			for (iTile = iTileStart; iTile < iTileStart + numTilesOnGo; iTile++)
+			{
+				iprev = iTile - 1;
+				if (iprev < iTileStart) iprev += numTilesOnGo;
+				inext = iTile + 1;
+				if (inext == iTileStart + numTilesOnGo) inext = iTileStart;
+				iprevprev = iprev - 1;
+				if (iprevprev < iTileStart) iprevprev += numTilesOnGo;
+				inextnext = inext + 1;
+				if (inextnext == iTileStart + numTilesOnGo) inextnext = iTileStart;
+
+				bFound = true;
+				while ((bFound == true) &&
+					(tris_assigned[iTile] > threadsPerTileMinor)
+					&& (tris_assigned[iprev] < threadsPerTileMinor)
+					&& ((tris_assigned[inext] >= threadsPerTileMinor)
+						||
+						(tris_assigned[iprevprev] <= threadsPerTileMinor))
+					// either we can only give to 1 place or it can only get 
+					// from 1 place.
+					)
+				{
+					bFound = false;
+					// Seeing if we can reassign something from here to previous tile.
+					// switch over ... prefer to switch one that is
+					// 3 separate feet, so do this pass first.
+					pTri = T;
+					for (iTri = 0; ((iTri < numTriangles) &&
+						(tris_assigned[iTile] > threadsPerTileMinor) &&
+						(tris_assigned[iprev] < threadsPerTileMinor)
+						); iTri++)
+					{
+						if (pTri->indicator == iTile) {
+							iVolley0 = pTri->cornerptr[0]->iVolley;
+							iVolley1 = pTri->cornerptr[1]->iVolley;
+							iVolley2 = pTri->cornerptr[2]->iVolley;
+							if ((((iVolley0 != iTile) && (iVolley0 != iprev)) ||
+								((iVolley1 != iTile) && (iVolley1 != iprev)) ||
+								((iVolley2 != iTile) && (iVolley2 != iprev)))
+								&&
+								((iVolley0 == iprev) ||
+								(iVolley1 == iprev) ||
+									(iVolley2 == iprev)))
+							{
+								tris_assigned[iTile]--;
+								tris_assigned[iprev]++;
+								pTri->indicator = iprev;
+								bFound = true;
+								bChangesOnThisPass = true;
+							};
+						};
+						++pTri;
+					};
+					// Possible we found none to use...
+				};
+
+				// Back the other way:
+				bFound = true;
+				while ((bFound == true) &&
+					(tris_assigned[iTile] > threadsPerTileMinor)
+					&& (tris_assigned[inext] < threadsPerTileMinor)
+					&& ((tris_assigned[iprev] >= threadsPerTileMinor)
+						||
+						(tris_assigned[inextnext] <= threadsPerTileMinor))
+					// Either we can only give to 1 place or it can only get from 1 place.
+					)
+				{
+					bFound = false;
+					// Seeing if we can reassign something from here to previous tile.
+					// switch over ... prefer to switch one that is
+					// 3 separate feet, so do this pass first.
+					pTri = T;
+					for (iTri = 0; ((iTri < numTriangles) &&
+						(tris_assigned[iTile] > threadsPerTileMinor) &&
+						(tris_assigned[inext] < threadsPerTileMinor)
+						); iTri++)
+					{
+						if (pTri->indicator == iTile) {
+							iVolley0 = pTri->cornerptr[0]->iVolley;
+							iVolley1 = pTri->cornerptr[1]->iVolley;
+							iVolley2 = pTri->cornerptr[2]->iVolley;
+							if ((((iVolley0 != iTile) && (iVolley0 != iprev)) ||
+								((iVolley1 != iTile) && (iVolley1 != iprev)) ||
+								((iVolley2 != iTile) && (iVolley2 != iprev)))
+								&&
+								((iVolley0 == iprev) ||
+								(iVolley1 == iprev) ||
+									(iVolley2 == iprev)))
+							{
+								tris_assigned[iTile]--;
+								tris_assigned[inext]++;
+								pTri->indicator = inext;
+								bFound = true;
+								bChangesOnThisPass = true;
+							};
+						};
+						++pTri;
+					};
+					// Possible we found none to use...
+				};
+
+				// Do this test for each tile pair and then go around for more 
+				// passes ... working on the end of any chain. 
+
+			}; // next iTile
+		} while (bChangesOnThisPass); // next pass	
+
+									  // Now unless we were unlucky about available corners, 
+									  // a chain can end only in 2+ or 2- if it has both + and -.
+
+									  // Let's just do a test and see if it ever fails at this point, to get going initially:
+		bool bFindWrong, bTookAnAction;
+		do {
+			bFindWrong = false;
+			for (iTile = iTileStart; iTile < iTileStart + numTilesOnGo; iTile++)
+			{
+				if (tris_assigned[iTile] != threadsPerTileMinor)
+				{
+					printf("Problem: iRow %d iTileStart %d iTile %d \n",
+						iRow, iTileStart, iTile);
+					for (i = iTileStart; i < iTileStart + numTilesOnGo; i++)
+						printf("%d ", tris_assigned[i]);
+					printf("\n");
+					bFindWrong = true;
+					if (bUsedOnly2Feet == false) {
+						// Then we expect something a bit stranger...
+						printf("weirdness12345.\n");
+						getch();
+					}
+				};
+				// Yes it does fail sometimes.
+				// So we have to improve : try finding which tile has TOO MANY, move that
+				// clockwise until we encounter TOO FEW.
+
+				inext = iTile + 1;
+				if (inext == iTileStart + numTilesOnGo) inext = iTileStart;
+
+
+				if ((tris_assigned[iTile] > threadsPerTileMinor) && (tris_assigned[inext] < tris_assigned[iTile]))
+				{
+					bTookAnAction = 0;
+					pTri = T;
+					for (iTri = 0; ((iTri < numTriangles) && (bTookAnAction == 0)); iTri++)
+					{
+						if (pTri->indicator == iTile)
+						{
+
+							// does it have a foot in next tile and in another?
+							iVolley0 = pTri->cornerptr[0]->iVolley;
+							iVolley1 = pTri->cornerptr[1]->iVolley;
+							iVolley2 = pTri->cornerptr[2]->iVolley;
+							if (((iVolley0 == inext) || (iVolley1 == inext) || (iVolley2 == inext))
+								&&
+								(
+								((iVolley0 >= iTileStart + numTilesOnGo) || (iVolley0 < iTileStart))
+									||
+									((iVolley1 >= iTileStart + numTilesOnGo) || (iVolley1 < iTileStart))
+									||
+									((iVolley2 >= iTileStart + numTilesOnGo) || (iVolley2 < iTileStart))
+									)) {
+								// This is one to switch across.
+								bTookAnAction = true;
+
+								pTri->indicator = inext;
+								tris_assigned[iTile]--;
+								tris_assigned[inext]++;
+
+							}
+						};
+						++pTri;
+					}; // next iTri
+					if (bTookAnAction == 0) {
+						printf("Deeper problem -- cannot move an extra peg clockwise\n");
+						getch();
+					};
+				};	// is this a tile to alter		
+			};		// next iTile
+		} while (bFindWrong);
+
+		iTileStart += numTilesOnGo;
+	} // next iRow
+
+	  // Now since we did within each row, it should be done...
+
+	  // Old attempt:
+	  /*
+
+	  FILE * fp;
+
+	  bool bEncountered;
+	  long numUnassigned, numAssigned;
+	  int addition = 0;
+	  int iPass = 0;
+	  do {
+	  bEncountered = false;
+	  numUnassigned = 0;
+	  numAssigned = 0;
+
+
+
+	  pTri = T;
+	  for (iTri = 0; iTri < numTriangles; iTri++)
+	  {
+	  if (pTri->indicator == -1) {
+	  numUnassigned++;
+
+	  // 3 separate vertex tiles
+	  iVolley0 = pTri->cornerptr[0]->iVolley;
+	  iVolley1 = pTri->cornerptr[1]->iVolley;
+	  iVolley2 = pTri->cornerptr[2]->iVolley;
+	  num0 = tris_assigned[iVolley0] + negotiables[iVolley0];
+	  num1 = tris_assigned[iVolley1] + negotiables[iVolley1];
+	  num2 = tris_assigned[iVolley2] + negotiables[iVolley2];
+	  // Sort : A. By tris_assigned: fewer assigned => assign more
+	  //        B. By negotiables: fewer negotiables => assign to that one
+
+	  if ((num0 < threadsPerTileMinor) ||
+	  (num1 < threadsPerTileMinor) ||
+	  (num2 < threadsPerTileMinor))
+	  {
+	  num0 = num0;
+	  }
+
+	  // Sometimes num1 is already now less than tPTM+addition but num0== it.
+	  // In that case clearly we wanted to assign to the one with less.
+	  bool bFound = false;
+	  for (int add_used = 0; ((add_used < addition) && (bFound == false)); add_used++)
+	  {
+	  if (num0 == threadsPerTileMinor + add_used) {
+
+	  pTri->indicator = iVolley0;
+	  tris_assigned[iVolley0]++;
+	  negotiables[iVolley0]--;
+
+	  if (num1 <= threadsPerTileMinor) printf("Problem: iVolley0 %d iVolley1 %d \n",iVolley0,iVolley1);
+	  if (num2 <= threadsPerTileMinor) printf("Problem: iVolley0 %d iVolley2 %d \n",iVolley0,iVolley2);
+
+	  negotiables[iVolley1]--;
+	  negotiables[iVolley2]--;
+	  bEncountered = true;
+	  bFound = true;
+	  numAssigned++;
+	  } else {
+	  if (num1 == threadsPerTileMinor + add_used) {
+	  pTri->indicator = iVolley1;
+	  tris_assigned[iVolley1]++;
+	  negotiables[iVolley1]--;
+
+	  if (num0 <= threadsPerTileMinor)printf("Problem: iVolley1 %d iVolley0 %d \n",iVolley1,iVolley0);
+	  if (num2 <= threadsPerTileMinor)printf("Problem: iVolley1 %d iVolley2 %d \n",iVolley1,iVolley2);
+
+	  negotiables[iVolley0]--;
+	  negotiables[iVolley2]--;
+	  bEncountered = true;
+	  bFound = true;
+	  numAssigned++;
+	  } else {
+	  if (num2 == threadsPerTileMinor + add_used) {
+	  pTri->indicator = iVolley2;
+	  tris_assigned[iVolley2]++;
+	  negotiables[iVolley2]--;
+
+	  if (num0 <= threadsPerTileMinor)printf("Problem: iVolley2 %d iVolley0 %d \n",iVolley2,iVolley0);
+	  if (num1 <= threadsPerTileMinor)printf("Problem: iVolley2 %d iVolley1 %d \n",iVolley2,iVolley1);
+
+	  negotiables[iVolley0]--;
+	  negotiables[iVolley1]--;
+	  bEncountered = true;
+	  bFound = true;
+	  numAssigned++;
+	  };
+	  };
+	  };
+	  };
+	  };
+	  ++pTri;
+	  }; // next iTri
+
+	  // Run at 0 addition until none encountered
+	  // Run at 1 --> if encounter, go back to 0; if not, go on to 2
+	  // Run at 2 --> if encounter, go back to 0;
+	  if (bEncountered == true) {
+	  addition = 0;
+	  } else {
+	  addition++; // In fact it just keeps going up and up with none encountered.
+	  };
+
+	  fp = fopen("tris_assigned.txt","w");
+	  for (iTile = 0; iTile < numTriTiles; iTile++)
+	  fprintf(fp,"%d : assigned %d negotiable %d \n",iTile,tris_assigned[iTile],negotiables[iTile]);
+	  fclose(fp);
+
+	  printf("Pass %d addition %d ; unassigned %d of which %d assigned\n", iPass, addition, numUnassigned,
+	  numAssigned);
+	  getch();
+	  // Gets stuck in a loop with about 3000 unassigned, 0 being assigned.
+
+	  iPass++;
+	  } while (numUnassigned > 0);
+	  */
+	  // Now turn 'volley' information into a sequence.
+	  // WE CHANGE WHAT indicator MEANS :
+
+	memset(tris_assigned, 0, sizeof(long)*numTriTiles);
+	pTri = T;
+	for (iTri = 0; iTri < numTriangles; iTri++)
+	{
+		int iWhich = pTri->indicator;
+		pTri->indicator = iWhich*threadsPerTileMinor + tris_assigned[iWhich]; // new index for triangle
+		tris_assigned[iWhich]++;
+		++pTri;
+	};
+
+	for (iTile = 0; iTile < numTriTiles; iTile++) {
+		printf("%d : %d  ||", iTile, tris_assigned[iTile]);
+		if (iTile % 4 == 0) printf("\n");
+	}
+
+	printf("Tri resequence done...\n");
+	getch();
+
+
+	// We then can set the new sequence and try to resequence the triangles, and affect the
+	// triangle index lists.
+	//  - Create 2nd system:
+
+	pVertex = X;
+	Vertex * pVertdest;
+	for (iVertex = 0; iVertex < numVertices; iVertex++)
+	{
+		pVertdest = pDestMesh->X + pVertex->iIndicator;
+
+		//pVertdest->CopyDataFrom(pVertex);
+		// at the moment we are using hard arrays in Vertex not pointers
+
+		// This will sort flags etc:
+		memcpy(pVertdest, pVertex, sizeof(Vertex));
+
+		/*  pVertdest->CopyLists(pVertex);
+		// but now we need to change them:
+
+		// Only neighbour list is relevant so far...
+		pVertdest->ClearNeighs();
+		int neigh_len = pVertex->GetNeighIndexArray(izNeigh);
+		for (i = 0; i < neigh_len; i++)
+		{
+		pVertdest->AddNeighbourIndex((X + izNeigh[i])->iIndicator);
+		};
+
+		pVertdest->ClearTris();
+		// Only neighbour list is relevant so far...
+		int tri_len = pVertex->GetTriIndexArray(izTri);
+		for (i = 0; i < tri_len; i++)
+		{
+		pVertdest->AddTriIndex((T + izTri[i])->indicator);
+		};*/
+
+		// Only neighbour list is relevant so far...
+		pVertdest->ClearNeighs();
+		int neigh_len = pVertex->GetNeighIndexArray(izNeigh);
+		for (i = 0; i < neigh_len; i++)
+		{
+			pVertdest->AddNeighbourIndex((X + izNeigh[i])->iIndicator);
+
+			if (pVertex->iIndicator == 13070) {
+				printf("13070: neigh %d || mapped from %d : %d \n", (X + izNeigh[i])->iIndicator,
+					iVertex, izNeigh[i]);
+			};
+		};
+
+
+
+
+
+		pVertdest->ClearTris();
+		// Only neighbour list is relevant so far...
+		int tri_len = pVertex->GetTriIndexArray(izTri);
+		for (i = 0; i < tri_len; i++)
+		{
+			pVertdest->AddTriIndex((T + izTri[i])->indicator);
+		};
+		++pVertex;
+
+		// Careful about other stuff.
+	}
+	// How to fill in lists? Need to remap: if old list said 25, new list says i[25]
+	// For neighbours.
+
+	Triangle * pTriDest;
+	pTri = T;
+	for (iTri = 0; iTri < numTriangles; iTri++)
+	{
+		pTriDest = pDestMesh->T + pTri->indicator;
+		// 
+		pTriDest->u8domain_flag = pTri->u8domain_flag;
+		pTriDest->area = pTri->area;
+		pTriDest->cent = pTri->cent;
+		pTriDest->periodic = pTri->periodic;
+		memcpy(pTriDest->edge_normal, pTri->edge_normal, sizeof(Vector2) * 3);
+
+		// Neighbour list, cornerptr list, what else to rewrite?
+
+		pTriDest->neighbours[0] = pDestMesh->T + pTri->neighbours[0]->indicator;
+		pTriDest->neighbours[1] = pDestMesh->T + pTri->neighbours[1]->indicator;
+		pTriDest->neighbours[2] = pDestMesh->T + pTri->neighbours[2]->indicator;
+
+		pTriDest->cornerptr[0] = pDestMesh->X + pTri->cornerptr[0]->iIndicator;
+		pTriDest->cornerptr[1] = pDestMesh->X + pTri->cornerptr[1]->iIndicator;
+		pTriDest->cornerptr[2] = pDestMesh->X + pTri->cornerptr[2]->iIndicator;
+
+		++pTri;
+	}
+
+	printf("Tiling & resequencing done.\n");
+
+	// Also copy across any other stuff from source to dest:
+
+	//	pDestMesh->EzTuning = this->EzTuning;
+	pDestMesh->Innermost_r_achieved = this->Innermost_r_achieved;
+	pDestMesh->Outermost_r_achieved = this->Outermost_r_achieved;
+	pDestMesh->InnermostFrillCentroidRadius = this->InnermostFrillCentroidRadius;
+	pDestMesh->OutermostFrillCentroidRadius = this->OutermostFrillCentroidRadius;
+	pDestMesh->Iz_prescribed = this->Iz_prescribed;
+	pDestMesh->numReverseJzTris = this->numReverseJzTris;
+	pDestMesh->numTriangles = this->numTriangles;
+	pDestMesh->numVertices = this->numVertices;
+
+	// >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+
+	//  - Create Systdata to match it
+	//  - When we come back from GPU: 
+	//    -- we want to refresh this post-Delaunay flips.
+	//    -- can a flip trigger a local swap of indices to move smth between blocks?
+
+	//    -- We want that to operate on Systdata not just System, because System does
+	//       not have data on triangles.
+
+	//   -- (On the other hand there is an argument that since System has objects for
+	//      vertex and triangle, it will be easier to avoid making mistakes if we did for System as well.)
+}
+void TriMesh::CreateTilingAndResequence2(TriMesh * pDestMesh) {
+
+
+	long * thetaindex = new long[NUMVERTICES];
+	real * thetaarray = new real[NUMVERTICES];
+	long * rindex = new long[NUMVERTICES];
+	real * rarray = new real[NUMVERTICES];
+	long iVertex, i , iTranche;
+	Vertex * pVertex = X;
+	for (iVertex = 0; iVertex < NUMVERTICES; iVertex++)
+	{
+		thetaindex[iVertex] = iVertex;
+		thetaarray[iVertex] = pVertex->pos.x / pVertex->pos.y;
+		pVertex++;
+	}
+	QuickSort(thetaindex, thetaarray, 0, NUMVERTICES - 1);
+	
+	// Now take each NUMVERTICES/12
+
+	long const Ntranche = NUMVERTICES / 12;
+	if (Ntranche * 12 != NUMVERTICES) {
+		printf("(Ntranche * 12 != NUMVERTICES)\n");
+		while(1) getch();
+	};
+
+	long iCaret = 0;
+	int iTile = 0;
+	long iDestVert = 0;
+	for (iTranche = 0; iTranche < 12; iTranche++)
+	{
+		for (i = 0; i < Ntranche; i++)
+		{
+			rindex[i] = thetaindex[iCaret]; // which vertex
+			rarray[i] = (X + rindex[i])->pos.modulus();
+			++iCaret;
+		};
+
+		QuickSort(rindex, rarray, 0, Ntranche - 1);
+
+		for (i = 0; i < Ntranche; i++)
+		{
+			(X + rindex[i])->iVolley = iTile;
+			(X + rindex[i])->iIndicator = iDestVert;
+			if ((i + 1) % threadsPerTileMajor == 0) iTile++;
+			iDestVert++;
+		};
+	}
+	
+	delete[] rindex;
+	delete[] rarray;
+	delete[] thetaindex;
+	delete[] thetaarray;
+
+
+	int numTilesOnGo = 12;
+	int spacing = numInnermostRow/numTilesOnGo;
+
+	// Distribute remainder through tiles! :
+	int Tileskips_between_remainder_points = numTilesOnGo/(numInnermostRow % spacing);
+
+/*
+
+	FILE * dbgfile = fopen("iVolley.txt", "w");
+	for (long iVertex = 0; iVertex < NUMVERTICES; iVertex++)
+		fprintf(dbgfile, "%d %d %1.14E %1.14E\n", iVertex, X[iVertex].iVolley, X[iVertex].pos.x, X[iVertex].pos.y);
+	fclose(dbgfile);
+	
+	printf("done to this point.\n");
+	while (1) getch();
+
+*/
+
+//
+//	FILE * dbg_seq = fopen("dbg_seq.txt", "w");
+//	pVertex = X;
+//	for (iVertex = 0; iVertex < NUMVERTICES; iVertex++)
+//	{
+//		fprintf(dbg_seq, "iVertex %d iVolley %d iIndicator %d\n", iVertex, pVertex->iVolley, pVertex->iIndicator);
+//		++pVertex;
+//	}
+//	fclose(dbg_seq);
+	printf("Reseq : vertex mapping done.\n"); // All we have done is set indicator though
 	
 	// This WORKED. iVolley and iIndicator are populated, we got some halfway sensible values in there. Now what?:
-
-	
+		
 	// ===============================================================================	
 	// -------------------------------------------------------------------------------
 	
@@ -8464,652 +9450,275 @@ void TriMesh::CreateTilingAndResequence(TriMesh * pDestMesh) {
 	// If 1 more, we can go along assigning those, and so on.
 	// Okay, that didn't work.
 
-	// Going with a domain decomposition type of idea instead. For simplicity
-	// let us take individual rows. We want to first try to assign the right number
-	// of negotiables to each row. 
-	// This may eventually break down but hopefully should be good enough initially.
+	// TRY:
+	// Each negotiable triangle, if there is one tile with fewer allocated, assign it to that tile.
+	// No --- base tiles have fewer negotiable.
 
-	// Once we have them in a row, if we do not manage to get it right on a first pass,
-	// and once shifting to immediate neighbours is exhausted, we can move extra negotiables
-	// clockwise as long as there are joins. 
-	// It does depend on having adequate shared negotiables for every pair in the row.
-	// That is something to aim for in deciding which to keep for this row -- or, we might find
-	// that it's not even possible to create a correct configuration.
-		
-	// Rows in seq since 1st row needs to claim what it can.
+	// OR: Work up each tranche, set the tris on the left hand side to get the full complement in each tile.?
 
-	long nego_2feet[numTriTiles]; // number of tris with 2 feet in this row, accessible to this tile.
+	// Overall iterative to get contiguous could be nontrivial; for now just let some be loose tris.
 
-	long numAttainedRow, numNeededForRow, iRow, numNegotRow;
-	iTileStart = 0;
-	int b0,b1,b2;
-	for (iRow = 0; iRow < numTilesMajor/numTilesOnGo; iRow++)
+	// Simple way: 
+	// i. assign each negotiable to the tile that has the least total, iteratively. 
+	// Until we get stuck ...
+	// because there might be some that could still go any direction.
+	// ii. For those ones always pick the lowest corner or rightmost.
+	// iii. We may well be left over with a few loose ones that now belong to a tile far away --- too bad. Notify how many.
+
+	int i1, i2, j1, j2;
+	pTri = T;
+	for (iTri = 0; iTri < numTriangles; iTri++)
 	{
-		// Claim ones for this row...
-		Triangle * pTri = T;
-		numNeededForRow = threadsPerTileMinor * numTilesOnGo;
-		numAttainedRow = 0;
-		numNegotRow = 0;
-		for (iTile = iTileStart; iTile < iTileStart + numTilesOnGo; iTile++)
+		iVolley0 = pTri->cornerptr[0]->iVolley;
+		iVolley1 = pTri->cornerptr[1]->iVolley;
+		iVolley2 = pTri->cornerptr[2]->iVolley;
+
+		if (pTri->indicator == -1)
 		{
-			numAttainedRow += tris_assigned[iTile];			
-		};
-	
-		memset(nego_2feet,0,sizeof(long)*numTriTiles); // scrap all the other rows - doesn't matter
-		pTri = T;
-		for (iTri = 0; iTri < numTriangles; iTri++)
-		{
-			// Collect nego_2feet so we attribute these as evenly as possible to the tiles in the row.
-			if (pTri->indicator == -1)
-			{
-				iVolley0 = pTri->cornerptr[0]->iVolley;
-				iVolley1 = pTri->cornerptr[1]->iVolley;
-				iVolley2 = pTri->cornerptr[2]->iVolley;
-				b0 = ((iVolley0 >= iTileStart) && (iVolley0 < iTileStart + numTilesOnGo))?1:0;
-				b1 = ((iVolley1 >= iTileStart) && (iVolley1 < iTileStart + numTilesOnGo))?1:0;
-				b2 = ((iVolley2 >= iTileStart) && (iVolley2 < iTileStart + numTilesOnGo))?1:0;
-				if  (b0 + b1 + b2 >= 2) {
-					if (b0 != 0) nego_2feet[iVolley0]++;
-					if (b1 != 0) nego_2feet[iVolley1]++;
-					if (b2 != 0) nego_2feet[iVolley2]++;
-				};					
-			};
-			++pTri;
-		};
+			// . Only choose between those which do not yet have a full complement
+			// . Choose the one with the least total
+			// . Failing that, choose amongst those, the one with y below centroid, or if there are 2, the rightmost of those.
+			bool bFell_out_2way = false;
+			bool bFell_out_3way = false;
 
-		// Firstly: look for ones with 2 feet in this row:
-
-		bool bEncounterAnything = 0;
-		do { // go back to searching for inequality once chosen on an equality.
-		
-			// Exhaustive passes of INEQUALITY :
-			bEncounterAnything = 0;
-			bool bEncounteredTri = 0;
-			
-			do {
-				bEncounteredTri = 0;
-				pTri = T;
-				for (iTri = 0; ((iTri < numTriangles) && (numNegotRow + numAttainedRow < numNeededForRow)); iTri++)
-				{
-					if (pTri->indicator == -1)
-					{
-						iVolley0 = pTri->cornerptr[0]->iVolley;
-						iVolley1 = pTri->cornerptr[1]->iVolley;
-						iVolley2 = pTri->cornerptr[2]->iVolley;
-						b0 = ((iVolley0 >= iTileStart) && (iVolley0 < iTileStart + numTilesOnGo))?1:0;
-						b1 = ((iVolley1 >= iTileStart) && (iVolley1 < iTileStart + numTilesOnGo))?1:0;
-						b2 = ((iVolley2 >= iTileStart) && (iVolley2 < iTileStart + numTilesOnGo))?1:0;
-						if  (b0 + b1 + b2 >= 2) {
-							// assign to this row
-							// but which tri?
-							num0 = tris_assigned[iVolley0] + nego_2feet[iVolley0];
-							num1 = tris_assigned[iVolley1] + nego_2feet[iVolley1];
-							num2 = tris_assigned[iVolley2] + nego_2feet[iVolley2];
-							
-							if (b0+ b1+ b2 == 3) {
-								if ((num0 < num1) && (num0 < num2)) {
-									tris_assigned[iVolley0]++;
-									pTri->indicator = iVolley0;
-								} else {
-									if (num1 < num2) {
-										tris_assigned[iVolley1]++;
-										pTri->indicator = iVolley1;
-									} else {
-										if (num2 < num1) {
-											tris_assigned[iVolley2]++;
-											pTri->indicator = iVolley2;
-										};
-									};
-								};
-							} else {
-								if (b0 + b1 == 2) {
-									if (num0 < num1) {
-										tris_assigned[iVolley0]++;
-										pTri->indicator = iVolley0;
-									} else {
-										if (num1 < num0) {
-											tris_assigned[iVolley1]++;
-											pTri->indicator = iVolley1;
-										};
-									};
-								} else {
-									if (b0 + b2 == 2) {
-										if (num0 < num2) {
-											tris_assigned[iVolley0]++;
-											pTri->indicator = iVolley0;
-										} else {
-											if (num2 < num0) {
-												tris_assigned[iVolley2]++;
-												pTri->indicator = iVolley2;
-											};
-										};
-									} else {
-										if (num1 < num2) {
-											tris_assigned[iVolley1]++;
-											pTri->indicator = iVolley1;
-										} else {
-											if (num2 < num1) {
-												tris_assigned[iVolley2]++;
-												pTri->indicator = iVolley2;
-											};
-										};
-									};
-								};
-							};
-							if (pTri->indicator != -1) {
-								nego_2feet[iVolley0]--;
-								nego_2feet[iVolley1]--;
-								nego_2feet[iVolley2]--;	
-								negotiables[iVolley0]--;
-								negotiables[iVolley1]--;
-								negotiables[iVolley2]--;
-								numNegotRow++;
-								bEncounteredTri = true;
-							};
-							printf("iTri %d b012 %d %d %d : %d %d %d num %d %d %d : Assign to %d\n",
-								iTri,b0,b1,b2,iVolley0,iVolley1,iVolley2,num0,num1,num2,pTri->indicator);
-							
-						}; // 2 feet in
-					}	// unallocated	
-					++pTri;
-				}; // next tri
-			} while (bEncounteredTri);
-			if (bEncounteredTri == true) bEncounterAnything = true;
-				
-			// equality pass:
-			bool bTookAnAction = 0;
-			pTri = T;
-			for (iTri = 0; ((iTri < numTriangles) && (numNegotRow + numAttainedRow < numNeededForRow)
-				&& (bTookAnAction == 0)); // Added an extra cond: stop if assigned 1 triangle.
-				iTri++)
-			{
-				if (pTri->indicator == -1)
-				{
-					iVolley0 = pTri->cornerptr[0]->iVolley;
-					iVolley1 = pTri->cornerptr[1]->iVolley;
-					iVolley2 = pTri->cornerptr[2]->iVolley;
-					b0 = ((iVolley0 >= iTileStart) && (iVolley0 < iTileStart + numTilesOnGo))?1:0;
-					b1 = ((iVolley1 >= iTileStart) && (iVolley1 < iTileStart + numTilesOnGo))?1:0;
-					b2 = ((iVolley2 >= iTileStart) && (iVolley2 < iTileStart + numTilesOnGo))?1:0;
-					if  (b0 + b1 + b2 >= 2) {
-						// assign to this row
-						// but which tri?
-						num0 = tris_assigned[iVolley0] + nego_2feet[iVolley0];
-						num1 = tris_assigned[iVolley1] + nego_2feet[iVolley1];
-						num2 = tris_assigned[iVolley2] + nego_2feet[iVolley2];
-						
-						if (b0+ b1+ b2 == 3) {
-							if ((num0 <= num1) && (num0 <= num2)) {
-								tris_assigned[iVolley0]++;
-								pTri->indicator = iVolley0;
-							} else {
-								if (num1 <= num2) {
-									tris_assigned[iVolley1]++;
-									pTri->indicator = iVolley1;
-								} else {
-									tris_assigned[iVolley2]++;
-									pTri->indicator = iVolley2;
-								};
-							};
-						} else {
-							if (b0 + b1 == 2) {
-								if (num0 <= num1) {
-									tris_assigned[iVolley0]++;
-									pTri->indicator = iVolley0;
-								} else {
-									tris_assigned[iVolley1]++;
-									pTri->indicator = iVolley1;
-								};
-							} else {
-								if (b0 + b2 == 2) {
-									if (num0 <= num2) {
-										tris_assigned[iVolley0]++;
-										pTri->indicator = iVolley0;
-									} else {
-										tris_assigned[iVolley2]++;
-										pTri->indicator = iVolley2;
-									};
-								} else {
-									if (num1 <= num2) {
-										tris_assigned[iVolley1]++;
-										pTri->indicator = iVolley1;
-									} else {
-										tris_assigned[iVolley2]++;
-										pTri->indicator = iVolley2;
-									};
-								};
-							};
-						};
-						nego_2feet[iVolley0]--;
-						nego_2feet[iVolley1]--;
-						nego_2feet[iVolley2]--;	
-						negotiables[iVolley0]--;
-						negotiables[iVolley1]--;
-						negotiables[iVolley2]--;
-						printf("iTri %d b012 %d %d %d : %d %d %d num %d %d %d : Assign to %d\n",
-							iTri,b0,b1,b2,iVolley0,iVolley1,iVolley2,num0,num1,num2,pTri->indicator);
-						numNegotRow++;
-						bEncounterAnything = true;
-						bTookAnAction = true;
+			if (tris_assigned[iVolley0] == threadsPerTileMinor) {
+				// choosing only between iVolley1 and iVolley2
+				if (tris_assigned[iVolley1] == threadsPerTileMinor) {
+					if (tris_assigned[iVolley2] == threadsPerTileMinor) {
+						// triangle not assignable any more -- it's a loose one
+						pTri->indicator = -2;
+					} else {
+						pTri->indicator = iVolley2;
+						tris_assigned[iVolley2]++;
 					};
-				}			
-				++pTri;
-			};
-		} while ((bEncounterAnything) && (numNegotRow + numAttainedRow < numNeededForRow));
-		
-		// If that did not assign all the ones to this row that we could have wanted,
-		// we need to go again and bring in some more.
-		bool bUsedOnly2Feet;
-		if (numNegotRow + numAttainedRow < numNeededForRow) {
-			printf("iRow %d didn't fill with 2-in triangles.\n",iRow);
-			bUsedOnly2Feet = false;
-		} else {
-			printf("iRow %d done2ft numNegotRow %d numAttainedRow %d numNeeded %d\n",iRow,
-				numNegotRow,numAttainedRow,numNeededForRow);
-			bUsedOnly2Feet = true;
-		};
-		
-		// Now we are going to have to use ones with only 1 corner in this row of tiles.
-		// However, find the ones for which the other tris have the highest minimum number of T+N.
-		long highmin, numAssigned;
-		
-		while (numNegotRow + numAttainedRow < numNeededForRow) {
-			highmin = 0;
-			for (iTri = 0; ((iTri < numTriangles) && (numNegotRow + numAttainedRow < numNeededForRow)); iTri++)
-			{
-				if (pTri->indicator == -1)
-				{
-					iVolley0 = pTri->cornerptr[0]->iVolley;
-					iVolley1 = pTri->cornerptr[1]->iVolley;
-					iVolley2 = pTri->cornerptr[2]->iVolley;
-					b0 = ((iVolley0 >= iTileStart) && (iVolley0 < iTileStart + numTilesOnGo))?1:0;
-					b1 = ((iVolley1 >= iTileStart) && (iVolley1 < iTileStart + numTilesOnGo))?1:0;
-					b2 = ((iVolley2 >= iTileStart) && (iVolley2 < iTileStart + numTilesOnGo))?1:0;
-					if  (b0 + b1 + b2 >= 1) {
-						num0 = tris_assigned[iVolley0] + negotiables[iVolley0];
-						num1 = tris_assigned[iVolley1] + negotiables[iVolley1];
-						num2 = tris_assigned[iVolley2] + negotiables[iVolley2];
-					
-						// assign to this row?
-						// Collect highest minimum
-						if (b0 + b1 == 0) {
-							if (min(num0,num1) > highmin) highmin = min(num0,num1);
-							// There were more available here, signifying a better place to steal tri to 'our' row of tiles.
-						};
-						if (b0 + b2 == 0) {
-							if (min(num0,num2) > highmin) highmin = min(num0,num2);
-						};
-						if (b1 + b2 == 0) {
-							if (min(num1,num2) > highmin) highmin = min(num1,num2);
-						};			
+				} else {
+					// 0 was maxed out, 1 was not
+					if (tris_assigned[iVolley2] == threadsPerTileMinor) {
+						pTri->indicator = iVolley1;
+						tris_assigned[iVolley1]++;
+					} else {
+						// between 1 & 2
+
+						bFell_out_2way = true;
+						i1 = iVolley1; i2 = iVolley2;						
+						j1 = 1; j2 = 2;
 					};
-				}; // if unallocated	
-				++pTri;
-			}; // next iTri
-			
-			numAssigned = 0;
-			// Now repeat with highmin used as signal to assign.
-			for (iTri = 0; ((iTri < numTriangles) && (numNegotRow + numAttainedRow < numNeededForRow)); iTri++)
-			{
-				if (pTri->indicator == -1)
-				{
-					iVolley0 = pTri->cornerptr[0]->iVolley;
-					iVolley1 = pTri->cornerptr[1]->iVolley;
-					iVolley2 = pTri->cornerptr[2]->iVolley;
-					b0 = ((iVolley0 >= iTileStart) && (iVolley0 < iTileStart + numTilesOnGo))?1:0;
-					b1 = ((iVolley1 >= iTileStart) && (iVolley1 < iTileStart + numTilesOnGo))?1:0;
-					b2 = ((iVolley2 >= iTileStart) && (iVolley2 < iTileStart + numTilesOnGo))?1:0;
-					if  (b0 + b1 + b2 >= 1) {
-						// assign to this row?
-						// Collect highest minimum
-						if (((b0 + b1 == 0) && (min(num0,num1) == highmin))
-							||
-						    ((b0 + b2 == 0) && (min(num0,num2) == highmin))
-						    ||
-						    ((b1 + b2 == 0) && (min(num1,num2) == highmin)))
-						{
-							negotiables[iVolley0]--;
-							negotiables[iVolley1]--;
-							negotiables[iVolley2]--;
-							if (b0 != 0){
-								tris_assigned[iVolley0]++;
-								pTri->indicator = iVolley0;
-							};
-							if (b1 != 0) {
-								tris_assigned[iVolley1]++;
-								pTri->indicator = iVolley1;
-							};
-							if (b2 != 0) {
-								tris_assigned[iVolley2]++;
-								pTri->indicator = iVolley2;
-							};
-							numNegotRow++;
-							numAssigned++;
-						};
-					};
-					// Of course we are giving symmetrical treatment above and below
-					// this row -- which is probably not the correct thing to do.
-				}; // if unallocated	
-				++pTri;
-			}; // next iTri
-			
-			printf("Assigned %d to row %d at highmin %d \n",numAssigned,iRow,highmin);
-		}; // wend
-
-		// Now within this row it's possible that we assigned too few to some triangles and too many
-		// to others -- so we've got to try and shuttle them along to get it right.
-		
-		// First go for next-door transfers... start with ones that can give/take only from
-		// one side.
-
-
-		// Need to put this in.
-
-		bool bChangesOnThisPass, bFound;
-		int inext, iprev, iprevprev, inextnext;
-		do {
-			bChangesOnThisPass = false;
-		for (iTile = iTileStart; iTile < iTileStart + numTilesOnGo; iTile++)
-		{
-			iprev = iTile-1;
-			if (iprev < iTileStart) iprev += numTilesOnGo;
-			inext = iTile+1;
-			if (inext == iTileStart + numTilesOnGo) inext = iTileStart;
-			iprevprev = iprev-1;
-			if (iprevprev < iTileStart) iprevprev += numTilesOnGo;
-			inextnext = inext+1;
-			if (inextnext == iTileStart + numTilesOnGo) inextnext = iTileStart;
-
-			bFound = true;
-			while ( (bFound == true) &&
-					(tris_assigned[iTile] > threadsPerTileMinor)
-				&& (tris_assigned[iprev] < threadsPerTileMinor)
-				&& ((tris_assigned[inext] >= threadsPerTileMinor)
-						||
-					(tris_assigned[iprevprev] <= threadsPerTileMinor))
-				// either we can only give to 1 place or it can only get 
-				// from 1 place.
-				)
-			{
-				bFound = false;
-				// Seeing if we can reassign something from here to previous tile.
-				// switch over ... prefer to switch one that is
-				// 3 separate feet, so do this pass first.
-				pTri = T;
-				for (iTri = 0; (  (iTri < numTriangles) &&
-					(tris_assigned[iTile] > threadsPerTileMinor) && 
-					(tris_assigned[iprev] < threadsPerTileMinor)
-									) ; iTri++)
-				{
-					if (pTri->indicator == iTile) {
-						iVolley0 = pTri->cornerptr[0]->iVolley;
-						iVolley1 = pTri->cornerptr[1]->iVolley;
-						iVolley2 = pTri->cornerptr[2]->iVolley;
-						if ( ( ((iVolley0 != iTile) && (iVolley0 != iprev)) ||
-							   ((iVolley1 != iTile) && (iVolley1 != iprev)) ||
-							   ((iVolley2 != iTile) && (iVolley2 != iprev)) )
-						      &&
-						   ((iVolley0 == iprev)	||
-							(iVolley1 == iprev) ||
-							(iVolley2 == iprev)) ) 
-						{
-							tris_assigned[iTile]--;
-							tris_assigned[iprev]++;
-							pTri->indicator = iprev;
-							bFound = true;
-							bChangesOnThisPass = true;
-						};						
-					};
-					++pTri;
-				};
-				// Possible we found none to use...
-			};
-
-			// Back the other way:
-			bFound = true;
-			while ( (bFound == true) &&
-					(tris_assigned[iTile] > threadsPerTileMinor)
-				&& (tris_assigned[inext] < threadsPerTileMinor)
-				&& ((tris_assigned[iprev] >= threadsPerTileMinor)
-						||
-					(tris_assigned[inextnext] <= threadsPerTileMinor))
-				// Either we can only give to 1 place or it can only get from 1 place.
-				)
-			{
-				bFound = false;
-				// Seeing if we can reassign something from here to previous tile.
-				// switch over ... prefer to switch one that is
-				// 3 separate feet, so do this pass first.
-				pTri = T;
-				for (iTri = 0; (  (iTri < numTriangles) &&
-					(tris_assigned[iTile] > threadsPerTileMinor) && 
-					(tris_assigned[inext] < threadsPerTileMinor)
-									) ; iTri++)
-				{
-					if (pTri->indicator == iTile) {
-						iVolley0 = pTri->cornerptr[0]->iVolley;
-						iVolley1 = pTri->cornerptr[1]->iVolley;
-						iVolley2 = pTri->cornerptr[2]->iVolley;
-						if ( ( ((iVolley0 != iTile) && (iVolley0 != iprev)) ||
-							   ((iVolley1 != iTile) && (iVolley1 != iprev)) ||
-							   ((iVolley2 != iTile) && (iVolley2 != iprev)) )
-						      &&
-						   ((iVolley0 == iprev)	||
-							(iVolley1 == iprev) ||
-							(iVolley2 == iprev)) ) 
-						{
-							tris_assigned[iTile]--;
-							tris_assigned[inext]++;
-							pTri->indicator = inext;
-							bFound = true;
-							bChangesOnThisPass = true;
-						};						
-					};
-					++pTri;
-				};
-				// Possible we found none to use...
-			};
-			
-			// Do this test for each tile pair and then go around for more 
-			// passes ... working on the end of any chain. 
-			
-		}; // next iTile
-		} while (bChangesOnThisPass); // next pass	
-		
-		// Now unless we were unlucky about available corners, 
-		// a chain can end only in 2+ or 2- if it has both + and -.
-		
-		// Let's just do a test and see if it ever fails at this point, to get going initially:
-		bool bFindWrong, bTookAnAction;
-		do {
-			bFindWrong = false;
-			for (iTile = iTileStart; iTile < iTileStart + numTilesOnGo; iTile++)
-			{
-				if (tris_assigned[iTile] != threadsPerTileMinor)
-				{
-					printf("Problem: iRow %d iTileStart %d iTile %d \n",
-						iRow,iTileStart,iTile);
-					for (i = iTileStart; i < iTileStart + numTilesOnGo; i++)
-						printf("%d ",tris_assigned[i]);
-					printf("\n");
-					bFindWrong = true;
-					if (bUsedOnly2Feet == false) {
-					// Then we expect something a bit stranger...
-					printf("weirdness12345.\n");
-					getch();
-				}
-				};
-				// Yes it does fail sometimes.
-				// So we have to improve : try finding which tile has TOO MANY, move that
-				// clockwise until we encounter TOO FEW.
-				
-				inext = iTile+1;
-				if (inext == iTileStart + numTilesOnGo) inext = iTileStart;
-				
-		
-				if ((tris_assigned[iTile] > threadsPerTileMinor) && (tris_assigned[inext] < tris_assigned[iTile]))
-				{
-					bTookAnAction = 0;
-					pTri = T;
-					for (iTri = 0; ((iTri < numTriangles) && (bTookAnAction == 0)); iTri++)
-					{
-						if (pTri->indicator == iTile)
-						{
-				
-							// does it have a foot in next tile and in another?
-							iVolley0 = pTri->cornerptr[0]->iVolley;
-							iVolley1 = pTri->cornerptr[1]->iVolley;
-							iVolley2 = pTri->cornerptr[2]->iVolley;
-							if (((iVolley0 == inext) || (iVolley1 == inext) || (iVolley2 == inext))
-								&&
-								(
-							((iVolley0 >= iTileStart+numTilesOnGo) || (iVolley0 < iTileStart))
-								||
-							((iVolley1 >= iTileStart+numTilesOnGo) || (iVolley1 < iTileStart))
-								||
-							((iVolley2 >= iTileStart+numTilesOnGo) || (iVolley2 < iTileStart))
-							) ) {
-								// This is one to switch across.
-								bTookAnAction = true;
-								
-								pTri->indicator = inext;
-								tris_assigned[iTile]--;
-								tris_assigned[inext]++;
-
-							}
-						};
-						++pTri;
-					}; // next iTri
-					if (bTookAnAction == 0) {
-						printf("Deeper problem -- cannot move an extra peg clockwise\n");
-						getch();
-					};
-				};	// is this a tile to alter		
-			};		// next iTile
-		} while (bFindWrong);
-
-		iTileStart += numTilesOnGo;
-	} // next iRow
-	
-	// Now since we did within each row, it should be done...
-	
-	// Old attempt:
-	/*
-	
-	FILE * fp;
-
-	bool bEncountered;
-	long numUnassigned, numAssigned;
-	int addition = 0;
-	int iPass = 0;
-	do {
-		bEncountered = false;
-		numUnassigned = 0;
-		numAssigned = 0;
-		
-		
-		
-		pTri = T;
-		for (iTri = 0; iTri < numTriangles; iTri++)
-		{
-			if (pTri->indicator == -1) {
-				numUnassigned++;
-				
-				// 3 separate vertex tiles
-				iVolley0 = pTri->cornerptr[0]->iVolley;
-				iVolley1 = pTri->cornerptr[1]->iVolley;
-				iVolley2 = pTri->cornerptr[2]->iVolley;
-				num0 = tris_assigned[iVolley0] + negotiables[iVolley0];
-				num1 = tris_assigned[iVolley1] + negotiables[iVolley1];
-				num2 = tris_assigned[iVolley2] + negotiables[iVolley2];
-				// Sort : A. By tris_assigned: fewer assigned => assign more
-				//        B. By negotiables: fewer negotiables => assign to that one
-				
-				if ((num0 < threadsPerTileMinor) ||
-					(num1 < threadsPerTileMinor) ||
-					(num2 < threadsPerTileMinor))
-				{
-					num0 = num0;
-				}
-				
-				// Sometimes num1 is already now less than tPTM+addition but num0== it.
-				// In that case clearly we wanted to assign to the one with less.
-				bool bFound = false;
-				for (int add_used = 0; ((add_used < addition) && (bFound == false)); add_used++)
-				{
-					if (num0 == threadsPerTileMinor + add_used) {
-						
+				};				
+			} else {
+				if (tris_assigned[iVolley1] == threadsPerTileMinor) {
+					if (tris_assigned[iVolley2] == threadsPerTileMinor) {
 						pTri->indicator = iVolley0;
 						tris_assigned[iVolley0]++;
-						negotiables[iVolley0]--;					
-						
-						if (num1 <= threadsPerTileMinor) printf("Problem: iVolley0 %d iVolley1 %d \n",iVolley0,iVolley1);
-						if (num2 <= threadsPerTileMinor) printf("Problem: iVolley0 %d iVolley2 %d \n",iVolley0,iVolley2);
-						
-						negotiables[iVolley1]--;
-						negotiables[iVolley2]--;
-						bEncountered = true;
-						bFound = true;
-						numAssigned++;
 					} else {
-						if (num1 == threadsPerTileMinor + add_used) {
-							pTri->indicator = iVolley1;
-							tris_assigned[iVolley1]++;
-							negotiables[iVolley1]--;
-							
-							if (num0 <= threadsPerTileMinor)printf("Problem: iVolley1 %d iVolley0 %d \n",iVolley1,iVolley0);
-							if (num2 <= threadsPerTileMinor)printf("Problem: iVolley1 %d iVolley2 %d \n",iVolley1,iVolley2);
-							
-							negotiables[iVolley0]--;
-							negotiables[iVolley2]--;
-							bEncountered = true;
-							bFound = true;							
-							numAssigned++;
+						// between 0 and 2
+						bFell_out_2way = true;
+						i1 = iVolley0; i2 = iVolley2;
+						j1 = 0; j2 = 2;
+					};
+				} else {
+					if (tris_assigned[iVolley2] == threadsPerTileMinor) {
+						 // between 0 and 1
+						bFell_out_2way = true;
+						i1 = iVolley0; i2 = iVolley1;
+						j1 = 0; j2 = 1;
+					} else {
+						// 3-way choice
+
+						bFell_out_3way = true;
+					};
+				};
+			};
+
+			f64_vec2 u[3], centroid;
+			if ((bFell_out_2way) || (bFell_out_3way))
+			{
+				pTri->MapLeftIfNecessary(u[0], u[1], u[2]);
+				centroid = THIRD*(u[0] + u[1] + u[2]);				
+			}
+
+			if (bFell_out_3way) {
+				// If one is lower total than the other 2, it's that one;
+				// if a pair is lower, go to bFell_out_2way = true
+				// IF all 3 are the same total, do a geometrical allocation to bottommost point or rightmost if 2 below centroid.
+
+				long total0 = tris_assigned[0] + negotiables[0];
+				long total1 = tris_assigned[1] + negotiables[1];
+				long total2 = tris_assigned[2] + negotiables[2];
+
+				if (total0 < total1) {
+					if (total2 < total0) {
+						// total2 is lowest
+						pTri->indicator = iVolley2;
+						tris_assigned[iVolley2]++;
+					} else {
+						if (total2 == total0) {
+							bFell_out_2way = true;
+							i1 = iVolley0; i2 = iVolley2;
+							j1 = 0; j2 = 2;
 						} else {
-							if (num2 == threadsPerTileMinor + add_used) {
-								pTri->indicator = iVolley2;
-								tris_assigned[iVolley2]++;
-								negotiables[iVolley2]--;
-								
-								if (num0 <= threadsPerTileMinor)printf("Problem: iVolley2 %d iVolley0 %d \n",iVolley2,iVolley0);
-								if (num1 <= threadsPerTileMinor)printf("Problem: iVolley2 %d iVolley1 %d \n",iVolley2,iVolley1);
-								
-								negotiables[iVolley0]--;
-								negotiables[iVolley1]--;
-								bEncountered = true;
-								bFound = true;
-								numAssigned++;
+							// total0 is lowest
+							pTri->indicator = iVolley0;
+							tris_assigned[iVolley0]++;
+						};
+					};
+				} else {
+					if (total1 < total0) {
+						if (total2 < total1) {
+							// total2 is lowest
+							pTri->indicator = iVolley2;
+							tris_assigned[iVolley2]++;
+						}
+						else {
+							if (total2 == total1) {
+								bFell_out_2way = true;
+								i1 = iVolley1; i2 = iVolley2;
+								j1 = 1; j2 = 2;
+							}
+							else {
+								// total1 is lowest
+								pTri->indicator = iVolley1;
+								tris_assigned[iVolley1]++;
+							};
+						};
+					} else {
+						// total1 == total0
+						if (total2 < total0) {
+							pTri->indicator = iVolley2;
+							tris_assigned[iVolley2]++;
+						} else {
+							if (total2 > total0) {
+								bFell_out_2way = true;
+								i1 = iVolley0; i2 = iVolley1;
+								j1 = 0; j2 = 1;
+							} else {
+								// ALL EQUAL TOTAL
+
+								// How many are below centroid?
+
+								int below = ((u[0].y < centroid.y) ? 1 : 0) +
+									((u[1].y < centroid.y) ? 1 : 0) +
+									((u[2].y < centroid.y) ? 1 : 0);
+								if (below == 1) {
+									// detect which one:
+
+									if (u[0].y < centroid.y) {
+										pTri->indicator = iVolley0;
+										tris_assigned[iVolley0]++;
+									};
+									if (u[1].y < centroid.y) {
+										pTri->indicator = iVolley1;
+										tris_assigned[iVolley1]++;
+									};
+									if (u[2].y < centroid.y) {
+										pTri->indicator = iVolley2;
+										tris_assigned[iVolley2]++;
+									};
+								} else {
+									if (below != 2) { printf("3RROR : iTri %d below != 2", iTri); getch(); };
+
+									// 2 below so pick rightmost point.
+									if (u[0].x > u[1].x) {
+										if (u[0].x > u[2].x) {
+											pTri->indicator = iVolley0;
+											tris_assigned[iVolley0]++;
+										} else {
+											pTri->indicator = iVolley2;
+											tris_assigned[iVolley2]++;
+										};
+									} else {
+										if (u[1].x > u[2].x) {
+											pTri->indicator = iVolley1;
+											tris_assigned[iVolley1]++;
+										} else {
+											pTri->indicator = iVolley2;
+											tris_assigned[iVolley2]++;
+										};
+									};																		
+								};
 							};
 						};
 					};
 				};
 			};
-			++pTri;
-		}; // next iTri
-		
-		// Run at 0 addition until none encountered
-		// Run at 1 --> if encounter, go back to 0; if not, go on to 2
-		// Run at 2 --> if encounter, go back to 0; 
-		if (bEncountered == true) {
-			addition = 0;
-		} else {
-			addition++; // In fact it just keeps going up and up with none encountered.
+
+			if (bFell_out_2way) {
+				if (tris_assigned[i1] + negotiables[i1] > tris_assigned[i2] + negotiables[i2])
+				{
+					pTri->indicator = i2; // attribute to the one with less going for it
+					tris_assigned[i2]++;
+				}
+				else {
+					if (tris_assigned[i1] + negotiables[i1] < tris_assigned[i2] + negotiables[i2])
+					{
+						pTri->indicator = i1;
+						tris_assigned[i1]++;
+					}
+					else {
+						// decide based if only one of them is below centroid:
+						if ((u[j1].y > centroid.y) && (u[j2].y < centroid.y))
+						{
+							pTri->indicator = i2;
+							tris_assigned[i2]++;
+						}
+						else {
+							if ((u[j1].y < centroid.y) && (u[j2].y > centroid.y))
+							{
+								pTri->indicator = i1;
+								tris_assigned[i1]++;
+							}
+							else {
+
+								// else decide to allocate to rightmost one:
+
+								if (u[j1].x > u[j2].x) {
+									pTri->indicator = i1;
+									tris_assigned[i1]++;
+								}
+								else {
+									pTri->indicator = i2;
+									tris_assigned[i2]++;
+								};
+							};
+						};
+					};
+				};
+			};
+			
+			// No matter what, triangle is no longer negotiable:
+			negotiables[iVolley0]--;
+			negotiables[iVolley1]--;
+			negotiables[iVolley2]--;
+		}
+		++pTri;
+	}
+
+	// Now count how many are at -2 and need to be allocated to whatever tiles are below count.
+	
+
+	pTri = T;
+	iTile = 0;
+	int iLoose = 0;
+	for (iTri = 0; iTri < numTriangles; iTri++)
+	{
+		if (pTri->indicator == -2)
+		{
+			while (tris_assigned[iTile] == threadsPerTileMinor) iTile++;
+
+			pTri->indicator = iTile;
+			tris_assigned[iTile]++;
+			printf("Loose tri: %d assigned to tile %d \n", iTri, iTile);
+			iLoose++;
 		};
+		++pTri;
+	};
+	printf("\niLoose %d\n", iLoose);
+	getch();
 
-		fp = fopen("tris_assigned.txt","w");
-		for (iTile = 0; iTile < numTriTiles; iTile++)
-			fprintf(fp,"%d : assigned %d negotiable %d \n",iTile,tris_assigned[iTile],negotiables[iTile]);
-		fclose(fp);
 
-		printf("Pass %d addition %d ; unassigned %d of which %d assigned\n", iPass, addition, numUnassigned,
-			numAssigned);
-		getch();
-		// Gets stuck in a loop with about 3000 unassigned, 0 being assigned.
-
-		iPass++;
-	} while (numUnassigned > 0);
-	*/
-		// Now turn 'volley' information into a sequence.
+	printf("got to here 3\n");
+	// Now since we did within each row, it should be done...
+	
+	// Now turn 'volley' information into a sequence.
 	// WE CHANGE WHAT indicator MEANS :
 	
 	memset(tris_assigned,0,sizeof(long)*numTriTiles);
@@ -9128,8 +9737,8 @@ void TriMesh::CreateTilingAndResequence(TriMesh * pDestMesh) {
 	}
 
 	printf("Tri resequence done...\n");
-	getch();
 
+	long izNeigh[128], izTri[128];
 
 	// We then can set the new sequence and try to resequence the triangles, and affect the
 	// triangle index lists.
@@ -9143,33 +9752,21 @@ void TriMesh::CreateTilingAndResequence(TriMesh * pDestMesh) {
 		
 		//pVertdest->CopyDataFrom(pVertex);
 		// at the moment we are using hard arrays in Vertex not pointers
+		
+		// This will sort flags etc:
 		memcpy(pVertdest, pVertex, sizeof(Vertex));
+	
+		// Only neighbour list is relevant so far...
+		pVertdest->ClearNeighs();
+		int neigh_len = pVertex->GetNeighIndexArray(izNeigh);
+		for (i = 0; i < neigh_len; i++)
+		{
+			pVertdest->AddNeighbourIndex((X + izNeigh[i])->iIndicator);
 
-		/*  pVertdest->CopyLists(pVertex);
-		// but now we need to change them:
-		
-		// Only neighbour list is relevant so far...
-		pVertdest->ClearNeighs();
-		int neigh_len = pVertex->GetNeighIndexArray(izNeigh);
-		for (i = 0; i < neigh_len; i++)
-		{
-			pVertdest->AddNeighbourIndex((X + izNeigh[i])->iIndicator);
-		};
-		
-		pVertdest->ClearTris();
-		// Only neighbour list is relevant so far...
-		int tri_len = pVertex->GetTriIndexArray(izTri);
-		for (i = 0; i < tri_len; i++)
-		{
-			pVertdest->AddTriIndex((T + izTri[i])->indicator);
-		};*/
-		
-		// Only neighbour list is relevant so far...
-		pVertdest->ClearNeighs();
-		int neigh_len = pVertex->GetNeighIndexArray(izNeigh);
-		for (i = 0; i < neigh_len; i++)
-		{
-			pVertdest->AddNeighbourIndex((X + izNeigh[i])->iIndicator);
+			if (pVertex->iIndicator == 13070) {
+				printf("13070: neigh %d || mapped from %d : %d \n", (X + izNeigh[i])->iIndicator,
+					iVertex, izNeigh[i]);
+			};
 		};
 
 		pVertdest->ClearTris();
@@ -9180,6 +9777,7 @@ void TriMesh::CreateTilingAndResequence(TriMesh * pDestMesh) {
 			pVertdest->AddTriIndex((T + izTri[i])->indicator);
 		};
 		++pVertex;
+
 		// Careful about other stuff.
 	}
 	// How to fill in lists? Need to remap: if old list said 25, new list says i[25]
@@ -9221,7 +9819,8 @@ void TriMesh::CreateTilingAndResequence(TriMesh * pDestMesh) {
 	pDestMesh->OutermostFrillCentroidRadius = this->OutermostFrillCentroidRadius;
 	pDestMesh->Iz_prescribed = this->Iz_prescribed;
 	pDestMesh->numReverseJzTris = this->numReverseJzTris;
-	
+	pDestMesh->numTriangles = this->numTriangles;
+	pDestMesh->numVertices = this->numVertices;
 	
 	// >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 

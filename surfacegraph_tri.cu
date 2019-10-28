@@ -497,7 +497,12 @@ HRESULT surfacegraph::InitialiseBuffers(const TriMesh & X)
 
 	// This quick test for now; when we use more arrays, we need to store total in another variable...
 
-	if (this->boolDisplayInnerMesh) {
+	if (1) { // this->boolDisplayInnerMesh) {
+
+		// New policy: for sanity we need to always output all vertices. Otherwise we'd have to track and map
+		// what drawn vertex corresponds to what used one, if we cannot guarantee that domain vertices are
+		// indexed after insulator ones.
+
 		numVerticesTotal = X.numVertices;
 		numTrianglesTotal = X.numTriangles;
 		const Triangle * pTri = &(X.T[0]);

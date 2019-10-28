@@ -645,7 +645,7 @@ void SolveBackwardAzAdvanceCG(f64 hsub,
 		
 		printf("iIteration %d L2eps[sqrt[h gamma] units] %1.10E \n", iIteration, sqrt(RSS / (real)NMINOR));
 		getch();
-
+		  
 		iIteration++;
 
 		if (bContinue == false) printf("all tests ok\n");
@@ -670,13 +670,13 @@ void SolveBackwardAzAdvanceCG(f64 hsub,
 #undef p_sqrthgamma_Az
 }
 
-
+ 
 void SolveBackwardAzAdvanceJ3LS(f64 hsub,
 	f64 * pAz_k,
 	f64 * p_Azdot0, f64 * p_gamma,
 	f64 * p_AzNext, f64 * p_LapCoeffself,
 	cuSyst * pX_use)
-{
+{  
 	f64 L2eps;
 	f64 beta[3];
 	Tensor3 mat;
@@ -725,7 +725,7 @@ void SolveBackwardAzAdvanceJ3LS(f64 hsub,
 		pX_use->p_info, pX_use->p_tri_neigh_index, p_Jacobi_x);
 	Call(cudaThreadSynchronize(), "cudaTS ResetFrills Jacobi");
 	
-	FILE * fpdbg = fopen("J3LS_2.txt", "w");
+//	FILE * fpdbg = fopen("J3LS_2.txt", "w");
 
 	do
 	{		
@@ -793,8 +793,7 @@ void SolveBackwardAzAdvanceJ3LS(f64 hsub,
 			pX_use->p_izNeigh_TriMinor,
 			pX_use->p_szPBCtri_vert,
 			pX_use->p_szPBC_triminor,
-			p_temp5, // Lap of regressor : result
-					 //		p_temp1, p_temp2, p_temp3,
+			p_temp5, 
 			pX_use->p_AreaMinor
 			);
 		Call(cudaThreadSynchronize(), "cudaTS Get Lap Jacobi 1");
@@ -802,24 +801,7 @@ void SolveBackwardAzAdvanceJ3LS(f64 hsub,
 		// Okay ... now we need to do the routine that creates the matrix deps/dbeta_i deps/dbeta_j
 		// and the vector against epsilon
 
-		//kernelAccumulateMatrix << <numTilesMinor, threadsPerTileMinor >> >(
-		//	pX_use->p_info,
-		//	hsub,
-		//	p_epsilon,
-		//	p_Jacobi_x,
-		//	p_regressor_n,
-		//	p_regressor_i,
-		//	p_LapJacobi,
-		//	p_temp4,
-		//	p_temp5,
-		//	p_gamma,
-
-		//	p_temp1, // sum of matrices, in lots of 6
-		//	p_eps_against_deps
-		//	);
-		//Call(cudaThreadSynchronize(), "cudaTS kernelAccumulateMatrix");
-
-		kernelAccumulateMatrix_debug << <numTilesMinor, threadsPerTileMinor >> >(
+		kernelAccumulateMatrix << <numTilesMinor, threadsPerTileMinor >> >(
 			pX_use->p_info,
 			hsub,
 			p_epsilon,
@@ -832,9 +814,7 @@ void SolveBackwardAzAdvanceJ3LS(f64 hsub,
 			p_gamma,
 
 			p_temp1, // sum of matrices, in lots of 6
-			p_eps_against_deps,
-
-			p_temp2, p_temp3, p_temp6
+			p_eps_against_deps
 			);
 		Call(cudaThreadSynchronize(), "cudaTS kernelAccumulateMatrix");
 		
@@ -888,12 +868,12 @@ void SolveBackwardAzAdvanceJ3LS(f64 hsub,
 
 		printf("L2eps %1.9E beta %1.8E %1.8E %1.8E ", L2eps, beta[0], beta[1], beta[2]);
 
-		printf("Verify: \n");
-		f64 z1 = mat.xx*beta[0] + mat.xy*beta[1] + mat.xz*beta[2];
-		f64 z2 = mat.yx*beta[0] + mat.yy*beta[1] + mat.yz*beta[2];
-		f64 z3 = mat.zx*beta[0] + mat.zy*beta[1] + mat.zz*beta[2];
-		printf("z1 %1.14E sumvec.x %1.14E | z2 %1.14E sumvec.y %1.14E | z3 %1.14E sumvec.z %1.14E \n",
-			z1, sumvec.x, z2, sumvec.y, z3, sumvec.z);
+	//	printf("Verify: \n");
+	//	f64 z1 = mat.xx*beta[0] + mat.xy*beta[1] + mat.xz*beta[2];
+	//	f64 z2 = mat.yx*beta[0] + mat.yy*beta[1] + mat.yz*beta[2];
+	//	f64 z3 = mat.zx*beta[0] + mat.zy*beta[1] + mat.zz*beta[2];
+	//	printf("z1 %1.14E sumvec.x %1.14E | z2 %1.14E sumvec.y %1.14E | z3 %1.14E sumvec.z %1.14E \n",
+	//		z1, sumvec.x, z2, sumvec.y, z3, sumvec.z);
 
 		// Since iterations can be MORE than under Jacobi, something went wrong.
 		// Try running with matrix s.t. beta1 = beta2 = 0. Do we get more improvement ever or a different coefficient than Jacobi?
@@ -943,7 +923,7 @@ void SolveBackwardAzAdvanceJ3LS(f64 hsub,
 			);
 		Call(cudaThreadSynchronize(), "cudaTS GetLap Az JLS 1");
 
-		cudaMemcpy(p_temphost6, p_epsilon, NMINOR * sizeof(f64), cudaMemcpyDeviceToHost);
+		//cudaMemcpy(p_temphost6, p_epsilon, NMINOR * sizeof(f64), cudaMemcpyDeviceToHost);
 
 		cudaMemset(p_bFailed, 0, sizeof(bool)*numTilesMinor);
 		kernelCreateEpsilonAndJacobi << <numTilesMinor, threadsPerTileMinor >> >
@@ -969,8 +949,9 @@ void SolveBackwardAzAdvanceJ3LS(f64 hsub,
 		L2eps = sqrt(RSS / (f64)NMINOR);
 		printf("L2eps: %1.9E \n", L2eps);
 
-		fprintf(fpdbg, "L2eps %1.14E beta %1.14E %1.14E %1.14E \n", L2eps, beta[0], beta[1], beta[2]);
+	//	fprintf(fpdbg, "L2eps %1.14E beta %1.14E %1.14E %1.14E \n", L2eps, beta[0], beta[1], beta[2]);
 
+		/*
 		cudaMemcpy(p_temphost1, p_epsilon, sizeof(f64)*NMINOR, cudaMemcpyDeviceToHost);
 		cudaMemcpy(p_temphost2, p_temp2, sizeof(f64)*NMINOR, cudaMemcpyDeviceToHost);
 		cudaMemcpy(p_temphost3, p_temp3, sizeof(f64)*NMINOR, cudaMemcpyDeviceToHost);
@@ -988,7 +969,7 @@ void SolveBackwardAzAdvanceJ3LS(f64 hsub,
 		}
 		fclose(jibble);
 		printf("\n\nFile saved\a\n\n");
-
+		*/
 
 		/*sprintf(buffer, "eps%d.txt", iIteration);
 		cudaMemcpy(p_temphost1, p_epsilon, sizeof(f64)*NMINOR, cudaMemcpyDeviceToHost);
@@ -1008,7 +989,7 @@ void SolveBackwardAzAdvanceJ3LS(f64 hsub,
 		iIteration++;
 
 	} while (bContinue);
-	fclose(fpdbg);
+//	fclose(fpdbg);
 }
 
 
@@ -3748,10 +3729,11 @@ void PerformCUDA_Invoke_Populate(
 		"cudaGetSymbolAddress((void **)(&longaddress), NumInnerFrills_d)");
 	Call(cudaMemcpy(longaddress, &NumInnerFrills, sizeof(long), cudaMemcpyHostToDevice),
 		"cudaMemcpy(longaddress, &NumInnerFrills, sizeof(long), cudaMemcpyHostToDevice)");
-	Call(cudaGetSymbolAddress((void **)(&longaddress), FirstOuterFrill_d),
-		"cudaGetSymbolAddress((void **)(&longaddress), FirstOuterFrill_d)");
-	Call(cudaMemcpy(longaddress, &FirstOuterFrill, sizeof(long), cudaMemcpyHostToDevice),
-		"cudaMemcpy(longaddress, &FirstOuterFrill, sizeof(long), cudaMemcpyHostToDevice)");
+//	Call(cudaGetSymbolAddress((void **)(&longaddress), FirstOuterFrill_d),
+//		"cudaGetSymbolAddress((void **)(&longaddress), FirstOuterFrill_d)");
+//	Call(cudaMemcpy(longaddress, &FirstOuterFrill, sizeof(long), cudaMemcpyHostToDevice),
+//		"cudaMemcpy(longaddress, &FirstOuterFrill, sizeof(long), cudaMemcpyHostToDevice)");
+// Cannot be used: FirstOuterFrill is not reliable with retiling.
 
 	Call(cudaMemcpyToSymbol(cross_T_vals_d, cross_T_vals, 10 * sizeof(f64)),
 		"cudaMemcpyToSymbol(cross_T_vals_d,cross_T_vals, 10*sizeof(f64))");
@@ -4098,7 +4080,7 @@ void PerformCUDA_RunStepsAndReturnSystem(cuSyst * pX_host)
 
 	fp_dbg = fopen("dbg1.txt", "a");
 	fp_trajectory = fopen("traj.txt", "a");
-	for (iSubstep = 0; iSubstep < 10; iSubstep++)
+	for (iSubstep = 0; iSubstep < GPU_STEPS; iSubstep++)
 	{
 		printf("\nSTEP %d\n-------------\n", iSubstep);
 		printf("evaltime = %1.10E \n\n", evaltime);
@@ -4113,6 +4095,7 @@ void PerformCUDA_RunStepsAndReturnSystem(cuSyst * pX_host)
 		// in the dest system at the end of the step -- riiiiiiiight?
 		pX_half->CopyStructuralDetailsFrom(*pX1);
 		pX2->CopyStructuralDetailsFrom(*pX1);
+
 /*
 		cudaMemcpy(pX_half->p_izTri_vert, pX1->p_izTri_vert, 
 			NUMVERTICES*MAXNEIGH_d * sizeof(long), cudaMemcpyDeviceToDevice);
@@ -4157,11 +4140,14 @@ void PerformCUDA_RunStepsAndReturnSystem(cuSyst * pX_host)
 	cudaEventRecord(stop1, 0);
 	cudaEventSynchronize(stop1);
 	cudaEventElapsedTime(&elapsedTime, start1, stop1);
-	printf("Elapsed time for 10 steps : %f ms\n", elapsedTime);
+	printf("Elapsed time for %d steps : %f ms\n", GPU_STEPS, elapsedTime);
 
 	// update with the most recent B field since we did not update it properly after subcycle:
 	cudaMemcpy(pX1->p_B, pX_half->p_B, sizeof(f64_vec3)*NMINOR, cudaMemcpyDeviceToDevice);
-
+	// For graphing :
+	cudaMemcpy(temp_array_host, p_LapAz, sizeof(f64)*NMINOR, cudaMemcpyDeviceToHost);
+	cudaMemcpy(p_OhmsCoeffs_host, p_OhmsCoeffs, sizeof(OhmsCoeffs)*NMINOR, cudaMemcpyDeviceToHost);
+	
 	pX1->SendToHost(*pX_host);
 	
 	// Now store for 1D graphs: temphost3 = n, temphost4 = vr, temphost5 = vez
@@ -8449,9 +8435,9 @@ SetConsoleTextAttribute(hConsole, 15);
 //	SolveBackwardAzAdvanceCG(hsub, p_Az, p_Azdot0, p_gamma, 
 //		p_AzNext, p_LapCoeffself, pX_target);
 
-//	SolveBackwardAzAdvanceJ3LS(hsub, p_Az, p_Azdot0, p_gamma,
-//				p_AzNext, p_LapCoeffself, pX_target);
-
+	SolveBackwardAzAdvanceJ3LS(hsub, p_Az, p_Azdot0, p_gamma,
+				p_AzNext, p_LapCoeffself, pX_target);
+	/*
 	// JLS alternative:
 	f64 sum_eps_deps_by_dbeta, sum_depsbydbeta_sq, sum_eps_eps, depsbydbeta;
 	printf("\nJLS [beta L2eps]: ");
@@ -8618,12 +8604,10 @@ SetConsoleTextAttribute(hConsole, 15);
 		//}
 
 	} while (bContinue);
-	
+	*/
 	//fclose(fpdbg);
 	
-	printf("\n\n");
-	getch();
-	getch();
+	printf("done solve\n");
 
 	cudaMemcpy(p_Az, p_AzNext, sizeof(f64)*NMINOR, cudaMemcpyDeviceToDevice);
 
@@ -9603,39 +9587,34 @@ SetConsoleTextAttribute(hConsole, 15);
 	printf("Done step %d from time %1.8E length %1.2E\n\n", runs, evaltime, Timestep);
 
 	// For graphing :
-	cudaMemcpy(temp_array_host, p_LapAz, sizeof(f64)*NMINOR, cudaMemcpyDeviceToHost);
-	cudaMemcpy(p_OhmsCoeffs_host, p_OhmsCoeffs, sizeof(OhmsCoeffs)*NMINOR, cudaMemcpyDeviceToHost);
+	//cudaMemcpy(temp_array_host, p_LapAz, sizeof(f64)*NMINOR, cudaMemcpyDeviceToHost);
+	//cudaMemcpy(p_OhmsCoeffs_host, p_OhmsCoeffs, sizeof(OhmsCoeffs)*NMINOR, cudaMemcpyDeviceToHost);
+	//cudaMemcpy(p_temphost3, pX_half->p_AreaMinor, sizeof(f64)*NMINOR, cudaMemcpyDeviceToHost);
 
-	cudaMemcpy(p_temphost3, pX_half->p_AreaMinor, sizeof(f64)*NMINOR, cudaMemcpyDeviceToHost);
-	f64 integral_lap = 0.0;
-	f64 integral_L1 = 0.0;
-	for (iMinor = 0; iMinor < NMINOR; iMinor++)
-	{
-		integral_lap += temp_array_host[iMinor] * p_temphost3[iMinor];
-		integral_L1 += fabs(temp_array_host[iMinor] * p_temphost3[iMinor]);
-	}
-	printf("Integral Lap Az %1.10E integ |Lap| %1.10E \n", integral_lap, integral_L1);
-	integral_lap = 0.0;
-	integral_L1 = 0.0;
-	for (iMinor = BEGINNING_OF_CENTRAL; iMinor < NMINOR; iMinor++)
-	{
-		integral_lap += temp_array_host[iMinor] * p_temphost3[iMinor];
-		integral_L1 += fabs(temp_array_host[iMinor] * p_temphost3[iMinor]);
-	}
-	printf("Verts Integral Lap Az %1.10E integ |Lap| %1.10E \n", integral_lap, integral_L1);
-	integral_lap = 0.0;
-	integral_L1 = 0.0;
-	for (iMinor = BEGINNING_OF_CENTRAL+11000; iMinor < NMINOR; iMinor++)
-	{
-		integral_lap += temp_array_host[iMinor] * p_temphost3[iMinor];
-		integral_L1 += fabs(temp_array_host[iMinor] * p_temphost3[iMinor]);
-	}
-	printf("Verts 11000+ Integral Lap Az %1.10E integ |Lap| %1.10E \n", integral_lap, integral_L1);
-
-	// Reveals that vertices only have the positive (in domain?) contributions.
-	// Negative is on triangles.
-	// What gives? Need to spit .. 
-	// Can we intersplice tris and verts on graph? could be good.
+	//f64 integral_lap = 0.0;
+	//f64 integral_L1 = 0.0;
+	//for (iMinor = 0; iMinor < NMINOR; iMinor++)
+	//{
+	//	integral_lap += temp_array_host[iMinor] * p_temphost3[iMinor];
+	//	integral_L1 += fabs(temp_array_host[iMinor] * p_temphost3[iMinor]);
+	//}
+	//printf("Integral Lap Az %1.10E integ |Lap| %1.10E \n", integral_lap, integral_L1);
+	//integral_lap = 0.0;
+	//integral_L1 = 0.0;
+	//for (iMinor = BEGINNING_OF_CENTRAL; iMinor < NMINOR; iMinor++)
+	//{
+	//	integral_lap += temp_array_host[iMinor] * p_temphost3[iMinor];
+	//	integral_L1 += fabs(temp_array_host[iMinor] * p_temphost3[iMinor]);
+	//}
+	//printf("Verts Integral Lap Az %1.10E integ |Lap| %1.10E \n", integral_lap, integral_L1);
+	//integral_lap = 0.0;
+	//integral_L1 = 0.0;
+	//for (iMinor = BEGINNING_OF_CENTRAL+11000; iMinor < NMINOR; iMinor++)
+	//{
+	//	integral_lap += temp_array_host[iMinor] * p_temphost3[iMinor];
+	//	integral_L1 += fabs(temp_array_host[iMinor] * p_temphost3[iMinor]);
+	//}
+	//printf("Verts 11000+ Integral Lap Az %1.10E integ |Lap| %1.10E \n", integral_lap, integral_L1);
 
 	fp = fopen("elapsed.txt", "a");
 	SetConsoleTextAttribute(hConsole, 13);

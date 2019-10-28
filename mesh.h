@@ -1340,6 +1340,8 @@ public:
 	
 	void CreateTilingAndResequence(TriMesh * pDestMesh);
 
+	void CreateTilingAndResequence2(TriMesh * pDestMesh);
+
 	// in MeshUtil.cpp:
 	int Load(const char * filename);
 	int Save(const char * filename);

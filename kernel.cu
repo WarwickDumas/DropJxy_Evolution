@@ -13748,9 +13748,13 @@ __global__ void kernelCreateLinearRelationship(
 		// We need to do the same sort of thing here as in CalcVelocityAzdot :
 
 		f64 Jz = 0.0;
-
-		if ((iMinor >= numStartZCurrentTriangles) && (iMinor < numEndZCurrentTriangles))
+		
+		//if ((iMinor >= numStartZCurrentTriangles) && (iMinor < numEndZCurrentTriangles))
+		if (info.flag == REVERSE_JZ_TRI)
 		{
+			// We should find a way to set these to exactly what we need for it to work,
+			// at TriMesh::Initialise and then propagated through the Invoke function.
+
 			f64 AreaMinor = p_AreaMinor[iMinor];
 			Jz = negative_Iz_per_triangle / AreaMinor;
 		}
@@ -13848,7 +13852,9 @@ __global__ void kernelCreateLinearRelationshipBwd(
 		// We need to do the same sort of thing here as in CalcVelocityAzdot :
 
 		f64 Jz = 0.0;
-		if ((iMinor >= numStartZCurrentTriangles) && (iMinor < numEndZCurrentTriangles))
+		
+		//if ((iMinor >= numStartZCurrentTriangles) && (iMinor < numEndZCurrentTriangles))
+		if (info.flag == REVERSE_JZ_TRI)
 		{
 			f64 AreaMinor = p_AreaMinor[iMinor];
 			Jz = negative_Iz_per_triangle / AreaMinor;			
@@ -15566,7 +15572,9 @@ __global__ void Estimate_Effect_on_Integral_Azdot_from_Jz_and_LapAz(
 			+ hstep*c*0.5*FOUR_PI*q*n_use.n*(v_kplus1.viz - v_kplus1.vez)*AreaMinor;
 		// Was n used consistently?
 	} else {
-		if ((iMinor >= numStartZCurrentTriangles) && (iMinor < numEndZCurrentTriangles))
+		
+										 //if ((iMinor >= numStartZCurrentTriangles) && (iMinor < numEndZCurrentTriangles))
+		if (info.flag == REVERSE_JZ_TRI)
 			sum2[threadIdx.x] = hstep*c*4.0*M_PI*negative_Iz_per_triangle;
 	}
 
@@ -15695,8 +15703,10 @@ __global__ void Estimate_Effect_on_Integral_Azdot_from_Jz_and_LapAz(
 
 			f64 Jz = 0.0;
 
-			if ((iMinor >= numStartZCurrentTriangles) && (iMinor < numEndZCurrentTriangles))
+			 //if ((iMinor >= numStartZCurrentTriangles) && (iMinor < numEndZCurrentTriangles))
+			if (info.flag == REVERSE_JZ_TRI)
 			{
+				
 				// Azdotdot = c^2 (Lap Az + 4pi/c Jz)
 				// ASSUME we are fed Iz_prescribed.
 				//Jz = -Iz_prescribed / (real)(numEndZCurrentTriangles - numStartZCurrentTriangles);
@@ -15801,8 +15811,9 @@ __global__ void kernelCalculateVelocityAndAzdot(
 
 		f64 Jz = 0.0;
 
-		if ((iMinor >= numStartZCurrentTriangles) && (iMinor < numEndZCurrentTriangles))
+		if (info.flag == REVERSE_JZ_TRI)
 		{
+			
 			// Azdotdot = c^2 (Lap Az + 4pi/c Jz)
 			// ASSUME we are fed Iz_prescribed.
 			//Jz = -Iz_prescribed / (real)(numEndZCurrentTriangles - numStartZCurrentTriangles);
@@ -17486,8 +17497,13 @@ __global__ void kernelGetLap_minor(
 
 			//f64_vec2 grad_Az = integ_grad_Az / area_quadrilateral;
 			// DEBUG:
-			if ((i % 2 == 0) || ((izNeighMinor[i] >= NumInnerFrills_d) && (izNeighMinor[i] < FirstOuterFrill_d)))
+
+
+			if ((opppos.dot(opppos) < 0.9999*0.9999*FRILL_CENTROID_OUTER_RADIUS_d*FRILL_CENTROID_OUTER_RADIUS_d) &&
+				(opppos.dot(opppos) > 1.0001*1.0001*FRILL_CENTROID_INNER_RADIUS_d*FRILL_CENTROID_INNER_RADIUS_d))
 			{
+				// neighbour's not a frill
+
 				Our_integral_Lap_Az += integ_grad_Az.dot(edge_normal) / area_quadrilateral;
 
 				if (TESTTRI3) {
@@ -17496,6 +17512,7 @@ __global__ void kernelGetLap_minor(
 						integ_grad_Az.dot(edge_normal) / area_quadrilateral);
 				}
 			}
+
 			AreaMinor += (0.5*endpt0.x + 0.5*endpt1.x)*edge_normal.x;
 
 	//		if ((TESTTRI)2) printf("CHOSEN2 %d izNeighMinor[i] %d our.pos %1.14E %1.14E "
@@ -18599,17 +18616,26 @@ __global__ void kernelGetLapCoeffs_and_min(
 			// Wait a minute: if either prev, info or next is a frill, we need to add
 			// to this one.
 			// specifically it is worth (pos1.r/pos2.r) times self
-			if (izNeighMinor[iprev] >= FirstOuterFrill_d) {
+
+			if ((prevpos.dot(prevpos) > 0.9999*0.9999*FRILL_CENTROID_OUTER_RADIUS_d*FRILL_CENTROID_OUTER_RADIUS_d))
+			{
+
+//			if (izNeighMinor[iprev] >= FirstOuterFrill_d) {
 				f64 ratio = info.pos.modulus() / FRILL_CENTROID_OUTER_RADIUS_d;
 				integ_grad_Az.x += 0.5*(opppos.y - info.pos.y)*ratio;
 				integ_grad_Az.y -= 0.5*(opppos.x - info.pos.x)*ratio;
 			};
-			if (izNeighMinor[i] >= FirstOuterFrill_d) {
+
+			if (opppos.dot(opppos) > 0.9999*0.9999*FRILL_CENTROID_OUTER_RADIUS_d*FRILL_CENTROID_OUTER_RADIUS_d)
+			{
+			//if (izNeighMinor[i] >= FirstOuterFrill_d) {
 				f64 ratio = info.pos.modulus() / FRILL_CENTROID_OUTER_RADIUS_d;
 				integ_grad_Az.x += 0.5*(nextpos.y - prevpos.y)*ratio;
 				integ_grad_Az.y -= 0.5*(nextpos.x - prevpos.x)*ratio;
 			};
-			if (izNeighMinor[inext] >= FirstOuterFrill_d) {
+			if (nextpos.dot(nextpos) > 0.9999*0.9999*FRILL_CENTROID_OUTER_RADIUS_d*FRILL_CENTROID_OUTER_RADIUS_d)
+			{
+			//if (izNeighMinor[inext] >= FirstOuterFrill_d) {
 				f64 ratio = info.pos.modulus() / FRILL_CENTROID_OUTER_RADIUS_d;
 				integ_grad_Az.x += 0.5*(info.pos.y - opppos.y)*ratio;
 				integ_grad_Az.y -= 0.5*(info.pos.x - opppos.x)*ratio;
@@ -19618,7 +19644,9 @@ __global__ void kernelCreate_pressure_gradT_and_gradA_LapA_CurlA_minor(
 					);
 
 				//f64_vec2 grad_Az = integ_grad_Az / area_quadrilateral;
-				if ((i % 2 == 0) || ((izNeighMinor[i] >= NumInnerFrills_d) && (izNeighMinor[i] < FirstOuterFrill_d)))
+				//if ((i % 2 == 0) || ((izNeighMinor[i] >= NumInnerFrills_d) && (izNeighMinor[i] < FirstOuterFrill_d)))
+				if ( (opppos.dot(opppos) < 0.9999*0.9999*FRILL_CENTROID_OUTER_RADIUS_d*FRILL_CENTROID_OUTER_RADIUS_d) &&
+					 (opppos.dot(opppos) > 1.0001*1.0001*FRILL_CENTROID_INNER_RADIUS_d*FRILL_CENTROID_INNER_RADIUS_d))
 					Our_integral_Lap_Az += integ_grad_Az.dot(edge_normal) / area_quadrilateral;
 
 				T3 T0, T1; // waste of registers
@@ -19867,8 +19895,10 @@ __global__ void kernelCreate_pressure_gradT_and_gradA_LapA_CurlA_minor(
 					);
 
 				//f64_vec2 grad_Az = integ_grad_Az / area_quadrilateral;
-				if ((i % 2 == 0) || // vertex neigh 
-					((izNeighMinor[i] >= NumInnerFrills_d) && (izNeighMinor[i] < FirstOuterFrill_d)))
+		//		if ((i % 2 == 0) || // vertex neigh 
+		//				((izNeighMinor[i] >= NumInnerFrills_d) && (izNeighMinor[i] < FirstOuterFrill_d)))
+				if ((opppos.dot(opppos) < 0.9999*0.9999*FRILL_CENTROID_OUTER_RADIUS_d*FRILL_CENTROID_OUTER_RADIUS_d) &&
+					(opppos.dot(opppos) > 1.0001*1.0001*FRILL_CENTROID_INNER_RADIUS_d*FRILL_CENTROID_INNER_RADIUS_d))
 					Our_integral_Lap_Az += integ_grad_Az.dot(edge_normal) / area_quadrilateral;
 
 				f64 Az_edge = SIXTH * (2.0*ourAz + 2.0*oppAz + prevAz + nextAz);

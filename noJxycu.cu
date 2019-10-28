@@ -949,7 +949,7 @@ void RefreshGraphs(TriMesh & X, // only not const because of such as Reset_verte
 			DATA_HEIGHT, (real *)(&(X.pData[0].n)),
 			VELOCITY_COLOUR, (real *)(&(X.pData[0].vxy)),
 			false, // no inner mesh display
-			GRAPH_ION_T, &X);
+			GRAPH_ION_N, &X);
 		Graph[1].DrawSurface("Ion v",
 			VELOCITY_HEIGHT, (real *)(&(X.pData[0].vxy)),
 			VELOCITY_COLOUR, (real *)(&(X.pData[0].vxy)),
@@ -1695,11 +1695,7 @@ __global__ void addKernel(int *c, const int *a, const int *b)
 
 int main()
 {
-    const int arraySize = 5;
-    const int a[arraySize] = { 1, 2, 3, 4, 5 };
-    const int b[arraySize] = { 10, 20, 30, 40, 50 };
-    int c[arraySize] = { 0 };
-	
+   
 	HINSTANCE hInstance = GetModuleHandle(NULL);
 	HWND hwndConsole = GetConsoleWindow();
 	char szInitialFilenameAvi[512];
@@ -1731,7 +1727,7 @@ int main()
 	report_time(0);
 
 	int filetag = 0;
-	do {
+	do { 
 		filetag++;
 		sprintf(Functionalfilename, FUNCTIONALFILE_START "%03d.txt", filetag);
 	} while ((_access(Functionalfilename, 0)) != -1);
@@ -1743,7 +1739,7 @@ int main()
 	}
 	else {
 		printf("opened %s \n", Functionalfilename);
-	};
+	}; 
 	fprintf(fp, "GSC evaltime Area neut.N ion.N elec.N neut.r ion.r elec.r SDneut.r SDion.r SDelec.r "
 		" neut.vr neut.vth neut.vz  ion.vr ion.vth ion.vz elec.vr elec.vth elec.vz neut.heat ion.heat elec.heat neut.T ion.T elec.T "
 		" neut.mnvv/3 ion.mnvv/3 elec.mnvv/3 elec.force(vxB)r within3.6 elec.Bth EE BB Heatings and dT changes - see code \n");
@@ -1753,13 +1749,13 @@ int main()
 	X2.Initialise(2);
 	X3.Initialise(3);
 	printf("Got to here 1\n");
-	   
+	    
 	{
 	//	X4.Initialise(4);
 	//	printf("Got to here 2\n");
-	//	X4.CreateTilingAndResequence(&X1);
-	//	X4.CreateTilingAndResequence(&X2);
-	//	X4.CreateTilingAndResequence(&X3);
+	//	X4.CreateTilingAndResequence2(&X1);
+	//	X4.CreateTilingAndResequence2(&X2);
+	//	X4.CreateTilingAndResequence2(&X3);
 	//	printf("Got to here 3\n");
 
 		// 
@@ -1893,11 +1889,7 @@ int main()
 	newLookat.z = 72.0f;
 
 						 // Add vectors in parallel.
-	cudaError_t cudaStatus = addWithCuda(c, a, b, arraySize);
-	if (cudaStatus != cudaSuccess) {
-		fprintf(stderr, "addWithCuda failed!");
-		return 1;
-	}
+	cudaError_t cudaStatus;
 
 	if (DXChk(Graph[0].InitialiseWithoutBuffers(0, 0, GRAPH_WIDTH, GRAPH_HEIGHT, GlobalEye, GlobalLookat)) +
 		DXChk(Graph[0].InitialiseBuffers(X1))
@@ -2003,11 +1995,16 @@ int main()
 	for (i = 0; i < NUMAVI; i++)
 		SetAviVideoCompression(hAvi[i], dib, &opts, false, hWnd); // always run this for every avi file but can
 																  // call with false as long as we know opts contains valid information. 
+
+	printf("GOT TO HERE ---\n\n");
+
 	counter = 0;
 	//ReleaseDC(hWnd,surfdc);
 	p_backbuffer_surface->ReleaseDC(surfdc);
-	GlobalCutaway = true;
-	RefreshGraphs(*pX, GlobalSpeciesToGraph); 
+	GlobalCutaway = false; // dies if true
+	
+	RefreshGraphs(*pX, GlobalSpeciesToGraph);
+	
 	Direct3D.pd3dDevice->Present(NULL, NULL, NULL, NULL);
 
 	// Main message loop:
@@ -2035,87 +2032,6 @@ int main()
 
     return 0;
 }
-
-// Helper function for using CUDA to add vectors in parallel.
-cudaError_t addWithCuda(int *c, const int *a, const int *b, unsigned int size)
-{
-    int *dev_a = 0;
-    int *dev_b = 0;
-    int *dev_c = 0;
-    cudaError_t cudaStatus;
-
-    // Choose which GPU to run on, change this on a multi-GPU system.
-    cudaStatus = cudaSetDevice(0);
-    if (cudaStatus != cudaSuccess) {
-        fprintf(stderr, "cudaSetDevice failed!  Do you have a CUDA-capable GPU installed?");
-        goto Error;
-    }
-
-    // Allocate GPU buffers for three vectors (two input, one output)    .
-    cudaStatus = cudaMalloc((void**)&dev_c, size * sizeof(int));
-    if (cudaStatus != cudaSuccess) {
-        fprintf(stderr, "cudaMalloc failed!");
-        goto Error;
-    }
-
-    cudaStatus = cudaMalloc((void**)&dev_a, size * sizeof(int));
-    if (cudaStatus != cudaSuccess) {
-        fprintf(stderr, "cudaMalloc failed!");
-        goto Error;
-    }
-
-    cudaStatus = cudaMalloc((void**)&dev_b, size * sizeof(int));
-    if (cudaStatus != cudaSuccess) {
-        fprintf(stderr, "cudaMalloc failed!");
-        goto Error;
-    }
-
-    // Copy input vectors from host memory to GPU buffers.
-    cudaStatus = cudaMemcpy(dev_a, a, size * sizeof(int), cudaMemcpyHostToDevice);
-    if (cudaStatus != cudaSuccess) {
-        fprintf(stderr, "cudaMemcpy failed!");
-        goto Error;
-    }
-
-    cudaStatus = cudaMemcpy(dev_b, b, size * sizeof(int), cudaMemcpyHostToDevice);
-    if (cudaStatus != cudaSuccess) {
-        fprintf(stderr, "cudaMemcpy failed!");
-        goto Error;
-    }
-
-    // Launch a kernel on the GPU with one thread for each element.
-    addKernel<<<1, size>>>(dev_c, dev_a, dev_b);
-
-    // Check for any errors launching the kernel
-    cudaStatus = cudaGetLastError();
-    if (cudaStatus != cudaSuccess) {
-        fprintf(stderr, "addKernel launch failed: %s\n", cudaGetErrorString(cudaStatus));
-        goto Error;
-    }
-    
-    // cudaDeviceSynchronize waits for the kernel to finish, and returns
-    // any errors encountered during the launch.
-    cudaStatus = cudaDeviceSynchronize();
-    if (cudaStatus != cudaSuccess) {
-        fprintf(stderr, "cudaDeviceSynchronize returned error code %d after launching addKernel!\n", cudaStatus);
-        goto Error;
-    }
-
-    // Copy output vector from GPU buffer to host memory.
-    cudaStatus = cudaMemcpy(c, dev_c, size * sizeof(int), cudaMemcpyDeviceToHost);
-    if (cudaStatus != cudaSuccess) {
-        fprintf(stderr, "cudaMemcpy failed!");
-        goto Error;
-    }
-
-Error:
-    cudaFree(dev_c);
-    cudaFree(dev_a);
-    cudaFree(dev_b);
-    
-    return cudaStatus;
-}
-
 
 LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
