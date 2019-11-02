@@ -235,11 +235,12 @@ long const INNERMOST_STEPS = 200;
 // Need to be careful in case of thermal pressure messing up mesh.
 // Let's assume we do recalculation of parameters as often as we do recalculation of pressure.
 
-real const TIMESTEP = 2.0e-13; 
-real const SUBSTEP = 2.0e-13;
+real const TIMESTEP = 4.0e-13; 
+real const SUBSTEP = 4.0e-13;
 int const SUBCYCLES = 1; 
-int const GPU_STEPS = 100;
-int const ADVECT_FREQUENCY = 50; // 1e-11 = 1e-4/1e7
+int const GPU_STEPS = 50;
+int const ADVECT_FREQUENCY = 25; // 1e-11 = 1e-4/1e7
+int const ADVECT_STEPS_PER_GPU_VISIT = 2;
 
 
 //long const NUM_VERTICES_PER_CM_SQ = 10000; // 60000; //12000; // use 262144 = 2^18. 2^9 = 512
