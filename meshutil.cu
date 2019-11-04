@@ -1293,7 +1293,7 @@ int TriMesh::Initialise(int token)
 		SetTriangleVertex(1, pTri, X + iVertex);
 		//	SetTriangleVertex(2,pTri,X + iVertex);
 		pTri->cornerptr[2] = pTri->cornerptr[1];
-
+		 
 		pTri->u8domain_flag = OUTER_FRILL;
 		++pTri;
 		++iTri;
@@ -7425,6 +7425,7 @@ real TriMesh::ReturnMaximumVelocity(int offset_v, bool bDisplayInner) const
 		pdata += (Xdomain-X);
 		nmax = numDomainVertices;
 	}
+	long iMax = -1;
 	for (long iVert = 0; iVert < nmax; iVert++)
 	{
 		ptr = ((real *)pdata) + offset_v;
@@ -7433,13 +7434,19 @@ real TriMesh::ReturnMaximumVelocity(int offset_v, bool bDisplayInner) const
 		vy = *ptr;
 		
 		vsq = vx*vx+vy*vy;
-		if (vsq > maxvsq) maxvsq = vsq;
+		if (vsq > maxvsq) {
+			maxvsq = vsq;
+			iMax = iVert;
+		}
 
 		++pdata;
 	};
 
 	if (maxvsq == 0.0) return 1.0; // do not return 0
 
+	if (bDisplayInner == 0) iMax += (Xdomain - X);
+
+	printf("Max|v| %1.8E found at vertex %d \n", sqrt(maxvsq), iMax);
 	return sqrt(maxvsq);
 }
 real TriMesh::ReturnMaximum3DMagnitude(int offset_v,bool bDisplayInner) const

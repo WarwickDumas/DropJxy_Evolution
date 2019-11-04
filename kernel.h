@@ -234,7 +234,9 @@ __global__ void kernelAverage_n_T_x_to_tris  (
 	);
 
 __global__ void kernelAddtoT(
-	T3 * __restrict__ p_T_dest,
+	f64 * __restrict__ p_T_n,
+	f64 * __restrict__ p_T_i,
+	f64 * __restrict__ p_T_e,
 	f64 beta_nJ, f64 beta_nR,
 	f64 beta_iJ, f64 beta_iR,
 	f64 beta_eJ, f64 beta_eR,
@@ -293,35 +295,6 @@ __global__ void kernelAccumulateSummands4(
 	f64 * __restrict__ p_sum_eps_sq
 );
 
-__global__ void kernelCalculateROCepsWRTregressorT(
-	f64 const h_use,
-	structural * __restrict__ p_info_minor,
-	long * __restrict__ pIndexNeigh,
-	char * __restrict__ pPBCNeigh,
-	long * __restrict__ izTri_verts,
-	char * __restrict__ szPBCtri_verts,
-	f64_vec2 * __restrict__ p_cc,
-
-	nvals * __restrict__ p_n_major,
-	T3 * __restrict__ p_T_major,
-	f64_vec3 * __restrict__ p_B_major,
-
-	f64 * __restrict__ p_kappa_n,
-	f64 * __restrict__ p_kappa_i,
-	f64 * __restrict__ p_kappa_e,
-
-	f64 * __restrict__ p_nu_i,
-	f64 * __restrict__ p_nu_e,
-	f64 * __restrict__ p_AreaMajor,
-
-	f64 * __restrict__ p_regressor_n,
-	f64 * __restrict__ p_regressor_i,
-	f64 * __restrict__ p_regressor_e,
-	f64 * __restrict__ p_d_eps_by_d_beta_n,
-	f64 * __restrict__ p_d_eps_by_d_beta_i,
-	f64 * __restrict__ p_d_eps_by_d_beta_e
-);
-
 __global__ void kernelDummy(
 	f64 * __restrict__ p_d_eps_by_d_beta_n
 );
@@ -347,11 +320,13 @@ __global__ void kernelCreateEpsilonAndJacobi_Heat
 (
 	f64 const h_sub,
 	structural * __restrict__ p_info_major,
-	T3 * __restrict__ p_T_putative,
-	T3 * __restrict__ p_T_k, // T_k for substep
+	f64 * __restrict__ p_T_n,
+	f64 * __restrict__ p_T_i, 
+	f64 * __restrict__ p_T_e,
+	T3 * p_T_k, // T_k for substep
 
-							 // f64 * __restrict__ p_Azdot0,f64 * __restrict__ p_gamma, 
-							 // corresponded to simple situation where Azdiff = h*(Azdot0+gamma Lap Az)
+				// f64 * __restrict__ p_Azdot0,f64 * __restrict__ p_gamma, 
+				// corresponded to simple situation where Azdiff = h*(Azdot0+gamma Lap Az)
 
 	NTrates * __restrict__ p_NTrates_diffusive,
 	nvals * __restrict__ p_n_major,
@@ -369,31 +344,15 @@ __global__ void kernelCreateEpsilonAndJacobi_Heat
 	bool * __restrict__ p_bFailedTest
 );
 
-__global__ void kernelCalc_SelfCoefficient_for_HeatConduction(
-	f64 const h_sub,
-	structural * __restrict__ p_info_minor,
-	long * __restrict__ pIndexNeigh,
-	char * __restrict__ pPBCNeigh,
-	long * __restrict__ izTri_verts,
-	char * __restrict__ szPBCtri_verts,
-	f64_vec2 * __restrict__ p_cc,
+__device__ void Augment_Jacobean(
+	f64_tens3 * pJ,
+	real Factor, //h_over (N m_i)
+	f64_vec2 edge_normal,
+	f64 ita_par, f64 nu, f64_vec3 omega,
+	f64 grad_vjdx_coeff_on_vj_self,
+	f64 grad_vjdy_coeff_on_vj_self
+);
 
-	nvals * __restrict__ p_n_major,
-	T3 * __restrict__ p_T_major,
-	f64_vec3 * __restrict__ p_B_major,
-
-	f64 * __restrict__ p_kappa_n,
-	f64 * __restrict__ p_kappa_i,
-	f64 * __restrict__ p_kappa_e,
-
-	f64 * __restrict__ p_nu_i,
-	f64 * __restrict__ p_nu_e,
-
-	f64 * __restrict__ p_AreaMajor,
-	f64 * __restrict__ p_coeffself_n,
-	f64 * __restrict__ p_coeffself_i,
-	f64 * __restrict__ p_coeffself_e,
-	f64 const additional);
 
 __global__ void kernelTileMaxMajor(
 	f64 * __restrict__ p_z,
@@ -585,7 +544,7 @@ __global__ void kernelAccumulateDiffusiveHeatRate_new_Longitudinalonly_scalarT(
 
 	nvals * __restrict__ p_n_major,
 	f64 * __restrict__ p_T_n, f64 * __restrict__ p_T_i, f64 * __restrict__ p_T_e,
-	T3 * __restrict__ p_T_k,
+//	T3 * __restrict__ p_T_k,
 	f64_vec3 * __restrict__ p_B_major,
 
 	f64 * __restrict__ p_kappa_n,
@@ -815,6 +774,65 @@ __global__ void kernelPopulateOhmsLaw_dbg2(
 	f64 * __restrict__ p_debug3
 		);
 
+__global__ void kernelCreateEpsilon_Heat_for_Jacobi
+(
+	f64 const h_sub,
+	structural * __restrict__ p_info_major,
+	f64 * __restrict__ p_T_n,
+	f64 * __restrict__ p_T_i,
+	f64 * __restrict__ p_T_e,
+	T3 * p_T_k, // T_k for substep
+
+	NTrates * __restrict__ p_NTrates_diffusive,
+	nvals * __restrict__ p_n_major,
+	f64 * __restrict__ p_AreaMajor,
+
+	f64 * __restrict__ p_eps_n,
+	f64 * __restrict__ p_eps_i,
+	f64 * __restrict__ p_eps_e
+);
+
+__global__ void kernelCalc_SelfCoefficient_for_HeatConduction
+(
+	f64 const h_use,
+	structural * __restrict__ p_info_minor,
+	long * __restrict__ pIndexNeigh,
+	char * __restrict__ pPBCNeigh,
+	long * __restrict__ izTri_verts,
+	char * __restrict__ szPBCtri_verts,
+	f64_vec2 * __restrict__ p_cc,
+	nvals * __restrict__ p_n_major,
+	f64_vec3 * __restrict__ p_B_major,
+
+	f64 * __restrict__ p_kappa_n,
+	f64 * __restrict__ p_kappa_i,
+	f64 * __restrict__ p_kappa_e,
+
+	f64 * __restrict__ p_nu_i,
+	f64 * __restrict__ p_nu_e,
+	f64 * __restrict__ p_AreaMajor,
+
+	f64 * __restrict__ p_coeffself_n,
+	f64 * __restrict__ p_coeffself_i,
+	f64 * __restrict__ p_coeffself_e // outputs
+	);
+
+__global__ void kernelCreate_neutral_viscous_contrib_to_MAR_and_NT(
+
+	structural * __restrict__ p_info_minor,
+	f64_vec3 * __restrict__ p_v_n_minor,
+
+	long * __restrict__ p_izTri,
+	char * __restrict__ p_szPBC,
+	long * __restrict__ p_izNeighMinor,
+	char * __restrict__ p_szPBCtriminor,
+
+	f64 * __restrict__ p_ita_neut_minor,   //
+	f64 * __restrict__ p_nu_neut_minor,   // 
+
+	f64_vec3 * __restrict__ p_MAR_neut,
+	NTrates * __restrict__ p_NT_addition_rate,
+	NTrates * __restrict__ p_NT_addition_tri);
 
 __global__ void kernelCalculate_ita_visc(
 	structural * __restrict__ p_info_minor,
@@ -834,6 +852,7 @@ __global__ void kernelTransmitHeatToVerts(
 	nvals * __restrict__ p_n_minor,
 	f64 * __restrict__ p_AreaMajor, // populated?
 	f64 * __restrict__ p_Nsum,
+	f64 * __restrict__ p_Nsum_n,
 	NTrates * __restrict__ NT_addition_rates,
 	NTrates * __restrict__ NT_addition_tri);
 
@@ -842,7 +861,8 @@ __global__ void Collect_Nsum_at_tris(
 	nvals * __restrict__ p_n_minor,
 	LONG3 * __restrict__ p_tricornerindex,
 	f64 * __restrict__ p_AreaMajor, // populated?
-	f64 * __restrict__ p_Nsum);
+	f64 * __restrict__ p_Nsum,
+	f64 * __restrict__ p_Nsum_n);
 
 __global__ void kernelCreate_viscous_contrib_to_MAR_and_NT(
 	structural * __restrict__ p_info_minor,
@@ -1476,5 +1496,203 @@ __global__ void kernelAdvanceDensityAndTemperature_debug(
 
 	f64 * __restrict__ p_ei,
 	f64 * __restrict__ p_en
+);
+
+__global__ void kernelAntiAdvect(
+	f64 const h_use,
+	structural * __restrict__ p_info_minor,
+
+	long * __restrict__ p_izTri,
+	char * __restrict__ p_szPBC,
+	long * __restrict__ p_izNeighTriMinor,
+	char * __restrict__ p_szPBCtriminor,
+
+	AAdot * __restrict__ p_AAdot,
+	f64_vec2 * __restrict__ p_v_overall_minor,
+	AAdot * __restrict__ p_AAdot_dest
+);
+
+__global__ void kernelAccelerate_v_from_advection
+(
+	f64 const h_use,
+	structural * __restrict__ p_info_minor,
+	nvals * __restrict__ p_n_k,    // multiply by old mass ..
+	nvals * __restrict__ p_n_plus, // divide by new mass ..
+	v4 * __restrict__ p_vie_k,
+	f64_vec3 * __restrict__ p_v_n_k,
+
+	f64_vec3 * __restrict__ p_MAR_neut, // these contain the mom flux due to advection.
+	f64_vec3 * __restrict__ p_MAR_ion,
+	f64_vec3 * __restrict__ p_MAR_elec,
+	f64 * __restrict__ p_AreaMinor,
+
+	// outputs:
+	v4 * __restrict__ p_vie_dest,
+	f64_vec3 * __restrict__ p_v_n_dest);
+
+
+__global__ void kernelAdvanceDensityAndTemperature_nosoak_etc(
+	f64 h_use,
+	structural * __restrict__ p_info_major,
+	nvals * p_n_major,
+	T3 * p_T_major,
+	NTrates * __restrict__ NTadditionrates,
+
+	nvals * p_n_use,
+	T3 * p_T_use,
+	v4 * __restrict__ p_vie_use,
+	f64_vec3 * __restrict__ p_v_n_use,
+
+	f64 * __restrict__ p_div_v_neut,
+	f64 * __restrict__ p_div_v,
+	f64 * __restrict__ p_Integrated_div_v_overall,
+	f64 * __restrict__ p_AreaMajor, // hmm
+
+	nvals * __restrict__ p_n_major_dest,
+	T3 * __restrict__ p_T_major_dest
+);
+
+__global__ void kernelNeutral_momflux(
+	structural * __restrict__ p_info_minor,
+
+	long * __restrict__ p_izTri,
+	char * __restrict__ p_szPBC,
+	long * __restrict__ p_izNeighTriMinor,
+	char * __restrict__ p_szPBCtriminor,
+	LONG3 * __restrict__ p_who_am_I_to_corners,
+	LONG3 * __restrict__ p_tricornerindex,
+
+	f64_vec3 * __restrict__ p_v_n_minor,
+	ShardModel * __restrict__ p_n_shards,
+	nvals * __restrict__ p_n_minor, // Just to handle insulator
+
+	f64_vec2 * __restrict__ p_v_overall_minor,
+	f64_vec3 * __restrict__ p_MAR_neut
+);
+
+
+__global__ void kernelAdvanceDensityAndTemperature_noadvectioncompression(
+	f64 h_use,
+	structural * __restrict__ p_info_major,
+	nvals * p_n_major,
+	T3 * p_T_major,
+	NTrates * __restrict__ NTadditionrates,
+
+	nvals * p_n_use,
+	T3 * p_T_use,
+	v4 * __restrict__ p_vie_use,
+
+	f64_vec3 * __restrict__ p_v_n_use, 
+	f64 * __restrict__ p_AreaMajor,
+
+	nvals * __restrict__ p_n_major_dest,
+	T3 * __restrict__ p_T_major_dest
+);
+
+__global__ void kernelNeutral_pressure(
+	structural * __restrict__ p_info_minor,
+
+	long * __restrict__ p_izTri,
+	char * __restrict__ p_szPBC,
+	long * __restrict__ p_izNeighTriMinor,
+	char * __restrict__ p_szPBCtriminor,
+	LONG3 * __restrict__ p_who_am_I_to_corners,
+	LONG3 * __restrict__ p_tricornerindex,
+
+	T3 * __restrict__ p_T_minor,
+	ShardModel * __restrict__ p_n_shards,
+	nvals * __restrict__ p_n_minor, // Just to handle insulator
+
+	f64_vec3 * __restrict__ p_MAR_neut
+);
+__global__ void kernelCreateLinearRelationshipBwd_noadvect(
+	f64 const h_use,
+	structural * __restrict__ p_info,
+	OhmsCoeffs* __restrict__ p_Ohms,
+	v4 * __restrict__ p_v0,
+	f64 * __restrict__ p_Lap_Az_use,
+	nvals * __restrict__ p_n_minor,
+	f64 * __restrict__ p_denom_e,
+	f64 * __restrict__ p_denom_i,
+	f64 * __restrict__ p_coeff_of_vez_upon_viz,
+	f64 * __restrict__ p_beta_ie_z,
+	AAdot * __restrict__ p_AAdot_k,
+	f64 * __restrict__ p_AreaMinor,
+	f64 * __restrict__ p_Azdot0,
+	f64 * __restrict__ p_gamma
+);
+
+__global__ void kernelPopulateBackwardOhmsLaw_noadvect(
+	f64 h_use,
+	structural * __restrict__ p_info_minor,
+	f64_vec3 * __restrict__ p_MAR_neut,
+	f64_vec3 * __restrict__ p_MAR_ion,
+	f64_vec3 * __restrict__ p_MAR_elec,
+	f64_vec3 * __restrict__ p_B,
+	f64 * __restrict__ p_LapAz,
+	f64_vec2 * __restrict__ p_GradAz,
+	f64_vec2 * __restrict__ p_GradTe,
+	nvals * __restrict__ p_n_minor_use,
+	T3 * __restrict__ p_T_minor_use,
+	v4 * __restrict__ p_vie_src,
+	f64_vec3 * __restrict__ p_v_n_src,
+	AAdot * __restrict__ p_AAdot_src,
+	f64 * __restrict__ p_AreaMinor,
+
+	f64_vec3 * __restrict__ p_vn0_dest,
+	v4 * __restrict__ p_v0_dest,
+	OhmsCoeffs * __restrict__ p_OhmsCoeffs_dest,
+	//AAdot * __restrict__ p_AAdot_intermediate,
+
+	f64 * __restrict__ p_Iz0,
+	f64 * __restrict__ p_sigma_zz,
+
+	f64 * __restrict__ p_denom_i,
+	f64 * __restrict__ p_denom_e,
+	f64 * __restrict__ p_effect_of_viz0_on_vez0,
+	f64 * __restrict__ p_beta_ie_z,
+
+	bool const bSwitchSave);
+
+__global__ void kernelCalculateVelocityAndAzdot_noadvect(
+	f64 h_use,
+	structural * p_info_minor,
+	f64_vec3 * __restrict__ p_vn0,
+	v4 * __restrict__ p_v0,
+	OhmsCoeffs * __restrict__ p_OhmsCoeffs,
+	AAdot * __restrict__ p_AAzdot_src,
+	nvals * __restrict__ p_n_minor,
+	f64 * __restrict__ p_AreaMinor,
+	f64 * __restrict__ p_LapAz, // would it be better just to be loading the Azdot0 relation?
+
+	AAdot * __restrict__ p_AAzdot_out,
+	v4 * __restrict__ p_vie_out,
+	f64_vec3 * __restrict__ p_vn_out);
+
+__global__ void kernelCreate_pressure_gradT_and_gradA_CurlA_minor_noadvect(
+
+	structural * __restrict__ p_info_minor,
+	T3 * __restrict__ p_T_minor,
+	AAdot * __restrict__ p_AAdot,
+
+	long * __restrict__ p_izTri,
+	char * __restrict__ p_szPBC,
+	long * __restrict__ p_izNeighMinor,
+	char * __restrict__ p_szPBCtriminor,
+
+	LONG3 * __restrict__ p_who_am_I_to_corners,
+	LONG3 * __restrict__ p_tricornerindex,
+
+	f64_vec3 * __restrict__ p_MAR_neut,
+	f64_vec3 * __restrict__ p_MAR_ion,
+	f64_vec3 * __restrict__ p_MAR_elec,
+	ShardModel * __restrict__ p_n_shards,
+	nvals * __restrict__ p_n_minor, // Just so we can handle insulator
+
+	f64_vec2 * __restrict__ p_GradTe,
+	f64_vec2 * __restrict__ p_GradAz,
+
+	f64_vec3 * __restrict__ p_B,
+	f64 * __restrict__ p_AreaMinor
 );
 

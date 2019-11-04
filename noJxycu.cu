@@ -1751,12 +1751,12 @@ int main()
 	printf("Got to here 1\n");
 	    
 	{
-	//	X4.Initialise(4);
-	//	printf("Got to here 2\n");
-	//	X4.CreateTilingAndResequence2(&X1);
-	//	X4.CreateTilingAndResequence2(&X2);
-	//	X4.CreateTilingAndResequence2(&X3);
-	//	printf("Got to here 3\n");
+		X4.Initialise(4);
+		printf("Got to here 2\n");
+		X4.CreateTilingAndResequence2(&X1);
+		X4.CreateTilingAndResequence2(&X2);
+		X4.CreateTilingAndResequence2(&X3);
+		printf("Got to here 3\n");
 
 		// 
 		// Dropping it for now so we can pursue solving equations first.
@@ -2479,13 +2479,13 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			steps_remaining_CPU--;
 			GSCCPU++;
 			printf("Done steps CPU: %d   ||   Remaining this run: %d\n\n", GSCCPU, steps_remaining_CPU);
-
+			  
 			sprintf(buf1000, "autosaveCPU%d.dat", GSCCPU);
 			pX->Save(buf1000);
 			printf("saved as %s\n", buf1000);
 		};
 		printf("%s\n", report_time(1));
-		
+		  
 		if (GlobalStepsCounter % GRAPHICS_FREQUENCY == 0)
 		{
 			// make video frames:

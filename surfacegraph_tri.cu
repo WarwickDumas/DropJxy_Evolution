@@ -2299,7 +2299,7 @@ VOID surfacegraph::Render(const char * szTitle, bool RenderTriLabels,
 							pVertex->pos.y*xzscale,0); 
 					};
 					if (GlobalWhichLabels == 2) {
-						sprintf(buffer,"%d", pX->pData[iVertex + BEGINNING_OF_CENTRAL].vxy.x);
+						sprintf(buffer,"%1.1E", pX->pData[iVertex + BEGINNING_OF_CENTRAL].vxy.x);
 						RenderLabel2(buffer,  // text
 							pVertex->pos.x*xzscale,
 							0.00001f+zeroplane,

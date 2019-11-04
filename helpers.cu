@@ -396,7 +396,19 @@ __device__ __forceinline__ void Get_kappa_parallels_and_nu_hearts
 		// NEUTRAL_KAPPA_FACTOR should be in constant.h
 		// e-n does not feature.
 	};
-	
+	 
+}
+__device__ __forceinline__ void RotateClockwise(f64_vec3 & v)
+{
+	f64 temp = Clockwise_d.xx*v.x + Clockwise_d.xy*v.y;
+	v.y = Clockwise_d.yx*v.x + Clockwise_d.yy*v.y;
+	v.x = temp;
+}
+__device__ __forceinline__ void RotateAnticlockwise(f64_vec3 & v)
+{
+	f64 temp = Anticlockwise_d.xx*v.x + Anticlockwise_d.xy*v.y;
+	v.y = Anticlockwise_d.yx*v.x + Anticlockwise_d.yy*v.y;
+	v.x = temp;
 }
 
 __device__ __forceinline__ f64_vec2 GetRadiusIntercept(f64_vec2 x1,f64_vec2 x2,f64 r)
