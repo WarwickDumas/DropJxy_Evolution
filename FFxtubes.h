@@ -31,11 +31,11 @@ bool const bScrewPinch = false;
 
 #define STEPS_PER_LOOP               1    // soon change to 500
 // frames between file pinch-offs:
-#define AVI_FILE_PINCHOFF_FREQUENCY     100 // 2 ns per file
+#define AVI_FILE_PINCHOFF_FREQUENCY     150 // 1.5 ns per file
 // milliseconds between frames:
-#define AVIFRAMEPERIOD         50 // 50 = 20 fps which is ok with our setting of 25 frames/ns [running 2e-11 x 2 = 4e-11 per frame]
+#define AVIFRAMEPERIOD         40 // 50 = 20 fps which is ok with our setting of 25 frames/ns [running 2e-11 x 2 = 4e-11 per frame]
 
-#define DATA_SAVE_FREQUENCY					  40
+#define DATA_SAVE_FREQUENCY					 20
 
 // Program Mechanics:
 // ==================
@@ -71,8 +71,11 @@ long const NMINOR = threadsPerTileMinor * numTilesMinor;
 long const NUMTRIANGLES = NMINOR - NUMVERTICES;
 
 
-double const RELTHRESH_AZ = 1.0e-9; // note, heat is at 1e-8
+#define REL_THRESHOLD_HEAT   1.0e-9
+#define REL_THRESHOLD_VISC   1.0e-7
+double const RELTHRESH_AZ =  1.0e-9; // note, heat is at 1e-8
 
+// Note that getting it wrong should mean that subsequently we will correct for the error.
 
 
 // Model parameters:
@@ -231,19 +234,19 @@ real const FULLANGLE = 2.0*PI/16.0;
 
 // Simulation parameters:
 //==================================
-
-real const h_INNER_INIT = 0.5e-14; // initial value
-real const h_RECALCULATE = 1.0e-12;
-long const INNERMOST_STEPS = 200;
+//
+//real const h_INNER_INIT = 0.5e-14; // initial value
+//real const h_RECALCULATE = 1.0e-12;
+//long const INNERMOST_STEPS = 200;
 //real const h_MOTION = 1.0e-12; // could make it longer. 1e-12+6 = 1e-6 cm = 0.01 micron.
 // Need to be careful in case of thermal pressure messing up mesh.
 // Let's assume we do recalculation of parameters as often as we do recalculation of pressure.
 
-real const TIMESTEP = 4.0e-13; 
-real const SUBSTEP = 4.0e-13;
+real const TIMESTEP = 1.0e-13; 
+real const SUBSTEP = 1.0e-13;
 int const SUBCYCLES = 1; 
-int const GPU_STEPS = 50;
-int const ADVECT_FREQUENCY = 25; // 1e-11 = 1e-4/1e7
+int const GPU_STEPS = 100;
+int const ADVECT_FREQUENCY = 50; // 1e-11 = 1e-4/1e7
 int const ADVECT_STEPS_PER_GPU_VISIT = 2;
 
 

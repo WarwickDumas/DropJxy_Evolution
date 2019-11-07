@@ -78,7 +78,8 @@ __global__ void kernelCreateEpsilon_Visc(
 
 	f64_vec2 * __restrict__ p_epsilon_xy,
 	f64 * __restrict__ p_epsilon_iz,
-	f64 * __restrict__ p_epsilon_ez);
+	f64 * __restrict__ p_epsilon_ez,
+	bool * __restrict__ p_bFailedTest);
 
 __global__ void kernelCalculateOverallVelocitiesVertices(
 	structural * __restrict__ p_info_minor,
@@ -109,6 +110,7 @@ __global__ void kernelAverageOverallVelocitiesTriangles(
 	LONG3 * __restrict__ p_tri_corner_index,
 	CHAR4 * __restrict__ p_tri_periodic_corner_flags
 );
+
 __global__ void kernelCalculateROCepsWRTregressorT_volleys(
 	f64 const h_use,
 	structural * __restrict__ p_info_minor,
@@ -279,6 +281,9 @@ __global__ void kernelAccumulateSummands3(
 	f64 * __restrict__ p_sum_eps_sq
 );
 
+__global__ void SubtractT3(
+	T3 * __restrict__ p_result,
+	T3 * __restrict__ p_a, T3 * __restrict__ p_b);
 
 __global__ void kernelAccumulateSummands4(
 
@@ -321,26 +326,26 @@ __global__ void kernelCreateEpsilonAndJacobi_Heat
 	f64 const h_sub,
 	structural * __restrict__ p_info_major,
 	f64 * __restrict__ p_T_n,
-	f64 * __restrict__ p_T_i, 
+	f64 * __restrict__ p_T_i,
 	f64 * __restrict__ p_T_e,
-	T3 * p_T_k, // T_k for substep
+	T3 * p_Tk, // T_k for substep
 
-				// f64 * __restrict__ p_Azdot0,f64 * __restrict__ p_gamma, 
-				// corresponded to simple situation where Azdiff = h*(Azdot0+gamma Lap Az)
+			   // f64 * __restrict__ p_Azdot0,f64 * __restrict__ p_gamma, 
+			   // corresponded to simple situation where Azdiff = h*(Azdot0+gamma Lap Az)
 
 	NTrates * __restrict__ p_NTrates_diffusive,
 	nvals * __restrict__ p_n_major,
 	f64 * __restrict__ p_AreaMajor,
 
-	f64 * __restrict__ p_coeffself_n, // what about dividing by N?
-	f64 * __restrict__ p_coeffself_i,
-	f64 * __restrict__ p_coeffself_e,
-	f64 * __restrict__ p_epsilon_n,
-	f64 * __restrict__ p_epsilon_i,
-	f64 * __restrict__ p_epsilon_e,
-	f64 * __restrict__ p_Jacobi_n,
-	f64 * __restrict__ p_Jacobi_i,
-	f64 * __restrict__ p_Jacobi_e,
+	f64 * __restrict__ p__coeffself_n, // what about dividing by N?
+	f64 * __restrict__ p__coeffself_i,
+	f64 * __restrict__ p__coeffself_e,
+	f64 * __restrict__ p__epsilon_n,
+	f64 * __restrict__ p__epsilon_i,
+	f64 * __restrict__ p__epsilon_e,
+	f64 * __restrict__ p__Jacobi_n,
+	f64 * __restrict__ p__Jacobi_i,
+	f64 * __restrict__ p__Jacobi_e,
 	bool * __restrict__ p_bFailedTest
 );
 
@@ -420,10 +425,13 @@ __global__ void kernelCreatePutativeT(
 	f64 hsub,
 	structural * __restrict__ p_info_minor,
 	T3 * __restrict__ p_T_k,
-	T3 * __restrict__ p_T_putative,
+//	T3 * __restrict__ p_T_putative,
 	nvals * __restrict__ p_n_major,
 	f64 * __restrict__ p_AreaMajor,
-	NTrates * __restrict__ NTadditionrates
+	NTrates * __restrict__ NTadditionrates,
+
+	bool * __restrict__ p_boolarray, // 2x NMAJOR
+	bool * __restrict__ p_bFailedtest
 	);
 
 __global__ void kernelAccumulateDiffusiveHeatRate_new_Longitudinalonly(
@@ -568,7 +576,7 @@ __global__ void kernelAccumulateDiffusiveHeatRate_new_Full(
 
 	nvals * __restrict__ p_n_major,
 	T3 * __restrict__ p_T_major,
-	T3 * __restrict__ p_T_putative,
+	bool * __restrict__ p_boolarray,
 	f64_vec3 * __restrict__ p_B_major,
 
 	f64 * __restrict__ p_kappa_n,
@@ -589,6 +597,7 @@ __global__ void kernelIonisationRates(
 	nvals * __restrict__ p_n_major,
 	f64 * __restrict__ p_AreaMajor,
 	NTrates * __restrict__ NTadditionrates
+
 );
 
 __global__ void kernelAccumulateDiffusiveHeatRateAndCalcIonisation(
@@ -773,6 +782,20 @@ __global__ void kernelPopulateOhmsLaw_dbg2(
 	f64 * __restrict__ p_debug2,
 	f64 * __restrict__ p_debug3
 		);
+
+__global__ void SubtractVector(
+	f64 * __restrict__ result,
+	f64 * __restrict__ b,
+	f64 * __restrict__ a);
+
+
+__global__ void kernelCreateExplicitStepAz(
+	f64 const hsub,
+	f64 * __restrict__ pAzdot0,
+	f64 * __restrict__ pgamma,
+	f64 * __restrict__ pLapAz, // we based this off of half-time Az.
+	f64 * __restrict__ p_result); // = h (Azdot0 + gamma*LapAz)
+
 
 __global__ void kernelCreateEpsilon_Heat_for_Jacobi
 (

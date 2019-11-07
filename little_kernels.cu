@@ -330,6 +330,20 @@ __global__ void NegateVector(
 	p_x1[iVertex] = -p_x1[iVertex];
 }
 
+__global__ void SubtractT3(
+	T3 * __restrict__ p_result,
+	T3 * __restrict__ p_a, T3 * __restrict__ p_b)
+{
+	long index = blockIdx.x*blockDim.x + threadIdx.x;
+	T3 result;
+	T3 T_1 = p_a[index];
+	T3 T_2 = p_b[index];
+	result.Tn = T_1.Tn - T_2.Tn;
+	result.Ti = T_1.Ti - T_2.Ti;
+	result.Te = T_1.Te - T_2.Te;
+	p_result[index] = result;
+}
+
 __global__ void kernelAccumulateSummands3(
 	structural * __restrict__ p_info_minor,
 	f64_vec2 * __restrict__ p_eps_xy,
@@ -2644,6 +2658,15 @@ __global__ void kernelCreateSeedPartTwo(
 	long const iMinor = blockDim.x*blockIdx.x + threadIdx.x;
 	p_AzNext_update[iMinor] += 0.5*h_use* (p_Azdot0[iMinor]
 		+ p_gamma[iMinor] * p_LapAz[iMinor]);
+}
+
+__global__ void SubtractVector(
+	f64 * __restrict__ result,
+	f64 * __restrict__ b,
+	f64 * __restrict__ a) 
+{
+	long const iMinor = blockDim.x*blockIdx.x + threadIdx.x;
+	result[iMinor] = a[iMinor] - b[iMinor];
 }
 
 __global__ void kernelCreateSeedAz(
