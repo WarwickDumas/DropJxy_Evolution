@@ -266,6 +266,15 @@ public:
 		cuSyst * pX_target, //const
 		cuSyst * pX_half);
 
+	void cuSyst::PerformCUDA_AdvectionCompressionInstantaneous(//const 
+		f64 const Timestep,
+		cuSyst * pX_target,
+		cuSyst * pX_half);
+
+	void PerformCUDA_Advance_noadvect(//const 
+		cuSyst * pX_target, //const
+		cuSyst * pX_half);
+
 	void PerformCUDA_Advance_Debug(const cuSyst * pX_target, const cuSyst * pX_half,
 		const cuSyst * p_cuSyst_host, cuSyst * p_cuSyst_compare, TriMesh * pTriMesh, TriMesh * pTriMeshhalf,
 		TriMesh * pDestMesh);

@@ -8,6 +8,110 @@
 //	nvals * __restrict__ p_n_major,
 //	f64_vec2 * __restrict__ p_v_overall_major);
 
+__global__ void kernelAccumulateDiffusiveHeatRate_new_Longitudinalonly_1species(
+	structural * __restrict__ p_info_minor,
+	long * __restrict__ pIndexNeigh,
+	char * __restrict__ pPBCNeigh,
+	long * __restrict__ izTri_verts,
+	char * __restrict__ szPBCtri_verts,
+	f64_vec2 * __restrict__ p_cc,
+
+	nvals * __restrict__ p_n_major,
+	f64 * __restrict__ p_T,
+	f64_vec3 * __restrict__ p_B_major,
+
+	f64 * __restrict__ p_kappa,
+	f64 * __restrict__ p_nu,
+
+	NTrates * __restrict__ NTadditionrates,
+	f64 * __restrict__ p_AreaMajor,
+	bool * __restrict__ p_maskbool,
+	bool * __restrict__ p_maskblock,
+	bool bUseMask,
+	int species);
+
+__global__ void kernelUnpackWithMask(f64 * __restrict__ pTn,
+	f64 * __restrict__ pTi,
+	f64 * __restrict__ pTe,
+	T3 * __restrict__ pT,
+	bool * __restrict__ p_bMask,
+	bool * __restrict__ p_bMaskblock
+);
+
+__global__ void VectorAddMultiple_masked(
+	f64 * __restrict__ p_T1, f64 const alpha1, f64 * __restrict__ p_x1,
+	f64 * __restrict__ p_T2, f64 const alpha2, f64 * __restrict__ p_x2,
+	f64 * __restrict__ p_T3, f64 const alpha3, f64 * __restrict__ p_x3,
+	bool * __restrict__ p_bMask,
+	bool * __restrict__ p_bMaskblock,
+	bool const bUseMask);
+
+__global__ void kernelAccumulateSummands7(
+	f64 * __restrict__ p_epsilon,
+	f64 * __restrict__ p_d_eps_by_dbeta,
+	// outputs:
+	f64 * __restrict__ p_sum_eps_depsbydbeta_x8,
+	f64 * __restrict__ p_sum_depsbydbeta__8x8);
+
+__global__ void kernelMultiplyVector(
+	f64 * __restrict__ p_multiply,
+	f64 const factor);
+
+__global__ void kernelCreateEpsilonHeat_1species
+(
+	f64 const h_sub,
+	structural * __restrict__ p_info_major,
+	f64 * __restrict__ p_T,
+	f64 * __restrict__ p_Tk, // T_k for substep
+	NTrates * __restrict__ p_NTrates_diffusive,
+	nvals * __restrict__ p_n_major,
+	f64 * __restrict__ p_AreaMajor,
+	f64 * __restrict__ p__epsilon,
+	bool * __restrict__ p_bFailedTest,
+	bool * __restrict__ p_bMask,
+	bool * __restrict__ p_bMaskblock,
+	bool bUseMask,
+	int species
+);
+
+__global__ void kernelVolleyRegressors(
+	f64 * __restrict__ p_regress,
+	long const Length,
+	char * __restrict__ p_iVolley
+);
+
+__global__ void VectorCompareMax(
+	f64 * __restrict__ p_comp1,
+	f64 * __restrict__ p_comp2,
+	long * __restrict__ p_iWhich,
+	f64 * __restrict__ p_max
+);
+
+__global__ void kernelCreateEpsilonAndJacobi_Heat_1species
+(
+	f64 const h_sub,
+	structural * __restrict__ p_info_major,
+	f64 * __restrict__ p_T,
+	f64 * p_Tk, // T_k for substep
+	NTrates * __restrict__ p_NTrates_diffusive,
+	nvals * __restrict__ p_n_major,
+	f64 * __restrict__ p_AreaMajor,
+	f64 * __restrict__ p__coeffself,
+	f64 * __restrict__ p__epsilon,
+	f64 * __restrict__ p__Jacobi,
+	bool * __restrict__ p_bFailedTest,
+	bool * __restrict__ p_bMask,
+	bool * __restrict__ p_bMaskblock,
+	bool bUseMask,
+	int species,
+	bool bIncorporateEps
+);
+
+__global__ void kernelAddtoT_lc(
+	f64 * __restrict__ p__T,
+	f64 * __restrict__ p_addition
+);
+
 __global__ void kernelMultiply_Get_Jacobi_Visc(
 	structural * __restrict__ p_info,
 	f64_vec2 * __restrict__ p_eps_xy,
@@ -318,7 +422,10 @@ __global__ void kernelCreateEpsilonHeat
 	f64 * __restrict__ p_AreaMajor,
 	nvals * __restrict__ p_n_major,
 	NTrates * __restrict__ NTadditionrates, // it's especially silly having a whole struct of 5 instead of 3 here.
-	bool * __restrict__ p_b_Failed
+	bool * __restrict__ p_b_Failed,
+		bool * __restrict__ p_bMask3,
+		bool * __restrict__ p_bMaskblock,
+		bool bUseMask
 );
 
 __global__ void kernelCreateEpsilonAndJacobi_Heat
@@ -346,7 +453,10 @@ __global__ void kernelCreateEpsilonAndJacobi_Heat
 	f64 * __restrict__ p__Jacobi_n,
 	f64 * __restrict__ p__Jacobi_i,
 	f64 * __restrict__ p__Jacobi_e,
-	bool * __restrict__ p_bFailedTest
+	bool * __restrict__ p_bFailedTest,
+	bool * __restrict__ p_bMask3,
+	bool * __restrict__ p_bMaskblock,
+	bool bUseMask
 );
 
 __device__ void Augment_Jacobean(
@@ -404,6 +514,19 @@ __global__ void kernelCreateShardModelOfDensities_And_SetMajorArea(
 	f64 * __restrict__ p_AreaMajor,
 	bool bUseCircumcenter);
 
+__global__ void kernelSetBlockMaskFlag_CountEquations_reset_Tk(
+	bool * __restrict__ p_bMask3,
+	bool * __restrict__ p_bMaskBlock3,
+	long * __restrict__ p_longblock3,
+	T3 * __restrict__ p_T_k,
+	T3 * __restrict__ p_T
+);
+
+__global__ void kernelSetNeighboursBwd(
+	structural * __restrict__ p_info_minor,
+	long * __restrict__ p_izNeigh_vert,
+	bool * __restrict__ p_bMask3);
+
 __global__ void kernelInferMinorDensitiesFromShardModel(
 	structural * __restrict__ p_info,
 	nvals * __restrict__ p_n_minor,
@@ -414,25 +537,109 @@ __global__ void kernelInferMinorDensitiesFromShardModel(
 	nvals * __restrict__ p_one_over_n
 ); 
 
+__global__ void kernelSelectivelyZeroNTrates(
+	NTrates * __restrict__ NTadditionrates,
+	bool * __restrict__ pMaskbool3
+);
+
+__global__ void kernelCreateTfromNTbydividing_bysqrtDN(
+	f64 * __restrict__ p_T_n,
+	f64 * __restrict__ p_T_i,
+	f64 * __restrict__ p_T_e,
+	f64 * __restrict__ p_sqrtDNn_Tn,
+	f64 * __restrict__ p_sqrtDN_Ti,
+	f64 * __restrict__ p_sqrtDN_Te,
+	f64 * __restrict__ p_AreaMajor,
+	nvals * __restrict__ p_n_major,
+	f64 * __restrict__ p_sqrtDinv_n, f64 * __restrict__ p_sqrtDinv_i, f64 * __restrict__ p_sqrtDinv_e
+);
+
+
+__global__ void kernelUnpacktorootDN_T(
+	f64 * __restrict__ psqrtDNnTn,
+	f64 * __restrict__ psqrtDNTi,
+	f64 * __restrict__ psqrtDNTe,
+	T3 * __restrict__ pT,
+	f64 * __restrict__ p_D_n,
+	f64 * __restrict__ p_D_i,
+	f64 * __restrict__ p_D_e,
+	f64 * __restrict__ p_AreaMajor,
+	nvals * __restrict__ p_n_major);
+
+__global__ void kernelCreateEpsilonHeat_Equilibrated
+(
+	f64 const hsub,
+	structural * __restrict__ p_info_major,
+	f64 * __restrict__ p_eps_n,
+	f64 * __restrict__ p_eps_i,
+	f64 * __restrict__ p_eps_e,
+	f64 * __restrict__ p_sqrtDNT_n,
+	f64 * __restrict__ p_sqrtDNT_i,
+	f64 * __restrict__ p_sqrtDNT_e,
+	T3 * __restrict__ p_T_k,
+	f64 * __restrict__ p_AreaMajor,
+	nvals * __restrict__ p_n_major,
+	f64 * __restrict__ p_invsqrtD_n,
+	f64 * __restrict__ p_invsqrtD_i,
+	f64 * __restrict__ p_invsqrtD_e,
+	NTrates * __restrict__ NTadditionrates, // it's especially silly having a whole struct of 5 instead of 3 here.
+	bool * __restrict__ p_b_Failed,
+	bool * __restrict__ p_bMask3,
+	bool * __restrict__ p_bMaskblock,
+	bool bUseMask
+);
+
+__global__ void kernelPowerminushalf
+(f64 * __restrict__ p_input, f64 * __restrict__ p_output);
+
+__global__ void kernelReturnNumberNegativeT(
+	structural * __restrict__ p_info_minor,
+	T3 * __restrict__ p_T,
+	long * __restrict__ p_sum
+);
+
+
+__global__ void kernelCompareForStability_andSetFlag(
+	structural * __restrict__ p_info_minor,
+	NTrates * __restrict__ p_NTrates1,
+	NTrates * __restrict__ p_NTrates2,
+	long * __restrict__ p_sum,
+	bool * __restrict__ p_bMask3
+);
+
 __global__ void kernelCalculateNu_eHeartNu_iHeart_nu_nn_visc(
 	structural * __restrict__ p_info,
 	nvals * __restrict__ p_n,
 	T3 * __restrict__ p_T,
 	species3 * __restrict__ p_nu);
 
+__global__ void kernelCreatePutativeTandsave(
+	f64 hsub,
+	structural * __restrict__ p_info_minor,
+	T3 * __restrict__ p_T_k,
+	nvals * __restrict__ p_n_major,
+	f64 * __restrict__ p_AreaMajor,
+	NTrates * __restrict__ NTadditionrates,
+	T3 * __restrict__ p_T_dest,
+	bool * bMask3
+);
+
 
 __global__ void kernelCreatePutativeT(
 	f64 hsub,
 	structural * __restrict__ p_info_minor,
 	T3 * __restrict__ p_T_k,
-//	T3 * __restrict__ p_T_putative,
+	// T3 * __restrict__ p_T_putative,
 	nvals * __restrict__ p_n_major,
 	f64 * __restrict__ p_AreaMajor,
 	NTrates * __restrict__ NTadditionrates,
 
 	bool * __restrict__ p_boolarray, // 2x NMAJOR
-	bool * __restrict__ p_bFailedtest
-	);
+	bool * __restrict__ p_bFailedtest,
+	bool * __restrict__ p_bMask3,
+	bool * __restrict__ p_bMaskBlock, // do 1 for all species
+	bool bUseMask
+);
 
 __global__ void kernelAccumulateDiffusiveHeatRate_new_Longitudinalonly(
 	f64 const h_use,
@@ -512,7 +719,10 @@ __global__ void kernelRegressorUpdate
 	f64 * __restrict__ p_x_i,
 	f64 * __restrict__ p_x_e,
 	f64 * __restrict__ p_a_n, f64 * __restrict__ p_a_i, f64 * __restrict__ p_a_e,
-	f64 const ratio1, f64 const ratio2, f64 const ratio3);
+	f64 const ratio1, f64 const ratio2, f64 const ratio3,
+	bool * __restrict__ p_bMaskBlock,
+	bool bUseMask
+	);
 
 __global__ void VectorAddMultiple(
 	f64 * __restrict__ p_T1, f64 const alpha1, f64 * __restrict__ p_x1,
@@ -563,10 +773,15 @@ __global__ void kernelAccumulateDiffusiveHeatRate_new_Longitudinalonly_scalarT(
 	f64 * __restrict__ p_nu_e,
 
 	NTrates * __restrict__ NTadditionrates,
-	f64 * __restrict__ p_AreaMajor);
+	f64 * __restrict__ p_AreaMajor,
+
+	bool * __restrict__ p_maskbool3,
+	bool * __restrict__ p_maskblock,
+	bool bUseMask
+	
+	);
 
 __global__ void kernelAccumulateDiffusiveHeatRate_new_Full(
-	f64 const h_use,
 	structural * __restrict__ p_info_minor,
 	long * __restrict__ pIndexNeigh,
 	char * __restrict__ pPBCNeigh,
@@ -576,7 +791,7 @@ __global__ void kernelAccumulateDiffusiveHeatRate_new_Full(
 
 	nvals * __restrict__ p_n_major,
 	T3 * __restrict__ p_T_major,
-	bool * __restrict__ p_boolarray,
+	bool * __restrict__ p_bool_longi,
 	f64_vec3 * __restrict__ p_B_major,
 
 	f64 * __restrict__ p_kappa_n,
@@ -589,16 +804,60 @@ __global__ void kernelAccumulateDiffusiveHeatRate_new_Full(
 	NTrates * __restrict__ NTadditionrates,
 	f64 * __restrict__ p_AreaMajor,
 
-	bool bCheckWhetherToDoctorUp);
+	bool bCheckWhetherToDoctorUp,
+	bool * __restrict__ p_maskbool3,
+	bool * __restrict__ p_maskblock,
+	bool bUseMask
+);
+
+
+__global__ void Augment_dNv_minor(
+	structural * __restrict__ p_info,
+	nvals * __restrict__ p_n_minor,
+	LONG3 * __restrict__ p_tricornerindex,
+	f64 * __restrict__ p_temp_Ntotalmajor,
+	f64 * __restrict__ p_temp_Nntotalmajor,
+	f64 * __restrict__ p_AreaMinor,
+	f64_vec3 * __restrict__ p_MAR_neut_major,
+	f64_vec3 * __restrict__ p_MAR_ion_major,
+	f64_vec3 * __restrict__ p_MAR_elec_major,
+	f64_vec3 * __restrict__ p_MAR_neut,
+	f64_vec3 * __restrict__ p_MAR_ion,
+	f64_vec3 * __restrict__ p_MAR_elec);
+
+__global__ void Collect_Ntotal_major(
+	structural * __restrict__ p_info_minor,
+	long * __restrict__ p_izTri,
+	nvals * __restrict__ p_n_minor,
+	f64 * __restrict__ p_AreaMinor,
+	f64 * __restrict__ p_temp_Ntotalmajor,
+	f64 * __restrict__ p_temp_Nntotalmajor)
+	;
+
 __global__ void kernelIonisationRates(
 	f64 const h_use,
 	structural * __restrict__ p_info_minor,
 	T3 * __restrict__ p_T_major,
 	nvals * __restrict__ p_n_major,
 	f64 * __restrict__ p_AreaMajor,
-	NTrates * __restrict__ NTadditionrates
-
+	NTrates * __restrict__ NTadditionrates,
+	f64_vec3 * __restrict__ p_MAR_neut,
+	f64_vec3 * __restrict__ p_MAR_ion,
+	f64_vec3 * __restrict__ p_MAR_elec,
+	v4 * __restrict__ p_v,
+	f64_vec3 * __restrict__ p_v_n, 
+	T3 * __restrict__ p_T_use_major,
+	bool b_useTuse
 );
+//__global__ void kernelIonisationRates(
+//	f64 const h_use,
+//	structural * __restrict__ p_info_minor,
+//	T3 * __restrict__ p_T_major,
+//	nvals * __restrict__ p_n_major,
+//	f64 * __restrict__ p_AreaMajor,
+//	NTrates * __restrict__ NTadditionrates
+//
+//);
 
 __global__ void kernelAccumulateDiffusiveHeatRateAndCalcIonisation(
 	f64 const h_use,
@@ -812,7 +1071,10 @@ __global__ void kernelCreateEpsilon_Heat_for_Jacobi
 
 	f64 * __restrict__ p_eps_n,
 	f64 * __restrict__ p_eps_i,
-	f64 * __restrict__ p_eps_e
+	f64 * __restrict__ p_eps_e, 
+	bool * __restrict__ p_bMask3,
+	bool * __restrict__ p_bMaskblock,
+	bool bUseMask
 );
 
 __global__ void kernelCalc_SelfCoefficient_for_HeatConduction

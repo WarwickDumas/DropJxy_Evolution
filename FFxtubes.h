@@ -26,7 +26,7 @@ bool const bScrewPinch = false;
 #define DELAY_MILLISECS      100 // pause
 
 // steps per frame
-#define GRAPHICS_FREQUENCY				1 // 2e-11
+#define GRAPHICS_FREQUENCY				1 // 1e-11
 #define REDELAUN_FREQUENCY				25
 
 #define STEPS_PER_LOOP               1    // soon change to 500
@@ -35,7 +35,7 @@ bool const bScrewPinch = false;
 // milliseconds between frames:
 #define AVIFRAMEPERIOD         40 // 50 = 20 fps which is ok with our setting of 25 frames/ns [running 2e-11 x 2 = 4e-11 per frame]
 
-#define DATA_SAVE_FREQUENCY					 20
+#define DATA_SAVE_FREQUENCY					 8
 
 // Program Mechanics:
 // ==================
@@ -70,10 +70,11 @@ long const NUMVERTICES = numTilesMajor*threadsPerTileMajor;//36864; //36000; // 
 long const NMINOR = threadsPerTileMinor * numTilesMinor;
 long const NUMTRIANGLES = NMINOR - NUMVERTICES;
 
+// incorrect flows will lead to compensations afterwards
 
-#define REL_THRESHOLD_HEAT   1.0e-9
+#define REL_THRESHOLD_HEAT   4.0e-8
 #define REL_THRESHOLD_VISC   1.0e-7
-double const RELTHRESH_AZ =  1.0e-9; // note, heat is at 1e-8
+double const RELTHRESH_AZ =  1.0e-9; 
 
 // Note that getting it wrong should mean that subsequently we will correct for the error.
 
@@ -242,11 +243,11 @@ real const FULLANGLE = 2.0*PI/16.0;
 // Need to be careful in case of thermal pressure messing up mesh.
 // Let's assume we do recalculation of parameters as often as we do recalculation of pressure.
 
-real const TIMESTEP = 1.0e-13; 
-real const SUBSTEP = 1.0e-13;
+real const TIMESTEP = 1.0e-13;// 7.8125e-14; 
+real const SUBSTEP = 1.0e-13; // 7.8125e-14;
 int const SUBCYCLES = 1; 
-int const GPU_STEPS = 100;
-int const ADVECT_FREQUENCY = 50; // 1e-11 = 1e-4/1e7
+int const GPU_STEPS = 100; // 128
+int const ADVECT_FREQUENCY = 50; // 1e-11 = 1e-4/1e7 // 64
 int const ADVECT_STEPS_PER_GPU_VISIT = 2;
 
 

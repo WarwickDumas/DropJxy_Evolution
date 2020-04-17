@@ -2,7 +2,16 @@
 #define f64 double
 
 #define HISTORY										4
- 
+
+#include <stdlib.h>
+#include <stdio.h>
+#include "lapacke.h"
+
+/* Auxiliary routines prototypes */
+extern void print_matrix(char* desc, lapack_int m, lapack_int n, double* a, lapack_int lda);
+extern void print_int_vector(char* desc, lapack_int n, lapack_int* a);
+
+
 #include "headers.h"
 #include "cuda_runtime.h"
 #include "device_launch_parameters.h"
@@ -1704,7 +1713,7 @@ int main()
 	//	HACCEL hAccelTable;
 	real x, y, temp;
 	int i, j;
-	float a1, a2, a3, a4;
+	float a1, a2, a3, a4; 
 	//HWND hwndConsole;
 	FILE * fp;
 	extern char Functionalfilename[1024];
@@ -2007,6 +2016,7 @@ int main()
 	
 	Direct3D.pd3dDevice->Present(NULL, NULL, NULL, NULL);
 
+
 	// Main message loop:
 	memset(&msg, 0, sizeof(MSG));
 	while (msg.message != WM_QUIT)
@@ -2031,6 +2041,24 @@ int main()
     }
 
     return 0;
+}
+
+/* Auxiliary routine: printing a matrix */
+void print_matrix(char* desc, lapack_int m, lapack_int n, double* a, lapack_int lda) {
+	lapack_int i, j;
+	printf("\n %s\n", desc);
+	for (i = 0; i < m; i++) {
+		for (j = 0; j < n; j++) printf(" %2.5E", a[i*lda + j]);
+		printf("\n");
+	}
+}
+
+/* Auxiliary routine: printing a vector of integers */
+void print_int_vector(char* desc, lapack_int n, lapack_int* a) {
+	lapack_int j;
+	printf("\n %s\n", desc);
+	for (j = 0; j < n; j++) printf(" %6i", a[j]);
+	printf("\n");
 }
 
 LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)

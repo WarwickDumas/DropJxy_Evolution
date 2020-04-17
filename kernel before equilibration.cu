@@ -15,7 +15,7 @@
 
 
 #define FOUR_PI 12.5663706143592
-#define TEST  (iVertex == VERTCHOSEN)
+#define TEST  (0)
 #define TEST1 (0)
 #define TESTTRI (0)
 #define TESTADVECT (0)// // iVertex == VERTCHOSEN)
@@ -49,263 +49,6 @@
 // Change to apportion visc heat from tri per N.
 
 //const int Chosens[7] = { 25454, 86529, 25453, 86381, 25455, 86530, 25750 };
-
-
-// define:
-
-__device__ f64 GetRecombinationRate_given_v(f64 const Te, int i_v)
-{
-
-	f64 const TeeV = Te / kB;
-	f64 const Tesq = TeeV*TeeV;
-	f64 const Te3 = Tesq*TeeV;
-	f64 rate, rate1, rate2;
-	if (Te > 4.75e-11) return 0.0;
-	if (Te < 1.875e-12) { // Magic numbers!!
-		rate = (recomb_coeffs[i_v][0][1] + recomb_coeffs[i_v][0][2] * TeeV
-			+ recomb_coeffs[i_v][0][3] * Tesq + recomb_coeffs[i_v][0][4] * Te3);
-		if (i_v < 7) {
-			rate /= (1.0 - recomb_coeffs[i_v][0][0] * TeeV);
-		} else {
-			rate += exp(-TeeV*0.5)*recomb_coeffs[i_v][0][0];
-		};
-	} else {
-		if (Te < 2.25e-12) {
-			rate1 = (recomb_coeffs[i_v][0][1] + recomb_coeffs[i_v][0][2] * TeeV
-				+ recomb_coeffs[i_v][0][3] * Tesq + recomb_coeffs[i_v][0][4] * Te3);
-			rate2 = (recomb_coeffs[i_v][1][1] + recomb_coeffs[i_v][1][2] * TeeV
-				+ recomb_coeffs[i_v][1][3] * Tesq + recomb_coeffs[i_v][1][4] * Te3);
-			if (i_v < 7) {
-				rate1 /= (1.0 - recomb_coeffs[i_v][0][0] * TeeV);
-				rate2 /= (1.0 - recomb_coeffs[i_v][1][0] * TeeV);
-			}
-			else {
-				rate1 += exp(-TeeV*0.5)*recomb_coeffs[i_v][0][0];
-				rate2 += exp(-TeeV*0.5)*recomb_coeffs[i_v][1][0];
-			};
-			f64 ppn_high = (Te - 1.875e-12) / (2.25e-12 - 1.875e-12);
-			f64 ppn_low = (2.25e-12 - Te) / (2.25e-12-1.875e-12);
-			rate = rate1*ppn_low + rate2*ppn_high;
-
-		} else {
-			if (Te < 1.05e-11) {
-				rate = (recomb_coeffs[i_v][1][1] + recomb_coeffs[i_v][1][2] * TeeV
-					+ recomb_coeffs[i_v][1][3] * Tesq + recomb_coeffs[i_v][1][4] * Te3);
-				if (i_v < 7) {
-					rate /= (1.0 - recomb_coeffs[i_v][1][0] * TeeV);
-				}
-				else {
-					rate += exp(-TeeV*0.5)*recomb_coeffs[i_v][1][0];
-				};
-			} else {
-				if (Te < 1.0875e-11) {
-					rate1 = (recomb_coeffs[i_v][1][1] + recomb_coeffs[i_v][1][2] * TeeV
-						+ recomb_coeffs[i_v][1][3] * Tesq + recomb_coeffs[i_v][1][4] * Te3);
-					rate2 = (recomb_coeffs[i_v][2][1] + recomb_coeffs[i_v][2][2] * TeeV
-						+ recomb_coeffs[i_v][2][3] * Tesq + recomb_coeffs[i_v][2][4] * Te3);
-					if (i_v < 7) {
-						rate1 /= (1.0 - recomb_coeffs[i_v][1][0] * TeeV);
-						rate2 /= (1.0 - recomb_coeffs[i_v][2][0] * TeeV);
-					} else {
-						rate1 += exp(-TeeV*0.5)*recomb_coeffs[i_v][1][0];
-						rate2 += exp(-TeeV*0.5)*recomb_coeffs[i_v][2][0];
-					};
-				f64	ppn_high = (Te - 1.05e-11) / (1.0875e-11 - 1.05e-11);
-				f64	ppn_low = (1.0875e-11 - Te) / (1.0875e-11 - 1.05e-11);
-					rate = rate1*ppn_low + rate2*ppn_high;
-
-				} else {
-					rate = (recomb_coeffs[i_v][2][1] + recomb_coeffs[i_v][2][2] * TeeV
-						+ recomb_coeffs[i_v][2][3] * Tesq + recomb_coeffs[i_v][2][4] * Te3);
-					if (i_v < 7) {
-						rate /= (1.0 - recomb_coeffs[i_v][2][0] * TeeV);
-					} else {
-						rate += exp(-TeeV*0.5)*recomb_coeffs[i_v][2][0];
-					};
-				};
-			};
-		};
-	};
-	return rate;
-}
-
-__device__ f64 GetIonizationRate_given_v(f64 const Te, int i_v)
-{
-	
-	f64 TeeV = Te / kB;
-	if (Te > ionize_temps[i_v][9]) {
-		TeeV = ionize_temps[i_v][9] / kB;
-	}
-	f64 Tesq = TeeV*TeeV;
-	f64 Te3 = Tesq*TeeV;
-	f64 Te4 = Tesq*Tesq;
-	
-	f64 rate, rate1, rate2;
-
-	bool b_exp[5];
-	memset(b_exp, 0, sizeof(bool) * 5);
-	if (i_v < 18) {
-		b_exp[0] = 1; b_exp[1] = 1; b_exp[2] = 1;
-	};
-	if (i_v == 18) {
-		b_exp[0] = 1; b_exp[1] = 1;
-	}
-
-	if (Te < ionize_temps[i_v][0]) {
-		rate = 0.0;
-	} else {
-		if (Te < ionize_temps[i_v][1]) {
-			rate = (ionize_coeffs[i_v][0][0] + ionize_coeffs[i_v][0][1] * TeeV
-				+ ionize_coeffs[i_v][0][2] * Tesq + ionize_coeffs[i_v][0][3] * Te3
-				+ ionize_coeffs[i_v][0][4] * Te4);
-			if (b_exp[0]) rate = exp(rate);
-		} else {
-			if (Te < ionize_temps[i_v][2]) {
-				rate1 = exp(ionize_coeffs[i_v][0][0] + ionize_coeffs[i_v][0][1] * TeeV
-					+ ionize_coeffs[i_v][0][2] * Tesq + ionize_coeffs[i_v][0][3] * Te3
-					+ ionize_coeffs[i_v][0][4] * Te4);
-				rate2 = exp(ionize_coeffs[i_v][1][0] + ionize_coeffs[i_v][1][1] * TeeV
-					+ ionize_coeffs[i_v][1][2] * Tesq + ionize_coeffs[i_v][1][3] * Te3
-					+ ionize_coeffs[i_v][1][4] * Te4);
-	
-				if (b_exp[0]) rate1 = exp(rate1);
-				if (b_exp[1]) rate2 = exp(rate2);
-
-				f64 ppn_high = (Te - ionize_temps[i_v][1]) / (ionize_temps[i_v][2] - ionize_temps[i_v][1]);
-				f64 ppn_low = (ionize_temps[i_v][2] - Te) / (ionize_temps[i_v][2] - ionize_temps[i_v][1]);
-				rate = rate1*ppn_low + rate2*ppn_high;
-
-			} else {
-				if (Te < ionize_temps[i_v][3])
-				{
-					rate = (ionize_coeffs[i_v][1][0] + ionize_coeffs[i_v][1][1] * TeeV
-						+ ionize_coeffs[i_v][1][2] * Tesq + ionize_coeffs[i_v][1][3] * Te3
-						+ ionize_coeffs[i_v][1][4] * Te4);
-					if (b_exp[1]) rate = exp(rate);
-
-				} else {
-					if (Te < ionize_temps[i_v][4]) {
-						rate1 = exp(ionize_coeffs[i_v][1][0] + ionize_coeffs[i_v][1][1] * TeeV
-							+ ionize_coeffs[i_v][1][2] * Tesq + ionize_coeffs[i_v][1][3] * Te3
-							+ ionize_coeffs[i_v][1][4] * Te4);
-						rate2 = (ionize_coeffs[i_v][2][0] + ionize_coeffs[i_v][2][1] * TeeV
-							+ ionize_coeffs[i_v][2][2] * Tesq + ionize_coeffs[i_v][2][3] * Te3
-							+ ionize_coeffs[i_v][2][4] * Te4);
-
-						if (b_exp[1]) rate1 = exp(rate1);
-						if (b_exp[2]) rate2 = exp(rate2);
-
-						f64 ppn_high = (Te - ionize_temps[i_v][3]) / (ionize_temps[i_v][4] - ionize_temps[i_v][3]);
-						f64 ppn_low = (ionize_temps[i_v][4] - Te) / (ionize_temps[i_v][4] - ionize_temps[i_v][3]);
-
-						rate = rate1*ppn_low + rate2*ppn_high;
-	
-					} else {
-						if (Te < ionize_temps[i_v][5]) {
-							rate = (ionize_coeffs[i_v][2][0] + ionize_coeffs[i_v][2][1] * TeeV
-								+ ionize_coeffs[i_v][2][2] * Tesq + ionize_coeffs[i_v][2][3] * Te3
-								+ ionize_coeffs[i_v][2][4] * Te4);
-							if (b_exp[2]) rate = exp(rate);
-
-						} else {
-							if (Te < ionize_temps[i_v][6]) {
-								rate1 = exp(ionize_coeffs[i_v][2][0] + ionize_coeffs[i_v][2][1] * TeeV
-									+ ionize_coeffs[i_v][2][2] * Tesq + ionize_coeffs[i_v][2][3] * Te3
-									+ ionize_coeffs[i_v][2][4] * Te4);
-							rate2 = (ionize_coeffs[i_v][3][0] + ionize_coeffs[i_v][3][1] * TeeV
-								+ ionize_coeffs[i_v][3][2] * Tesq + ionize_coeffs[i_v][3][3] * Te3
-								+ ionize_coeffs[i_v][3][4] * Te4);
-
-							if (b_exp[2]) rate1 = exp(rate1);
-							if (b_exp[3]) rate2 = exp(rate2);
-
-							f64 ppn_high = (Te - ionize_temps[i_v][5]) / (ionize_temps[i_v][6] - ionize_temps[i_v][5]);
-							f64 ppn_low = (ionize_temps[i_v][6] - Te) / (ionize_temps[i_v][6] - ionize_temps[i_v][5]);
-
-							rate = rate1*ppn_low + rate2*ppn_high;
-
-							} else {
-								if (Te < ionize_temps[i_v][7]) {
-									rate = (ionize_coeffs[i_v][3][0] + ionize_coeffs[i_v][3][1] * TeeV
-										+ ionize_coeffs[i_v][3][2] * Tesq + ionize_coeffs[i_v][3][3] * Te3
-										+ ionize_coeffs[i_v][3][4] * Te4);
-									if (b_exp[3]) rate = exp(rate); // it is always false anyway								
-								} else {
-									if (Te < ionize_temps[i_v][8]) {
-
-										rate1 = (ionize_coeffs[i_v][3][0] + ionize_coeffs[i_v][3][1] * TeeV
-											+ ionize_coeffs[i_v][3][2] * Tesq + ionize_coeffs[i_v][3][3] * Te3
-											+ ionize_coeffs[i_v][3][4] * Te4);
-										if (b_exp[3]) rate1 = exp(rate1); // it is always false anyway								
-										rate2 = (ionize_coeffs[i_v][4][0] + ionize_coeffs[i_v][4][1] * TeeV
-											+ ionize_coeffs[i_v][4][2] * Tesq + ionize_coeffs[i_v][4][3] * Te3
-											+ ionize_coeffs[i_v][4][4] * Te4);
-										if (b_exp[4]) rate2 = exp(rate2); // it is always false anyway								
-										f64 ppn_high = (Te - ionize_temps[i_v][7]) / (ionize_temps[i_v][8] - ionize_temps[i_v][7]);
-										f64 ppn_low = (ionize_temps[i_v][8] - Te) / (ionize_temps[i_v][8] - ionize_temps[i_v][7]);
-
-										rate = rate1*ppn_low + rate2*ppn_high;
-									} else {
-
-										rate = (ionize_coeffs[i_v][4][0] + ionize_coeffs[i_v][4][1] * TeeV
-											+ ionize_coeffs[i_v][4][2] * Tesq + ionize_coeffs[i_v][4][3] * Te3
-											+ ionize_coeffs[i_v][4][4] * Te4);
-										if (b_exp[4]) rate = exp(rate); // it is always false anyway								
-									};
-								}
-							};
-						};
-					};
-				};
-			};
-		};
-	};
-	return rate;
-}
-
-__device__ f64 GetIonizationRates(f64 const Te, f64 const v, f64 * p_Recombo_rate)
-{
-	int i_vleft, i_vright;
-	f64 vleft, vright;
-	f64 ppn_right, ppn_left;
-	if (v < 1.0e7) {
-		i_vleft = (int)(v / 2.0e6);
-		i_vright = i_vleft + 1;
-		vleft = 2.0e6*(double)(i_vleft);
-		vright = 2.0e6*(double)(i_vleft); // at most 1e7		
-	} else {
-		if (v > 2.7e8) {
-			i_vleft = 31;
-			i_vright = 31;
-			ppn_left = 1.0;
-			ppn_right = 0.0;
-			vleft = 1.0e7*(double)(i_vleft - 4);
-			vright = 1.0e7*(double)(i_vright - 4); // careful	
-
-		} else {
-			i_vleft = 4 + (int)(v / 1.0e-7); // cHeck ?
-			if (i_vleft >= 31) i_vleft = 30;
-			i_vright = i_vleft + 1;
-			if (i_vright >= 32) i_vright = 31;
-
-			vleft = 1.0e7*(double)(i_vleft - 4);
-			vright = 1.0e7*(double)(i_vright - 4); // careful	
-			ppn_right = (v - vleft) / (vright - vleft);
-			ppn_left = (vright - v) / (vright - vleft);
-		};
-	};
-
-	f64 rate_left = GetIonizationRate_given_v(Te, i_vleft);
-	f64 rate_right = GetIonizationRate_given_v(Te, i_vright);
-	f64 recomb_rate_left = GetRecombinationRate_given_v(Te, i_vleft);
-	f64 recomb_rate_right = GetRecombinationRate_given_v(Te, i_vright);
-	
-	// now we need to go again given which v column to another function!
-	f64 rate = rate_left*ppn_left + rate_right*ppn_right;
-	*p_Recombo_rate = recomb_rate_left*ppn_left + recomb_rate_right*ppn_right;
-	return rate;
-}
-
 
 
 __global__ void kernelCreateEpsilon_Visc(
@@ -4516,12 +4259,7 @@ __global__ void kernelAccumulateDiffusiveHeatRate_new_Longitudinalonly_scalarT(
 	if (bUseMask)
 		if (p_maskblock[blockIdx.x] == 0) return;
 
-	if (bUseMask) {
-		bMask[0] = p_maskbool3[iVertex];
-		bMask[1] = p_maskbool3[iVertex + NUMVERTICES];
-		bMask[2] = p_maskbool3[iVertex + NUMVERTICES*2];
-		//memcpy(bMask, p_maskbool3 + iVertex * 3, 3 * sizeof(bool));
-	}
+	if (bUseMask) memcpy(bMask, p_maskbool3 + iVertex * 3, 3 * sizeof(bool));
 
 	structural info = p_info_minor[iVertex + BEGINNING_OF_CENTRAL];     // 3 double
 	shared_pos_verts[threadIdx.x] = info.pos;
@@ -4573,28 +4311,8 @@ __global__ void kernelAccumulateDiffusiveHeatRate_new_Longitudinalonly_scalarT(
 	short iNeigh; // only fixed # of addresses so short makes no difference.
 	char PBC; // char makes no difference.
 
-	if  ( (info.flag == DOMAIN_VERTEX) && (
-		((bUseMask == 0) || (bMask[0] == true) || (bMask[1] == true) || (bMask[2] == true))))
-	{
-		// Need this, we are adding on to existing d/dt N,NT :
-		memcpy(&ourrates, NTadditionrates + iVertex, sizeof(NTrates));
 
-		memcpy(Indexneigh + MAXNEIGH_d * threadIdx.x,
-			pIndexNeigh + MAXNEIGH_d * iVertex,
-			MAXNEIGH_d * sizeof(long));
-		memcpy(PBCneigh + MAXNEIGH_d * threadIdx.x,
-			pPBCNeigh + MAXNEIGH_d * iVertex,
-			MAXNEIGH_d * sizeof(char));
-		memcpy(PBCtri + MAXNEIGH_d * threadIdx.x,
-			szPBCtri_verts + MAXNEIGH_d * iVertex,
-			MAXNEIGH_d * sizeof(char));
-
-		memcpy(izTri, //+ MAXNEIGH_d * threadIdx.x,
-			izTri_verts + MAXNEIGH_d * iVertex, MAXNEIGH_d * sizeof(long));
-
-	};
-
-	if ((bUseMask == 0) || (bMask[0] == true) )
+	if ((bUseMask == 0) || (bMask[0] == true)) // either there is no masking, or this is switched on
 	{
 		if ((info.flag == INNERMOST) || (info.flag == OUTERMOST))
 		{
@@ -4603,6 +4321,25 @@ __global__ void kernelAccumulateDiffusiveHeatRate_new_Longitudinalonly_scalarT(
 		else {
 			if (info.flag == DOMAIN_VERTEX) {
 				// The idea of not sending blocks full of non-domain vertices is another idea. Fiddly with indices.
+
+				// Need this, we are adding on to existing d/dt N,NT :
+				memcpy(&ourrates, NTadditionrates + iVertex, sizeof(NTrates));
+
+				memcpy(Indexneigh + MAXNEIGH_d * threadIdx.x,
+					pIndexNeigh + MAXNEIGH_d * iVertex,
+					MAXNEIGH_d * sizeof(long));
+				memcpy(PBCneigh + MAXNEIGH_d * threadIdx.x,
+					pPBCNeigh + MAXNEIGH_d * iVertex,
+					MAXNEIGH_d * sizeof(char));
+				memcpy(PBCtri + MAXNEIGH_d * threadIdx.x,
+					szPBCtri_verts + MAXNEIGH_d * iVertex,
+					MAXNEIGH_d * sizeof(char));
+
+				// EXPERIMENT WHETHER IT IS FASTER WITH THESE OUTSIDE OR INSIDE THE BRANCH.
+
+
+				memcpy(izTri, //+ MAXNEIGH_d * threadIdx.x,
+					izTri_verts + MAXNEIGH_d * iVertex, MAXNEIGH_d * sizeof(long));
 
 				// Now do Tn:
 
@@ -4659,11 +4396,10 @@ __global__ void kernelAccumulateDiffusiveHeatRate_new_Longitudinalonly_scalarT(
 				PBC = PBCtri[MAXNEIGH_d*threadIdx.x + info.neigh_len - 1];
 				if (PBC == ROTATE_ME_CLOCKWISE) endpt_clock = Clockwise_d * endpt_clock;
 				if (PBC == ROTATE_ME_ANTICLOCKWISE) endpt_clock = Anticlockwise_d * endpt_clock;
-//
-//				if (T_clock == 0.0) {
-//					T_clock = 0.5*(shared_T[threadIdx.x] + T_out);
-//				};
-//				Mimic
+
+				if (T_clock == 0.0) {
+					T_clock = 0.5*(shared_T[threadIdx.x] + T_out);
+				};
 
 #pragma unroll MAXNEIGH_d
 				for (iNeigh = 0; iNeigh < info.neigh_len; iNeigh++)
@@ -4690,10 +4426,9 @@ __global__ void kernelAccumulateDiffusiveHeatRate_new_Longitudinalonly_scalarT(
 						pos_anti = Clockwise_rotate2(pos_anti);
 					};
 
-					//if (T_anti == 0.0) {
-					//	T_anti = 0.5*(shared_T[threadIdx.x] + T_out);
-					//}; // So we are receiving 0 then doing this. But how come?
-					//Mimic
+					if (T_anti == 0.0) {
+						T_anti = 0.5*(shared_T[threadIdx.x] + T_out);
+					}; // So we are receiving 0 then doing this. But how come?
 
 					   // Now let's see
 					   // tri 0 has neighs 0 and 1 I'm pretty sure (check....) CHECK
@@ -4842,291 +4577,264 @@ __global__ void kernelAccumulateDiffusiveHeatRate_new_Longitudinalonly_scalarT(
 
 		if ((bUseMask == 0) || (bMask[iSpecies] == true)) // either there is no masking, or this is switched on
 		{
-			
+			if ((info.flag == INNERMOST) || (info.flag == OUTERMOST))
 			{
-				if ((info.flag == INNERMOST) || (info.flag == OUTERMOST))
-				{
-					// [ Ignore flux into edge of outermost vertex I guess ???]
-				}
-				else {
-					if (info.flag == DOMAIN_VERTEX) {
+				// [ Ignore flux into edge of outermost vertex I guess ???]
+			}
+			else {
+				if (info.flag == DOMAIN_VERTEX) {
 
-						indexneigh = Indexneigh[MAXNEIGH_d*threadIdx.x + info.neigh_len - 1];
-						if ((indexneigh >= StartMajor) && (indexneigh < EndMajor))
-						{
-							pos_clock = shared_pos_verts[indexneigh - StartMajor];
-							T_clock = shared_T[indexneigh - StartMajor];
+					indexneigh = Indexneigh[MAXNEIGH_d*threadIdx.x + info.neigh_len - 1];
+					if ((indexneigh >= StartMajor) && (indexneigh < EndMajor))
+					{
+						pos_clock = shared_pos_verts[indexneigh - StartMajor];
+						T_clock = shared_T[indexneigh - StartMajor];
+					}
+					else {
+						structural info2 = p_info_minor[indexneigh + BEGINNING_OF_CENTRAL];
+						pos_clock = info2.pos;
+						if (iSpecies == 1) {
+							T_clock = p_T_i[indexneigh];
 						}
 						else {
-							structural info2 = p_info_minor[indexneigh + BEGINNING_OF_CENTRAL];
-							pos_clock = info2.pos;
-							if (iSpecies == 1) {
-								T_clock = p_T_i[indexneigh];
-							}
-							else {
-								T_clock = p_T_e[indexneigh];
-							};
+							T_clock = p_T_e[indexneigh];
 						};
-						PBC = PBCneigh[MAXNEIGH_d*threadIdx.x + info.neigh_len - 1];
-						if (PBC == NEEDS_ANTI) {
-							pos_clock = Anticlock_rotate2(pos_clock);
-						};
-						if (PBC == NEEDS_CLOCK) {
-							pos_clock = Clockwise_rotate2(pos_clock);
-						};
+					};
+					PBC = PBCneigh[MAXNEIGH_d*threadIdx.x + info.neigh_len - 1];
+					if (PBC == NEEDS_ANTI) {
+						pos_clock = Anticlock_rotate2(pos_clock);
+					};
+					if (PBC == NEEDS_CLOCK) {
+						pos_clock = Clockwise_rotate2(pos_clock);
+					};
 
-						indexneigh = Indexneigh[MAXNEIGH_d*threadIdx.x + 0];
-						if ((indexneigh >= StartMajor) && (indexneigh < EndMajor))
-						{
-							pos_out = shared_pos_verts[indexneigh - StartMajor];
-							T_out = shared_T[indexneigh - StartMajor];
+					indexneigh = Indexneigh[MAXNEIGH_d*threadIdx.x + 0];
+					if ((indexneigh >= StartMajor) && (indexneigh < EndMajor))
+					{
+						pos_out = shared_pos_verts[indexneigh - StartMajor];
+						T_out = shared_T[indexneigh - StartMajor];
+					}
+					else {
+						structural info2 = p_info_minor[indexneigh + BEGINNING_OF_CENTRAL];
+						pos_out = info2.pos;
+						if (iSpecies == 1) {
+							T_out = p_T_i[indexneigh];
 						}
 						else {
-							structural info2 = p_info_minor[indexneigh + BEGINNING_OF_CENTRAL];
-							pos_out = info2.pos;
-							if (iSpecies == 1) {
-								T_out = p_T_i[indexneigh];
-							}
-							else {
-								T_out = p_T_e[indexneigh];
-							};
+							T_out = p_T_e[indexneigh];
 						};
-						PBC = PBCneigh[MAXNEIGH_d*threadIdx.x + 0];
-						if (PBC == NEEDS_ANTI) {
-							pos_out = Anticlock_rotate2(pos_out);
-						};
-						if (PBC == NEEDS_CLOCK) {
-							pos_out = Clockwise_rotate2(pos_out);
-						};
+					};
+					PBC = PBCneigh[MAXNEIGH_d*threadIdx.x + 0];
+					if (PBC == NEEDS_ANTI) {
+						pos_out = Anticlock_rotate2(pos_out);
+					};
+					if (PBC == NEEDS_CLOCK) {
+						pos_out = Clockwise_rotate2(pos_out);
+					};
 
-						if ((izTri[info.neigh_len - 1] >= StartMinor) && (izTri[info.neigh_len - 1] < EndMinor))
-						{
-							endpt_clock = shared_pos[izTri[info.neigh_len - 1] - StartMinor];
-						}
-						else {
+					if ((izTri[info.neigh_len - 1] >= StartMinor) && (izTri[info.neigh_len - 1] < EndMinor))
+					{
+						endpt_clock = shared_pos[izTri[info.neigh_len - 1] - StartMinor];
+					}
+					else {
 #ifdef CENTROID_HEATCONDUCTION
-							endpt_clock = p_info_minor[izTri[info.neigh_len - 1]].pos;
+						endpt_clock = p_info_minor[izTri[info.neigh_len - 1]].pos;
 #else
-							endpt_clock = p_cc[izTri[info.neigh_len - 1]];
+						endpt_clock = p_cc[izTri[info.neigh_len - 1]];
 #endif
-						}
-						PBC = PBCtri[MAXNEIGH_d*threadIdx.x + info.neigh_len - 1];
-						if (PBC == ROTATE_ME_CLOCKWISE) endpt_clock = Clockwise_d * endpt_clock;
-						if (PBC == ROTATE_ME_ANTICLOCKWISE) endpt_clock = Anticlockwise_d * endpt_clock;
-//
-//						if (T_clock == 0.0) {
-//							T_clock = 0.5*(shared_T[threadIdx.x] + T_out);
-//						};
-//						Mimic
+					}
+					PBC = PBCtri[MAXNEIGH_d*threadIdx.x + info.neigh_len - 1];
+					if (PBC == ROTATE_ME_CLOCKWISE) endpt_clock = Clockwise_d * endpt_clock;
+					if (PBC == ROTATE_ME_ANTICLOCKWISE) endpt_clock = Anticlockwise_d * endpt_clock;
+
+					if (T_clock == 0.0) {
+						T_clock = 0.5*(shared_T[threadIdx.x] + T_out);
+					};
 
 #pragma unroll MAXNEIGH_d
-						for (iNeigh = 0; iNeigh < info.neigh_len; iNeigh++)
+					for (iNeigh = 0; iNeigh < info.neigh_len; iNeigh++)
+					{
 						{
+							short iNext = iNeigh + 1; if (iNext == info.neigh_len) iNext = 0;
+							indexneigh = Indexneigh[MAXNEIGH_d*threadIdx.x + iNext];
+							PBC = PBCneigh[MAXNEIGH_d*threadIdx.x + iNext];
+						}
+						if ((indexneigh >= StartMajor) && (indexneigh < EndMajor))
+						{
+							pos_anti = shared_pos_verts[indexneigh - StartMajor];
+							T_anti = shared_T[indexneigh - StartMajor];
+						}
+						else {
+							structural info2 = p_info_minor[indexneigh + BEGINNING_OF_CENTRAL];
+							pos_anti = info2.pos;
+							if (iSpecies == 1)
 							{
-								short iNext = iNeigh + 1; if (iNext == info.neigh_len) iNext = 0;
-								indexneigh = Indexneigh[MAXNEIGH_d*threadIdx.x + iNext];
-								PBC = PBCneigh[MAXNEIGH_d*threadIdx.x + iNext];
-							}
-							if ((indexneigh >= StartMajor) && (indexneigh < EndMajor))
-							{
-								pos_anti = shared_pos_verts[indexneigh - StartMajor];
-								T_anti = shared_T[indexneigh - StartMajor];
+								T_anti = p_T_i[indexneigh];
 							}
 							else {
-								structural info2 = p_info_minor[indexneigh + BEGINNING_OF_CENTRAL];
-								pos_anti = info2.pos;
-								if (iSpecies == 1)
-								{
-									T_anti = p_T_i[indexneigh];
-								}
-								else {
-									T_anti = p_T_e[indexneigh];
-								};
+								T_anti = p_T_e[indexneigh];
 							};
-							if (PBC == NEEDS_ANTI) {
-								pos_anti = Anticlock_rotate2(pos_anti);
-							};
-							if (PBC == NEEDS_CLOCK) {
-								pos_anti = Clockwise_rotate2(pos_anti);
-							};
+						};
+						if (PBC == NEEDS_ANTI) {
+							pos_anti = Anticlock_rotate2(pos_anti);
+						};
+						if (PBC == NEEDS_CLOCK) {
+							pos_anti = Clockwise_rotate2(pos_anti);
+						};
 
-						//	if (T_anti == 0.0) {
-						//		T_anti = 0.5*(shared_T[threadIdx.x] + T_out);
-						//	}; // So we are receiving 0 then doing this. But how come?
+						if (T_anti == 0.0) {
+							T_anti = 0.5*(shared_T[threadIdx.x] + T_out);
+						}; // So we are receiving 0 then doing this. But how come?
 
+						if ((izTri[iNeigh] >= StartMinor) && (izTri[iNeigh] < EndMinor))
+						{
+							endpt_anti = shared_pos[izTri[iNeigh] - StartMinor];
+						}
+						else {
+#ifdef CENTROID_HEATCONDUCTION
+							endpt_anti = p_info_minor[izTri[iNeigh]].pos;
+#else
+							endpt_anti = p_cc[izTri[iNeigh]];
+#endif					
+						}
+						PBC = PBCtri[MAXNEIGH_d*threadIdx.x + iNeigh];
+						if (PBC == ROTATE_ME_CLOCKWISE) endpt_anti = Clockwise_d * endpt_anti;
+						if (PBC == ROTATE_ME_ANTICLOCKWISE) endpt_anti = Anticlockwise_d * endpt_anti;
 
-							// BUG -- masked stuff will go wrong.
+						edge_normal.x = (endpt_anti.y - endpt_clock.y);
+						edge_normal.y = (endpt_clock.x - endpt_anti.x);
 
+						// SMARTY:
+						if (pos_out.x*pos_out.x + pos_out.y*pos_out.y >
+							DEVICE_RADIUS_INSULATOR_OUTER*DEVICE_RADIUS_INSULATOR_OUTER)
+						{
+							//f64 Area_quadrilateral = 0.5*(
+							//	(info.pos.x + pos_anti.x)*(info.pos.y - pos_anti.y)
+							//	+ (pos_clock.x + info.pos.x)*(pos_clock.y - info.pos.y)
+							//	+ (pos_out.x + pos_clock.x)*(pos_out.y - pos_clock.y)
+							//	+ (pos_anti.x + pos_out.x)*(pos_anti.y - pos_out.y)
+							//	);
+							//grad_T.x = 0.5*(
+							//	(shared_T[threadIdx.x] + T_anti)*(info.pos.y - pos_anti.y)
+							//	+ (T_clock + shared_T[threadIdx.x])*(pos_clock.y - info.pos.y)
+							//	+ (T_out + T_clock)*(pos_out.y - pos_clock.y)
+							//	+ (T_anti + T_out)*(pos_anti.y - pos_out.y)
+							//	) / Area_quadrilateral;
+							//grad_T.y = -0.5*( // notice minus
+							//	(shared_T[threadIdx.x] + T_anti)*(info.pos.x - pos_anti.x)
+							//	+ (T_clock + shared_T[threadIdx.x])*(pos_clock.x - info.pos.x)
+							//	+ (T_out + T_clock)*(pos_out.x - pos_clock.x)
+							//	+ (T_anti + T_out)*(pos_anti.x - pos_out.x)
+							//	) / Area_quadrilateral;
 
+							kappa_parallel = 0.0;
+							f64 nu;
 							if ((izTri[iNeigh] >= StartMinor) && (izTri[iNeigh] < EndMinor))
 							{
-								endpt_anti = shared_pos[izTri[iNeigh] - StartMinor];
+								kappa_parallel = 0.5*shared_kappa[izTri[iNeigh] - StartMinor];
+								nu = 0.5*shared_nu[izTri[iNeigh] - StartMinor];
 							}
 							else {
-#ifdef CENTROID_HEATCONDUCTION
-								endpt_anti = p_info_minor[izTri[iNeigh]].pos;
-#else
-								endpt_anti = p_cc[izTri[iNeigh]];
-#endif					
-							}
-							PBC = PBCtri[MAXNEIGH_d*threadIdx.x + iNeigh];
-							if (PBC == ROTATE_ME_CLOCKWISE) endpt_anti = Clockwise_d * endpt_anti;
-							if (PBC == ROTATE_ME_ANTICLOCKWISE) endpt_anti = Anticlockwise_d * endpt_anti;
-
-							edge_normal.x = (endpt_anti.y - endpt_clock.y);
-							edge_normal.y = (endpt_clock.x - endpt_anti.x);
-
-							// SMARTY:
-							if (pos_out.x*pos_out.x + pos_out.y*pos_out.y >
-								DEVICE_RADIUS_INSULATOR_OUTER*DEVICE_RADIUS_INSULATOR_OUTER)
-							{
-								//f64 Area_quadrilateral = 0.5*(
-								//	(info.pos.x + pos_anti.x)*(info.pos.y - pos_anti.y)
-								//	+ (pos_clock.x + info.pos.x)*(pos_clock.y - info.pos.y)
-								//	+ (pos_out.x + pos_clock.x)*(pos_out.y - pos_clock.y)
-								//	+ (pos_anti.x + pos_out.x)*(pos_anti.y - pos_out.y)
-								//	);
-								//grad_T.x = 0.5*(
-								//	(shared_T[threadIdx.x] + T_anti)*(info.pos.y - pos_anti.y)
-								//	+ (T_clock + shared_T[threadIdx.x])*(pos_clock.y - info.pos.y)
-								//	+ (T_out + T_clock)*(pos_out.y - pos_clock.y)
-								//	+ (T_anti + T_out)*(pos_anti.y - pos_out.y)
-								//	) / Area_quadrilateral;
-								//grad_T.y = -0.5*( // notice minus
-								//	(shared_T[threadIdx.x] + T_anti)*(info.pos.x - pos_anti.x)
-								//	+ (T_clock + shared_T[threadIdx.x])*(pos_clock.x - info.pos.x)
-								//	+ (T_out + T_clock)*(pos_out.x - pos_clock.x)
-								//	+ (T_anti + T_out)*(pos_anti.x - pos_out.x)
-								//	) / Area_quadrilateral;
-
-								kappa_parallel = 0.0;
-								f64 nu;
-								if ((izTri[iNeigh] >= StartMinor) && (izTri[iNeigh] < EndMinor))
-								{
-									kappa_parallel = 0.5*shared_kappa[izTri[iNeigh] - StartMinor];
-									nu = 0.5*shared_nu[izTri[iNeigh] - StartMinor];
+								if (iSpecies == 1) {
+									kappa_parallel = 0.5*p_kappa_i[izTri[iNeigh]];
+									nu = 0.5*p_nu_i[izTri[iNeigh]];
 								}
 								else {
-									if (iSpecies == 1) {
-										kappa_parallel = 0.5*p_kappa_i[izTri[iNeigh]];
-										nu = 0.5*p_nu_i[izTri[iNeigh]];
-									}
-									else {
-										kappa_parallel = 0.5*p_kappa_e[izTri[iNeigh]];
-										nu = 0.5*p_nu_e[izTri[iNeigh]];
-									};
+									kappa_parallel = 0.5*p_kappa_e[izTri[iNeigh]];
+									nu = 0.5*p_nu_e[izTri[iNeigh]];
 								};
+							};
+							{
+								short iPrev = iNeigh - 1; if (iPrev < 0) iPrev = info.neigh_len - 1;
+								if ((izTri[iPrev] >= StartMinor) && (izTri[iPrev] < EndMinor))
 								{
-									short iPrev = iNeigh - 1; if (iPrev < 0) iPrev = info.neigh_len - 1;
-									if ((izTri[iPrev] >= StartMinor) && (izTri[iPrev] < EndMinor))
-									{
-										kappa_parallel += 0.5*shared_kappa[izTri[iPrev] - StartMinor];
-										nu += 0.5*shared_nu[izTri[iPrev] - StartMinor];
-									}
-									else {
-										if (iSpecies == 1) {
-											kappa_parallel += 0.5*p_kappa_i[izTri[iPrev]];
-											nu += 0.5*p_nu_i[izTri[iPrev]];
-										}
-										else {
-											kappa_parallel += 0.5*p_kappa_e[izTri[iPrev]];
-											nu += 0.5*p_nu_e[izTri[iPrev]];
-										};
-									}
-
-								}
-
-								indexneigh = Indexneigh[MAXNEIGH_d*threadIdx.x + iNeigh];
-								if ((indexneigh >= StartMajor) && (indexneigh < EndMajor))
-								{
-									B_out = shared_B[indexneigh - StartMajor];
+									kappa_parallel += 0.5*shared_kappa[izTri[iPrev] - StartMinor];
+									nu += 0.5*shared_nu[izTri[iPrev] - StartMinor];
 								}
 								else {
-									f64_vec3 B_out3 = p_B_major[indexneigh];
-									B_out = B_out3.xypart();
-								}
-								PBC = PBCneigh[MAXNEIGH_d*threadIdx.x + iNeigh];
-								if (PBC == NEEDS_ANTI) 	B_out = Anticlock_rotate2(B_out);
-								if (PBC == NEEDS_CLOCK)	B_out = Clockwise_rotate2(B_out);
-
-								//kappa.xx = kappa_parallel * (nu_eHeart*nu_eHeart + omega.x*omega.x) / (nu_eHeart * nu_eHeart + omega_sq);
-								//kappa.xy = kappa_parallel * (omega.x*omega.y - nu_eHeart *omega.z) / (nu_eHeart * nu_eHeart + omega_sq);
-								//kappa.yx = kappa_parallel * (omega.x*omega.y + nu_eHeart * omega.z) / (nu_eHeart * nu_eHeart + omega_sq);
-								//kappa.yy = kappa_parallel * (omega.y*omega.y + nu_eHeart * nu_eHeart) / (nu_eHeart * nu_eHeart + omega_sq);
-
-								{ // scoping brace
-
-
-									f64_vec3 omega;
 									if (iSpecies == 1) {
-										omega = Make3(qoverMc * 0.5*(shared_B[threadIdx.x] + B_out), BZ_CONSTANT*qoverMc);
+										kappa_parallel += 0.5*p_kappa_i[izTri[iPrev]];
+										nu += 0.5*p_nu_i[izTri[iPrev]];
 									}
 									else {
-										omega = Make3(qovermc * 0.5*(shared_B[threadIdx.x] + B_out), BZ_CONSTANT*qovermc);
+										kappa_parallel += 0.5*p_kappa_e[izTri[iPrev]];
+										nu += 0.5*p_nu_e[izTri[iPrev]];
 									};
-									// PROBABLY ALWAYS SPILLED INTO GLOBAL -- WHAT CAN WE DO?
-			//
-			//						ourrates.NiTi += TWOTHIRDS * kappa_parallel *(
-			//							edge_normal.x*((nu*nu + omega.x*omega.x)*grad_T.x + (omega.x*omega.y + nu * omega.z)*grad_T.y)
-			//							+ edge_normal.y*((omega.x*omega.y - nu * omega.z)*grad_T.x + (omega.y*omega.y + nu * nu)*grad_T.y)
-			//							) / (nu * nu + omega.dot(omega));
-									f64 edgelen = edge_normal.modulus();
-									f64 delta_out = sqrt((info.pos.x - pos_out.x)*(info.pos.x - pos_out.x) + (info.pos.y - pos_out.y)*(info.pos.y - pos_out.y));
-								
-
-									// We don't need test for T == 0 because we don't use anti or clock
-									// and we ruled out looking into insulator.
-
-
-									if (iSpecies == 1) {
-																				
-										ourrates.NiTi += TWOTHIRDS * kappa_parallel *  (T_out - shared_T[threadIdx.x]) *
-												(nu*nu*edgelen*edgelen + omega.dotxy(edge_normal)*omega.dotxy(edge_normal))
-												/ (delta_out*edgelen *(nu * nu + omega.dot(omega)));										
-
-
-										//if (iVertex == VERTCHOSEN) {
-										//	printf("iVertex %d T_out T_our %1.10E %1.10E contrib %1.10E\n",
-										//		iVertex, T_out, shared_T[threadIdx.x],
-										//		TWOTHIRDS * kappa_parallel *  (T_out - shared_T[threadIdx.x]) *
-										//		(nu*nu*edgelen*edgelen + omega.dotxy(edge_normal)*omega.dotxy(edge_normal))
-										//		/ (delta_out*edgelen *(nu * nu + omega.dot(omega)))
-										//	);
-										//}
-
-									} else {									
-										ourrates.NeTe += TWOTHIRDS * kappa_parallel *  (T_out - shared_T[threadIdx.x]) *
-												(nu*nu*edgelen*edgelen + omega.dotxy(edge_normal)*omega.dotxy(edge_normal))
-												/ (delta_out*edgelen *(nu * nu + omega.dot(omega)));											
-									};
-									
-									if ((TESTHEAT1) && (iSpecies == 2))
-										printf("%d iNeigh %d %d e factor %1.12E contrib %1.12E T_out %1.12E T_self %1.12E\n",
-											iVertex, iNeigh, indexneigh, 
-											TWOTHIRDS * kappa_parallel *
-											(nu*nu*edgelen*edgelen + omega.dotxy(edge_normal)*omega.dotxy(edge_normal))
-											/ (delta_out*edgelen *(nu * nu + omega.dot(omega))),
-											(T_out - shared_T[threadIdx.x])*
-											TWOTHIRDS * kappa_parallel *
-											(nu*nu*edgelen*edgelen + omega.dotxy(edge_normal)*omega.dotxy(edge_normal))
-											/ (delta_out*edgelen *(nu * nu + omega.dot(omega))),
-											T_out, shared_T[threadIdx.x]
-											);
 								}
-							} // if (pos_out.x*pos_out.x + pos_out.y*pos_out.y > ...)
 
-							  // Now go round:	
-							endpt_clock = endpt_anti;
-							pos_clock = pos_out;
-							pos_out = pos_anti;
-							T_clock = T_out;
-							T_out = T_anti;
-						}; // next iNeigh
+							}
 
-					}; // was it DOMAIN_VERTEX? Do what otherwise?
-				}; // was it OUTERMOST/INNERMOST?
-			
-			}; // debug
+							indexneigh = Indexneigh[MAXNEIGH_d*threadIdx.x + iNeigh];
+							if ((indexneigh >= StartMajor) && (indexneigh < EndMajor))
+							{
+								B_out = shared_B[indexneigh - StartMajor];
+							}
+							else {
+								f64_vec3 B_out3 = p_B_major[indexneigh];
+								B_out = B_out3.xypart();
+							}
+							PBC = PBCneigh[MAXNEIGH_d*threadIdx.x + iNeigh];
+							if (PBC == NEEDS_ANTI) 	B_out = Anticlock_rotate2(B_out);
+							if (PBC == NEEDS_CLOCK)	B_out = Clockwise_rotate2(B_out);
+
+							//kappa.xx = kappa_parallel * (nu_eHeart*nu_eHeart + omega.x*omega.x) / (nu_eHeart * nu_eHeart + omega_sq);
+							//kappa.xy = kappa_parallel * (omega.x*omega.y - nu_eHeart *omega.z) / (nu_eHeart * nu_eHeart + omega_sq);
+							//kappa.yx = kappa_parallel * (omega.x*omega.y + nu_eHeart * omega.z) / (nu_eHeart * nu_eHeart + omega_sq);
+							//kappa.yy = kappa_parallel * (omega.y*omega.y + nu_eHeart * nu_eHeart) / (nu_eHeart * nu_eHeart + omega_sq);
+
+							{ // scoping brace
+
+
+								f64_vec3 omega;
+								if (iSpecies == 1) {
+									omega = Make3(qoverMc * 0.5*(shared_B[threadIdx.x] + B_out), BZ_CONSTANT*qoverMc);
+								}
+								else {
+									omega = Make3(qovermc * 0.5*(shared_B[threadIdx.x] + B_out), BZ_CONSTANT*qovermc);
+								};
+								// PROBABLY ALWAYS SPILLED INTO GLOBAL -- WHAT CAN WE DO?
+		//
+		//						ourrates.NiTi += TWOTHIRDS * kappa_parallel *(
+		//							edge_normal.x*((nu*nu + omega.x*omega.x)*grad_T.x + (omega.x*omega.y + nu * omega.z)*grad_T.y)
+		//							+ edge_normal.y*((omega.x*omega.y - nu * omega.z)*grad_T.x + (omega.y*omega.y + nu * nu)*grad_T.y)
+		//							) / (nu * nu + omega.dot(omega));
+								f64 edgelen = edge_normal.modulus();
+								f64 delta_out = sqrt((info.pos.x - pos_out.x)*(info.pos.x - pos_out.x) + (info.pos.y - pos_out.y)*(info.pos.y - pos_out.y));
+
+								if (iSpecies == 1) {
+									ourrates.NiTi += TWOTHIRDS * kappa_parallel *  (T_out - shared_T[threadIdx.x]) *
+										(nu*nu*edgelen*edgelen + omega.dotxy(edge_normal)*omega.dotxy(edge_normal))
+										/ (delta_out*edgelen *(nu * nu + omega.dot(omega)));
+								}
+								else {
+									ourrates.NeTe += TWOTHIRDS * kappa_parallel *  (T_out - shared_T[threadIdx.x]) *
+										(nu*nu*edgelen*edgelen + omega.dotxy(edge_normal)*omega.dotxy(edge_normal))
+										/ (delta_out*edgelen *(nu * nu + omega.dot(omega)));
+								};
+
+								if ((TESTHEAT1) && (iSpecies == 2))
+									printf("%d iNeigh %d %d iSpecies %d kappa %1.8E nu %1.8E |o| %1.8E contrib %1.10E T_out %1.14E T_self %1.14E \n",
+										iVertex, iNeigh, indexneigh, iSpecies, kappa_parallel, nu,
+										omega.modulus(),
+										TWOTHIRDS * kappa_parallel *  (T_out - shared_T[threadIdx.x]) *
+										(nu*nu*edgelen*edgelen + omega.dotxy(edge_normal)*omega.dotxy(edge_normal))
+										/ (delta_out*edgelen *(nu * nu + omega.dot(omega))),
+										T_out, shared_T[threadIdx.x]
+
+									);
+							}
+						} // if (pos_out.x*pos_out.x + pos_out.y*pos_out.y > ...)
+
+						  // Now go round:	
+						endpt_clock = endpt_anti;
+						pos_clock = pos_out;
+						pos_out = pos_anti;
+						T_clock = T_out;
+						T_out = T_anti;
+					}; // next iNeigh
+
+				}; // was it DOMAIN_VERTEX? Do what otherwise?
+			}; // was it OUTERMOST/INNERMOST?
 
 		}; // mask
 
@@ -5141,412 +4849,6 @@ __global__ void kernelAccumulateDiffusiveHeatRate_new_Longitudinalonly_scalarT(
 	// However, it is quite daft having a separate routine for vector2 grad T (??)
 
 }
-
-
-__global__ void kernelAccumulateDiffusiveHeatRate_new_Longitudinalonly_1species(
-	structural * __restrict__ p_info_minor,
-	long * __restrict__ pIndexNeigh,
-	char * __restrict__ pPBCNeigh,
-	long * __restrict__ izTri_verts,
-	char * __restrict__ szPBCtri_verts,
-	f64_vec2 * __restrict__ p_cc,
-
-	nvals * __restrict__ p_n_major,
-	f64 * __restrict__ p__T,
-	f64_vec3 * __restrict__ p_B_major,
-
-	f64 * __restrict__ p__kappa,
-	f64 * __restrict__ p__nu,
-
-	NTrates * __restrict__ NTadditionrates,
-	f64 * __restrict__ p_AreaMajor,
-	bool * __restrict__ p_maskbool,
-	bool * __restrict__ p_maskblock,
-	bool bUseMask,
-	int iSpecies)
-{
-	// Think we might as well take kappa_par and nu from triangles really.
-	// If n is modelled well then hopefully a nearby high-n does not have a big impact.
-
-	__shared__ f64_vec2 shared_pos_verts[threadsPerTileMajorClever]; // 2
-
-																	 // DO NOT WANT:
-	__shared__ f64_vec2 shared_pos[2 * threadsPerTileMajorClever];
-
-	__shared__ f64 shared_T[threadsPerTileMajorClever];      
-
-	__shared__ f64_vec2 shared_B[threadsPerTileMajorClever]; // +2
-
-															 // B is smooth. Unfortunately we have not fitted in Bz here.
-															 // In order to do that perhaps rewrite so that variables are overwritten in shared.
-															 // We do not need all T and nu in shared at the same time.
-															 // This way is easier for NOW.
-	__shared__ f64 shared_kappa[threadsPerTileMajorClever * 2];
-	__shared__ f64 shared_nu[threadsPerTileMajorClever * 2];
-
-	__shared__ long Indexneigh[MAXNEIGH_d*threadsPerTileMajorClever]; // assume 48 bytes = 4*12 = 6 doubles
-
-	__shared__ char PBCneigh[MAXNEIGH_d*threadsPerTileMajorClever]; // 12 bytes each from L1. Have 42 per thread at 384 threads.
-																	// We should at any rate try a major block of size 256. If 1 block will run at a time, so be it.
-																	// Leave L1 in case of register overflow into it. <-- don't know how likely - do we only have 31 doubles in registry
-																	// regardless # of threads and space? Or can be 63?
-	__shared__ char PBCtri[MAXNEIGH_d*threadsPerTileMajorClever];
-	// Balance of shared vs L1: 24*256*8 = 48K. That leaves 8 doublesworth in L1 for variables.
-
-	long izTri[MAXNEIGH_d];  // so only 2 doubles left in L1. 31 in registers??
-
-							 // Set threadsPerTileMajorClever to 256.
-
-							 // It would help matters if we get rid of T3. We might as well therefore change to scalar flatpack T.
-
-							 // We are hoping that it works well loading kappa(tri) and that this is not upset by nearby values. Obviously a bit of an experiment.
-
-							 // Does make it somewhat laughable that we go to such efforts to reduce global accesses when we end up overflowing anyway. 
-							 // If we can fit 24 doubles/thread in 48K that means we can fit 8 doubles/thread in 16K so that's most of L1 used up.
-
-	long const StartMajor = blockIdx.x*blockDim.x;
-	long const EndMajor = StartMajor + blockDim.x;
-	long const StartMinor = blockIdx.x*blockDim.x * 2;
-	long const EndMinor = StartMinor + blockDim.x * 2;
-	long const iVertex = threadIdx.x + blockIdx.x * blockDim.x; // INDEX OF VERTEX	// 2.5 double
-	bool bMask;
-
-	if (bUseMask)
-		if (p_maskblock[blockIdx.x] == 0) return;
-
-	if (bUseMask) bMask = p_maskbool[iVertex];
-
-	structural info = p_info_minor[iVertex + BEGINNING_OF_CENTRAL];     // 3 double
-	shared_pos_verts[threadIdx.x] = info.pos;
-#ifdef CENTROID_HEATCONDUCTION
-	{
-		structural infotemp[2];
-		memcpy(infotemp, p_info_minor + 2 * iVertex, 2 * sizeof(structural));
-		shared_pos[threadIdx.x * 2] = infotemp[0].pos;
-		shared_pos[threadIdx.x * 2 + 1] = infotemp[1].pos;
-		// No nu to set for neutrals - not used
-	}
-#else
-	{
-		memcpy(&(shared_pos[threadIdx.x * 2]), p_cc + 2 * iVertex, 2 * sizeof(f64_vec2));
-	}
-#endif
-
-	memcpy(&(shared_nu[threadIdx.x * 2]), p__nu + 2 * iVertex, 2 * sizeof(f64));
-	memcpy(&(shared_kappa[threadIdx.x * 2]), p__kappa + 2 * iVertex, 2 * sizeof(f64));
-
-	if ((info.flag == DOMAIN_VERTEX) || (info.flag == OUTERMOST)) {
-		shared_B[threadIdx.x] = p_B_major[iVertex].xypart();
-		shared_T[threadIdx.x] = p__T[iVertex];
-	} else {
-		// SHOULD NOT BE LOOKING INTO INS.
-		// How do we avoid?
-		memset(&(shared_B[threadIdx.x]), 0, sizeof(f64_vec2));
-		shared_T[threadIdx.x] = 0.0;
-	}
-
-	__syncthreads();
-
-	f64_vec2 grad_T;
-	f64 T_anti, T_clock, T_out, T_outk;		// 5
-	f64_vec2 pos_clock, pos_anti, pos_out;   // +6
-	f64_vec2 B_out;       // +2
-	NTrates ourrates;      // +5
-	f64 kappa_parallel; // do we use them all at once or can we save 2 doubles here?
-	f64 nu;                // 20 there  
-	f64_vec2 edge_normal;  // 22
-	f64_vec2 endpt_anti;    // 24 .. + 6 from above
-	long indexneigh;     // into the 2-double buffer in L1
-	f64_vec2 endpt_clock;    // As we only use endpt_anti afterwords we could union endpt_clock with edge_normal
-							 // Come back and optimize by checking which things we need in scope at the same time?
-
-	short iNeigh; // only fixed # of addresses so short makes no difference.
-	char PBC; // char makes no difference.
-
-	if ((info.flag == DOMAIN_VERTEX) && ((bUseMask == 0) || (bMask == true)) )
-	{
-		// Need this, we are adding on to existing d/dt N,NT :
-		memcpy(&ourrates, NTadditionrates + iVertex, sizeof(NTrates));
-
-		memcpy(Indexneigh + MAXNEIGH_d * threadIdx.x,
-			pIndexNeigh + MAXNEIGH_d * iVertex,
-			MAXNEIGH_d * sizeof(long));
-		memcpy(PBCneigh + MAXNEIGH_d * threadIdx.x,
-			pPBCNeigh + MAXNEIGH_d * iVertex,
-			MAXNEIGH_d * sizeof(char));
-		memcpy(PBCtri + MAXNEIGH_d * threadIdx.x,
-			szPBCtri_verts + MAXNEIGH_d * iVertex,
-			MAXNEIGH_d * sizeof(char));
-		memcpy(izTri, //+ MAXNEIGH_d * threadIdx.x,
-			izTri_verts + MAXNEIGH_d * iVertex, MAXNEIGH_d * sizeof(long));
-
-			// The idea of not sending blocks full of non-domain vertices is another idea. Fiddly with indices.
-
-			// Now do Tn:
-
-		indexneigh = Indexneigh[MAXNEIGH_d*threadIdx.x + info.neigh_len - 1];
-		if ((indexneigh >= StartMajor) && (indexneigh < EndMajor))
-		{
-			pos_clock = shared_pos_verts[indexneigh - StartMajor];
-			T_clock = shared_T[indexneigh - StartMajor];
-		}
-		else {
-			structural info2 = p_info_minor[indexneigh + BEGINNING_OF_CENTRAL];
-			pos_clock = info2.pos;
-			T_clock = p__T[indexneigh];
-		};
-		PBC = PBCneigh[MAXNEIGH_d*threadIdx.x + info.neigh_len - 1];
-		if (PBC == NEEDS_ANTI) {
-			pos_clock = Anticlock_rotate2(pos_clock);
-		};
-		if (PBC == NEEDS_CLOCK) {
-			pos_clock = Clockwise_rotate2(pos_clock);
-		};
-
-		indexneigh = Indexneigh[MAXNEIGH_d*threadIdx.x + 0];
-		if ((indexneigh >= StartMajor) && (indexneigh < EndMajor))
-		{
-			pos_out = shared_pos_verts[indexneigh - StartMajor];
-			T_out = shared_T[indexneigh - StartMajor];
-		}
-		else {
-			structural info2 = p_info_minor[indexneigh + BEGINNING_OF_CENTRAL];
-			pos_out = info2.pos;
-			T_out = p__T[indexneigh]; // saved nothing here, only in loading
-		};
-
-		PBC = PBCneigh[MAXNEIGH_d*threadIdx.x + 0];
-		if (PBC == NEEDS_ANTI) {
-			pos_out = Anticlock_rotate2(pos_out);
-		};
-		if (PBC == NEEDS_CLOCK) {
-			pos_out = Clockwise_rotate2(pos_out);
-		};
-
-		if ((izTri[info.neigh_len - 1] >= StartMinor) && (izTri[info.neigh_len - 1] < EndMinor))
-		{
-			endpt_clock = shared_pos[izTri[info.neigh_len - 1] - StartMinor];
-		}
-		else {
-#ifdef CENTROID_HEATCONDUCTION
-			endpt_clock = p_info_minor[izTri[info.neigh_len - 1]].pos;
-#else
-			endpt_clock = p_cc[izTri[info.neigh_len - 1]];
-#endif
-		}
-		PBC = PBCtri[MAXNEIGH_d*threadIdx.x + info.neigh_len - 1];
-		if (PBC == ROTATE_ME_CLOCKWISE) endpt_clock = Clockwise_d * endpt_clock;
-		if (PBC == ROTATE_ME_ANTICLOCKWISE) endpt_clock = Anticlockwise_d * endpt_clock;
-
-//		if (T_clock == 0.0) {
-//			T_clock = 0.5*(shared_T[threadIdx.x] + T_out);
-//		};
-//		Mimic
-
-
-#pragma unroll MAXNEIGH_d
-		for (iNeigh = 0; iNeigh < info.neigh_len; iNeigh++)
-		{
-			{
-				short iNext = iNeigh + 1; if (iNext == info.neigh_len) iNext = 0;
-				indexneigh = Indexneigh[MAXNEIGH_d*threadIdx.x + iNext];
-				PBC = PBCneigh[MAXNEIGH_d*threadIdx.x + iNext];
-			}
-			if ((indexneigh >= StartMajor) && (indexneigh < EndMajor))
-			{
-				pos_anti = shared_pos_verts[indexneigh - StartMajor];
-				T_anti = shared_T[indexneigh - StartMajor];
-			}
-			else {
-				structural info2 = p_info_minor[indexneigh + BEGINNING_OF_CENTRAL];
-				pos_anti = info2.pos;
-				T_anti = p__T[indexneigh];
-			};
-			if (PBC == NEEDS_ANTI) {
-				pos_anti = Anticlock_rotate2(pos_anti);
-			};
-			if (PBC == NEEDS_CLOCK) {
-				pos_anti = Clockwise_rotate2(pos_anti);
-			};
-
-			//if (T_anti == 0.0) {
-			//	T_anti = 0.5*(shared_T[threadIdx.x] + T_out);
-			//}; // So we are receiving 0 then doing this. But how come?
-			//Mimic
-				// Now let's see
-				// tri 0 has neighs 0 and 1 I'm pretty sure (check....) CHECK
-
-			if ((izTri[iNeigh] >= StartMinor) && (izTri[iNeigh] < EndMinor))
-			{
-				endpt_anti = shared_pos[izTri[iNeigh] - StartMinor];
-			}
-			else {
-#ifdef CENTROID_HEATCONDUCTION
-				endpt_anti = p_info_minor[izTri[iNeigh]].pos;
-				// we should switch back to centroids!!
-#else
-				endpt_anti = p_cc[izTri[iNeigh]];
-#endif
-			}
-			PBC = PBCtri[MAXNEIGH_d*threadIdx.x + iNeigh];
-			if (PBC == ROTATE_ME_CLOCKWISE) endpt_anti = Clockwise_d * endpt_anti;
-			if (PBC == ROTATE_ME_ANTICLOCKWISE) endpt_anti = Anticlockwise_d * endpt_anti;
-
-			edge_normal.x = (endpt_anti.y - endpt_clock.y);
-			edge_normal.y = (endpt_clock.x - endpt_anti.x);
-			
-			// SMARTY:
-			if (pos_out.x*pos_out.x + pos_out.y*pos_out.y >
-				DEVICE_RADIUS_INSULATOR_OUTER*DEVICE_RADIUS_INSULATOR_OUTER)
-			{				
-				kappa_parallel = 0.0; 
-				f64 nu;
-				if (iSpecies == 0) {
-					if ((izTri[iNeigh] >= StartMinor) && (izTri[iNeigh] < EndMinor))
-					{
-						kappa_parallel = 0.5*shared_kappa[izTri[iNeigh] - StartMinor];
-					}
-					else {
-						kappa_parallel = 0.5*p__kappa[izTri[iNeigh]];
-					}
-					{
-						short iPrev = iNeigh - 1; if (iPrev < 0) iPrev = info.neigh_len - 1;
-						if ((izTri[iPrev] >= StartMinor) && (izTri[iPrev] < EndMinor))
-						{
-							kappa_parallel += 0.5*shared_kappa[izTri[iPrev] - StartMinor];
-						}
-						else {
-							kappa_parallel += 0.5*p__kappa[izTri[iPrev]];
-						}
-					}
-
-					if ((pos_clock.x*pos_clock.x + pos_clock.y*pos_clock.y <
-						DEVICE_RADIUS_INSULATOR_OUTER*DEVICE_RADIUS_INSULATOR_OUTER)
-						||
-						(pos_anti.x*pos_anti.x + pos_anti.y*pos_anti.y <
-							DEVICE_RADIUS_INSULATOR_OUTER*DEVICE_RADIUS_INSULATOR_OUTER))
-					{
-						f64 edgelen = edge_normal.modulus();
-
-						ourrates.NnTn += TWOTHIRDS * kappa_parallel * edgelen *
-							(T_out - shared_T[threadIdx.x]) / (pos_out - info.pos).modulus();
-					} else {
-						f64 Area_quadrilateral = 0.5*(
-							(info.pos.x + pos_anti.x)*(info.pos.y - pos_anti.y)
-							+ (pos_clock.x + info.pos.x)*(pos_clock.y - info.pos.y)
-							+ (pos_out.x + pos_clock.x)*(pos_out.y - pos_clock.y)
-							+ (pos_anti.x + pos_out.x)*(pos_anti.y - pos_out.y)
-							);
-
-						// When we come to do the other iSpecies, make a subroutine.
-
-						grad_T.x = 0.5*( // notice minus
-							(shared_T[threadIdx.x] + T_anti)*(info.pos.y - pos_anti.y)
-							+ (T_clock + shared_T[threadIdx.x])*(pos_clock.y - info.pos.y)
-							+ (T_out + T_clock)*(pos_out.y - pos_clock.y)
-							+ (T_anti + T_out)*(pos_anti.y - pos_out.y)
-							) / Area_quadrilateral;
-
-						grad_T.y = -0.5*( // notice minus
-							(shared_T[threadIdx.x] + T_anti)*(info.pos.x - pos_anti.x)
-							+ (T_clock + shared_T[threadIdx.x])*(pos_clock.x - info.pos.x)
-							+ (T_out + T_clock)*(pos_out.x - pos_clock.x)
-							+ (T_anti + T_out)*(pos_anti.x - pos_out.x)
-							) / Area_quadrilateral;
-
-						ourrates.NnTn += TWOTHIRDS * kappa_parallel * grad_T.dot(edge_normal);
-					};
-					// This is correct, grad T in same coordinates as edge_normal...
-					
-				} else {
-					if ((izTri[iNeigh] >= StartMinor) && (izTri[iNeigh] < EndMinor))
-					{
-						kappa_parallel = 0.5*shared_kappa[izTri[iNeigh] - StartMinor];
-						nu = 0.5*shared_nu[izTri[iNeigh] - StartMinor];
-					}
-					else {
-						kappa_parallel = 0.5*p__kappa[izTri[iNeigh]];
-						nu = 0.5*p__nu[izTri[iNeigh]];						
-					};
-					{
-						short iPrev = iNeigh - 1; if (iPrev < 0) iPrev = info.neigh_len - 1;
-						if ((izTri[iPrev] >= StartMinor) && (izTri[iPrev] < EndMinor))
-						{
-							kappa_parallel += 0.5*shared_kappa[izTri[iPrev] - StartMinor];
-							nu += 0.5*shared_nu[izTri[iPrev] - StartMinor];
-						} else {							
-							kappa_parallel += 0.5*p__kappa[izTri[iPrev]];
-							nu += 0.5*p__nu[izTri[iPrev]];							
-						};
-					};
-
-					indexneigh = Indexneigh[MAXNEIGH_d*threadIdx.x + iNeigh];
-					if ((indexneigh >= StartMajor) && (indexneigh < EndMajor))
-					{
-						B_out = shared_B[indexneigh - StartMajor];
-					}
-					else {
-						f64_vec3 B_out3 = p_B_major[indexneigh];
-						B_out = B_out3.xypart();
-					}
-					PBC = PBCneigh[MAXNEIGH_d*threadIdx.x + iNeigh];
-					if (PBC == NEEDS_ANTI) 	B_out = Anticlock_rotate2(B_out);
-					if (PBC == NEEDS_CLOCK)	B_out = Clockwise_rotate2(B_out);
-
-					{ // scoping brace
-						f64_vec3 omega;
-						if (iSpecies == 1) {
-							omega = Make3(qoverMc * 0.5*(shared_B[threadIdx.x] + B_out), BZ_CONSTANT*qoverMc);
-						}
-						else {
-							omega = Make3(qovermc * 0.5*(shared_B[threadIdx.x] + B_out), BZ_CONSTANT*qovermc);
-						};
-					
-						f64 edgelen = edge_normal.modulus();
-						f64 delta_out = sqrt((info.pos.x - pos_out.x)*(info.pos.x - pos_out.x) + (info.pos.y - pos_out.y)*(info.pos.y - pos_out.y));
-
-						if (iSpecies == 1) {
-
-							ourrates.NiTi += TWOTHIRDS * kappa_parallel *  (T_out - shared_T[threadIdx.x]) *
-								(nu*nu*edgelen*edgelen + omega.dotxy(edge_normal)*omega.dotxy(edge_normal))
-								/ (delta_out*edgelen *(nu * nu + omega.dot(omega)));
-
-
-						} else {
-							ourrates.NeTe += TWOTHIRDS * kappa_parallel *  (T_out - shared_T[threadIdx.x]) *
-								(nu*nu*edgelen*edgelen + omega.dotxy(edge_normal)*omega.dotxy(edge_normal))
-								/ (delta_out*edgelen *(nu * nu + omega.dot(omega)));
-
-						//	if (iVertex == VERTCHOSEN) 
-						//		printf("iVertex %d %d T_out T_our %1.10E %1.10E contrib %1.10E\n",
-						//			iVertex, Indexneigh[MAXNEIGH_d*threadIdx.x + iNeigh],
-						//			T_out, shared_T[threadIdx.x],
-						//			TWOTHIRDS * kappa_parallel *  (T_out - shared_T[threadIdx.x]) *
-						//			(nu*nu*edgelen*edgelen + omega.dotxy(edge_normal)*omega.dotxy(edge_normal))
-						//			/ (delta_out*edgelen *(nu * nu + omega.dot(omega)))
-						//		);
-							
-						};
-					}
-				}; // if iSpecies == 0
-
-			} // if (pos_out.x*pos_out.x + pos_out.y*pos_out.y > ...)
-
-				// Now go round:	
-			endpt_clock = endpt_anti;
-			pos_clock = pos_out;
-			pos_out = pos_anti;
-			T_clock = T_out;
-			T_out = T_anti;
-		}; // next iNeigh
-				
-	}; // DOMAIN vertex active in mask
-
-	// Turned out to be stupid having a struct called NTrates. We just want to modify one scalar at a time.
-	
-	memcpy(NTadditionrates + iVertex, &ourrates, sizeof(NTrates));
-}
-
 
 __global__ void kernelCalc_SelfCoefficient_for_HeatConduction 
 (
@@ -6063,11 +5365,6 @@ __global__ void kernelCalc_SelfCoefficient_for_HeatConduction
 								ourrates.NiTi += TWOTHIRDS * kappa_parallel *  (-1.0) *
 									(nu*nu*edgelen*edgelen + omega.dotxy(edge_normal)*omega.dotxy(edge_normal))
 									/ (delta_out*edgelen *(nu * nu + omega.dot(omega)));
-
-								if (TESTHEAT) printf("%d NiTi %1.10E contrib %1.10E nu %1.10E edgelen %1.10E\n",
-									iVertex, ourrates.NiTi, TWOTHIRDS * kappa_parallel *  (-1.0) *
-									(nu*nu*edgelen*edgelen + omega.dotxy(edge_normal)*omega.dotxy(edge_normal))
-									/ (delta_out*edgelen *(nu * nu + omega.dot(omega))), nu, edgelen);
 							}
 							else {
 								ourrates.NeTe += TWOTHIRDS * kappa_parallel *  (-1.0) *
@@ -6096,52 +5393,11 @@ __global__ void kernelCalc_SelfCoefficient_for_HeatConduction
 	f64 AreaMajor = p_AreaMajor[iVertex];
 	f64 Nn = n_use.n_n*AreaMajor;
 	f64 N = n_use.n *AreaMajor;
-	p_coeffself_n[iVertex] = 1.0 - (h_use / Nn)*ourrates.NnTn; // ourrates is ROC epsilon wrt self
-	p_coeffself_i[iVertex] = 1.0 - (h_use / N)*ourrates.NiTi; // ourrates is ROC epsilon wrt self
-	p_coeffself_e[iVertex] = 1.0 - (h_use / N)*ourrates.NeTe; // ourrates is ROC epsilon wrt self
-	
-	if (iVertex == VERTCHOSEN) printf("iVertex %d coeffself_i %1.10E \n", iVertex, p_coeffself_i[iVertex]);
-	// ourrates is negative so this is > 1.
-}
-
-__global__ void kernelPowerminushalf
-(f64 * __restrict__ p_input, f64 * __restrict__ p_output)
-{
-	long const index = threadIdx.x + blockIdx.x*blockDim.x;
-	p_output[index] = 1.0 / sqrt(p_input[index]);
-}
-
-__global__ void kernelVolleyRegressors(
-	f64 * __restrict__ p_regress,
-	long const Length,
-	char * __restrict__ p_iVolley
-) {
-	long const iVertex = threadIdx.x + blockDim.x*blockIdx.x;
-
-	char cVolley = p_iVolley[iVertex];
-	f64 regr1 = p_regress[iVertex];
-	f64 regr2 = p_regress[iVertex + Length];
-	
-	f64 regr3 = regr1*((cVolley == 1)? 1 : 0);
-	f64 regr4 = regr2*((cVolley == 1) ? 1 : 0);
-	f64 regr5 = regr1*((cVolley == 2) ? 1 : 0);
-	f64 regr6 = regr2*((cVolley == 2)? 1 : 0);
-	f64 regr7 = regr1*((cVolley > 2)? 1 : 0);
-	f64 regr8 = regr2*((cVolley > 2) ? 1 : 0);
-
-	regr1 = regr1*((cVolley == 0) ? 1 : 0);
-	regr2 = regr2*((cVolley == 0) ? 1 : 0);
-	p_regress[iVertex] = regr1;
-	p_regress[iVertex + Length] = regr2;
-	p_regress[iVertex + 2 * Length] = regr3;
-	p_regress[iVertex + 3 * Length] = regr4;
-	p_regress[iVertex + 4 * Length] = regr5;
-	p_regress[iVertex + 5 * Length] = regr6;
-	p_regress[iVertex + 6 * Length] = regr7;
-	p_regress[iVertex + 7 * Length] = regr8;
+	p_coeffself_n[iVertex] = 1.0 - (h_use / Nn)*ourrates.NnTn; // ourrates is ROC wrt self
+	p_coeffself_i[iVertex] = 1.0 - (h_use / N)*ourrates.NiTi; // ourrates is ROC wrt self
+	p_coeffself_e[iVertex] = 1.0 - (h_use / N)*ourrates.NeTe; // ourrates is ROC wrt self
 
 }
-
 __global__ void kernelCreateEpsilonHeat
 (
 	f64 const hsub,
@@ -6167,11 +5423,7 @@ __global__ void kernelCreateEpsilonHeat
 	long const iVertex = blockDim.x*blockIdx.x + threadIdx.x;
 	bool bMask[3];
 	if (bUseMask) {
-		//memcpy(bMask, p_bMask3 + 3 * iVertex, sizeof(bool) * 3); // until we break out species!
-		bMask[0] = p_bMask3[iVertex];
-		bMask[1] = p_bMask3[iVertex + NUMVERTICES];
-		bMask[2] = p_bMask3[iVertex + 2*NUMVERTICES];
-
+		memcpy(bMask, p_bMask3 + 3 * iVertex, sizeof(bool) * 3); // until we break out species!
 		if ((bMask[0] == 0) && (bMask[1] == 0) && (bMask[2] == 0)) return;
 	};
 
@@ -6186,12 +5438,13 @@ __global__ void kernelCreateEpsilonHeat
 		f64 epsilon_n, epsilon_i, epsilon_e;
 		bool bFail = false;
 
-		if (bMask[0] || (bUseMask == 0)) {
+		if (bMask[0]) {
 			f64 sqrtNn = sqrt(AreaMajor*n.n_n);
 			f64 NnTn = p_NT_n[iVertex]; // means sqrtN T
  			epsilon_n = NnTn - T_k.Tn*sqrtNn - (hsub / sqrtNn)*ourrates.NnTn;
 
 			if (epsilon_n*epsilon_n > REL_THRESHOLD_HEAT*REL_THRESHOLD_HEAT*(NnTn*NnTn + 1.0e-10*1.0e-10)) bFail = true;
+
 
 		//	Note that ourrates already included the factor 1/sqrtN on our own sqrt(N)T
 			
@@ -6200,20 +5453,16 @@ __global__ void kernelCreateEpsilonHeat
 			epsilon_n = 0.0;
 		};
 
-		if (bMask[1] || (bUseMask == 0)) {
+		if (bMask[1]) {
 			f64 sqrtN = sqrt(AreaMajor*n.n);
 			f64 NTi = p_NT_i[iVertex];
 			epsilon_i = NTi - T_k.Ti*sqrtN - (hsub / sqrtN)*ourrates.NiTi;
 			if (epsilon_i*epsilon_i > REL_THRESHOLD_HEAT*REL_THRESHOLD_HEAT*(NTi*NTi + 1.0e-10*1.0e-10)) bFail = true;
-
-			if (iVertex == VERTCHOSEN) printf("%d NTi %1.10E sqrtN Tk %1.10E hsub / sqrtN %1.10E NiTi %1.10E eps_i %1.10E sqrtN %1.10E\n",
-				iVertex, NTi, T_k.Ti*sqrtN, hsub / sqrtN, ourrates.NiTi, epsilon_i, sqrtN);
-
 		} else {
 			epsilon_i = 0.0;
 		};
 
-		if (bMask[2] || (bUseMask == 0)) {
+		if (bMask[2]) {
 			f64 sqrtN = sqrt(AreaMajor*n.n);
 			f64 NTe = p_NT_e[iVertex]; // is this sqrtN T ?
 			epsilon_e = NTe - T_k.Te*sqrtN - (hsub / sqrtN)*ourrates.NeTe;
@@ -6222,6 +5471,8 @@ __global__ void kernelCreateEpsilonHeat
 			epsilon_e = 0.0;
 		};
 
+	//	if (TEST) printf("%d epsilon_e %1.8E NTe %1.8E nete %1.8E\n",
+	//		iVertex, epsilon_e, NTe, ourrates.NeTe);
 		if (epsilon_n != epsilon_n)printf("epsilon_n NaN iVertex %d n_n %1.10E Area %1.10E \n",
 			iVertex, n.n_n, AreaMajor);
 
@@ -6238,163 +5489,6 @@ __global__ void kernelCreateEpsilonHeat
 			// root N * 1e-14 erg = 1e-10 for (root N) T
 		};
 	} else {
-		p_eps_n[iVertex] = 0.0;
-		p_eps_i[iVertex] = 0.0;
-		p_eps_e[iVertex] = 0.0;
-	};
-}
-
-__global__ void kernelSelectivelyZeroNTrates(
-	NTrates * __restrict__ NTadditionrates,
-	bool * __restrict__ p_bMask3
-) {
-	long const iVertex = threadIdx.x + blockIdx.x*blockDim.x;
-
-	bool bMask[3];
-
-	bMask[0] = p_bMask3[iVertex];
-	bMask[1] = p_bMask3[iVertex + NUMVERTICES];
-	bMask[2] = p_bMask3[iVertex + 2 * NUMVERTICES];
-	if ((bMask[0] == 0) && (bMask[1] == 0) && (bMask[2] == 0)) return;
-
-	NTrates dNTbydt;
-	memcpy(&dNTbydt, &(NTadditionrates[iVertex]), sizeof(NTrates));
-
-	if (bMask[0]) dNTbydt.NnTn = 0.0;
-	if (bMask[1]) dNTbydt.NiTi = 0.0;
-	if (bMask[2]) dNTbydt.NeTe = 0.0;
-
-	memcpy(&(NTadditionrates[iVertex]), &dNTbydt, sizeof(NTrates));
-}
-
-__global__ void kernelCreateEpsilonHeat_Equilibrated
-(
-	f64 const hsub,
-	structural * __restrict__ p_info_major,
-	f64 * __restrict__ p_eps_n,
-	f64 * __restrict__ p_eps_i,
-	f64 * __restrict__ p_eps_e,
-	f64 * __restrict__ p_sqrtDNT_n,
-	f64 * __restrict__ p_sqrtDNT_i,
-	f64 * __restrict__ p_sqrtDNT_e,
-	T3 * __restrict__ p_T_k,
-	f64 * __restrict__ p_AreaMajor,
-	nvals * __restrict__ p_n_major,
-	f64 * __restrict__ p_invsqrtD_n,
-	f64 * __restrict__ p_invsqrtD_i,
-	f64 * __restrict__ p_invsqrtD_e,
-	NTrates * __restrict__ NTadditionrates, // it's especially silly having a whole struct of 5 instead of 3 here.
-	bool * __restrict__ p_b_Failed,
-	bool * __restrict__ p_bMask3,
-	bool * __restrict__ p_bMaskblock,
-	bool bUseMask
-)
-{
-	if ((bUseMask) && (p_bMaskblock[blockIdx.x] == 0)) return;
-
-	long const iVertex = blockDim.x*blockIdx.x + threadIdx.x;
-	bool bMask[3];
-	if (bUseMask) {
-		bMask[0] = p_bMask3[iVertex];
-		bMask[1] = p_bMask3[iVertex + NUMVERTICES];
-		bMask[2] = p_bMask3[iVertex + 2*NUMVERTICES];
-		if ((bMask[0] == 0) && (bMask[1] == 0) && (bMask[2] == 0)) return;
-	};
-
-	structural info = p_info_major[iVertex];
-	if (info.flag == DOMAIN_VERTEX) {
-
-		T3 T_k = p_T_k[iVertex];
-		NTrates ourrates;
-		memcpy(&ourrates, NTadditionrates + iVertex, sizeof(NTrates));
-		f64 AreaMajor = p_AreaMajor[iVertex];
-		nvals n = p_n_major[iVertex];
-		f64 epsilon_n, epsilon_i, epsilon_e;
-		bool bFail = false;
-
-		if ((bMask[0]) || (bUseMask == 0)) {
-			f64 sqrtNn = sqrt(AreaMajor*n.n_n);
-			f64 sqrtDN_T = p_sqrtDNT_n[iVertex]; // means sqrtDN T
-			f64 sqrtDinv = p_invsqrtD_n[iVertex];
-
-			// epsilon_i = NTi - T_k.Ti*sqrtN - (hsub / sqrtN)*ourrates.NiTi;
-			// Multiply epsilon by D^-1/2 and
-			// wherever a sqrt(DN)T appears multiply it by D_j^-1/2 to give sqrt(N)T
-			// The multiplication D_j^-1/2 was already included in T -> ourrates
-
-			epsilon_n = sqrtDinv*sqrtDinv*sqrtDN_T
-				- sqrtDinv*(hsub / sqrtNn)*ourrates.NnTn
-				- sqrtDinv*T_k.Tn*sqrtNn;
-
-			f64 test_epsilon = epsilon_n / sqrtDinv; // divides take long.
-			f64 sqrtNn_Tn = sqrtDinv*sqrtDN_T;
-			if (test_epsilon*test_epsilon > REL_THRESHOLD_HEAT*REL_THRESHOLD_HEAT*(sqrtNn_Tn*sqrtNn_Tn + 1.0e-10*1.0e-10)) bFail = true;
-			
-			// Let's be careful about that threshold. It's for N T^2. 
-
-			// sqrt(N) that we care about ~ 1e4. T that we care about ~ 1e-14. We then go REL_THRESH*that.
-
-			//	Note that ourrates already included the factor 1/sqrtN on our own sqrt(N)T
-			
-		} else {
-			epsilon_n = 0.0;
-		};
-
-		if ((bMask[1]) || (bUseMask == 0)) {
-			f64 sqrtN = sqrt(AreaMajor*n.n);
-			f64 sqrtDN_T = p_sqrtDNT_i[iVertex]; // means sqrtDN T
-			f64 sqrtDinv = p_invsqrtD_i[iVertex];
-
-			epsilon_i = sqrtDinv*sqrtDinv*sqrtDN_T
-				- sqrtDinv*(hsub / sqrtN)*ourrates.NiTi
-				- sqrtDinv*T_k.Ti*sqrtN;
-
-			//epsilon_i = NTi - T_k.Ti*sqrtN - (hsub / sqrtN)*ourrates.NiTi;
-			f64 test_epsilon = epsilon_i / sqrtDinv;
-			f64 sqrtN_Ti = sqrtDinv*sqrtDN_T;
-			if (test_epsilon*test_epsilon > REL_THRESHOLD_HEAT*REL_THRESHOLD_HEAT*(sqrtN_Ti*sqrtN_Ti + 1.0e-10*1.0e-10)) bFail = true;
-		}
-		else {
-			epsilon_i = 0.0;
-		};
-
-		if ((bMask[2]) || (bUseMask == 0)) {
-			f64 sqrtN = sqrt(AreaMajor*n.n);
-			f64 sqrtDN_T = p_sqrtDNT_e[iVertex]; // means sqrtDN T
-			f64 sqrtDinv = p_invsqrtD_e[iVertex];
-
-			epsilon_e = sqrtDinv*sqrtDinv*sqrtDN_T
-				- sqrtDinv*(hsub / sqrtN)*ourrates.NeTe
-				- sqrtDinv*T_k.Te*sqrtN;
-
-		//	epsilon_e = NTe - T_k.Te*sqrtN - (hsub / sqrtN)*ourrates.NeTe;
-			f64 test_epsilon = epsilon_e / sqrtDinv;
-			f64 sqrtN_Te = sqrtDinv*sqrtDN_T;
-			if (test_epsilon*test_epsilon > REL_THRESHOLD_HEAT*REL_THRESHOLD_HEAT*(sqrtN_Te*sqrtN_Te + 1.0e-10*1.0e-10)) bFail = true;
-		}
-		else {
-			epsilon_e = 0.0;
-		};
-
-		//	if (TEST) printf("%d epsilon_e %1.8E NTe %1.8E nete %1.8E\n",
-		//		iVertex, epsilon_e, NTe, ourrates.NeTe);
-		if (epsilon_n != epsilon_n)printf("epsilon_n NaN iVertex %d n_n %1.10E Area %1.10E \n",
-			iVertex, n.n_n, AreaMajor);
-
-		p_eps_n[iVertex] = epsilon_n;
-		p_eps_i[iVertex] = epsilon_i;
-		p_eps_e[iVertex] = epsilon_e;
-
-		if (p_b_Failed != 0) {
-			if (bFail)
-				p_b_Failed[blockIdx.x] = true;
-			// Why 1.0e-10 in absolute error, for minimum value we care about:
-			// N = 2.0e12*7e-5 = 1e8 
-			// root N = 1e4
-			// root N * 1e-14 erg = 1e-10 for (root N) T
-		};
-	}
-	else {
 		p_eps_n[iVertex] = 0.0;
 		p_eps_i[iVertex] = 0.0;
 		p_eps_e[iVertex] = 0.0;
@@ -6530,13 +5624,8 @@ __global__ void kernelAccumulateDiffusiveHeatRate_new_Full(
 	if (bUseMask) 
 		if (p_maskblock[blockIdx.x] == 0) return;
 
-	if (bUseMask) {
-		//memcpy(bMask, p_maskbool3 + iVertex * 3, 3 * sizeof(bool));
-		bMask[0] = p_maskbool3[iVertex];
-		bMask[1] = p_maskbool3[iVertex + NUMVERTICES];
-		bMask[2] = p_maskbool3[iVertex + NUMVERTICES*2];
+	if (bUseMask) memcpy(bMask, p_maskbool3 + iVertex * 3, 3 * sizeof(bool));
 
-	}
 	structural info = p_info_minor[iVertex + BEGINNING_OF_CENTRAL];     // 3 double
 	shared_pos_verts[threadIdx.x] = info.pos;
 #ifdef CENTROID_HEATCONDUCTION
@@ -6587,28 +5676,6 @@ __global__ void kernelAccumulateDiffusiveHeatRate_new_Full(
 	short iNeigh; // only fixed # of addresses so short makes no difference.
 	char PBC; // char makes no difference.
 
-
-	if ((bUseMask == 0) || (bMask[0] == true) || (bMask[1] == true) || (bMask[2] == true))
-	{
-		// Need this, we are adding on to existing d/dt N,NT :
-		memcpy(&ourrates, NTadditionrates + iVertex, sizeof(NTrates));
-
-		memcpy(Indexneigh + MAXNEIGH_d * threadIdx.x,
-			pIndexNeigh + MAXNEIGH_d * iVertex,
-			MAXNEIGH_d * sizeof(long));
-		memcpy(PBCneigh + MAXNEIGH_d * threadIdx.x,
-			pPBCNeigh + MAXNEIGH_d * iVertex,
-			MAXNEIGH_d * sizeof(char));
-		memcpy(PBCtri + MAXNEIGH_d * threadIdx.x,
-			szPBCtri_verts + MAXNEIGH_d * iVertex,
-			MAXNEIGH_d * sizeof(char));
-
-		memcpy(izTri, //+ MAXNEIGH_d * threadIdx.x,
-			izTri_verts + MAXNEIGH_d * iVertex, MAXNEIGH_d * sizeof(long));
-
-	}
-
-
 	if ((bUseMask == 0) || (bMask[0] == true)) // either there is no masking, or this is switched on
 	{
 
@@ -6620,7 +5687,25 @@ __global__ void kernelAccumulateDiffusiveHeatRate_new_Full(
 			if (info.flag == DOMAIN_VERTEX) {
 				// The idea of not sending blocks full of non-domain vertices is another idea. Fiddly with indices.
 
-				
+				// Need this, we are adding on to existing d/dt N,NT :
+				memcpy(&ourrates, NTadditionrates + iVertex, sizeof(NTrates));
+
+				memcpy(Indexneigh + MAXNEIGH_d * threadIdx.x,
+					pIndexNeigh + MAXNEIGH_d * iVertex,
+					MAXNEIGH_d * sizeof(long));
+				memcpy(PBCneigh + MAXNEIGH_d * threadIdx.x,
+					pPBCNeigh + MAXNEIGH_d * iVertex,
+					MAXNEIGH_d * sizeof(char));
+				memcpy(PBCtri + MAXNEIGH_d * threadIdx.x,
+					szPBCtri_verts + MAXNEIGH_d * iVertex,
+					MAXNEIGH_d * sizeof(char));
+
+				// EXPERIMENT WHETHER IT IS FASTER WITH THESE OUTSIDE OR INSIDE THE BRANCH.
+
+
+				memcpy(izTri, //+ MAXNEIGH_d * threadIdx.x,
+					izTri_verts + MAXNEIGH_d * iVertex, MAXNEIGH_d * sizeof(long));
+
 				// Now do Tn:
 
 				indexneigh = Indexneigh[MAXNEIGH_d*threadIdx.x + info.neigh_len - 1];
@@ -6690,15 +5775,14 @@ __global__ void kernelAccumulateDiffusiveHeatRate_new_Full(
 				PBC = PBCtri[MAXNEIGH_d*threadIdx.x + info.neigh_len - 1];
 				if (PBC == ROTATE_ME_CLOCKWISE) endpt_clock = Clockwise_d * endpt_clock;
 				if (PBC == ROTATE_ME_ANTICLOCKWISE) endpt_clock = Anticlockwise_d * endpt_clock;
-//
-//				if (T_clock == 0.0) {
-//#ifdef BWDSIDET
-//					T_clock = 0.5*(shared_T[threadIdx.x] + T_out);
-//#else
-//					T_clock = T_outk;
-//#endif
-//				};
-//				Mimic
+
+				if (T_clock == 0.0) {
+#ifdef BWDSIDET
+					T_clock = 0.5*(shared_T[threadIdx.x] + T_out);
+#else
+					T_clock = T_outk;
+#endif
+				};
 
 #pragma unroll MAXNEIGH_d
 				for (iNeigh = 0; iNeigh < info.neigh_len; iNeigh++)
@@ -6742,15 +5826,14 @@ __global__ void kernelAccumulateDiffusiveHeatRate_new_Full(
 						T_out = p_T_major[indexneigh].Tn;
 					};
 #endif
-//
-//					if (T_anti == 0.0) {
-//#ifdef BWDSIDET
-//						T_anti = 0.5*(shared_T[threadIdx.x] + T_out);
-//#else
-//						T_anti = T_outk;
-//#endif					
-//					}; // So we are receiving 0 then doing this. But how come?
-//					Mimic
+
+					if (T_anti == 0.0) {
+#ifdef BWDSIDET
+						T_anti = 0.5*(shared_T[threadIdx.x] + T_out);
+#else
+						T_anti = T_outk;
+#endif					
+					}; // So we are receiving 0 then doing this. But how come?
 
 					   // Now let's see
 					   // tri 0 has neighs 0 and 1 I'm pretty sure (check....) CHECK
@@ -6856,31 +5939,21 @@ __global__ void kernelAccumulateDiffusiveHeatRate_new_Full(
 
 							// When we come to do the other species, make a subroutine.
 
-							if ((T_clock == 0.0) || (T_anti == 0.0)) {
+							grad_T.x = 0.5*( // notice minus
+								(shared_T[threadIdx.x] + T_anti)*(info.pos.y - pos_anti.y)
+								+ (T_clock + shared_T[threadIdx.x])*(pos_clock.y - info.pos.y)
+								+ (T_out + T_clock)*(pos_out.y - pos_clock.y)
+								+ (T_anti + T_out)*(pos_anti.y - pos_out.y)
+								) / Area_quadrilateral;
 
-								f64 edgelen = edge_normal.modulus();
-								
-								ourrates.NnTn += TWOTHIRDS * kappa_parallel * edgelen *
-									(T_out - shared_T[threadIdx.x]) / (pos_out - info.pos).modulus();
+							grad_T.y = -0.5*( // notice minus
+								(shared_T[threadIdx.x] + T_anti)*(info.pos.x - pos_anti.x)
+								+ (T_clock + shared_T[threadIdx.x])*(pos_clock.x - info.pos.x)
+								+ (T_out + T_clock)*(pos_out.x - pos_clock.x)
+								+ (T_anti + T_out)*(pos_anti.x - pos_out.x)
+								) / Area_quadrilateral;
 
-							} else {
-
-								grad_T.x = 0.5*( // notice minus
-									(shared_T[threadIdx.x] + T_anti)*(info.pos.y - pos_anti.y)
-									+ (T_clock + shared_T[threadIdx.x])*(pos_clock.y - info.pos.y)
-									+ (T_out + T_clock)*(pos_out.y - pos_clock.y)
-									+ (T_anti + T_out)*(pos_anti.y - pos_out.y)
-									) / Area_quadrilateral;
-
-								grad_T.y = -0.5*( // notice minus
-									(shared_T[threadIdx.x] + T_anti)*(info.pos.x - pos_anti.x)
-									+ (T_clock + shared_T[threadIdx.x])*(pos_clock.x - info.pos.x)
-									+ (T_out + T_clock)*(pos_out.x - pos_clock.x)
-									+ (T_anti + T_out)*(pos_anti.x - pos_out.x)
-									) / Area_quadrilateral;
-
-								ourrates.NnTn += TWOTHIRDS * kappa_parallel * grad_T.dot(edge_normal);
-							};
+							ourrates.NnTn += TWOTHIRDS * kappa_parallel * grad_T.dot(edge_normal);
 							// This is correct, grad T in same coordinates as edge_normal...
 						};
 					} // if (pos_out.x*pos_out.x + pos_out.y*pos_out.y > ...)
@@ -6999,15 +6072,14 @@ __global__ void kernelAccumulateDiffusiveHeatRate_new_Full(
 				PBC = PBCtri[MAXNEIGH_d*threadIdx.x + info.neigh_len - 1];
 				if (PBC == ROTATE_ME_CLOCKWISE) endpt_clock = Clockwise_d * endpt_clock;
 				if (PBC == ROTATE_ME_ANTICLOCKWISE) endpt_clock = Anticlockwise_d * endpt_clock;
-//
-//				if (T_clock == 0.0) {
-//#ifdef BWDSIDET
-//					T_clock = 0.5*(shared_T[threadIdx.x] + T_out);
-//#else
-//					T_clock = T_outk;
-//#endif
-//				};
-//				Mimic
+
+				if (T_clock == 0.0) {
+#ifdef BWDSIDET
+					T_clock = 0.5*(shared_T[threadIdx.x] + T_out);
+#else
+					T_clock = T_outk;
+#endif
+				};
 
 #pragma unroll MAXNEIGH_d
 				for (iNeigh = 0; iNeigh < info.neigh_len; iNeigh++)
@@ -7049,15 +6121,14 @@ __global__ void kernelAccumulateDiffusiveHeatRate_new_Full(
 					if (PBC == NEEDS_CLOCK) {
 						pos_anti = Clockwise_rotate2(pos_anti);
 					};
-//
-//					if (T_anti == 0.0) {
-//#ifdef BWDSIDET
-//						T_anti = 0.5*(shared_T[threadIdx.x] + T_out);
-//#else
-//						T_anti = T_outk;
-//#endif					
-//					}; // So we are receiving 0 then doing this. But how come?
-//					Mimic
+
+					if (T_anti == 0.0) {
+#ifdef BWDSIDET
+						T_anti = 0.5*(shared_T[threadIdx.x] + T_out);
+#else
+						T_anti = T_outk;
+#endif					
+					}; // So we are receiving 0 then doing this. But how come?
 
 					if ((izTri[iNeigh] >= StartMinor) && (izTri[iNeigh] < EndMinor))
 					{
@@ -7125,7 +6196,6 @@ __global__ void kernelAccumulateDiffusiveHeatRate_new_Full(
 							||
 							(pos_anti.x*pos_anti.x + pos_anti.y*pos_anti.y <
 								DEVICE_RADIUS_INSULATOR_OUTER*DEVICE_RADIUS_INSULATOR_OUTER))
-							// excellent
 						{
 
 							// Use longitudinal:
@@ -7340,15 +6410,14 @@ __global__ void kernelAccumulateDiffusiveHeatRate_new_Full(
 				PBC = PBCtri[MAXNEIGH_d*threadIdx.x + info.neigh_len - 1];
 				if (PBC == ROTATE_ME_CLOCKWISE) endpt_clock = Clockwise_d * endpt_clock;
 				if (PBC == ROTATE_ME_ANTICLOCKWISE) endpt_clock = Anticlockwise_d * endpt_clock;
-//
-//				if (T_clock == 0.0) {
-//#ifdef BWDSIDET
-//					T_clock = 0.5*(shared_T[threadIdx.x] + T_out);
-//#else
-//					T_clock = T_outk;
-//#endif
-//				};
-//				Mimic
+
+				if (T_clock == 0.0) {
+#ifdef BWDSIDET
+					T_clock = 0.5*(shared_T[threadIdx.x] + T_out);
+#else
+					T_clock = T_outk;
+#endif
+				};
 
 #pragma unroll MAXNEIGH_d
 				for (iNeigh = 0; iNeigh < info.neigh_len; iNeigh++)
@@ -7389,15 +6458,14 @@ __global__ void kernelAccumulateDiffusiveHeatRate_new_Full(
 					if (PBC == NEEDS_CLOCK) {
 						pos_anti = Clockwise_rotate2(pos_anti);
 					};
-//
-//					if (T_anti == 0.0) {
-//#ifdef BWDSIDET
-//						T_anti = 0.5*(shared_T[threadIdx.x] + T_out);
-//#else
-//						T_anti = T_outk;
-//#endif					
-//					}; // So we are receiving 0 then doing this. But how come?
-//					mimic
+
+					if (T_anti == 0.0) {
+#ifdef BWDSIDET
+						T_anti = 0.5*(shared_T[threadIdx.x] + T_out);
+#else
+						T_anti = T_outk;
+#endif					
+					}; // So we are receiving 0 then doing this. But how come?
 
 					if ((izTri[iNeigh] >= StartMinor) && (izTri[iNeigh] < EndMinor))
 					{
@@ -7626,25 +6694,16 @@ __global__ void kernelCreatePutativeT(
 	bool bUseMask
 )
 {
-	long const iVertex = threadIdx.x + blockIdx.x * blockDim.x; // INDEX OF VERTEX	// 2.5 double
-	
-	if (iVertex == VERTCHOSEN) printf("kernelCreatePutative %d : %d %d \n", iVertex,
-		(bUseMask) ? 1 : 0, (p_bMaskBlock[blockIdx.x]) ? 1 : 0);
-
 	if ((bUseMask) && (p_bMaskBlock[blockIdx.x] == 0)) return;
 	
-	
+	long const iVertex = threadIdx.x + blockIdx.x * blockDim.x; // INDEX OF VERTEX	// 2.5 double
+
 	bool bMask[3];
 	if (bUseMask) {
-		bMask[1] = p_bMask3[iVertex + NUMVERTICES];
-		bMask[2] = p_bMask3[iVertex + 2 * NUMVERTICES];
-
-		if (iVertex == VERTCHOSEN) printf("kernelCreatePutative %d : %d %d \n", iVertex,
-			(bMask[1]) ? 1 : 0, (bMask[2]) ? 1 : 0);
-
+		memcpy(bMask, p_bMask3 + iVertex * 3, sizeof(bool) * 3);
 		if ((bMask[1] == 0) && (bMask[2] == 0)) return; // we do nothing here with neutrals
 	};
-	
+
 	structural info = p_info_minor[iVertex + BEGINNING_OF_CENTRAL];     // 3 double
 	T3 T_k = p_T_k[iVertex];
 	nvals n = p_n_major[iVertex];
@@ -7658,10 +6717,6 @@ __global__ void kernelCreatePutativeT(
 	//if (iVertex == VERTCHOSEN) printf("%d T_e_k %1.8E NeTe %1.8E N %1.8E T_put %1.8E\n",
 	//	iVertex, T_k.Te, NT.NeTe, (n.n*AreaMajor), T_put.Te);
 
-
-	if (iVertex == VERTCHOSEN) printf("kernelCreatePutative %d : T_put.Te %1.10E NeTe %1.10E \n", iVertex,
-		T_put.Te, NT.NeTe);
-
 	bool ourbools[2];
 	bool bAlert = false;
 	memcpy(ourbools, p_boolarray + 2 * iVertex, sizeof(bool) * 2);
@@ -7669,17 +6724,14 @@ __global__ void kernelCreatePutativeT(
 	//if (iVertex == VERTCHOSEN) printf("%d Te_putative %1.10E NT.NeTe %1.10E ourbool %d bAlert %d\n", iVertex, T_put.Te, NT.NeTe,
 	//	ourbools[1]?1:0, bAlert?1:0);
 	
-	if (((bUseMask == 0) || (bMask[1] == true)) && (T_put.Ti < 0.0)) {
+	if (((bUseMask == 0) || (bMask[0] == true)) && (T_put.Ti < 0.0)) {
 		if (ourbools[0] == 0) bAlert = true;
 		ourbools[0] = true;
 	};
-	if (((bUseMask == 0) || (bMask[2] == true)) && (T_put.Te < 0.0)) {
+	if (((bUseMask == 0) || (bMask[1] == true)) && (T_put.Te < 0.0)) {
 		if (ourbools[1] == 0) bAlert = true;
 		ourbools[1] = true;
 	};
-
-	if (iVertex == VERTCHOSEN) printf("kernelCreatePutative %d :ourbools[1] %d \n", iVertex,
-		(ourbools[1]) ? 1 : 0);
 
 	memcpy(p_boolarray + 2 * iVertex, ourbools, sizeof(bool) * 2);
 
@@ -7743,14 +6795,12 @@ __global__ void kernelReturnNumberNegativeT(
 		p_sum[blockIdx.x] = sum[0];
 	};
 }
-/*
+
 __global__ void kernelSetNeighboursBwd(
 	structural * __restrict__ p_info_minor,
 	long * __restrict__ p_izNeigh_vert,
 	bool * __restrict__ p_bMask3)
 {
-	Won't work because it needs separate src and dest memory.
-
 	__shared__ bool bMask[threadsPerTileMajorClever][3];
 
 	long const iVertex = threadIdx.x + blockIdx.x*blockDim.x;
@@ -7796,11 +6846,10 @@ __global__ void kernelSetNeighboursBwd(
 		};
 	}
 }
-*/
 
 __global__ void kernelSetBlockMaskFlag_CountEquations_reset_Tk(
 	bool * __restrict__ p_bMask3,
-	bool * __restrict__ p_bMaskBlock,
+	bool * __restrict__ p_bMaskBlock3,
 	long * __restrict__ p_longblock3,
 	T3 * __restrict__ p_T_k,
 	T3 * __restrict__ p_T
@@ -7814,20 +6863,11 @@ __global__ void kernelSetBlockMaskFlag_CountEquations_reset_Tk(
 	if (threadIdx.x < 3) 
 		bAlert[threadIdx.x] = 0;
 
-	sum0[threadIdx.x] = 0.0;
-	sum1[threadIdx.x] = 0.0;
-	sum2[threadIdx.x] = 0.0;
-
 	__syncthreads();
 
 	long const iVertex = threadIdx.x + blockIdx.x * blockDim.x; // INDEX OF VERTEX	// 2.5 double
 	bool bMask[3];
-	//memcpy(bMask, p_bMask3 + 3 * iVertex, sizeof(bool) * 3); 
-	
-	bMask[0] = p_bMask3[iVertex];
-	bMask[1] = p_bMask3[iVertex + NUMVERTICES];
-	bMask[2] = p_bMask3[iVertex + NUMVERTICES*2];
-	
+	memcpy(bMask, p_bMask3 + 3 * iVertex, sizeof(bool) * 3);
 	if (bMask[0]) {
 		bAlert[0] = true;
 		sum0[threadIdx.x]++;
@@ -7835,12 +6875,10 @@ __global__ void kernelSetBlockMaskFlag_CountEquations_reset_Tk(
 	if (bMask[1]) {
 		bAlert[1] = true;
 		sum1[threadIdx.x]++;
-		printf("Ion: %d\n", iVertex);
 	};
 	if (bMask[2]) {
-		bAlert[2] = true;    // maybe this does not work.
+		bAlert[2] = true;
 		sum2[threadIdx.x]++;
-		printf("Elec: %d  |  ", iVertex);
 	};
 	
 	if ((bMask[0]) || (bMask[1]) || (bMask[2]))
@@ -7855,14 +6893,7 @@ __global__ void kernelSetBlockMaskFlag_CountEquations_reset_Tk(
 
 	__syncthreads();
 
-//	if (iVertex == VERTCHOSEN) printf(" %d bAlert %d %d %d \n",
-//		iVertex, bAlert[0] ? 1 : 0, bAlert[1] ? 1 : 0, bAlert[2] ? 1 : 0);
-
-	if (threadIdx.x == 0) {
-		p_bMaskBlock[blockIdx.x] = (bAlert[0] || bAlert[1] || bAlert[2]);
-
-	}
-	// all this doing but we want to split into species solves anyway.
+	if (threadIdx.x == 0) memcpy(p_bMaskBlock3 + 3 * iVertex, bAlert, sizeof(bool) * 3);
 
 	int s = blockDim.x;
 	int k = s / 2;
@@ -7895,7 +6926,6 @@ __global__ void kernelSetBlockMaskFlag_CountEquations_reset_Tk(
 		p_longblock3[blockIdx.x*3+1] = sum1[0];
 		p_longblock3[blockIdx.x*3+2] = sum2[0];
 	};
-
 }
 
 __global__ void kernelCompareForStability_andSetFlag(
@@ -7913,16 +6943,12 @@ __global__ void kernelCompareForStability_andSetFlag(
 	sum[threadIdx.x] = 0;
 	
 	structural info = p_info_minor[iVertex + BEGINNING_OF_CENTRAL];     // 3 double
-	
 	if (info.flag == DOMAIN_VERTEX) {
 		NTrates dNTdt1 = p_NTrates1[iVertex];
 		NTrates dNTdt2 = p_NTrates2[iVertex];
 
-		//memcpy(bMask, p_bMask3 + iVertex * 3, sizeof(bool) * 3);
-		bMask[0] = p_bMask3[iVertex];
-		bMask[1] = p_bMask3[iVertex + NUMVERTICES];
-		bMask[2] = p_bMask3[iVertex + NUMVERTICES * 2];
-		
+		memcpy(bMask, p_bMask3 + iVertex * 3, sizeof(bool) * 3);
+
 		// we want to check if 2 is greater magnitude than 1 and reversed sign
 		if ((dNTdt2.NnTn*dNTdt1.NnTn < 0.0)
 			&& (fabs(dNTdt2.NnTn) > fabs(dNTdt1.NnTn)))
@@ -7941,10 +6967,7 @@ __global__ void kernelCompareForStability_andSetFlag(
 			bMask[2] = 1;
 		};
 		
-		p_bMask3[iVertex] = bMask[0];
-		p_bMask3[iVertex + NUMVERTICES] = bMask[1];
-		p_bMask3[iVertex + NUMVERTICES * 2] = bMask[2];
-
+		memcpy(p_bMask3 + iVertex * 3, bMask, sizeof(bool) * 3);
 	};
 	// non domain mask flags already set to 0
 	
@@ -7991,8 +7014,6 @@ __global__ void kernelCreatePutativeTandsave(
 	long const iVertex = threadIdx.x + blockIdx.x * blockDim.x; // INDEX OF VERTEX	// 2.5 double
 
 	structural info = p_info_minor[iVertex + BEGINNING_OF_CENTRAL];     // 3 double
-	bool bMask[3];
-
 	if ((info.flag == DOMAIN_VERTEX) || (info.flag == OUTERMOST)) {
 		T3 T_k = p_T_k[iVertex];
 		nvals n = p_n_major[iVertex];
@@ -8005,23 +7026,15 @@ __global__ void kernelCreatePutativeTandsave(
 
 		p_T_dest[iVertex] = T_put;
 
+		bool bMask[3]; 
 		memset(bMask, 0, sizeof(bool) * 3);
 		if (T_put.Tn < 0.0) bMask[0] = 1;
 		if (T_put.Ti < 0.0) bMask[1] = 1;
 		if (T_put.Te < 0.0) bMask[2] = 1;
-
-		
+		memcpy(bMask3 + iVertex * 3, bMask, sizeof(bool) * 3);
 	} else {
-		memset(bMask, 0, sizeof(bool) * 3);
+		memset(bMask3 + iVertex * 3, 0, sizeof(bool) * 3);
 	}
-	if (iVertex == 22351) printf("22351 info.flag %d bMask %d %d %d \n",
-		info.flag, (bMask[0] ? 1 : 0), (bMask[1] ? 1 : 0), (bMask[2] ? 1 : 0));
-	bMask3[iVertex] = bMask[0];
-	bMask3[iVertex + NUMVERTICES] = bMask[1];
-	bMask3[iVertex + 2 * NUMVERTICES] = bMask[2];
-
-	//memcpy(bMask3 + iVertex * 3, bMask, sizeof(bool) * 3);
-
 }
 
 __global__ void kernelIonisationRates(
@@ -8030,619 +7043,104 @@ __global__ void kernelIonisationRates(
 	T3 * __restrict__ p_T_major,
 	nvals * __restrict__ p_n_major,
 	f64 * __restrict__ p_AreaMajor,
-	NTrates * __restrict__ NTadditionrates,
-	f64_vec3 * __restrict__ p_MAR_neut, 
-	f64_vec3 * __restrict__ p_MAR_ion, 
-	f64_vec3 * __restrict__ p_MAR_elec,
-
-	// We are in major cells so actually output this to a fresh temp array (9 scalars)
-	// which we then share out into minor cells.
-
-	v4 * __restrict__ p_v,
-	f64_vec3 * __restrict__ p_v_n,
-	T3 * __restrict__ p_T_use_major,
-	bool b_useTuse
+	NTrates * __restrict__ NTadditionrates
 	)
 {
-
-#define SAFETY_FACTOR 1.2
-#define LEEWAY        1.0e-23
-#define vAC 218687393.0  // Alfven Critical velocity = sqrt(13.6*1.6e-12*2/me)
 
 	long const iVertex = blockIdx.x*blockDim.x + threadIdx.x;
 	structural info = p_info_minor[iVertex + BEGINNING_OF_CENTRAL];
 	NTrates ourrates;
-	f64_vec3 MAR_neut, MAR_ion, MAR_elec;
-	v4 v;
-	f64_vec3 v_n;
-	f64 T_use;
-	
+
 	if (info.flag == DOMAIN_VERTEX)
 	{
 		// case DOMAIN_VERTEX:
-
-		f64 lambda;
+		
 		f64 AreaMajor = p_AreaMajor[iVertex];
-		T3 T_k = p_T_major[iVertex];
-		if (b_useTuse) {
-			T3 T = p_T_use_major[iVertex];
-			T_use = T.Te;
-		} else {
-			T_use = T_k.Te;
-		}
-
+		T3 T = p_T_major[iVertex];
 		nvals our_n = p_n_major[iVertex];
 		memcpy(&ourrates, NTadditionrates + iVertex, sizeof(NTrates));
-		memcpy(&MAR_neut, p_MAR_neut + iVertex, sizeof(f64_vec3));   // are we passing stuff from central then?
-		memcpy(&MAR_ion, p_MAR_ion + iVertex, sizeof(f64_vec3));
-		memcpy(&MAR_elec, p_MAR_elec + iVertex, sizeof(f64_vec3));  // it does mean d/dt (Nv)
-		memcpy(&v, p_v + iVertex, sizeof(v4));
-		memcpy(&v_n, p_v_n + iVertex, sizeof(f64_vec3));
 
-		// 0 . What is lambda?
-		
-		f64 oldT1;
-		
-		f64 n_k = our_n.n;
-		f64 n_n_k = our_n.n_n;
-		f64 n_kplus1, n_n_kplus1, n_kplus2;
-		f64 Gamma_ion, Gamma_rec, hn, hnn, Delta_ionise, Delta_rec;
-		// lambda = 0.5*reduced mass*w0.dot(w0) / T_k.Te;
+		// So this will be different.
+		// now add IONISATION:
+	//	f64 TeV = T.Te * one_over_kB; 
+		// We loaded in ourrates.NT which indicates the new heat available so we should include some of that.
+		// The main impact will be from heat conduction; dN/dt due to advection neglected here.
+		f64 TeV = one_over_kB * (T.Te*our_n.n*AreaMajor + h_use*ourrates.NeTe)/
+			(our_n.n*AreaMajor + h_use*ourrates.N);
+		// Should be very careful here: ourrates.NeTe can soak to neutrals on timescale what? 1e-11?
 
-		f64 w0z = v.vez - v_n.z;
-		// What is capital Theta of T_k ?
-		//f64 w = sqrt(w0z*w0z); // WE ARE ONLY USING Z DIMENSION FOR ABSORBING KINETIC ENERGY 
+		if (TeV < 0.0) {
+			printf("\n\niVertex %d : ourrates.N %1.14E denominator %1.14E \n"
+				" AreaMajor %1.14E TeV %1.14E ourrates.NeTe %1.10E h %1.10E \n"
+				"ourrates.Nn %1.10E n %1.10E n_n %1.10E Te %1.10E Tn %1.10E \n\n",
+				iVertex, ourrates.N, 
+				(our_n.n*AreaMajor + h_use*ourrates.N),
+				AreaMajor, TeV, ourrates.NeTe, h_use,
+				ourrates.Nn, our_n.n, our_n.n_n, T.Te, T.Tn);
+			
+		}
+		f64 sqrtT = sqrt(TeV);
+		f64 temp = 1.0e-5*exp(-13.6 / TeV) / (13.6*(6.0*13.6 + TeV)); // = S / T^1/2
+			// Let h n n_n S be the ionising amount,
+			// h n S is the proportion of neutrals! Make sure we do not run out!
 
-		// Check again: how did we come up with the following formulas?
-		// Off of the lambda spreadsheet or the v spreadsheet? I think lambda.
+		//f64 hnS = (h_use*our_n.n*TeV*temp) / (sqrtT + h_use * our_n.n_n*temp*SIXTH*13.6);
 
-		f64 T_use_theta = T_k.Te;
-		if (T_use_theta < 1.0e-12) T_use_theta = 1.0e-12;
-		f64 Theta = (1.1 + 0.4e-12 / T_use_theta);
-		if (w0z < vAC - 0.4e-4 / T_use_theta) {
-			//Theta *= exp(-w*(vC - 0.4e-4 / T_use_theta - w)*1.0e-12
-			//	/ (0.25*(vC - 0.4e-4 / T_use_theta)*(vC - 0.4e-4 / T_use_theta)*T_use_theta));
-			// Multiply through to save on divisions?:
-			Theta *= exp(-w0z*((vAC - w0z)* T_use_theta - 0.4e-4)*1.0e-12 /
-				(0.25*(vAC* T_use_theta - 0.4e-4)*(vAC* T_use_theta - 0.4e-4)));
+			// d/dt (sqrtT) = 1/2 dT/dt T^-1/2. 
+			// dT[eV]/dt = -TWOTHIRDS * 13.6* n_n* sqrtT *temp
+			// d/dt (sqrtT) = -THIRD*13.6*n_n*temp;
+
+		// kind of midpoint, see SIXTH not THIRD:
+		f64 Model_of_T_to_half = TeV / (sqrtT + h_use*SIXTH*13.6*our_n.n_n*temp / (1.0 - h_use*(our_n.n_n - our_n.n)*temp*sqrtT));
+
+		f64 hS = h_use*temp*Model_of_T_to_half;
+				
+		// NEW:
+		f64 ionise_rate = AreaMajor * our_n.n_n * our_n.n*hS / 
+							(h_use*(1.0 + hS*(our_n.n-our_n.n_n)));   // dN/dt
+
+		ourrates.N += ionise_rate;
+		ourrates.Nn += -ionise_rate;
+
+
+		// Let nR be the recombining amount, R is the proportion.
+		TeV = T.Te * one_over_kB;
+		f64 Ttothe5point5 = sqrtT * TeV * TeV*TeV * TeV*TeV;
+		f64 hR = h_use * (our_n.n * our_n.n*8.75e-27*TeV) /
+			(Ttothe5point5 + h_use * 2.25*TWOTHIRDS*13.6*our_n.n*our_n.n*8.75e-27);
+
+		// T/T^5.5 = T^-4.5
+		// T/(T^5.5+eps) < T^-4.5
+
+		// For some reason I picked 2.25 = 4.5/2 instead of 5.5/2.
+		// But basically it looks reasonable.
+
+		// Maybe the additional stuff is an estimate of the change in T[eV]^5.5??
+		// d/dt T^5.5 = 5.5 T^4.5 dT/dt 
+		// dT/dt = TWOTHIRDS * 13.6*( hR / h_use) = TWOTHIRDS * 13.6*( n^2 8.75e-27 T^-4.5) 
+		// d/dt T^5.5 = 5.5 TWOTHIRDS * 13.6*( n^2 8.75e-27 )  
+
+		f64 recomb_rate = AreaMajor * our_n.n * hR / h_use; // could reasonably again take hR/(1+hR) for n_k+1
+		ourrates.N -= recomb_rate;
+		ourrates.Nn += recomb_rate;
+
+		if (TEST) printf("%d recomb rate %1.10E our_n.n %1.10E hR %1.10E h_use %1.8E Ttothe5point5 %1.9E Te %1.9E\n", iVertex,
+			recomb_rate, our_n.n, hR, h_use, Ttothe5point5, T.Te);
+
+		ourrates.NeTe += -TWOTHIRDS * 13.6*kB*(ionise_rate - recomb_rate) + 0.5*T.Tn*ionise_rate;
+		ourrates.NiTi += 0.5*T.Tn*ionise_rate;
+		ourrates.NnTn += (T.Te + T.Ti)*recomb_rate;
+		if (TEST) {
+			printf("kernelIonisation %d NeTe %1.12E NiTi %1.12E NnTn %1.12E\n"
+				"due to I+R : NeTe %1.12E NiTi %1.12E NnTn %1.12E\n"
+				"d/dtNeTe/N %1.9E d/dtNiTi/N %1.9E d/dtNnTn/Nn %1.9E \n\n",
+				iVertex, ourrates.NeTe, ourrates.NiTi, ourrates.NnTn,
+				-TWOTHIRDS * 13.6*kB*(ionise_rate - recomb_rate) + 0.5*T.Tn*ionise_rate,
+				0.5*T.Tn*ionise_rate,
+				(T.Te + T.Ti)*recomb_rate,
+				ourrates.NeTe / (our_n.n*AreaMajor), ourrates.NiTi / (our_n.n*AreaMajor), ourrates.NnTn / (our_n.n_n*AreaMajor));
 		};
-
-		// Available KE:
-		f64 Kconv = 0.5*m_e*m_n*n_k*n_n_k*(w0z*w0z) / (m_e*n_k + m_n*n_n_k);
-
-		f64 coeff_on_ionizing = 0.5*T_k.Tn - 2.0*T_k.Te*13.6*kB*n_k / (3.0*T_k.Te*n_k + 2.0*Theta*Kconv);
-
-		// Now compute f(Tk) = T_k+1 given using T_k
-
-		f64 w = sqrt(0.5*(w0z*w0z + (v.vxy.x - v_n.x)*(v.vxy.x - v_n.x) + (v.vxy.y - v_n.y)*(v.vxy.y - v_n.y))); // CORRECTION FACTOR 0.5 ...
-																													 // ================
-		// Made a mistake and saved data for v that is sqrt(2) times greater by missing 0.5 out of lambda
-		// so
-		// data for "1e7" is actually for 1.4e7. Thus pass 1/sqrt(2) times our velocity 
-
-		f64 T_image1, T2, T_image2, T_oldimage1, Tkplus2minus1;
-
-		hn = h_use*n_k;
-		hnn = h_use*n_k*n_k;
-
-		f64 T1 = T_use;  // first go. = Tk if b_useTuse == false.
-		{
-			Gamma_ion = GetIonizationRates(T1, w, &Gamma_rec);
-
-			Delta_ionise = (n_n_k*hn*Gamma_ion + (n_n_k + n_k)*hnn*Gamma_rec*hn*Gamma_ion) /
-				(1.0 + hn*Gamma_ion)*(1.0 + hnn*Gamma_rec - hnn*Gamma_rec*hn*Gamma_ion);
-			Delta_rec = (n_k*hnn*Gamma_rec + (n_k + n_n_k)*hnn*Gamma_rec*hn*Gamma_ion) /
-				((1.0 + hnn*Gamma_rec)*(1.0 + hn*Gamma_ion - hnn*Gamma_rec*hn*Gamma_ion));
-			n_kplus1 = n_k + Delta_ionise - Delta_rec; // Delta_rec is amount recombining.
-			n_n_kplus1 = n_n_k - Delta_ionise + Delta_rec;
-
-			T_image1 = (n_k*T_k.Te + coeff_on_ionizing*Delta_ionise + TWOTHIRDS*13.6*kB*Delta_rec)/ n_kplus1;
-		}
-		T2 = T_image1;
-		int sign_k = (T2 - T1 > 0.0) ? 1 : -1; // usually -1 , ie negative rate of change, net ionization
-		//  Torigmove = T2 - T1; -- no, it's T_image-T_k that we wanna use.
-
-		// it's ok to use sign_k for the sign of the T_use move
-		// because if it's different sign to fwd move we never do overshooting test
-		// But what about if it's T<0? so fwd is recombining but new shift of T
-		// brings T_k+1<0.
-		// In that case we should be detecting it right here.
-
-
-		// First check if fwd next temperature would be negative:
-		bool bAccept = false;
-		bool b_test = b_useTuse;
-		
-		if ((T2 < 0.0) && (b_useTuse) && (T_use > T_k.Te))
-		{
-			// in this case we should switch to T1 = T_k:
-
-			f64 T1 = T_k.Te;  // first go. = Tk if b_useTuse == false.
-			{
-				Gamma_ion = GetIonizationRates(T1, w, &Gamma_rec);
-
-				Delta_ionise = (n_n_k*hn*Gamma_ion + (n_n_k + n_k)*hnn*Gamma_rec*hn*Gamma_ion) /
-					(1.0 + hn*Gamma_ion)*(1.0 + hnn*Gamma_rec - hnn*Gamma_rec*hn*Gamma_ion);
-				Delta_rec = (n_k*hnn*Gamma_rec + (n_k + n_n_k)*hnn*Gamma_rec*hn*Gamma_ion) /
-					((1.0 + hnn*Gamma_rec)*(1.0 + hn*Gamma_ion - hnn*Gamma_rec*hn*Gamma_ion));
-				n_kplus1 = n_k + Delta_ionise - Delta_rec; // Delta_rec is amount recombining.
-				n_n_kplus1 = n_n_k - Delta_ionise + Delta_rec;
-
-				T_image1 = (n_k*T_k.Te + coeff_on_ionizing*Delta_ionise + TWOTHIRDS*13.6*kB*Delta_rec) / n_kplus1;
-			}
-			T2 = T_image1;
-			sign_k = (T2 - T1 > 0.0) ? 1 : -1;
-			
-			// and turn off tests below involving assn of move?
-			b_test = false;
-		}
-
-		if (T2 < 0.0) {
-			
-			while (T2 < 0.0) {
-
-				oldT1 = T1;
-				T1 *= 0.5;
-				T_oldimage1 = T_image1; // save
-				// Compute image of T1:
-				{
-					Gamma_ion = GetIonizationRates(T1, w, &Gamma_rec);
-
-					Delta_ionise = (n_n_k*hn*Gamma_ion + (n_n_k + n_k)*hnn*Gamma_rec*hn*Gamma_ion) /
-						(1.0 + hn*Gamma_ion)*(1.0 + hnn*Gamma_rec - hnn*Gamma_rec*hn*Gamma_ion);
-					Delta_rec = (n_k*hnn*Gamma_rec + (n_k + n_n_k)*hnn*Gamma_rec*hn*Gamma_ion) /
-						((1.0 + hnn*Gamma_rec)*(1.0 + hn*Gamma_ion - hnn*Gamma_rec*hn*Gamma_ion));
-					n_kplus1 = n_k + Delta_ionise - Delta_rec; // Delta_rec is amount recombining.
-					n_n_kplus1 = n_n_k - Delta_ionise + Delta_rec;
-
-					T_image1 = (n_k*T_k.Te + coeff_on_ionizing*Delta_ionise + TWOTHIRDS*13.6*kB*Delta_rec) / n_kplus1;
-				}
-				T2 = T_image1;
-			};
-
-			// 3(a) If 2^-i Tk is an acceptable point, accept it.
-
-			if (T_image1 - T1 > 0.0) // T is now rising -- we crossed T_bwd from T_k
-			{ // Note: bwd criterion: T_image(use T_use from T_k) element (0, fwd image of Tk)
-				
-				// 3.(c) If 2^-i T_k is lower than a bwd step, proceed to main loop with
-				// 2^-i T_k as T_far and 2^-(i-1) T_k as T_near:
-				
-				T2 = T1; // "left point" (right if we were ascending)
-				T1 *= 2.0; // "right point" -- may be T_k itself
-				bAccept = false;
-				T_image1 = T_oldimage1;
-				T_image2 = T_image1;
-			} else {
-				// Test T1 for overshooting:
-				// T2 is already defined as image of T1
-
-				Gamma_ion = GetIonizationRates(T2, w, &Gamma_rec);
-				n_kplus2 = n_kplus1 + h_use*n_n_kplus1*n_kplus1*Gamma_ion -
-										h_use*n_kplus1*n_kplus1*n_kplus1*Gamma_rec;
-				Tkplus2minus1 = (n_kplus1 / n_kplus2 - 1.0)*T2 +
-					coeff_on_ionizing*h_use*n_n_kplus1*Gamma_ion +
-					TWOTHIRDS*13.6*kB*h_use*n_kplus1*n_kplus1*Gamma_rec;
-				// compare this inflated difference of Tnext from T2
-				// with the difference T2-Tk :
-				
-				if (Tkplus2minus1 < 0.0)// same sign as move from Tk to T2
-				{
-					bAccept = true; // accept this move Delta(T1)
-					
-				} else {
-					// Test that the reversed magnitude is smaller.
-					bAccept = (SAFETY_FACTOR*fabs(Tkplus2minus1) < fabs(T2-T_k.Te) + LEEWAY);
-				};
-
-				if (bAccept == false) {
-					// Overshooting:
-
-					// No adjustment to T1, T2 needed.
-					// Compute image of T2 under f_k:		
-					Delta_ionise = (n_n_k*hn*Gamma_ion + (n_n_k + n_k)*hnn*Gamma_rec*hn*Gamma_ion) /
-						(1.0 + hn*Gamma_ion)*(1.0 + hnn*Gamma_rec - hnn*Gamma_rec*hn*Gamma_ion);
-					Delta_rec = (n_k*hnn*Gamma_rec + (n_k + n_n_k)*hnn*Gamma_rec*hn*Gamma_ion) /
-						((1.0 + hnn*Gamma_rec)*(1.0 + hn*Gamma_ion - hnn*Gamma_rec*hn*Gamma_ion));
-					n_kplus1 = n_k + Delta_ionise - Delta_rec; // Delta_rec is amount recombining.
-					T_image2 = (n_k*T_k.Te + coeff_on_ionizing*Delta_ionise + TWOTHIRDS*13.6*kB*Delta_rec) / n_kplus1;	
-					// We want this defined when we enter secant loop.
-				};
-			};
-
-		} else { // fwd T, or first step with T_use, didn't go below zero
-
-			// 4. If we are so close to equilibrium that the proposed
-			// change in temperature is tiny like 10^{-9}T then just set
-			// the actual ionization to 0. We have only 10^{-6}/10^{-13}=10^{7} steps.
-
-			if (fabs(T_image1 - T_k.Te) < 1.0e-9*T_k.Te) {
-				// do nothing for a tiny move:
-				Delta_ionise = 0.0;
-				Delta_rec = 0.0;
-				bAccept = true; 
-				// To move 10% would take 1e8 moves, we have only 1e-6/1e-13 = 1e7.
-			} else {
-
-
-				if (b_test) {
-					// in this case we now want to check whether our move
-					// is the same sign as the T_k move.
-
-					// We can check the sign_k just by evaluating ionization rates at T_k
-					// No, we pretty much need to work out which one is winning out.
-					Gamma_ion = GetIonizationRates(T_k.Te, w, &Gamma_rec);
-					f64 Delta_ionise_k = (n_n_k*hn*Gamma_ion + (n_n_k + n_k)*hnn*Gamma_rec*hn*Gamma_ion) /
-						(1.0 + hn*Gamma_ion)*(1.0 + hnn*Gamma_rec - hnn*Gamma_rec*hn*Gamma_ion);
-					f64 Delta_rec_k = (n_k*hnn*Gamma_rec + (n_k + n_n_k)*hnn*Gamma_rec*hn*Gamma_ion) /
-						((1.0 + hnn*Gamma_rec)*(1.0 + hn*Gamma_ion - hnn*Gamma_rec*hn*Gamma_ion));
-					n_kplus1 = n_k + Delta_ionise_k - Delta_rec_k; // Delta_rec is amount recombining.
-					f64 T_image_k = (n_k*T_k.Te + coeff_on_ionizing*Delta_ionise + TWOTHIRDS*13.6*kB*Delta_rec) / n_kplus1;
-
-					if (((T_image_k > T_k.Te) && (T_image1 < T1))
-						||
-						((T_image_k < T_k.Te) && (T_image1 > T1)))
-					{
-						// different sign:
-
-						// If it's different sign, either accept it if the move
-						// brings us the f(Tk) side of Tk, or set it to 0 
-						// if the move would take us the opposite direction from Tk.
-						bAccept = true;
-						// We have not changed Delta_ionize
-
-						if (((T_image_k > T_k.Te) && (T_image1 < T_k.Te))
-							||
-							((T_image_k < T_k.Te) && (T_image1 > T_k.Te)))
-						{
-							Delta_ionise = 0.0;
-							Delta_rec = 0.0;
-							// A better solution may exist.
-						};
-					} else {
-						// If it's the same sign, pass to the following code
-						// which asks if it is overshooting.
-						// We have not changed T2 or T1 or T_image1
-					};
-				};
-
-				// putative Fwd Euler move neither had T < 0 nor was tiny.
-				// Overshooting test for Fwd Euler:
-
-				bAccept = false;
-
-				Gamma_ion = GetIonizationRates(T2, w, &Gamma_rec);
-				n_kplus2 = n_kplus1 + h_use*n_n_kplus1*n_kplus1*Gamma_ion -
-					h_use*n_kplus1*n_kplus1*n_kplus1*Gamma_rec;
-				// Comparator:
-				Tkplus2minus1 = (n_kplus1 / n_kplus2 - 1.0)*T2 +
-					coeff_on_ionizing*h_use*n_n_kplus1*Gamma_ion +
-					TWOTHIRDS*13.6*kB*h_use*n_kplus1*n_kplus1*Gamma_rec;
-				// compare this inflated difference of Tnext from T2 with the difference T2-T1:
-				if (((Tkplus2minus1 > 0.0) && (sign_k > 0))
-					||
-					((Tkplus2minus1 < 0.0) && (sign_k < 0)))
-				{
-					bAccept = true; // Accept forward Euler move; Delta was set.
-					// Or on main step, accept "T_k+1/2" move
-				} else {
-					bAccept = (SAFETY_FACTOR*fabs(Tkplus2minus1) < fabs(T2-T_k.Te)+LEEWAY);
-					// Accept only if the comparator is smaller in magnitude.
-				};
-
-				if (bAccept == false) {
-					// construct f_k image of T2 for use in secant:
-					f64 hnGamma_ion = h_use*Gamma_ion*n_k;
-					f64 hnnGamma_rec = h_use*Gamma_rec*n_k*n_k;
-					Delta_ionise = (n_n_k*hnGamma_ion + (n_n_k + n_k)*hnnGamma_rec*hnGamma_ion) /
-						(1.0 + hnGamma_ion)*(1.0 + hnnGamma_rec - hnnGamma_rec*hnGamma_ion);
-					Delta_rec = (n_k*hnnGamma_rec + (n_k + n_n_k)*hnnGamma_rec*hnGamma_ion) /
-						((1.0 + hnnGamma_rec)*(1.0 + hnGamma_ion - hnnGamma_rec*hnGamma_ion));
-					n_kplus1 = n_k + Delta_ionise - Delta_rec; // Delta_rec is amount recombining.
-					T_image2 = (n_k*T_k.Te + coeff_on_ionizing*Delta_ionise + TWOTHIRDS*13.6*kB*Delta_rec) / n_kplus1;
-				}
-			}; // whether small move
-		}; // whether fwd T < 0
-
-		// Main loop:				
-
-		int ctr = 0;
-
-		while ((bAccept == false) && (ctr < 100)){
-			++ctr; 
-			// max 100 iterations but I don't see any reason hard limit will be needed.
-			
-			// Calculate secant from existing points:
-
-			// We have T1, T2 coming in
-			// T1 is the one closer to T_k, T2 is the other side of bwd T
-			
-			f64 T_sec = (T2*T_image1 - T1*T_image2) / (T2 - T_image2 - T1 + T_image1);
-			// This approximates a backward step.
-			// Try 'midpoint': we want to be on fwd side of bwd step
-			f64 T_est = 0.5*(T_sec + T1);
-
-			// Calculate image starting from T_k and using T_est
-			Gamma_ion = GetIonizationRates(T_est, w, &Gamma_rec);
-			Delta_ionise = (n_n_k*hn*Gamma_ion + (n_n_k + n_k)*hnn*Gamma_rec*hn*Gamma_ion) /
-				(1.0 + hn*Gamma_ion)*(1.0 + hnn*Gamma_rec - hnn*Gamma_rec*hn*Gamma_ion);
-			Delta_rec = (n_k*hnn*Gamma_rec + (n_k + n_n_k)*hnn*Gamma_rec*hn*Gamma_ion) /
-				((1.0 + hnn*Gamma_rec)*(1.0 + hn*Gamma_ion - hnn*Gamma_rec*hn*Gamma_ion));
-			// *** Set for the move we are testing ***
-			n_kplus1 = n_k + Delta_ionise - Delta_rec; // Delta_rec is amount recombining.
-			n_n_kplus1 = n_n_k - Delta_ionise + Delta_rec;
-
-			f64 T_image_est = (n_k*T_k.Te + coeff_on_ionizing*Delta_ionise + TWOTHIRDS*13.6*kB*Delta_rec) / n_kplus1;
-			
-			bAccept = false;
-			if ((T_image_est < 0.0) && (sign_k < 0)) // If T goes negative it does count as overshooting, supposing original dT was decreasing.
-			{
-				// Can only get here if non-monotonic?
-				// overshooting:
-				T1 = T_est;
-				T_image1 = T_image_est;				
-				bAccept = false;
-
-			} else {
-
-				// between bwd & fwd: T_image_est - T_est between 0 and Torigmove.
-				if (
-					((sign_k > 0) && (T_image_est - T_est < 0.0)) 
-					|| // going wrong way starting from T_k: therefore beyond bwd
-					((sign_k < 0) && (T_image_est - T_est > 0.0))
-					)
-				{
-					T2 = T_est;
-					T_image2 = T_image_est;
-					bAccept = false;
-
-					// This is beyond bwd but do we need to check that we are not exceeding a fwd.
-					// .. If we got here then the fwd step is overshooting so that greater move would presumably be overshooting also.
-
-					// We now defined sign_k based on the requested T's move
-					// Therefore can we say that 
-					// 1. T2 is on the opposite side of T_use from T_k
-					// 2. Moving back towards T_use will achieve the same sign as T_use
-					// ... it is possible that we were given T_use the other side of bwd so then 
-					// we are stuck? can it be the other side of bwd, overshoot T_k away from itself ---
-					// we need to address separate cases.
-
-
-				} else {
-					// Test overshooting:
-					bAccept = false;
-
-					// T_image_est is > 0 if we got here.
-					Gamma_ion = GetIonizationRates(T_image_est, w, &Gamma_rec);
-					// Comparator:
-					n_kplus2 = n_kplus1 + h_use*n_n_kplus1*n_kplus1*Gamma_ion -
-						h_use*n_kplus1*n_kplus1*n_kplus1*Gamma_rec;
-					// Comparator:
-					Tkplus2minus1 = (n_kplus1 / n_kplus2 - 1.0)*T2 +
-						coeff_on_ionizing*h_use*n_n_kplus1*Gamma_ion +
-						TWOTHIRDS*13.6*kB*h_use*n_kplus1*n_kplus1*Gamma_rec;
-					// compare this inflated difference of Tnext from T2 with the difference T2-T1:
-					if (((Tkplus2minus1 > 0.0) && (T2-T_k.Te > 0.0))
-						||
-						((Tkplus2minus1 < 0.0) && (T2-T_k.Te < 0.0)))
-					{
-						bAccept = true; // same sign onward => not overshooting eqm
-					} else {
-						bAccept = (SAFETY_FACTOR*fabs(Tkplus2minus1) < fabs(T2-T_k.Te)+LEEWAY);
-						// Accept only if the comparator is smaller in magnitude.
-						if (bAccept == false) {
-							T1 = T_est; // still overshooting
-							T_image1 = T_image_est;
-						};
-					};
-				};
-			};
-		}; // end while: bAccept == true
-		
-		// Now calculate what to do, given this move:
-		// ==========================================
-
-		// Aim in the above:
-		// Delta_ionise and delta_rec should be already set.
-
-		// This bit is not perfect. It breaks down the changes into steps.
-
-		// 0. What is ROC of N:
-
-		f64 dNdt_ionise = AreaMajor*Delta_ionise/ h_use;
-		f64 dNdt_recombine = AreaMajor*Delta_rec / h_use;
-
-		ourrates.N += dNdt_ionise - dNdt_recombine;
-		ourrates.Nn += dNdt_recombine - dNdt_ionise;
-
-		// Store existing energy density:
-		f64 Energy_k = 1.5*(n_k*(T_k.Te + T_k.Ti) + n_n_k*T_k.Tn) +
-			0.5*((m_e+m_i)*n_k*(v.vxy.dot(v.vxy)) + m_e*n_k*v.vez*v.vez + m_i*n_k*v.viz*v.viz + m_n*n_n_k*v_n.dot(v_n));
-
-
-		// 1. Calculate kinetic energy absorption impact on vez, vnz
-		// ie Ionization resistance to current
-
-		n_kplus1 = n_k + Delta_ionise - Delta_rec;
-		n_n_kplus1 = n_n_k - Delta_ionise + Delta_rec;
-
-		// Absorbed DKE:
-		f64 deltaKE = -(2.0*Theta*Kconv / (3.0*n_k*T_k.Te + 2.0*Theta*Kconv))*Delta_ionise*13.6*kB;
-		f64 new_vz_diff = sqrt(m_e*n_kplus1 + m_n*n_n_kplus1*
-			((n_k*n_n_k / (m_e*n_k + m_n*n_n_k))*(w0z*w0z) + 2.0*deltaKE / (m_e*m_n)) /
-			n_kplus1*n_n_kplus1);
-		f64 delta_vez = m_n*n_n_kplus1*(w0z + new_vz_diff) /
-					(m_n*n_n_kplus1 + m_e*n_kplus1);
-		f64 delta_vnz = -m_e*n_kplus1*delta_vez / (m_n*n_n_kplus1);
-
-		// Check: w0 = vez-vnz - tick
-		// should change to scalar.
-
-		MAR_neut.z += AreaMajor*n_n_kplus1*delta_vnz / h_use;
-		MAR_elec.z += AreaMajor*n_kplus1*delta_vez / h_use;
-
-		f64_vec3 ve_kplus1, vi_kplus1, vn_kplus1;
-
-		// Store alongside: v_k+1 so that we can follow the anticipated change in energy,
-		// to create energy balance:
-		ve_kplus1.x = v.vxy.x*(n_k/n_kplus1);
-		ve_kplus1.y = v.vxy.y*(n_k / n_kplus1);
-		ve_kplus1.z = v.vez*(n_k / n_kplus1) + delta_vez; // we need to store v, we could also store nv if we wanted.
-
-		vi_kplus1.x = v.vxy.x*(n_k / n_kplus1);
-		vi_kplus1.y = v.vxy.y*(n_k / n_kplus1);
-		vi_kplus1.z = v.viz*(n_k / n_kplus1);
-
-		vn_kplus1 = v_n*(n_n_k/n_n_kplus1);
-		vn_kplus1.z += delta_vnz;
-		
-		// 2. Add the effect of xfers on momenta:
-
-		// What does MAR_neut mean? Nv?
-		{
-			f64_vec3 v_use; 
-			v_use.x = v.vxy.x;
-			v_use.y = v.vxy.y;
-			v_use.z = (m_e*v.vez + m_i*v.viz) / (m_e + m_i);
-			MAR_neut += -dNdt_ionise*v_n + dNdt_recombine*v_use;
-			MAR_ion += dNdt_ionise*v_n - dNdt_recombine*v_use;
-			MAR_elec += dNdt_ionise*v_n - dNdt_recombine*v_use;	
-			
-			vn_kplus1 -= (Delta_ionise*v_n - Delta_rec*v_use) / n_n_kplus1;
-			// n_k+1 v_k+1 = n_k v_k + Delta_n*v_use => v_k+1 = (n_k/n_k+1) v_k + (Delta_n/n_k+1) v_use
-			vi_kplus1 += (Delta_ionise*v_n - Delta_rec*v_use) / n_kplus1;
-			ve_kplus1 += (Delta_ionise*v_n - Delta_rec*v_use) / n_kplus1;
-
-		}
-
-	
-		
-		// . Ionization cooling & recombination heating
-		//f64 coeff_on_ionizing = 0.5*T_k.Tn - 2.0*T_k.Te*13.6*kB*n_k / (3.0*T_k.Te*n_k + 2.0*Theta*Kconv);
-//		ourrates.NeTe +=
-//			dNdt_recombine*2.0*13.6*kB / 3.0
-//			- (2.0*T_k.Te*13.6*kB*n_k / (3.0*T_k.Te*n_k + 2.0*Theta*Kconv))*dNdt_ionise;
-		// We can drop this: it will be accounted for by the final energy balance.
-		
-		// 3. Add to nT for x-fers due to species converting
-
-		ourrates.NiTi += 0.5*dNdt_ionise*T_k.Tn;
-		ourrates.NeTe += 0.5*dNdt_ionise*T_k.Tn;
-		ourrates.NnTn -= dNdt_ionise*T_k.Tn;
-		
-		f64 nTe_kplus1 = T_k.Te*(n_k ) + 0.5*Delta_ionise*T_k.Tn ;
-		f64 nTi_kplus1 = T_k.Ti*(n_k ) + 0.5*Delta_ionise*T_k.Tn ;
-		f64 n_nTn_kplus1 = T_k.Tn*(n_n_k) - Delta_ionise*T_k.Tn;
-
-		// 4. Energy balance through Te:
-		// Maybe we should rather be seeking OVERALL energy balance where KE_result is from n_k+1, v_k+1
-		// and we ensure that we have lost the right amount of energy overall.
-		// That is the better way:
-		
-		f64 KE_result = 0.5*(m_e*n_kplus1*ve_kplus1.dot(ve_kplus1) + m_i*n_kplus1*vi_kplus1.dot(vi_kplus1)
-			+ m_n*n_n_kplus1*vn_kplus1.dot(vn_kplus1));
-
-		f64 Energy_density_kplus1 = KE_result + 1.5*(nTe_kplus1 + nTi_kplus1 + n_nTn_kplus1);
-		f64 Energy_density_target = Energy_k - 13.6*kB*(Delta_ionise - Delta_rec);
-		
-		// Additional_heat = (KE_k + deltaKE) - KE_result; // usually positive
-		// 1*1+3*3 > 2*2 + 2*2  so KE is generally decreasing by friction; KE_result < KE_k+deltaKE
-		// KE_result + Added_heat + existing heat = desired total energy = KE_k + heat_k + deltaKE
-		
-		// 1.5 nT += Frictional_heating
-		// NTe += (2/3) Area Frictional_heating
-		ourrates.NeTe += 2.0*AreaMajor*
-			(Energy_density_target - Energy_density_kplus1)/ (3.0*h_use);
-				
 		memcpy(NTadditionrates + iVertex, &ourrates, sizeof(NTrates));
-		memcpy(p_MAR_neut + iVertex, &MAR_neut, sizeof(f64_vec3));
-		memcpy(p_MAR_ion + iVertex, &MAR_ion, sizeof(f64_vec3));
-		memcpy(p_MAR_elec + iVertex, &MAR_elec, sizeof(f64_vec3));
-
-
-//******************************************************************************************************
-
-
-		//// f64 TeV = T.Te * one_over_kB; 
-		//// We loaded in ourrates.NT which indicates the new heat available so we should include some of that.
-		//// The main impact will be from heat conduction; dN/dt due to advection neglected here.
-		//f64 TeV = one_over_kB * (T.Te*our_n.n*AreaMajor + h_use*ourrates.NeTe)/
-		//	(our_n.n*AreaMajor + h_use*ourrates.N);
-		//// Should be very careful here: ourrates.NeTe can soak to neutrals on timescale what? 1e-11?
-
-		//if (TeV < 0.0) {
-		//	printf("\n\niVertex %d : ourrates.N %1.14E denominator %1.14E \n"
-		//		" AreaMajor %1.14E TeV %1.14E ourrates.NeTe %1.10E h %1.10E \n"
-		//		"ourrates.Nn %1.10E n %1.10E n_n %1.10E Te %1.10E Tn %1.10E \n\n",
-		//		iVertex, ourrates.N, 
-		//		(our_n.n*AreaMajor + h_use*ourrates.N),
-		//		AreaMajor, TeV, ourrates.NeTe, h_use,
-		//		ourrates.Nn, our_n.n, our_n.n_n, T.Te, T.Tn);
-		//	
-		//}
-		//f64 sqrtT = sqrt(TeV);
-		//f64 temp = 1.0e-5*exp(-13.6 / TeV) / (13.6*(6.0*13.6 + TeV)); // = S / T^1/2
-		//	// Let h n n_n S be the ionising amount,
-		//	// h n S is the proportion of neutrals! Make sure we do not run out!
-
-		////f64 hnS = (h_use*our_n.n*TeV*temp) / (sqrtT + h_use * our_n.n_n*temp*SIXTH*13.6);
-
-		//	// d/dt (sqrtT) = 1/2 dT/dt T^-1/2. 
-		//	// dT[eV]/dt = -TWOTHIRDS * 13.6* n_n* sqrtT *temp
-		//	// d/dt (sqrtT) = -THIRD*13.6*n_n*temp;
-
-		//// kind of midpoint, see SIXTH not THIRD:
-		//f64 Model_of_T_to_half = TeV / (sqrtT + h_use*SIXTH*13.6*our_n.n_n*temp / (1.0 - h_use*(our_n.n_n - our_n.n)*temp*sqrtT));
-
-		//f64 hS = h_use*temp*Model_of_T_to_half;
-		//		
-		//// NEW:
-		//f64 ionise_rate = AreaMajor * our_n.n_n * our_n.n*hS / 
-		//					(h_use*(1.0 + hS*(our_n.n-our_n.n_n)));   // dN/dt
-
-		//ourrates.N += ionise_rate;
-		//ourrates.Nn += -ionise_rate;
-
-
-		//// Let nR be the recombining amount, R is the proportion.
-		//TeV = T.Te * one_over_kB;
-		//f64 Ttothe5point5 = sqrtT * TeV * TeV*TeV * TeV*TeV;
-		//f64 hR = h_use * (our_n.n * our_n.n*8.75e-27*TeV) /
-		//	(Ttothe5point5 + h_use * 2.25*TWOTHIRDS*13.6*our_n.n*our_n.n*8.75e-27);
-
-		//// T/T^5.5 = T^-4.5
-		//// T/(T^5.5+eps) < T^-4.5
-
-		//// For some reason I picked 2.25 = 4.5/2 instead of 5.5/2.
-		//// But basically it looks reasonable.
-
-		//// Maybe the additional stuff is an estimate of the change in T[eV]^5.5??
-		//// d/dt T^5.5 = 5.5 T^4.5 dT/dt 
-		//// dT/dt = TWOTHIRDS * 13.6*( hR / h_use) = TWOTHIRDS * 13.6*( n^2 8.75e-27 T^-4.5) 
-		//// d/dt T^5.5 = 5.5 TWOTHIRDS * 13.6*( n^2 8.75e-27 )  
-
-		//f64 recomb_rate = AreaMajor * our_n.n * hR / h_use; // could reasonably again take hR/(1+hR) for n_k+1
-		//ourrates.N -= recomb_rate;
-		//ourrates.Nn += recomb_rate;
-
-		//if (TEST) printf("%d recomb rate %1.10E ionise_rate %1.10E our_n.n %1.10E nn %1.10E hR %1.10E hS %1.10E\n"
-		//	"h_use %1.8E sqrtTeV %1.10E Ttothe5point5 %1.9E Te %1.9E modelThalf %1.9E\n", iVertex,
-		//	recomb_rate, ionise_rate, our_n.n, our_n.n_n, hR, hS, h_use, sqrtT, Ttothe5point5, T.Te, Model_of_T_to_half);
-
-		//ourrates.NeTe += -TWOTHIRDS * 13.6*kB*(ionise_rate - recomb_rate) + 0.5*T.Tn*ionise_rate;
-		//ourrates.NiTi += 0.5*T.Tn*ionise_rate;
-		//ourrates.NnTn += (T.Te + T.Ti)*recomb_rate;
-		//if (TEST) {
-		//	printf("kernelIonisation %d NeTe %1.12E NiTi %1.12E NnTn %1.12E\n"
-		//		"due to I+R : NeTe %1.12E NiTi %1.12E NnTn %1.12E\n"
-		//		"d/dtNeTe/N %1.9E d/dtNiTi/N %1.9E d/dtNnTn/Nn %1.9E \n\n",
-		//		iVertex, ourrates.NeTe, ourrates.NiTi, ourrates.NnTn,
-		//		-TWOTHIRDS * 13.6*kB*(ionise_rate - recomb_rate) + 0.5*T.Tn*ionise_rate,
-		//		0.5*T.Tn*ionise_rate,
-		//		(T.Te + T.Ti)*recomb_rate,
-		//		ourrates.NeTe / (our_n.n*AreaMajor), ourrates.NiTi / (our_n.n*AreaMajor), ourrates.NnTn / (our_n.n_n*AreaMajor));
-		//};
-		//memcpy(NTadditionrates + iVertex, &ourrates, sizeof(NTrates));
 	};
 }
 
@@ -9215,7 +7713,6 @@ __global__ void kernelAdvanceDensityAndTemperature_noadvectioncompression(
 					"newdata.Nn %1.12E newdata.Ni %1.12E AreaMajor %1.10E \n"
 					"h*additionNiTi %1.12E for e %1.12E for n %1.12E \n"
 					"AdditionNT.e %1.10E h_use %1.10E\n"
-					
 					, VERTCHOSEN,
 					n_src_or_use[threadIdx.x].n, n_src_or_use[threadIdx.x].n_n,
 					n_src_or_use[threadIdx.x].n*AreaMajor[threadIdx.x],
@@ -9243,12 +7740,9 @@ __global__ void kernelAdvanceDensityAndTemperature_noadvectioncompression(
 			//
 			if (TEST) {
 				printf("\nAdvance_nT %d : n %1.12E Area %1.12E compressfac %1.10E \n"
-					"newdata.NiTi %1.12E Ti_k %1.12E newdata.NeTe %1.10E Te_k %1.10E\n"
-					"newdata.NnTn %1.12E Tn_k %1.12E \n"
-					, 
+					"newdate.NiTi %1.12E Ti_k %1.12E newdata.NeTe %1.10E Te_k %1.10E\n"	, 
 					VERTCHOSEN, n_src_or_use[threadIdx.x].n, AreaMajor[threadIdx.x], factor,
-					newdata.NiTi,T_src.Ti, newdata.NeTe, T_src.Te,
-					newdata.NnTn, T_src.Tn);
+					newdata.NiTi,T_src.Ti, newdata.NeTe, T_src.Te);
 			}
 		}
 		
@@ -9385,7 +7879,7 @@ __global__ void kernelAdvanceDensityAndTemperature_noadvectioncompression(
 					LHS.xx, LHS.xy, LHS.xz, 
 					LHS.yx, LHS.yy, LHS.yz, 
 					LHS.zx, LHS.zy, LHS.zz);
-				printf("GPU %d : NnTn %1.14E NeTe %1.14E \n", VERTCHOSEN, newdata.NnTn, newdata.NeTe);
+				printf("GPU %d : NnTn %1.14E NeTe %1.14E \n", CHOSEN, newdata.NnTn, newdata.NeTe);
 				printf("GPU nu_en_MT %1.14E\n", nu_en_MT);
 			} 
 			LHS.Inverse(inverted);
@@ -12454,27 +10948,13 @@ __global__ void kernelCreateEpsilonAndJacobi_Heat
 	long const iVertex = blockDim.x*blockIdx.x + threadIdx.x;
 
 	if (bUseMask) {
-
-	//	if (iVertex == VERTCHOSEN) {
-	//		printf("%d : bUseMask %d p_bMaskblock[blockIdx.x] %d blockIdx.x %d\n",
-	//			iVertex, (bUseMask) ? 1 : 0, (p_bMaskblock[blockIdx.x]) ? 1 : 0, blockIdx.x);
-	//	}
-
 		if (p_bMaskblock[blockIdx.x] == 0) return;
 	}
 
 	bool bMask[3];
 
 	if (bUseMask) {
-		//memcpy(bMask, p_bMask3 + 3 * iVertex, sizeof(bool) * 3);
-		bMask[0] = p_bMask3[iVertex];
-		bMask[1] = p_bMask3[iVertex + NUMVERTICES];
-		bMask[2] = p_bMask3[iVertex + NUMVERTICES*2];
-	//	if (iVertex == VERTCHOSEN) {
-	//		printf("%d : bUseMask %d p_bMask[2] %d \n",
-	//			iVertex, (bUseMask) ? 1 : 0, (bMask[2]) ? 1 : 0);
-	//	}
-
+		memcpy(bMask, p_bMask3 + 3 * iVertex, sizeof(bool) * 3);
 		// We need to re-do into species anyway. Afterwards.
 		if ((bMask[0] == 0) &&
 			(bMask[1] == 0) &&
@@ -12498,10 +10978,7 @@ __global__ void kernelCreateEpsilonAndJacobi_Heat
 			Tn = p_T_n[iVertex];
 			actual_Tn = T_k.Tn + (h_sub / Nn)*Rates.NnTn;
 			epsilon_n = Tn - actual_Tn;
-
-			// Try this:
-			p__Jacobi_n[iVertex] = -(h_sub / sqrt(Nn))*Rates.NnTn / p__coeffself_n[iVertex]; // should never be 0
-
+			p__Jacobi_n[iVertex] = -epsilon_n / p__coeffself_n[iVertex]; // should never be 0
 			epsilon_n *= sqrt(Nn);
 			p__epsilon_n[iVertex] = epsilon_n;
 		} else {
@@ -12513,10 +10990,7 @@ __global__ void kernelCreateEpsilonAndJacobi_Heat
 			Ti = p_T_i[iVertex];
 			actual_Ti = T_k.Ti + (h_sub / N)*Rates.NiTi;
 			epsilon_i = Ti - actual_Ti;
-
-			// Try this:
-			p__Jacobi_i[iVertex] = -(h_sub / sqrt(N))*Rates.NiTi / p__coeffself_i[iVertex];
-
+			p__Jacobi_i[iVertex] = -epsilon_i / p__coeffself_i[iVertex];
 			// Weighted Least Squares:
 			epsilon_i *= sqrt(N);
 			p__epsilon_i[iVertex] = epsilon_i;
@@ -12525,21 +10999,13 @@ __global__ void kernelCreateEpsilonAndJacobi_Heat
 			actual_Ti = 0.0; // not used
 		};
 
-
 		if ((bUseMask == 0) || (bMask[2])) {
 			Te = p_T_e[iVertex];
 			actual_Te = T_k.Te + (h_sub / N)*Rates.NeTe;
 			epsilon_e = Te - actual_Te;
-
-			// Try this:
-			p__Jacobi_e[iVertex] = -(h_sub / sqrt(N))*Rates.NeTe / p__coeffself_e[iVertex];
+			p__Jacobi_e[iVertex] = -epsilon_e / p__coeffself_e[iVertex];
 			epsilon_e *= sqrt(N);
 			p__epsilon_e[iVertex] = epsilon_e;
-
-			//if ((iVertex == VERTCHOSEN)) 
-			//	printf("iVertex %d Te %1.10E actual_Te %1.9E Tk %1.9E Rates %1.10E epsilon %1.11E Jacobi %1.10E\n",
-			//		iVertex, Te, actual_Te, T_k.Te, Rates.NeTe, epsilon_e, p__Jacobi_e[iVertex]);
-			
 		} else {
 			epsilon_e = 0.0;
 			actual_Te = 0.0; // not used
@@ -12581,186 +11047,10 @@ __global__ void kernelCreateEpsilonAndJacobi_Heat
 		p__Jacobi_i[iVertex] = 0.0;
 		p__Jacobi_e[iVertex] = 0.0;
 	};
+
 }
 
-__global__ void kernelMultiplyVector(
-	f64 * __restrict__ p_multiply,
-	f64 const factor)
-{
-	long const iVertex = blockDim.x*blockIdx.x + threadIdx.x;
-
-	p_multiply[iVertex] *= factor;
-}
-
-__global__ void kernelCreateEpsilonAndJacobi_Heat_1species
-(
-	f64 const h_sub,
-	structural * __restrict__ p_info_major,
-	f64 * __restrict__ p_T,
-	f64 * p_Tk, // T_k for substep
-	NTrates * __restrict__ p_NTrates_diffusive,
-	nvals * __restrict__ p_n_major,
-	f64 * __restrict__ p_AreaMajor,
-	f64 * __restrict__ p__coeffself,
-	f64 * __restrict__ p__epsilon,
-	f64 * __restrict__ p__Jacobi,
-	bool * __restrict__ p_bFailedTest,
-	bool * __restrict__ p_bMask,
-	bool * __restrict__ p_bMaskblock,
-	bool bUseMask,
-	int species,
-	bool bIncorporateEps
-)
-{
-	// 2. Calculate epsilon: given the est of T, eps = T - (T_k +- h sum kappa dot grad T)
-
-	// So this is a lot like saying, let's call the actual routine...
-	// except we also want Jacobi which means we also want coeff on self in epsilon.
-
-	// eps= T_putative - (T_k +- h sum kappa dot grad T_putative)
-
-	// coeff on self we want to be linearized so it incorporates the assumption that it affects kappa.
-	// deps/dT = sum [[dkappa/dT = 0.5 kappa/T] dot grad T + kappa dot d/dT grad T]
-
-	// However this means if we know kappa dot grad T then we can * by 0.5/T to get dkappa/dT part
-	// But we had to collect a separate value for kappa dot d/dT grad T.
-
-	// We certainly need to somehow modify the existing kappa dot grad T routine here.
-	// what about dividing by N?
-
-	long const iVertex = blockDim.x*blockIdx.x + threadIdx.x;
-
-	if ((bUseMask) && (p_bMaskblock[blockIdx.x] == 0)) return;
-	if (bUseMask) {
-		if (p_bMask[iVertex] == 0)  return; // do not modify anything
-	}
-
-	structural info = p_info_major[iVertex];
-	 
-	if ((info.flag == DOMAIN_VERTEX)) { //|| (info.flag == OUTERMOST)) {
-
-		NTrates Rates = p_NTrates_diffusive[iVertex];
-		nvals n = p_n_major[iVertex];
-		f64 Area = p_AreaMajor[iVertex];
-		
-		f64 T, actual_T, epsilon;
-		f64 T_k = p_Tk[iVertex];
-
-		f64 N = (species != 0)?(n.n*Area) : (n.n_n*Area);
-		
-		T = p_T[iVertex];
-		
-		if (species == 0) actual_T = T_k + (h_sub / N)*Rates.NnTn;		
-		if (species == 1) actual_T = T_k + (h_sub / N)*Rates.NiTi;		
-		if (species == 2) actual_T = T_k + (h_sub / N)*Rates.NeTe;
-		
-		epsilon = T - actual_T;
-		if (bIncorporateEps) {
-			p__Jacobi[iVertex] = -epsilon / p__coeffself[iVertex]; // should never be 0 // match the other function for a minute
-		} else {
-			p__Jacobi[iVertex] = -actual_T;
-			
-			// Try just doing Richardson beyond the 1st regressor.
-
-			// / p__coeffself[iVertex]; // should never be 0 // match the other function for a minute
-		}
-		// although putting this here just seems completely wrong.
-		epsilon *= sqrt(N);
-		p__epsilon[iVertex] = epsilon;
-		
-		// We have yet to experiment why it failed with Jacobi inc sqrt(N) --- not clear why at all.
-
-		//if ((bUseMask) && (species == 1)) printf("iVertex %d epsilon %1.10E T_k %1.10E \n", iVertex, epsilon, T_k);
-
-
-		// If sqrt N we care about is 1e4 and T we care about is 1e-14 then we get 1e-10 as the sqrt(N)T to add to create absolute threshold
-
-	//	if ((iVertex == VERTCHOSEN) && (species == 2))
-	//		printf("%d : epsilon %1.10E T %1.10E Tk+NeTe %1.10E T_k %1.10E NeTe %1.10E hsub/N %1.10E Jacobi %1.10E\n", iVertex, epsilon,
-	//			T, actual_T, T_k, Rates.NeTe, h_sub / N, p_Jacobi[iVertex]);
-
-		if (p_bFailedTest != 0) {
-			if (epsilon*epsilon > REL_THRESHOLD_HEAT*REL_THRESHOLD_HEAT*(actual_T*actual_T*N + 1.0e-10*1.0e-10))
-					p_bFailedTest[blockIdx.x] = true;
-			// Why 1.0e-10 in absolute error, for minimum value we care about:
-			// N = 2.0e12*7e-5 = 1e8 
-			// root N = 1e4
-			// root N * 1e-14 erg = 1e-10 for (root N) T
-		}
-	} else {
-		p__epsilon[iVertex] = 0.0;
-		p__Jacobi[iVertex] = 0.0;
-	};
-}
-
-__global__ void kernelCreateEpsilonHeat_1species
-(
-	f64 const h_sub,
-	structural * __restrict__ p_info_major,
-	f64 * __restrict__ p_T,
-	f64 * __restrict__ p_Tk, // T_k for substep
-	NTrates * __restrict__ p_NTrates_diffusive,
-	nvals * __restrict__ p_n_major,
-	f64 * __restrict__ p_AreaMajor,
-	f64 * __restrict__ p__epsilon,
-	bool * __restrict__ p_bFailedTest,
-	bool * __restrict__ p_bMask,
-	bool * __restrict__ p_bMaskblock,
-	bool bUseMask,
-	int species
-)
-{
-	// 2. Calculate epsilon: given the est of T, eps = T - (T_k +- h sum kappa dot grad T)
-	
-	long const iVertex = blockDim.x*blockIdx.x + threadIdx.x;
-
-	if ((bUseMask) && (p_bMaskblock[blockIdx.x] == 0)) return;
-	if (bUseMask) {
-		if (p_bMask[iVertex] == 0)  return; // do not modify anything
-	}
-
-	structural info = p_info_major[iVertex];
-
-	if ((info.flag == DOMAIN_VERTEX)) { //|| (info.flag == OUTERMOST)) {
-
-		NTrates Rates = p_NTrates_diffusive[iVertex];
-		nvals n = p_n_major[iVertex];
-		f64 Area = p_AreaMajor[iVertex];
-
-		f64 T, actual_T, epsilon;
-		f64 T_k = p_Tk[iVertex];
-
-		f64 N = (species != 0) ? (n.n*Area) : (n.n_n*Area);
-
-		T = p_T[iVertex];
-
-		if (species == 0) actual_T = T_k + (h_sub / N)*Rates.NnTn;
-		if (species == 1) actual_T = T_k + (h_sub / N)*Rates.NiTi;
-		if (species == 2) actual_T = T_k + (h_sub / N)*Rates.NeTe;
-
-		epsilon = T - actual_T;
-		
-		// although putting this here just seems completely wrong.
-		epsilon *= sqrt(N);
-		p__epsilon[iVertex] = epsilon;
-
-		// We have yet to experiment why it failed with Jacobi inc sqrt(N) --- not clear why at all.
-
-		if (p_bFailedTest != 0) {
-			if (epsilon*epsilon > REL_THRESHOLD_HEAT*REL_THRESHOLD_HEAT*(actual_T*actual_T*N + 1.0e-10*1.0e-10))
-				p_bFailedTest[blockIdx.x] = true;
-			// Why 1.0e-10 in absolute error, for minimum value we care about:
-			// N = 2.0e12*7e-5 = 1e8 
-			// root N = 1e4
-			// root N * 1e-14 erg = 1e-10 for (root N) T
-		}
-	}
-	else {
-		p__epsilon[iVertex] = 0.0;
-	};
-}
-
-__global__ void kernelCreateEpsilon_Heat_for_Jacobi
+	__global__ void kernelCreateEpsilon_Heat_for_Jacobi
 	(
 		f64 const h_sub,
 		structural * __restrict__ p_info_major,
@@ -12787,18 +11077,12 @@ __global__ void kernelCreateEpsilon_Heat_for_Jacobi
 
 		bool bMask[3];
 		if (bUseMask) {			
-
-			bMask[0] = p_bMask3[iVertex];
-			bMask[1] = p_bMask3[iVertex + NUMVERTICES];
-			bMask[2] = p_bMask3[iVertex + NUMVERTICES * 2];
+			memcpy(bMask, p_bMask3 + 3*iVertex, sizeof(bool) * 3);
 			if ((bMask[0] == 0) && (bMask[1] == 0) && (bMask[2] == 0)) return;
 		};
 
 		structural info = p_info_major[iVertex];
-
-		if (iVertex == VERTCHOSEN) printf("%d : bMask[2] %d info.flag %d \n",
-			iVertex, (bMask[2]) ? 1 : 0, info.flag);
-
+	
 		if ((info.flag == DOMAIN_VERTEX)) { //|| (info.flag == OUTERMOST)) {
 
 			T3 T_k;
@@ -12818,11 +11102,7 @@ __global__ void kernelCreateEpsilon_Heat_for_Jacobi
 				f64 epsilon_e = Te - actual_Te;
 				epsilon_e *= sqrt(N);
 				p_eps_e[iVertex] = epsilon_e;
-
-			//	if ((iVertex == VERTCHOSEN)) printf("%d : Te %1.9E actual %1.9E Tk %1.9E rates %1.9E epsilon %1.11E \n",
-			//		iVertex,
-			//		Te, actual_Te, T_k.Te, Rates.NeTe, epsilon_e);
-			};
+			}
 
 			if ((bUseMask == 0) || (bMask[0])) {
 				Tn = p_T_n[iVertex];
@@ -12830,7 +11110,7 @@ __global__ void kernelCreateEpsilon_Heat_for_Jacobi
 				f64 epsilon_n = Tn - actual_Tn;
 				epsilon_n *= sqrt(Nn);
 				p_eps_n[iVertex] = epsilon_n;
-			};
+			}
 
 			if ((bUseMask == 0) || (bMask[1])) {
 				Ti = p_T_i[iVertex];
@@ -12839,12 +11119,7 @@ __global__ void kernelCreateEpsilon_Heat_for_Jacobi
 				// Weighted Least Squares:
 				epsilon_i *= sqrt(N);
 				p_eps_i[iVertex] = epsilon_i;
-				
-			//	if (iVertex == VERTCHOSEN) 
-			//		printf("iVertex %d actual_Ti %1.9E Tk %1.9E Rates %1.10E epsilon %1.10E\n",
-			//			iVertex, actual_Ti, T_k.Ti, Rates.NiTi, epsilon_i);
-					
-			};
+			}
 		}; 
 		// NOT NEEDED: ENSURE WE SET EPS TO 0 FIRST INSTEAD.
 // else			p_eps_n[iVertex] = 0.0;

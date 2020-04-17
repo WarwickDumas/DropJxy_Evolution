@@ -280,6 +280,45 @@ __global__ void kernelUnpack(f64 * __restrict__ pTn,
 	pTe[iVertex] = T.Te;
 }
 
+__global__ void kernelUnpackWithMask(f64 * __restrict__ pTn,
+	f64 * __restrict__ pTi,
+	f64 * __restrict__ pTe,
+	T3 * __restrict__ pT,
+	bool * __restrict__ p_bMask,
+	bool * __restrict__ p_bMaskblock
+	)
+{	
+	if (p_bMaskblock[blockIdx.x] == 0) return;
+	
+	long const iVertex = blockDim.x * blockIdx.x + threadIdx.x;
+
+	T3 T = pT[iVertex];
+	if (p_bMask[iVertex]) pTn[iVertex] = T.Tn;
+	if (p_bMask[iVertex + NUMVERTICES]) pTi[iVertex] = T.Ti;
+	if (p_bMask[iVertex + 2 * NUMVERTICES]) pTe[iVertex] = T.Te;
+}
+
+
+__global__ void kernelUnpacktorootDN_T(
+	f64 * __restrict__ psqrtDNnTn,
+	f64 * __restrict__ psqrtDNTi,
+	f64 * __restrict__ psqrtDNTe,
+	T3 * __restrict__ pT,
+	f64 * __restrict__ p_D_n,
+	f64 * __restrict__ p_D_i,
+	f64 * __restrict__ p_D_e,
+	f64 * __restrict__ p_AreaMajor,
+	nvals * __restrict__ p_n_major)
+{
+	long const iVertex = blockDim.x * blockIdx.x + threadIdx.x;
+	T3 T = pT[iVertex];
+	f64 AreaMajor = p_AreaMajor[iVertex];
+	nvals n = p_n_major[iVertex];
+	psqrtDNnTn[iVertex] = T.Tn*sqrt(p_D_n[iVertex]*AreaMajor*n.n_n);
+	psqrtDNTi[iVertex] = T.Ti*sqrt(p_D_i[iVertex]*AreaMajor*n.n);
+	psqrtDNTe[iVertex] = T.Te*sqrt(p_D_e[iVertex]*AreaMajor*n.n);
+}
+
 
 __global__ void kernelUnpacktorootNT(
 	f64 * __restrict__ pNnTn,
@@ -538,16 +577,12 @@ __global__ void kernelAccumulateSummands4(
 
 
 
-__global__ void kernelAccumulateSummands6(
+__global__ void kernelAccumulateSummands7(
 	f64 * __restrict__ p_epsilon,
-	f64_vec4 * __restrict__ p_d_eps_by_dbetaJ_x4,
-	f64_vec4 * __restrict__ p_d_eps_by_dbetaR_x4,
-
+	f64 * __restrict__ p_d_eps_by_dbeta,
 	// outputs:
-	f64_vec4 * __restrict__ p_sum_eps_depsbydbeta_J_x4,
-	f64_vec4 * __restrict__ p_sum_eps_depsbydbeta_R_x4,
-	f64 * __restrict__ p_sum_depsbydbeta__8x8,  // do we want to store 64 things in memory? .. we don't.
-	f64 * __restrict__ p_sum_eps_eps_
+	f64 * __restrict__ p_sum_eps_depsbydbeta_x8,
+	f64 * __restrict__ p_sum_depsbydbeta__8x8
 ) {
 	__shared__ f64 sumdata[threadsPerTileMajor][24]; 
 	// Row-major memory layout implies that this is a contiguous array for each thread.
@@ -562,7 +597,171 @@ __global__ void kernelAccumulateSummands6(
 
 	long const iVertex = threadIdx.x + blockIdx.x * blockDim.x;
 	f64 eps = p_epsilon[iVertex];
-	f64_vec4 d_eps_by_d_beta_J; 
+	f64 d_eps_by_d_beta[REGRESSORS]; 
+	int i;
+	for (i = 0; i < REGRESSORS; i++) {
+		d_eps_by_d_beta[i] = p_d_eps_by_dbeta[iVertex + i*NUMVERTICES];
+	};	
+
+#pragma unroll 
+	for (i = 0; i < REGRESSORS; i++)
+		sumdata[threadIdx.x][i] = eps*d_eps_by_d_beta[i];
+#pragma unroll 
+	for (i = 0; i < REGRESSORS; i++)
+		sumdata[threadIdx.x][REGRESSORS+i] = d_eps_by_d_beta[0] *d_eps_by_d_beta[i];
+#pragma unroll 
+	for (i = 0; i < REGRESSORS; i++)
+		sumdata[threadIdx.x][2 * REGRESSORS + i] = d_eps_by_d_beta[1] * d_eps_by_d_beta[i];
+	
+	// That was 24.
+
+	__syncthreads();
+
+	int s = blockDim.x;
+	int k = s / 2;
+
+	while (s != 1) {
+		if (threadIdx.x < k)
+		{
+			for (int y = 0; y < 24; y++)
+				sumdata[threadIdx.x][y] += sumdata[threadIdx.x + k][y];
+		};
+		__syncthreads();
+
+		// Modify for case blockdim not 2^n:
+		if ((s % 2 == 1) && (threadIdx.x == k - 1)) {
+			for (int y = 0; y < 24; y++)
+				sumdata[threadIdx.x][y] += sumdata[threadIdx.x + s - 1][y];
+		};
+		// In case k == 81, add [39] += [80]
+		// Otherwise we only get to 39+40=79.
+		s = k;
+		k = s / 2;
+		__syncthreads();
+	};
+
+	if (threadIdx.x == 0)
+	{
+		memcpy(&(p_sum_eps_depsbydbeta_x8[blockIdx.x*REGRESSORS]), &(sumdata[0][0]), sizeof(f64)*8);
+		memcpy(&(p_sum_depsbydbeta__8x8[blockIdx.x * REGRESSORS * REGRESSORS]), &(sumdata[0][REGRESSORS]),
+			2*REGRESSORS * sizeof(f64));		
+	};
+
+	__syncthreads();
+
+#pragma unroll 
+	for (i = 0; i < REGRESSORS; i++)
+		sumdata[threadIdx.x][i] = d_eps_by_d_beta[2] * d_eps_by_d_beta[i];
+#pragma unroll 
+	for (i = 0; i < REGRESSORS; i++)
+		sumdata[threadIdx.x][i + REGRESSORS] = d_eps_by_d_beta[3] * d_eps_by_d_beta[i];
+#pragma unroll 
+	for (i = 0; i < REGRESSORS; i++)
+		sumdata[threadIdx.x][i + 2*REGRESSORS] = d_eps_by_d_beta[4] * d_eps_by_d_beta[i];
+
+	__syncthreads();
+
+	s = blockDim.x;
+	k = s / 2;
+
+	while (s != 1) {
+		if (threadIdx.x < k)
+		{
+			for (int y = 0; y < 24; y++)
+				sumdata[threadIdx.x][y] += sumdata[threadIdx.x + k][y];
+		};
+		__syncthreads();
+
+		// Modify for case blockdim not 2^n:
+		if ((s % 2 == 1) && (threadIdx.x == k - 1)) {
+			for (int y = 0; y < 24; y++)
+				sumdata[threadIdx.x][y] += sumdata[threadIdx.x + s - 1][y];
+		};
+		// In case k == 81, add [39] += [80]
+		// Otherwise we only get to 39+40=79.
+		s = k;
+		k = s / 2;
+		__syncthreads();
+	};
+
+	if (threadIdx.x == 0)
+	{
+		memcpy(&(p_sum_depsbydbeta__8x8[blockIdx.x * REGRESSORS * REGRESSORS + 2 * REGRESSORS]), &(sumdata[0][0]), 3 * REGRESSORS * sizeof(f64));
+	};
+	__syncthreads();
+
+#pragma unroll 
+	for (i = 0; i < REGRESSORS; i++)
+		sumdata[threadIdx.x][i] = d_eps_by_d_beta[5] * d_eps_by_d_beta[i];
+#pragma unroll 
+	for (i = 0; i < REGRESSORS; i++)
+		sumdata[threadIdx.x][i + REGRESSORS] = d_eps_by_d_beta[6] * d_eps_by_d_beta[i];
+#pragma unroll 
+	for (i = 0; i < REGRESSORS; i++)
+		sumdata[threadIdx.x][i + 2*REGRESSORS] = d_eps_by_d_beta[7] * d_eps_by_d_beta[i];
+
+	__syncthreads();
+
+	s = blockDim.x;
+	k = s / 2;
+
+	while (s != 1) {
+		if (threadIdx.x < k)
+		{
+			for (int y = 0; y < 24; y++)
+				sumdata[threadIdx.x][y] += sumdata[threadIdx.x + k][y];
+		};
+		__syncthreads();
+
+		// Modify for case blockdim not 2^n:
+		if ((s % 2 == 1) && (threadIdx.x == k - 1)) {
+			for (int y = 0; y < 24; y++)
+				sumdata[threadIdx.x][y] += sumdata[threadIdx.x + s - 1][y];
+		};
+		// In case k == 81, add [39] += [80]
+		// Otherwise we only get to 39+40=79.
+		s = k;
+		k = s / 2;
+		__syncthreads();
+	};
+
+	if (threadIdx.x == 0)
+	{
+		// Caught ourselves out. We need to do what, quadrants of matrix? It's 8 x 8.
+		// We can do rows, if we do 3 sets of rows.
+
+		memcpy(&(p_sum_depsbydbeta__8x8[blockIdx.x * REGRESSORS * REGRESSORS + 5 * REGRESSORS]),
+			&(sumdata[0][0]), 3 * REGRESSORS * sizeof(f64));
+	};
+	
+}
+
+
+__global__ void kernelAccumulateSummands6(
+	f64 * __restrict__ p_epsilon,
+	f64_vec4 * __restrict__ p_d_eps_by_dbetaJ_x4,
+	f64_vec4 * __restrict__ p_d_eps_by_dbetaR_x4,
+
+	// outputs:
+	f64_vec4 * __restrict__ p_sum_eps_depsbydbeta_J_x4,
+	f64_vec4 * __restrict__ p_sum_eps_depsbydbeta_R_x4,
+	f64 * __restrict__ p_sum_depsbydbeta__8x8,  // do we want to store 64 things in memory? .. we don't.
+	f64 * __restrict__ p_sum_eps_eps_
+) {
+	__shared__ f64 sumdata[threadsPerTileMajor][24];
+	// Row-major memory layout implies that this is a contiguous array for each thread.
+
+	// We can have say 24 doubles in shared. We need to sum 64 + 8 + 1 = 73 things. 24*3 = 72. hah!
+	// It would be nicer then if we just called this multiple times. But it has to be for distinct input data..
+	// Note that given threadsPerTileMajor = 128 we could comfortably put 48 doubles in shared and still run something.
+
+	// The inputs are only 9 doubles so we can have them.
+	// We only need the upper matrix. 1 + 2 + 3 + 4 +5 +6+7+8+9 = 45
+	// So we can do it in 2 goes.
+
+	long const iVertex = threadIdx.x + blockIdx.x * blockDim.x;
+	f64 eps = p_epsilon[iVertex];
+	f64_vec4 d_eps_by_d_beta_J;
 	f64_vec4 d_eps_by_d_beta_R;
 	memcpy(&d_eps_by_d_beta_J, &(p_d_eps_by_dbetaJ_x4[iVertex]), sizeof(f64_vec4));
 	memcpy(&d_eps_by_d_beta_R, &(p_d_eps_by_dbetaR_x4[iVertex]), sizeof(f64_vec4));
@@ -576,14 +775,14 @@ __global__ void kernelAccumulateSummands6(
 	sumdata[threadIdx.x][6] = eps*d_eps_by_d_beta_R.x[2];
 	sumdata[threadIdx.x][7] = eps*d_eps_by_d_beta_R.x[3];
 
-	sumdata[threadIdx.x][8] = d_eps_by_d_beta_J.x[0] *d_eps_by_d_beta_J.x[0];
-	sumdata[threadIdx.x][9] = d_eps_by_d_beta_J.x[0] *d_eps_by_d_beta_J.x[1];
-	sumdata[threadIdx.x][10] = d_eps_by_d_beta_J.x[0] *d_eps_by_d_beta_J.x[2];
-	sumdata[threadIdx.x][11] = d_eps_by_d_beta_J.x[0] *d_eps_by_d_beta_J.x[3];
-	sumdata[threadIdx.x][12] = d_eps_by_d_beta_J.x[0] *d_eps_by_d_beta_R.x[0];
-	sumdata[threadIdx.x][13] = d_eps_by_d_beta_J.x[0] *d_eps_by_d_beta_R.x[1];
-	sumdata[threadIdx.x][14] = d_eps_by_d_beta_J.x[0] *d_eps_by_d_beta_R.x[2];
-	sumdata[threadIdx.x][15] = d_eps_by_d_beta_J.x[0] *d_eps_by_d_beta_R.x[3];
+	sumdata[threadIdx.x][8] = d_eps_by_d_beta_J.x[0] * d_eps_by_d_beta_J.x[0];
+	sumdata[threadIdx.x][9] = d_eps_by_d_beta_J.x[0] * d_eps_by_d_beta_J.x[1];
+	sumdata[threadIdx.x][10] = d_eps_by_d_beta_J.x[0] * d_eps_by_d_beta_J.x[2];
+	sumdata[threadIdx.x][11] = d_eps_by_d_beta_J.x[0] * d_eps_by_d_beta_J.x[3];
+	sumdata[threadIdx.x][12] = d_eps_by_d_beta_J.x[0] * d_eps_by_d_beta_R.x[0];
+	sumdata[threadIdx.x][13] = d_eps_by_d_beta_J.x[0] * d_eps_by_d_beta_R.x[1];
+	sumdata[threadIdx.x][14] = d_eps_by_d_beta_J.x[0] * d_eps_by_d_beta_R.x[2];
+	sumdata[threadIdx.x][15] = d_eps_by_d_beta_J.x[0] * d_eps_by_d_beta_R.x[3];
 
 	sumdata[threadIdx.x][16] = d_eps_by_d_beta_J.x[1] * d_eps_by_d_beta_J.x[0];
 	sumdata[threadIdx.x][17] = d_eps_by_d_beta_J.x[1] * d_eps_by_d_beta_J.x[1];
@@ -593,7 +792,7 @@ __global__ void kernelAccumulateSummands6(
 	sumdata[threadIdx.x][21] = d_eps_by_d_beta_J.x[1] * d_eps_by_d_beta_R.x[1];
 	sumdata[threadIdx.x][22] = d_eps_by_d_beta_J.x[1] * d_eps_by_d_beta_R.x[2];
 	sumdata[threadIdx.x][23] = d_eps_by_d_beta_J.x[1] * d_eps_by_d_beta_R.x[3];
-	
+
 	// Can we fit the rest into 24? yes
 
 	__syncthreads();
@@ -644,7 +843,7 @@ __global__ void kernelAccumulateSummands6(
 	sumdata[threadIdx.x][5] = d_eps_by_d_beta_J.x[2] * d_eps_by_d_beta_R.x[1];
 	sumdata[threadIdx.x][6] = d_eps_by_d_beta_J.x[2] * d_eps_by_d_beta_R.x[2];
 	sumdata[threadIdx.x][7] = d_eps_by_d_beta_J.x[2] * d_eps_by_d_beta_R.x[3];
-	
+
 	sumdata[threadIdx.x][8] = d_eps_by_d_beta_J.x[3] * d_eps_by_d_beta_J.x[0];
 	sumdata[threadIdx.x][9] = d_eps_by_d_beta_J.x[3] * d_eps_by_d_beta_J.x[1];
 	sumdata[threadIdx.x][10] = d_eps_by_d_beta_J.x[3] * d_eps_by_d_beta_J.x[2];
@@ -653,7 +852,7 @@ __global__ void kernelAccumulateSummands6(
 	sumdata[threadIdx.x][13] = d_eps_by_d_beta_J.x[3] * d_eps_by_d_beta_R.x[1];
 	sumdata[threadIdx.x][14] = d_eps_by_d_beta_J.x[3] * d_eps_by_d_beta_R.x[2];
 	sumdata[threadIdx.x][15] = d_eps_by_d_beta_J.x[3] * d_eps_by_d_beta_R.x[3];
-	
+
 	sumdata[threadIdx.x][16] = d_eps_by_d_beta_R.x[0] * d_eps_by_d_beta_J.x[0];
 	sumdata[threadIdx.x][17] = d_eps_by_d_beta_R.x[0] * d_eps_by_d_beta_J.x[1];
 	sumdata[threadIdx.x][18] = d_eps_by_d_beta_R.x[0] * d_eps_by_d_beta_J.x[2];
@@ -793,7 +992,6 @@ __global__ void kernelAccumulateSummands6(
 
 	};
 }
-
 __global__ void kernelCalculateOverallVelocitiesVertices(
 	structural * __restrict__ p_info_minor,
 	v4 * __restrict__ p_vie_major,
@@ -1435,6 +1633,46 @@ __global__ void kernelCalculate_kappa_nu(
 }
 
 
+__global__ void kernelCreateTfromNTbydividing_bysqrtDN(
+	f64 * __restrict__ p_T_n,
+	f64 * __restrict__ p_T_i,
+	f64 * __restrict__ p_T_e,
+	f64 * __restrict__ p_sqrtDNn_Tn,
+	f64 * __restrict__ p_sqrtDN_Ti,
+	f64 * __restrict__ p_sqrtDN_Te,
+	f64 * __restrict__ p_AreaMajor,
+	nvals * __restrict__ p_n_major,
+	f64 * __restrict__ p_sqrtDinv_n, f64 * __restrict__ p_sqrtDinv_i,f64 * __restrict__ p_sqrtDinv_e
+)
+{
+	long const iVertex = threadIdx.x + blockIdx.x * blockDim.x;
+
+	nvals n = p_n_major[iVertex];
+	f64 AreaMajor = p_AreaMajor[iVertex];
+	f64 sqrtDNnTn = p_sqrtDNn_Tn[iVertex];
+	f64 sqrtDNTi = p_sqrtDN_Ti[iVertex];
+	f64 sqrtDNTe = p_sqrtDN_Te[iVertex];
+	f64 Tn, Ti, Te;
+	if (n.n_n*AreaMajor == 0.0) {
+		Tn = 0.0;
+	} else {
+		Tn = sqrtDNnTn *p_sqrtDinv_n[iVertex] / sqrt(AreaMajor*n.n_n);
+	}
+	p_T_n[iVertex] = Tn;
+
+	if (Tn != Tn) printf("iVertex %d Tn %1.10E area %1.9E \n",
+		iVertex, Tn, AreaMajor);
+
+	if (n.n*AreaMajor == 0.0) {
+		Ti = 0.0;
+		Te = 0.0;
+	} else {
+		Ti = sqrtDNTi *p_sqrtDinv_i[iVertex] / sqrt(AreaMajor*n.n);
+		Te = sqrtDNTe *p_sqrtDinv_e[iVertex] / sqrt(AreaMajor*n.n);
+	}
+	p_T_i[iVertex] = Ti;
+	p_T_e[iVertex] = Te;
+}
 
 __global__ void kernelCreateTfromNTbydividing(
 	f64 * __restrict__ p_T_n,
@@ -1680,6 +1918,18 @@ __global__ void kernelAddtoT(
 	// It does indeed - but we can't explain why.
 	
 	p_T_dest[index] = T;
+}
+
+__global__ void kernelAddtoT_lc(
+	f64 * __restrict__ p__T,
+	f64 * __restrict__ p_addition
+)
+{
+	long const iVertex = blockDim.x*blockIdx.x + threadIdx.x;
+	f64 T = p__T[iVertex];
+	for (int i = 0; i < REGRESSORS; i++)
+		T += beta_n_c[i] * p_addition[i*NUMVERTICES+iVertex];
+	p__T[iVertex] = T;
 }
 
 __global__ void kernelAddtoT_volleys(
@@ -1948,6 +2198,67 @@ __global__ void kernelAccumulateMatrix(
 	}
 }
 
+
+__global__ void VectorCompareMax(
+	f64 * __restrict__ p_comp1,
+	f64 * __restrict__ p_comp2,
+	long * __restrict__ p_iWhich,
+	f64 * __restrict__ p_max
+)
+{
+	__shared__ f64 diff[threadsPerTileMajorClever];
+	__shared__ long longarray[threadsPerTileMajorClever];
+
+	long const iVertex = threadIdx.x + blockDim.x*blockIdx.x;
+	diff[threadIdx.x] = fabs(p_comp1[iVertex] - p_comp2[iVertex]);
+	longarray[threadIdx.x] = iVertex;
+	__syncthreads();
+
+	int s = blockDim.x;
+	int k = s / 2;
+
+	while (s != 1) {
+		if (threadIdx.x < k)
+		{
+#pragma unroll
+			
+			if (diff[threadIdx.x] > diff[threadIdx.x + k])
+			{
+				// do nothing	
+			} else {
+				diff[threadIdx.x] = diff[threadIdx.x + k];
+				longarray[threadIdx.x] = longarray[threadIdx.x + k];
+			};
+			
+		};
+		__syncthreads();
+
+		// Modify for case blockdim not 2^n:
+		if ((s % 2 == 1) && (threadIdx.x == k - 1)) {
+			
+			if (diff[threadIdx.x] > diff[threadIdx.x + s-1])
+			{
+				// do nothing	
+			} else {
+				diff[threadIdx.x] = diff[threadIdx.x + s-1];
+				longarray[threadIdx.x] = longarray[threadIdx.x + s-1];
+			};
+		};
+		// In case k == 81, add [39] += [80]
+		// Otherwise we only get to 39+40=79.
+		s = k;
+		k = s / 2;
+		__syncthreads();
+	};
+
+	if (threadIdx.x == 0)
+	{
+		p_iWhich[blockIdx.x] = longarray[0];
+		p_max[blockIdx.x] = diff[0];
+	}
+}
+
+
 //
 //__global__ void kernelAccumulateMatrix_debug(
 //	structural * __restrict__ p_info,
@@ -2150,7 +2461,7 @@ __global__ void kernelAccumulateSumOfSquares(
 	sumdata1[threadIdx.x] = epsilon_n*epsilon_n;
 	sumdata2[threadIdx.x] = epsilon_i*epsilon_i;
 	sumdata3[threadIdx.x] = epsilon_e*epsilon_e;
-
+	
 	__syncthreads();
 
 	int s = blockDim.x;
@@ -2343,20 +2654,71 @@ __global__ void VectorAddMultiple(
 	f64 * __restrict__ p_T3, f64 const alpha3, f64 * __restrict__ p_x3)
 {
 	long const iVertex = blockDim.x*blockIdx.x + threadIdx.x;
+
+	//if (iVertex == VERTCHOSEN) printf("%d Ti %1.10E ", iVertex, p_T2[iVertex]);
+	
 	p_T1[iVertex] += alpha1*p_x1[iVertex];
 	p_T2[iVertex] += alpha2*p_x2[iVertex];
 	p_T3[iVertex] += alpha3*p_x3[iVertex];
+
+	//if (iVertex == VERTCHOSEN) printf("alpha2 %1.12E x2 %1.12E result %1.12E\n",
+	//	alpha2, p_x2[iVertex], p_T2[iVertex]);
+	
 }
 
+__global__ void VectorAddMultiple_masked(
+	f64 * __restrict__ p_T1, f64 const alpha1, f64 * __restrict__ p_x1,
+	f64 * __restrict__ p_T2, f64 const alpha2, f64 * __restrict__ p_x2,
+	f64 * __restrict__ p_T3, f64 const alpha3, f64 * __restrict__ p_x3,
+	bool * __restrict__ p_bMask,
+	bool * __restrict__ p_bMaskblock,
+	bool const bUseMask)
+{
+	if ((bUseMask) && (p_bMaskblock[blockIdx.x] == 0)) return;
+
+	long const iVertex = blockDim.x*blockIdx.x + threadIdx.x;
+
+	//if (iVertex == VERTCHOSEN) printf("%d Ti %1.10E ", iVertex, p_T2[iVertex]);
+	if (bUseMask) {
+
+		bool bMask[3];
+		bMask[0] = p_bMask[iVertex];
+		bMask[1] = p_bMask[iVertex + NUMVERTICES];
+		bMask[2] = p_bMask[iVertex + NUMVERTICES*2];
+		if (bMask[0]) p_T1[iVertex] += alpha1*p_x1[iVertex];
+		if (bMask[1]) p_T2[iVertex] += alpha2*p_x2[iVertex];
+
+		if (iVertex == VERTCHOSEN) printf("%d old T : %1.12E ", iVertex, p_T3[iVertex]);
+
+		if (bMask[2]) p_T3[iVertex] += alpha3*p_x3[iVertex];
+
+		if (iVertex == VERTCHOSEN) printf("alpha3 %1.12E x3 %1.12E new T %1.12E \n",
+			alpha3, p_x3[iVertex], p_T3[iVertex]);
+
+	} else {
+		p_T1[iVertex] += alpha1*p_x1[iVertex];
+		p_T2[iVertex] += alpha2*p_x2[iVertex];
+		p_T3[iVertex] += alpha3*p_x3[iVertex];
+	}
+	//if (iVertex == VERTCHOSEN) printf("alpha2 %1.12E x2 %1.12E result %1.12E\n",
+	//	alpha2, p_x2[iVertex], p_T2[iVertex]);
+
+}
 __global__ void kernelRegressorUpdate
 (
-	f64 * __restrict__ p_x_n, 
-	f64 * __restrict__ p_x_i, 
+	f64 * __restrict__ p_x_n,
+	f64 * __restrict__ p_x_i,
 	f64 * __restrict__ p_x_e,
 	f64 * __restrict__ p_a_n, f64 * __restrict__ p_a_i, f64 * __restrict__ p_a_e,
-	f64 const ratio1, f64 const ratio2, f64 const ratio3)
+	f64 const ratio1, f64 const ratio2, f64 const ratio3,
+	bool * __restrict__ p_bMaskBlock,
+	bool bUseMask
+	)
 {
+	if ((bUseMask) && (p_bMaskBlock[blockIdx.x] == 0)) return;
+
 	long const iVertex = blockDim.x*blockIdx.x + threadIdx.x;
+	
 	f64 xn = p_x_n[iVertex];
 	p_x_n[iVertex] = p_a_n[iVertex] + ratio1*xn;
 	f64 xi = p_x_i[iVertex];
@@ -2364,6 +2726,7 @@ __global__ void kernelRegressorUpdate
 	f64 xe = p_x_e[iVertex];
 	p_x_e[iVertex] = p_a_e[iVertex] + ratio3*xe;
 }
+
 __global__ void kernelPackupT3(
 	T3 * __restrict__ p_T,
 	f64 * __restrict__ p_Tn, f64 * __restrict__ p_Ti, f64 * __restrict__ p_Te)
@@ -2374,8 +2737,8 @@ __global__ void kernelPackupT3(
 	T.Ti = p_Ti[iVertex];
 	T.Te = p_Te[iVertex];
 	p_T[iVertex] = T;
-
 }
+
 __global__ void kernelAccumulateSummands2(
 	structural * __restrict__ p_info,
 	
@@ -2521,6 +2884,112 @@ __global__ void kernelInterpolateVarsAndPositions(
 // Idea: vertex code determines array of 12 relevant n and sticks them into shared.
 // Only saved us 1 var. 9 + 6 + 3 = 18.
 // Still there is premature optimization here -- none of this happens OFTEN.
+
+
+__global__ void Augment_dNv_minor(
+	structural * __restrict__ p_info,
+	nvals * __restrict__ p_n_minor,
+	LONG3 * __restrict__ p_tricornerindex,
+	f64 * __restrict__ p_temp_Ntotalmajor,
+	f64 * __restrict__ p_temp_Nntotalmajor,
+	f64 * __restrict__ p_AreaMinor,
+	f64_vec3 * __restrict__ p_MAR_neut_major,
+	f64_vec3 * __restrict__ p_MAR_ion_major,
+	f64_vec3 * __restrict__ p_MAR_elec_major,
+	f64_vec3 * __restrict__ p_MAR_neut,
+	f64_vec3 * __restrict__ p_MAR_ion,
+	f64_vec3 * __restrict__ p_MAR_elec)
+{
+	long iMinor = blockDim.x*blockIdx.x + threadIdx.x;
+	structural info = p_info[iMinor];
+
+	if (info.flag == DOMAIN_TRIANGLE)
+	{
+		if (iMinor < BEGINNING_OF_CENTRAL)
+		{
+			LONG3 tricornerindex = p_tricornerindex[iMinor];
+			nvals nminor = p_n_minor[iMinor];
+			f64 areaminor = p_AreaMinor[iMinor];
+			f64 Nhere = areaminor * nminor.n;
+			f64 Nnhere =areaminor * nminor.n_n;
+			f64 coeff1 = 0.333333333333333*Nhere / p_temp_Ntotalmajor[tricornerindex.i1];
+			f64 coeff2 = 0.333333333333333*Nhere / p_temp_Ntotalmajor[tricornerindex.i2];
+			f64 coeff3 = 0.333333333333333*Nhere / p_temp_Ntotalmajor[tricornerindex.i3];
+		
+			// this may be dividing by 0 if the corner is not a domain vertex -- so for ease we stick to domain minors
+
+			f64_vec3 add_i = p_MAR_ion_major[tricornerindex.i1] * coeff1
+				+ p_MAR_ion_major[tricornerindex.i2] * coeff2
+				+ p_MAR_ion_major[tricornerindex.i3] * coeff3;
+			f64_vec3 add_e = p_MAR_elec_major[tricornerindex.i1] * coeff1
+				+ p_MAR_elec_major[tricornerindex.i2] * coeff2
+				+ p_MAR_elec_major[tricornerindex.i3] * coeff3;
+
+			coeff1 = 0.333333333333333*Nnhere / p_temp_Nntotalmajor[tricornerindex.i1];
+			coeff2 = 0.333333333333333*Nnhere / p_temp_Nntotalmajor[tricornerindex.i2];
+			coeff3 = 0.333333333333333*Nnhere / p_temp_Nntotalmajor[tricornerindex.i3];
+
+			f64_vec3 add_n = p_MAR_neut_major[tricornerindex.i1] * coeff1
+				+ p_MAR_neut_major[tricornerindex.i2] * coeff2
+				+ p_MAR_neut_major[tricornerindex.i3] * coeff3;
+
+			p_MAR_neut[iMinor] += add_n;
+			p_MAR_ion[iMinor] += add_i;
+			p_MAR_elec[iMinor] += add_e;
+		} else {
+			nvals nminor = p_n_minor[iMinor];
+			f64 Nhere = p_AreaMinor[iMinor] * nminor.n_n;
+			f64 coeff = Nhere / p_temp_Ntotalmajor[iMinor - BEGINNING_OF_CENTRAL];
+			f64_vec3 add_i = p_MAR_ion_major[iMinor - BEGINNING_OF_CENTRAL] * coeff;
+			f64_vec3 add_e = p_MAR_elec_major[iMinor - BEGINNING_OF_CENTRAL] * coeff;
+			f64 Nnhere = p_AreaMinor[iMinor] * nminor.n;
+			coeff = Nnhere / p_temp_Nntotalmajor[iMinor - BEGINNING_OF_CENTRAL];
+			f64_vec3 add_n = p_MAR_neut_major[iMinor - BEGINNING_OF_CENTRAL] * coeff;
+
+			p_MAR_neut[iMinor] += add_n;
+			p_MAR_ion[iMinor] += add_i;
+			p_MAR_elec[iMinor] += add_e;
+		};		
+	};
+}
+
+
+__global__ void Collect_Ntotal_major(
+	structural * __restrict__ p_info_minor,
+	long * __restrict__ p_izTri,
+	nvals * __restrict__ p_n_minor,
+	f64 * __restrict__ p_AreaMinor, 
+	f64 * __restrict__ p_temp_Ntotalmajor,
+	f64 * __restrict__ p_temp_Nntotalmajor)
+{
+	long iVertex = blockDim.x*blockIdx.x + threadIdx.x;
+	structural info = p_info_minor[iVertex + BEGINNING_OF_CENTRAL];	
+	long izTri[MAXNEIGH_d];
+	short i;
+	
+	if (info.flag == DOMAIN_VERTEX) {
+		memcpy(izTri, p_izTri + MAXNEIGH_d*iVertex, sizeof(long)*MAXNEIGH_d);
+		nvals ncentral = p_n_minor[iVertex + BEGINNING_OF_CENTRAL];
+		f64 areaminorhere = p_AreaMinor[iVertex + BEGINNING_OF_CENTRAL];
+		f64 sum_N = ncentral.n*areaminorhere;
+		f64 sum_Nn = ncentral.n_n*areaminorhere;
+		f64 areaminor;
+		nvals nminor;
+		for (i = 0; i < info.neigh_len; i++)
+		{
+			if (p_info_minor[izTri[i]].flag == DOMAIN_TRIANGLE) // see above
+			{
+				nminor = p_n_minor[izTri[i]];
+				areaminor = p_AreaMinor[izTri[i]];
+				sum_N += 0.33333333333333*nminor.n*areaminor;
+				sum_Nn += 0.33333333333333*nminor.n_n*areaminor;
+			}
+		};
+		p_temp_Ntotalmajor[iVertex] = sum_N;
+		p_temp_Nntotalmajor[iVertex] = sum_Nn;
+	};
+}
+// We could probably create a big speedup by having a set of blocks that index only the DOMAIN!
 
 
 __global__ void Collect_Nsum_at_tris(

@@ -113,40 +113,47 @@ using std::cout;
 		};
 		for (k = 0; k < LUSIZE; k++) // the outermost kij loop
 		{
-			imax = -1;
-			big = zero;					// initialise for the search for largest pivot element
-			for (i = k; i < LUSIZE; i++)
+			printf("k %d\n", k);
+
+			if (k < LUSIZE - 1) // if it == LUSIZE-1 then we don't need to run this, and it's dangerous too.
 			{
-				temp1 = vv[i]*fabs(LU[i][k]);
-				if (temp1 > big) // is the figure of merit for the pivot better than the best so far?
+				imax = -1;
+				big = zero;					// initialise for the search for largest pivot element
+				for (i = k; i < LUSIZE; i++)
 				{
-					big = temp1;
-					imax = i;
+					temp1 = vv[i] * fabs(LU[i][k]);
+					if (temp1 > big) // is the figure of merit for the pivot better than the best so far?
+					{
+						big = temp1;
+						imax = i;
+					};
 				};
-			};
-			if (k != imax)	// do we need to interchange rows?
-			{
-				for (j = 0; j < LUSIZE; j++)
+				if (k != imax)	// do we need to interchange rows?
 				{
-					temp1 = LU[imax][j];
-					LU[imax][j] = LU[k][j];
-					LU[k][j] = temp1;
+					for (j = 0; j < LUSIZE; j++)
+					{
+						temp1 = LU[imax][j];
+						LU[imax][j] = LU[k][j];
+						LU[k][j] = temp1;
+					};
+					d = -d;	// change the parity of d [ never used for anything ]
+
+					// surely here we should be actually interchanging properly?
+
+					// Old version:
+					//vv[imax] = vv[k];  // interchange the scale factor
+
+					// Warwick code:
+					temp1 = vv[imax];
+					vv[imax] = vv[k];
+					vv[k] = temp1;  // does that help anything? Guess probably not.
+					// Otherwise the info from vv[imax] is lost completely - can that be right? This is all a bit crazy.
+					// never used again??
+
 				};
-				d = -d;	// change the parity of d [ never used for anything ]
-				
-				// surely here we should be actually interchanging properly?
-
-				// Old version:
-				//vv[imax] = vv[k];  // interchange the scale factor
-
-				// Warwick code:
-				temp1 = vv[imax];
-				vv[imax] = vv[k];
-				vv[k] = temp1;  // does that help anything? Guess probably not.
-				// Otherwise the info from vv[imax] is lost completely - can that be right? This is all a bit crazy.
-				// never used again??
-
-			};
+			} else {
+				imax = k;
+			}
 			if (imax < 0) {
 				printf("problem -- imax not found.\n");
 				getch();
@@ -154,7 +161,11 @@ using std::cout;
 				indx[k] = imax;
 			};
 
-			if (LU[k][k] == zero) LU[k][k] = TINY;
+			if (LU[k][k] == zero) {
+				LU[k][k] = TINY;
+				printf("singular matrix!\n");
+			};
+
 			// pivot element == zero, ie singular matrix
 			// huh.
 			// Well, this is simply changing the matrix then
