@@ -8024,7 +8024,334 @@ __global__ void kernelCreatePutativeTandsave(
 
 }
 
+
 __global__ void kernelIonisationRates(
+	f64 const h_use,
+	structural * __restrict__ p_info_minor,
+	T3 * __restrict__ p_T_major,
+	nvals * __restrict__ p_n_major,
+	f64 * __restrict__ p_AreaMajor,
+	NTrates * __restrict__ NTadditionrates,
+	f64_vec3 * __restrict__ p_MAR_neut,
+	f64_vec3 * __restrict__ p_MAR_ion,
+	f64_vec3 * __restrict__ p_MAR_elec,
+
+	// We are in major cells so actually output this to a fresh temp array (9 scalars)
+	// which we then share out into minor cells.
+
+	v4 * __restrict__ p_v,
+	f64_vec3 * __restrict__ p_v_n,
+	T3 * __restrict__ p_T_use_major,
+	bool b_useTuse
+)
+					// ** SIMPLIFIED VERSION **
+{
+
+#define SAFETY_FACTOR 1.2
+#define LEEWAY        1.0e-23
+#define vAC 218687393.0  // Alfven Critical velocity = sqrt(13.6*1.6e-12*2/me)
+
+	long const iVertex = blockIdx.x*blockDim.x + threadIdx.x;
+	structural info = p_info_minor[iVertex + BEGINNING_OF_CENTRAL];
+	NTrates ourrates;
+	f64_vec3 MAR_neut, MAR_ion, MAR_elec;
+	v4 v;
+	f64_vec3 v_n;
+	f64 T_use;
+
+	if (info.flag == DOMAIN_VERTEX)
+	{
+		// case DOMAIN_VERTEX:
+
+		f64 lambda;
+		f64 AreaMajor = p_AreaMajor[iVertex];
+		T3 T_k = p_T_major[iVertex];
+		if (b_useTuse) {
+			T3 T = p_T_use_major[iVertex];
+			T_use = T.Te;
+		}
+		else {
+			T_use = T_k.Te;
+		}
+
+		nvals our_n = p_n_major[iVertex];
+		memcpy(&ourrates, NTadditionrates + iVertex, sizeof(NTrates));
+		memcpy(&MAR_neut, p_MAR_neut + iVertex, sizeof(f64_vec3));   // are we passing stuff from central then?
+		memcpy(&MAR_ion, p_MAR_ion + iVertex, sizeof(f64_vec3));
+		memcpy(&MAR_elec, p_MAR_elec + iVertex, sizeof(f64_vec3));  // it does mean d/dt (Nv)
+		memcpy(&v, p_v + iVertex, sizeof(v4));
+		memcpy(&v_n, p_v_n + iVertex, sizeof(f64_vec3));
+
+		// 0 . What is lambda?
+
+		f64 oldT1;
+
+		f64 n_k = our_n.n;
+		f64 n_n_k = our_n.n_n;
+		f64 n_kplus1, n_n_kplus1, n_kplus2;
+		f64 Gamma_ion, Gamma_rec, hn, hnn, Delta_ionise, Delta_rec;
+		// lambda = 0.5*reduced mass*w0.dot(w0) / T_k.Te;
+
+		f64 w0z = v.vez - v_n.z;
+		// What is capital Theta of T_k ?
+		//f64 w = sqrt(w0z*w0z); // WE ARE ONLY USING Z DIMENSION FOR ABSORBING KINETIC ENERGY 
+
+		// Check again: how did we come up with the following formulas?
+		// Off of the lambda spreadsheet or the v spreadsheet? I think lambda.
+
+		f64 T_use_theta = T_k.Te;
+		if (T_use_theta < 1.0e-12) T_use_theta = 1.0e-12;
+		f64 Theta = (1.1 + 0.4e-12 / T_use_theta);
+		if (w0z < vAC - 0.4e-4 / T_use_theta) {
+			//Theta *= exp(-w*(vC - 0.4e-4 / T_use_theta - w)*1.0e-12
+			//	/ (0.25*(vC - 0.4e-4 / T_use_theta)*(vC - 0.4e-4 / T_use_theta)*T_use_theta));
+			// Multiply through to save on divisions?:
+			Theta *= exp(-w0z*((vAC - w0z)* T_use_theta - 0.4e-4)*1.0e-12 /
+				(0.25*(vAC* T_use_theta - 0.4e-4)*(vAC* T_use_theta - 0.4e-4)));
+		};
+
+		// Available KE:
+		f64 Kconv = 0.5*m_e*m_n*n_k*n_n_k*(w0z*w0z) / (m_e*n_k + m_n*n_n_k);
+
+		f64 coeff_on_ionizing = 0.5*T_k.Tn - 2.0*T_k.Te*13.6*kB*n_k / (3.0*T_k.Te*n_k + 2.0*Theta*Kconv);
+
+		// Now compute f(Tk) = T_k+1 given using T_k
+
+		f64 w = sqrt(0.5*(w0z*w0z + (v.vxy.x - v_n.x)*(v.vxy.x - v_n.x) + (v.vxy.y - v_n.y)*(v.vxy.y - v_n.y))); // CORRECTION FACTOR 0.5 ...
+																												 // ================
+																												 // Made a mistake and saved data for v that is sqrt(2) times greater by missing 0.5 out of lambda
+																												 // so
+																												 // data for "1e7" is actually for 1.4e7. Thus pass 1/sqrt(2) times our velocity 
+
+		f64 T_image1, T2, T_image2, T_oldimage1, Tkplus2minus1;
+
+		hn = h_use*n_k;
+		hnn = h_use*n_k*n_k;
+
+		f64 T1 = T_use;  // first go. = Tk if b_useTuse == false.
+		{
+			Gamma_ion = GetIonizationRates(T1, w, &Gamma_rec);
+
+			Delta_ionise = (n_n_k*hn*Gamma_ion + (n_n_k + n_k)*hnn*Gamma_rec*hn*Gamma_ion) /
+				((1.0 + hn*Gamma_ion)*(1.0 + hnn*Gamma_rec) - hnn*Gamma_rec*hn*Gamma_ion);
+			Delta_rec = (n_k*hnn*Gamma_rec + (n_k + n_n_k)*hnn*Gamma_rec*hn*Gamma_ion) /
+				((1.0 + hn*Gamma_ion)*(1.0 + hnn*Gamma_rec) - hnn*Gamma_rec*hn*Gamma_ion);
+			n_kplus1 = n_k + Delta_ionise - Delta_rec; // Delta_rec is amount recombining.
+			n_n_kplus1 = n_n_k - Delta_ionise + Delta_rec;
+
+			T_image1 = (n_k*T_k.Te + coeff_on_ionizing*Delta_ionise + TWOTHIRDS*13.6*kB*Delta_rec) / n_kplus1;
+		}
+		T2 = T_image1;
+
+
+		// Skip over algorithm:
+
+		if (iVertex == 16700) printf("Tuse %1.10E w %1.8E Gamma %1.10E rec %1.10E w0z %1.10E Kconv %1.10E\n", T_use, w, Gamma_ion, Gamma_rec, w0z, Kconv);
+
+		if (iVertex == 16700) printf("Delta_ionise %1.10E rec %1.10E \n", Delta_ionise, Delta_rec);
+
+
+		f64 dNdt_ionise = AreaMajor*Delta_ionise / h_use;
+		f64 dNdt_recombine = AreaMajor*Delta_rec / h_use;
+
+		ourrates.N += dNdt_ionise - dNdt_recombine;
+		ourrates.Nn += dNdt_recombine - dNdt_ionise;
+
+		// Store existing energy density:
+		f64 Energy_k = 1.5*(n_k*(T_k.Te + T_k.Ti) + n_n_k*T_k.Tn) +
+			0.5*((m_e + m_i)*n_k*(v.vxy.dot(v.vxy)) + m_e*n_k*v.vez*v.vez + m_i*n_k*v.viz*v.viz + m_n*n_n_k*v_n.dot(v_n));
+
+
+		// 1. Calculate kinetic energy absorption impact on vez, vnz
+		// ie Ionization resistance to current
+
+		n_kplus1 = n_k + Delta_ionise - Delta_rec;
+		n_n_kplus1 = n_n_k - Delta_ionise + Delta_rec;
+
+		// Absorbed DKE:
+		f64 deltaKE = -(2.0*Theta*Kconv / (3.0*n_k*T_k.Te + 2.0*Theta*Kconv))*Delta_ionise*13.6*kB;
+		f64 new_vz_diff = sqrt(m_e*n_kplus1 + m_n*n_n_kplus1*
+			((n_k*n_n_k / (m_e*n_k + m_n*n_n_k))*(w0z*w0z) + 2.0*deltaKE / (m_e*m_n)) /
+			n_kplus1*n_n_kplus1);
+		f64 delta_vez = m_n*n_n_kplus1*(w0z + new_vz_diff) /
+			(m_n*n_n_kplus1 + m_e*n_kplus1);
+		f64 delta_vnz = -m_e*n_kplus1*delta_vez / (m_n*n_n_kplus1);
+
+		// Check: w0 = vez-vnz - tick
+		// should change to scalar.
+
+		MAR_neut.z += AreaMajor*n_n_kplus1*delta_vnz / h_use;
+		MAR_elec.z += AreaMajor*n_kplus1*delta_vez / h_use;
+
+		f64_vec3 ve_kplus1, vi_kplus1, vn_kplus1;
+
+		// Store alongside: v_k+1 so that we can follow the anticipated change in energy,
+		// to create energy balance:
+		ve_kplus1.x = v.vxy.x*(n_k / n_kplus1);
+		ve_kplus1.y = v.vxy.y*(n_k / n_kplus1);
+		ve_kplus1.z = v.vez*(n_k / n_kplus1) + delta_vez; // we need to store v, we could also store nv if we wanted.
+
+		vi_kplus1.x = v.vxy.x*(n_k / n_kplus1);
+		vi_kplus1.y = v.vxy.y*(n_k / n_kplus1);
+		vi_kplus1.z = v.viz*(n_k / n_kplus1);
+
+		vn_kplus1 = v_n*(n_n_k / n_n_kplus1);
+		vn_kplus1.z += delta_vnz;
+
+		// 2. Add the effect of xfers on momenta:
+
+		// What does MAR_neut mean? Nv?
+		{
+			f64_vec3 v_use;
+			v_use.x = v.vxy.x;
+			v_use.y = v.vxy.y;
+			v_use.z = (m_e*v.vez + m_i*v.viz) / (m_e + m_i);
+			MAR_neut += -dNdt_ionise*v_n + dNdt_recombine*v_use;
+			MAR_ion += dNdt_ionise*v_n - dNdt_recombine*v_use;
+			MAR_elec += dNdt_ionise*v_n - dNdt_recombine*v_use;
+
+			vn_kplus1 -= (Delta_ionise*v_n - Delta_rec*v_use) / n_n_kplus1;
+			// n_k+1 v_k+1 = n_k v_k + Delta_n*v_use => v_k+1 = (n_k/n_k+1) v_k + (Delta_n/n_k+1) v_use
+			vi_kplus1 += (Delta_ionise*v_n - Delta_rec*v_use) / n_kplus1;
+			ve_kplus1 += (Delta_ionise*v_n - Delta_rec*v_use) / n_kplus1;
+
+		}
+		
+
+		// . Ionization cooling & recombination heating
+		//f64 coeff_on_ionizing = 0.5*T_k.Tn - 2.0*T_k.Te*13.6*kB*n_k / (3.0*T_k.Te*n_k + 2.0*Theta*Kconv);
+		//		ourrates.NeTe +=
+		//			dNdt_recombine*2.0*13.6*kB / 3.0
+		//			- (2.0*T_k.Te*13.6*kB*n_k / (3.0*T_k.Te*n_k + 2.0*Theta*Kconv))*dNdt_ionise;
+		// We can drop this: it will be accounted for by the final energy balance.
+
+		// 3. Add to nT for x-fers due to species converting
+
+		ourrates.NiTi += 0.5*dNdt_ionise*T_k.Tn;
+		ourrates.NeTe += 0.5*dNdt_ionise*T_k.Tn;
+		ourrates.NnTn -= dNdt_ionise*T_k.Tn;
+
+		f64 nTe_kplus1 = T_k.Te*(n_k)+0.5*Delta_ionise*T_k.Tn;
+		f64 nTi_kplus1 = T_k.Ti*(n_k)+0.5*Delta_ionise*T_k.Tn;
+		f64 n_nTn_kplus1 = T_k.Tn*(n_n_k)-Delta_ionise*T_k.Tn;
+
+		// 4. Energy balance through Te:
+		// Maybe we should rather be seeking OVERALL energy balance where KE_result is from n_k+1, v_k+1
+		// and we ensure that we have lost the right amount of energy overall.
+		// That is the better way:
+
+		f64 KE_result = 0.5*(m_e*n_kplus1*ve_kplus1.dot(ve_kplus1) + m_i*n_kplus1*vi_kplus1.dot(vi_kplus1)
+			+ m_n*n_n_kplus1*vn_kplus1.dot(vn_kplus1));
+
+		f64 Energy_density_kplus1 = KE_result + 1.5*(nTe_kplus1 + nTi_kplus1 + n_nTn_kplus1);
+		f64 Energy_density_target = Energy_k - 13.6*kB*(Delta_ionise - Delta_rec);
+
+		// Additional_heat = (KE_k + deltaKE) - KE_result; // usually positive
+		// 1*1+3*3 > 2*2 + 2*2  so KE is generally decreasing by friction; KE_result < KE_k+deltaKE
+		// KE_result + Added_heat + existing heat = desired total energy = KE_k + heat_k + deltaKE
+
+		// 1.5 nT += Frictional_heating
+		// NTe += (2/3) Area Frictional_heating
+		ourrates.NeTe += 2.0*AreaMajor*
+			(Energy_density_target - Energy_density_kplus1) / (3.0*h_use);
+
+		// DEBUG:
+		if ((ourrates.NeTe != ourrates.NeTe) && (iVertex == 16700)) printf("Nan NeTe %d \n", iVertex);
+		//if (ourrates.N != ourrates.N) printf("Nan N %d \n", iVertex);
+
+
+		memcpy(NTadditionrates + iVertex, &ourrates, sizeof(NTrates));
+		memcpy(p_MAR_neut + iVertex, &MAR_neut, sizeof(f64_vec3));
+		memcpy(p_MAR_ion + iVertex, &MAR_ion, sizeof(f64_vec3));
+		memcpy(p_MAR_elec + iVertex, &MAR_elec, sizeof(f64_vec3));
+
+
+		//******************************************************************************************************
+
+
+		//// f64 TeV = T.Te * one_over_kB; 
+		//// We loaded in ourrates.NT which indicates the new heat available so we should include some of that.
+		//// The main impact will be from heat conduction; dN/dt due to advection neglected here.
+		//f64 TeV = one_over_kB * (T.Te*our_n.n*AreaMajor + h_use*ourrates.NeTe)/
+		//	(our_n.n*AreaMajor + h_use*ourrates.N);
+		//// Should be very careful here: ourrates.NeTe can soak to neutrals on timescale what? 1e-11?
+
+		//if (TeV < 0.0) {
+		//	printf("\n\niVertex %d : ourrates.N %1.14E denominator %1.14E \n"
+		//		" AreaMajor %1.14E TeV %1.14E ourrates.NeTe %1.10E h %1.10E \n"
+		//		"ourrates.Nn %1.10E n %1.10E n_n %1.10E Te %1.10E Tn %1.10E \n\n",
+		//		iVertex, ourrates.N, 
+		//		(our_n.n*AreaMajor + h_use*ourrates.N),
+		//		AreaMajor, TeV, ourrates.NeTe, h_use,
+		//		ourrates.Nn, our_n.n, our_n.n_n, T.Te, T.Tn);
+		//	
+		//}
+		//f64 sqrtT = sqrt(TeV);
+		//f64 temp = 1.0e-5*exp(-13.6 / TeV) / (13.6*(6.0*13.6 + TeV)); // = S / T^1/2
+		//	// Let h n n_n S be the ionising amount,
+		//	// h n S is the proportion of neutrals! Make sure we do not run out!
+
+		////f64 hnS = (h_use*our_n.n*TeV*temp) / (sqrtT + h_use * our_n.n_n*temp*SIXTH*13.6);
+
+		//	// d/dt (sqrtT) = 1/2 dT/dt T^-1/2. 
+		//	// dT[eV]/dt = -TWOTHIRDS * 13.6* n_n* sqrtT *temp
+		//	// d/dt (sqrtT) = -THIRD*13.6*n_n*temp;
+
+		//// kind of midpoint, see SIXTH not THIRD:
+		//f64 Model_of_T_to_half = TeV / (sqrtT + h_use*SIXTH*13.6*our_n.n_n*temp / (1.0 - h_use*(our_n.n_n - our_n.n)*temp*sqrtT));
+
+		//f64 hS = h_use*temp*Model_of_T_to_half;
+		//		
+		//// NEW:
+		//f64 ionise_rate = AreaMajor * our_n.n_n * our_n.n*hS / 
+		//					(h_use*(1.0 + hS*(our_n.n-our_n.n_n)));   // dN/dt
+
+		//ourrates.N += ionise_rate;
+		//ourrates.Nn += -ionise_rate;
+
+
+		//// Let nR be the recombining amount, R is the proportion.
+		//TeV = T.Te * one_over_kB;
+		//f64 Ttothe5point5 = sqrtT * TeV * TeV*TeV * TeV*TeV;
+		//f64 hR = h_use * (our_n.n * our_n.n*8.75e-27*TeV) /
+		//	(Ttothe5point5 + h_use * 2.25*TWOTHIRDS*13.6*our_n.n*our_n.n*8.75e-27);
+
+		//// T/T^5.5 = T^-4.5
+		//// T/(T^5.5+eps) < T^-4.5
+
+		//// For some reason I picked 2.25 = 4.5/2 instead of 5.5/2.
+		//// But basically it looks reasonable.
+
+		//// Maybe the additional stuff is an estimate of the change in T[eV]^5.5??
+		//// d/dt T^5.5 = 5.5 T^4.5 dT/dt 
+		//// dT/dt = TWOTHIRDS * 13.6*( hR / h_use) = TWOTHIRDS * 13.6*( n^2 8.75e-27 T^-4.5) 
+		//// d/dt T^5.5 = 5.5 TWOTHIRDS * 13.6*( n^2 8.75e-27 )  
+
+		//f64 recomb_rate = AreaMajor * our_n.n * hR / h_use; // could reasonably again take hR/(1+hR) for n_k+1
+		//ourrates.N -= recomb_rate;
+		//ourrates.Nn += recomb_rate;
+
+		//if (TEST) printf("%d recomb rate %1.10E ionise_rate %1.10E our_n.n %1.10E nn %1.10E hR %1.10E hS %1.10E\n"
+		//	"h_use %1.8E sqrtTeV %1.10E Ttothe5point5 %1.9E Te %1.9E modelThalf %1.9E\n", iVertex,
+		//	recomb_rate, ionise_rate, our_n.n, our_n.n_n, hR, hS, h_use, sqrtT, Ttothe5point5, T.Te, Model_of_T_to_half);
+
+		//ourrates.NeTe += -TWOTHIRDS * 13.6*kB*(ionise_rate - recomb_rate) + 0.5*T.Tn*ionise_rate;
+		//ourrates.NiTi += 0.5*T.Tn*ionise_rate;
+		//ourrates.NnTn += (T.Te + T.Ti)*recomb_rate;
+		//if (TEST) {
+		//	printf("kernelIonisation %d NeTe %1.12E NiTi %1.12E NnTn %1.12E\n"
+		//		"due to I+R : NeTe %1.12E NiTi %1.12E NnTn %1.12E\n"
+		//		"d/dtNeTe/N %1.9E d/dtNiTi/N %1.9E d/dtNnTn/Nn %1.9E \n\n",
+		//		iVertex, ourrates.NeTe, ourrates.NiTi, ourrates.NnTn,
+		//		-TWOTHIRDS * 13.6*kB*(ionise_rate - recomb_rate) + 0.5*T.Tn*ionise_rate,
+		//		0.5*T.Tn*ionise_rate,
+		//		(T.Te + T.Ti)*recomb_rate,
+		//		ourrates.NeTe / (our_n.n*AreaMajor), ourrates.NiTi / (our_n.n*AreaMajor), ourrates.NnTn / (our_n.n_n*AreaMajor));
+		//};
+		//memcpy(NTadditionrates + iVertex, &ourrates, sizeof(NTrates));
+	};
+}
+__global__ void kernelIonisationRates_full_version_with_nonovershooting_alg(
 	f64 const h_use,
 	structural * __restrict__ p_info_minor,
 	T3 * __restrict__ p_T_major,
@@ -8130,9 +8457,9 @@ __global__ void kernelIonisationRates(
 			Gamma_ion = GetIonizationRates(T1, w, &Gamma_rec);
 
 			Delta_ionise = (n_n_k*hn*Gamma_ion + (n_n_k + n_k)*hnn*Gamma_rec*hn*Gamma_ion) /
-				(1.0 + hn*Gamma_ion)*(1.0 + hnn*Gamma_rec - hnn*Gamma_rec*hn*Gamma_ion);
+				((1.0 + hn*Gamma_ion)*(1.0 + hnn*Gamma_rec) - hnn*Gamma_rec*hn*Gamma_ion);
 			Delta_rec = (n_k*hnn*Gamma_rec + (n_k + n_n_k)*hnn*Gamma_rec*hn*Gamma_ion) /
-				((1.0 + hnn*Gamma_rec)*(1.0 + hn*Gamma_ion - hnn*Gamma_rec*hn*Gamma_ion));
+				((1.0 + hn*Gamma_ion)*(1.0 + hnn*Gamma_rec) - hnn*Gamma_rec*hn*Gamma_ion);
 			n_kplus1 = n_k + Delta_ionise - Delta_rec; // Delta_rec is amount recombining.
 			n_n_kplus1 = n_n_k - Delta_ionise + Delta_rec;
 
@@ -8162,9 +8489,9 @@ __global__ void kernelIonisationRates(
 				Gamma_ion = GetIonizationRates(T1, w, &Gamma_rec);
 
 				Delta_ionise = (n_n_k*hn*Gamma_ion + (n_n_k + n_k)*hnn*Gamma_rec*hn*Gamma_ion) /
-					(1.0 + hn*Gamma_ion)*(1.0 + hnn*Gamma_rec - hnn*Gamma_rec*hn*Gamma_ion);
+					((1.0 + hn*Gamma_ion)*(1.0 + hnn*Gamma_rec) - hnn*Gamma_rec*hn*Gamma_ion);
 				Delta_rec = (n_k*hnn*Gamma_rec + (n_k + n_n_k)*hnn*Gamma_rec*hn*Gamma_ion) /
-					((1.0 + hnn*Gamma_rec)*(1.0 + hn*Gamma_ion - hnn*Gamma_rec*hn*Gamma_ion));
+					((1.0 + hn*Gamma_ion)*(1.0 + hnn*Gamma_rec) - hnn*Gamma_rec*hn*Gamma_ion);
 				n_kplus1 = n_k + Delta_ionise - Delta_rec; // Delta_rec is amount recombining.
 				n_n_kplus1 = n_n_k - Delta_ionise + Delta_rec;
 
@@ -8187,11 +8514,12 @@ __global__ void kernelIonisationRates(
 				// Compute image of T1:
 				{
 					Gamma_ion = GetIonizationRates(T1, w, &Gamma_rec);
-
+					
 					Delta_ionise = (n_n_k*hn*Gamma_ion + (n_n_k + n_k)*hnn*Gamma_rec*hn*Gamma_ion) /
-						(1.0 + hn*Gamma_ion)*(1.0 + hnn*Gamma_rec - hnn*Gamma_rec*hn*Gamma_ion);
+						((1.0 + hn*Gamma_ion)*(1.0 + hnn*Gamma_rec) - hnn*Gamma_rec*hn*Gamma_ion);
 					Delta_rec = (n_k*hnn*Gamma_rec + (n_k + n_n_k)*hnn*Gamma_rec*hn*Gamma_ion) /
-						((1.0 + hnn*Gamma_rec)*(1.0 + hn*Gamma_ion - hnn*Gamma_rec*hn*Gamma_ion));
+						((1.0 + hn*Gamma_ion)*(1.0 + hnn*Gamma_rec) - hnn*Gamma_rec*hn*Gamma_ion);
+
 					n_kplus1 = n_k + Delta_ionise - Delta_rec; // Delta_rec is amount recombining.
 					n_n_kplus1 = n_n_k - Delta_ionise + Delta_rec;
 
@@ -8241,9 +8569,9 @@ __global__ void kernelIonisationRates(
 					// No adjustment to T1, T2 needed.
 					// Compute image of T2 under f_k:		
 					Delta_ionise = (n_n_k*hn*Gamma_ion + (n_n_k + n_k)*hnn*Gamma_rec*hn*Gamma_ion) /
-						(1.0 + hn*Gamma_ion)*(1.0 + hnn*Gamma_rec - hnn*Gamma_rec*hn*Gamma_ion);
+						((1.0 + hn*Gamma_ion)*(1.0 + hnn*Gamma_rec) - hnn*Gamma_rec*hn*Gamma_ion);
 					Delta_rec = (n_k*hnn*Gamma_rec + (n_k + n_n_k)*hnn*Gamma_rec*hn*Gamma_ion) /
-						((1.0 + hnn*Gamma_rec)*(1.0 + hn*Gamma_ion - hnn*Gamma_rec*hn*Gamma_ion));
+						((1.0 + hn*Gamma_ion)*(1.0 + hnn*Gamma_rec) - hnn*Gamma_rec*hn*Gamma_ion);
 					n_kplus1 = n_k + Delta_ionise - Delta_rec; // Delta_rec is amount recombining.
 					T_image2 = (n_k*T_k.Te + coeff_on_ionizing*Delta_ionise + TWOTHIRDS*13.6*kB*Delta_rec) / n_kplus1;	
 					// We want this defined when we enter secant loop.
@@ -8272,10 +8600,11 @@ __global__ void kernelIonisationRates(
 					// We can check the sign_k just by evaluating ionization rates at T_k
 					// No, we pretty much need to work out which one is winning out.
 					Gamma_ion = GetIonizationRates(T_k.Te, w, &Gamma_rec);
-					f64 Delta_ionise_k = (n_n_k*hn*Gamma_ion + (n_n_k + n_k)*hnn*Gamma_rec*hn*Gamma_ion) /
-						(1.0 + hn*Gamma_ion)*(1.0 + hnn*Gamma_rec - hnn*Gamma_rec*hn*Gamma_ion);
-					f64 Delta_rec_k = (n_k*hnn*Gamma_rec + (n_k + n_n_k)*hnn*Gamma_rec*hn*Gamma_ion) /
-						((1.0 + hnn*Gamma_rec)*(1.0 + hn*Gamma_ion - hnn*Gamma_rec*hn*Gamma_ion));
+
+					Delta_ionise = (n_n_k*hn*Gamma_ion + (n_n_k + n_k)*hnn*Gamma_rec*hn*Gamma_ion) /
+						((1.0 + hn*Gamma_ion)*(1.0 + hnn*Gamma_rec) - hnn*Gamma_rec*hn*Gamma_ion);
+					Delta_rec = (n_k*hnn*Gamma_rec + (n_k + n_n_k)*hnn*Gamma_rec*hn*Gamma_ion) /
+						((1.0 + hn*Gamma_ion)*(1.0 + hnn*Gamma_rec) - hnn*Gamma_rec*hn*Gamma_ion);
 					n_kplus1 = n_k + Delta_ionise_k - Delta_rec_k; // Delta_rec is amount recombining.
 					f64 T_image_k = (n_k*T_k.Te + coeff_on_ionizing*Delta_ionise + TWOTHIRDS*13.6*kB*Delta_rec) / n_kplus1;
 
@@ -8334,10 +8663,10 @@ __global__ void kernelIonisationRates(
 					// construct f_k image of T2 for use in secant:
 					f64 hnGamma_ion = h_use*Gamma_ion*n_k;
 					f64 hnnGamma_rec = h_use*Gamma_rec*n_k*n_k;
-					Delta_ionise = (n_n_k*hnGamma_ion + (n_n_k + n_k)*hnnGamma_rec*hnGamma_ion) /
-						(1.0 + hnGamma_ion)*(1.0 + hnnGamma_rec - hnnGamma_rec*hnGamma_ion);
-					Delta_rec = (n_k*hnnGamma_rec + (n_k + n_n_k)*hnnGamma_rec*hnGamma_ion) /
-						((1.0 + hnnGamma_rec)*(1.0 + hnGamma_ion - hnnGamma_rec*hnGamma_ion));
+			Delta_ionise = (n_n_k*hn*Gamma_ion + (n_n_k + n_k)*hnn*Gamma_rec*hn*Gamma_ion) /
+				((1.0 + hn*Gamma_ion)*(1.0 + hnn*Gamma_rec) - hnn*Gamma_rec*hn*Gamma_ion);
+			Delta_rec = (n_k*hnn*Gamma_rec + (n_k + n_n_k)*hnn*Gamma_rec*hn*Gamma_ion) /
+				((1.0 + hn*Gamma_ion)*(1.0 + hnn*Gamma_rec) - hnn*Gamma_rec*hn*Gamma_ion);
 					n_kplus1 = n_k + Delta_ionise - Delta_rec; // Delta_rec is amount recombining.
 					T_image2 = (n_k*T_k.Te + coeff_on_ionizing*Delta_ionise + TWOTHIRDS*13.6*kB*Delta_rec) / n_kplus1;
 				}
@@ -8365,9 +8694,9 @@ __global__ void kernelIonisationRates(
 			// Calculate image starting from T_k and using T_est
 			Gamma_ion = GetIonizationRates(T_est, w, &Gamma_rec);
 			Delta_ionise = (n_n_k*hn*Gamma_ion + (n_n_k + n_k)*hnn*Gamma_rec*hn*Gamma_ion) /
-				(1.0 + hn*Gamma_ion)*(1.0 + hnn*Gamma_rec - hnn*Gamma_rec*hn*Gamma_ion);
+				((1.0 + hn*Gamma_ion)*(1.0 + hnn*Gamma_rec) - hnn*Gamma_rec*hn*Gamma_ion);
 			Delta_rec = (n_k*hnn*Gamma_rec + (n_k + n_n_k)*hnn*Gamma_rec*hn*Gamma_ion) /
-				((1.0 + hnn*Gamma_rec)*(1.0 + hn*Gamma_ion - hnn*Gamma_rec*hn*Gamma_ion));
+				((1.0 + hn*Gamma_ion)*(1.0 + hnn*Gamma_rec) - hnn*Gamma_rec*hn*Gamma_ion);
 			// *** Set for the move we are testing ***
 			n_kplus1 = n_k + Delta_ionise - Delta_rec; // Delta_rec is amount recombining.
 			n_n_kplus1 = n_n_k - Delta_ionise + Delta_rec;

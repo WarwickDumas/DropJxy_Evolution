@@ -745,7 +745,7 @@ void SolveBackwardAzAdvanceJ3LS(f64 hsub,
 	// 1. Create regressor:
 	// Careful with major vs minor + BEGINNING_OF_CENTRAL:
 
-	GlobalSuppressSuccessVerbosity = true;
+	//GlobalSuppressSuccessVerbosity = true;
 
 	kernelResetFrillsAz << <numTilesMinor, threadsPerTileMinor >> > (
 		pX_use->p_info, pX_use->p_tri_neigh_index,
@@ -2294,7 +2294,7 @@ int RunBwdJnLSForHeat(f64 * p_T_k, f64 * p_T, f64 hsub, cuSyst * pX_use, bool bU
 		if (species == 2) p_coeffself = p_coeffself_e;
 	};
 
-	::GlobalSuppressSuccessVerbosity = true;
+	::GlobalSuppressSuccessVerbosity = false; //
 
 	iIteration = 0;
 	do {
@@ -2772,7 +2772,7 @@ int RunBackwardJLSForHeat(T3 * p_T_k, T3 * p_T, f64 hsub, cuSyst * pX_use,
 	bool bUseMask)
 {
 #define UPLIFT_THRESHOLD 0.33
-	GlobalSuppressSuccessVerbosity = true;
+	GlobalSuppressSuccessVerbosity = false;
 
 
 
@@ -5628,7 +5628,7 @@ void PerformCUDA_Invoke_Populate(
 	for (int iV = 0; iV < 32; iV++)
 	{
 		for (int j = 0; j < 10; j++)
-			fscanf(fp, "%d", &(ionize_temps_host[iV][j]));
+			fscanf(fp, " %lf", &(ionize_temps_host[iV][j]));
 			// check format specifier
 		for (int iWhich = 0; iWhich < 5; iWhich++) 
 			fscanf(fp, " %lf %lf %lf %lf %lf", &(ionize_coeffs_host[iV][iWhich][0]),
@@ -5652,8 +5652,8 @@ void PerformCUDA_Invoke_Populate(
 	fclose(fp);
 
 	printf("ionize_temps[8][3] %1.14E /n", ionize_temps_host[8][3]);
-	printf("ionize_coeffs[7][4][2] %1.14E /n", ionize_coeffs_host[7][4][2]);
-	printf("recomb_coeffs[4][1][3] %1.14E /n", recomb_coeffs_host[4][1][3]);
+	printf("ionize_coeffs[11][4][2] %1.14E /n", ionize_coeffs_host[11][4][2]);
+	printf("recomb_coeffs[28][1][3] %1.14E /n", recomb_coeffs_host[28][1][3]);
 	getch(); // test what we loaded
 	Call(cudaMemcpyToSymbol(ionize_temps, ionize_temps_host, 32*10 * sizeof(f64)), 
 		"cudaMemcpyToSymbol(ionize_temps)");
@@ -10830,6 +10830,9 @@ void cuSyst::PerformCUDA_Advance_noadvect(//const
 		0,0
 		);
 	Call(cudaThreadSynchronize(), "cudaTS Ionisation");
+
+	printf("press o\n");
+	while (getch() != 'o');
 
 	Collect_Ntotal_major << <numTilesMajor, threadsPerTileMajor >> >(
 		this->p_info,
