@@ -31,7 +31,10 @@ bool const bScrewPinch = false;
 
 #define STEPS_PER_LOOP               1    // soon change to 500
 // frames between file pinch-offs:
-#define AVI_FILE_PINCHOFF_FREQUENCY     150 // 1.5 ns per file
+#define AVI_FILE_PINCHOFF_FREQUENCY     250
+
+// 1 frame = 0.01 so 100 frames == 1 ns
+
 // milliseconds between frames:
 #define AVIFRAMEPERIOD         40 // 50 = 20 fps which is ok with our setting of 25 frames/ns [running 2e-11 x 2 = 4e-11 per frame]
 
@@ -84,6 +87,8 @@ double const RELTHRESH_AZ =  1.0e-9;
 
  // radii in cm from anode centre : 
 #define DOMAIN_OUTER_RADIUS   4.64
+
+#define KILL_NEUTRAL_V_OUTSIDE_TEMP  4.6 // No idea why problem occurring - just killing it for now
 
 // reality: cathode rod is 0.47625 cm radius, at 5cm device radius
 real const CATHODE_ROD_R = 5.0;

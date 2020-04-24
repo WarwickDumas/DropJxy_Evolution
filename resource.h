@@ -30,8 +30,10 @@
 #define ID_DISPLAY_JZAZBXYEZ            50004
 #define ID_DISPLAY_SIGMAEJ              50005
 #define ID_DISPLAY_VIZVEZJZAZDOT        50006		
-#define ID_DISPLAY_ONE_D                50007
+#define ID_DISPLAY_ONE_D                40024 // seems to be what it wants
 #define ID_DISPLAY_JILL                 50008
+#define ID_DISPLAY_IONIZEGRAPHS         40028 // seems to be what it wants
+#define ID_DISPLAY_OHMS                 40026 // seems to be what it wants
 #define IDC_STATIC                      -1
 #define ID_RUN_CPUSTEP                  40021
 #define ID_FILE_LOADGPU                 40022

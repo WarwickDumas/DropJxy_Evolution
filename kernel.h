@@ -468,6 +468,13 @@ __device__ void Augment_Jacobean(
 	f64 grad_vjdy_coeff_on_vj_self
 );
 
+__global__ void kernelPrepareNuGraphs(
+	structural * __restrict__ p_info_minor,
+	nvals * __restrict__ p_n_minor,
+	T3 * __restrict__ p_T_minor,
+	f64 * __restrict__ p_nu_e_MT,
+	f64 * __restrict__ p_nu_en_MT
+);
 
 __global__ void kernelTileMaxMajor(
 	f64 * __restrict__ p_z,
@@ -599,6 +606,21 @@ __global__ void kernelReturnNumberNegativeT(
 );
 
 
+__global__ void kernelPrepareIonizationGraphs(
+	structural * __restrict__ p_info_major,
+	nvals * __restrict__ p_n_major,
+	f64 * __restrict__ p_AreaMajor,
+	NTrates * __restrict__ ratesNT, // dN/dt, dNeTe/dt
+	f64_vec3 * __restrict__ p_dNve, // --> d/dt v_e
+
+	f64 * __restrict__ p_graph1, 
+	f64 * __restrict__ p_graph2, 
+	f64 * __restrict__ p_graph3, 
+	f64 * __restrict__ p_graph4, 
+	f64 * __restrict__ p_graph5, 
+	f64 * __restrict__ p_graph6);
+
+
 __global__ void kernelCompareForStability_andSetFlag(
 	structural * __restrict__ p_info_minor,
 	NTrates * __restrict__ p_NTrates1,
@@ -624,6 +646,11 @@ __global__ void kernelCreatePutativeTandsave(
 	bool * bMask3
 );
 
+
+__global__ void kernelKillNeutral_v_OutsideRadius(
+	structural * __restrict__ p_info_minor,
+	f64_vec3 * __restrict__ p_v_n
+);
 
 __global__ void kernelCreatePutativeT(
 	f64 hsub,

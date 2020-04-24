@@ -15,7 +15,7 @@
 
 
 #define FOUR_PI 12.5663706143592
-#define TEST  (iVertex == VERTCHOSEN)
+#define TEST  (0) // iVertex == VERTCHOSEN
 #define TEST1 (0)
 #define TESTTRI (0)
 #define TESTADVECT (0)// // iVertex == VERTCHOSEN)
@@ -28,6 +28,7 @@
 #define TESTIONISE (0)
 #define TESTOHMS (0) // iMinor == CHOSEN
 #define TESTVISC (0)
+#define TEST_IONIZE (0)
 #define VISCMAG 1 
 #define MIDPT_A
 
@@ -62,8 +63,8 @@ __device__ f64 GetRecombinationRate_given_v(f64 const Te, int i_v)
 	f64 rate, rate1, rate2;
 	if (Te > 4.75e-11) return 0.0;
 	if (Te < 1.875e-12) { // Magic numbers!!
-		rate = (recomb_coeffs[i_v][0][1] + recomb_coeffs[i_v][0][2] * TeeV
-			+ recomb_coeffs[i_v][0][3] * Tesq + recomb_coeffs[i_v][0][4] * Te3);
+		rate = (recomb_coeffs[i_v][0][4] + recomb_coeffs[i_v][0][3] * TeeV
+			+ recomb_coeffs[i_v][0][2] * Tesq + recomb_coeffs[i_v][0][1] * Te3);
 		if (i_v < 7) {
 			rate /= (1.0 - recomb_coeffs[i_v][0][0] * TeeV);
 		} else {
@@ -71,10 +72,10 @@ __device__ f64 GetRecombinationRate_given_v(f64 const Te, int i_v)
 		};
 	} else {
 		if (Te < 2.25e-12) {
-			rate1 = (recomb_coeffs[i_v][0][1] + recomb_coeffs[i_v][0][2] * TeeV
-				+ recomb_coeffs[i_v][0][3] * Tesq + recomb_coeffs[i_v][0][4] * Te3);
-			rate2 = (recomb_coeffs[i_v][1][1] + recomb_coeffs[i_v][1][2] * TeeV
-				+ recomb_coeffs[i_v][1][3] * Tesq + recomb_coeffs[i_v][1][4] * Te3);
+			rate1 = (recomb_coeffs[i_v][0][4] + recomb_coeffs[i_v][0][3] * TeeV
+				+ recomb_coeffs[i_v][0][2] * Tesq + recomb_coeffs[i_v][0][1] * Te3);
+			rate2 = (recomb_coeffs[i_v][1][4] + recomb_coeffs[i_v][1][3] * TeeV
+				+ recomb_coeffs[i_v][1][2] * Tesq + recomb_coeffs[i_v][1][1] * Te3);
 			if (i_v < 7) {
 				rate1 /= (1.0 - recomb_coeffs[i_v][0][0] * TeeV);
 				rate2 /= (1.0 - recomb_coeffs[i_v][1][0] * TeeV);
@@ -89,8 +90,8 @@ __device__ f64 GetRecombinationRate_given_v(f64 const Te, int i_v)
 
 		} else {
 			if (Te < 1.05e-11) {
-				rate = (recomb_coeffs[i_v][1][1] + recomb_coeffs[i_v][1][2] * TeeV
-					+ recomb_coeffs[i_v][1][3] * Tesq + recomb_coeffs[i_v][1][4] * Te3);
+				rate = (recomb_coeffs[i_v][1][4] + recomb_coeffs[i_v][1][3] * TeeV
+					+ recomb_coeffs[i_v][1][2] * Tesq + recomb_coeffs[i_v][1][1] * Te3);
 				if (i_v < 7) {
 					rate /= (1.0 - recomb_coeffs[i_v][1][0] * TeeV);
 				}
@@ -99,10 +100,10 @@ __device__ f64 GetRecombinationRate_given_v(f64 const Te, int i_v)
 				};
 			} else {
 				if (Te < 1.0875e-11) {
-					rate1 = (recomb_coeffs[i_v][1][1] + recomb_coeffs[i_v][1][2] * TeeV
-						+ recomb_coeffs[i_v][1][3] * Tesq + recomb_coeffs[i_v][1][4] * Te3);
-					rate2 = (recomb_coeffs[i_v][2][1] + recomb_coeffs[i_v][2][2] * TeeV
-						+ recomb_coeffs[i_v][2][3] * Tesq + recomb_coeffs[i_v][2][4] * Te3);
+					rate1 = (recomb_coeffs[i_v][1][4] + recomb_coeffs[i_v][1][3] * TeeV
+						+ recomb_coeffs[i_v][1][2] * Tesq + recomb_coeffs[i_v][1][1] * Te3);
+					rate2 = (recomb_coeffs[i_v][2][4] + recomb_coeffs[i_v][2][3] * TeeV
+						+ recomb_coeffs[i_v][2][2] * Tesq + recomb_coeffs[i_v][2][1] * Te3);
 					if (i_v < 7) {
 						rate1 /= (1.0 - recomb_coeffs[i_v][1][0] * TeeV);
 						rate2 /= (1.0 - recomb_coeffs[i_v][2][0] * TeeV);
@@ -115,8 +116,8 @@ __device__ f64 GetRecombinationRate_given_v(f64 const Te, int i_v)
 					rate = rate1*ppn_low + rate2*ppn_high;
 
 				} else {
-					rate = (recomb_coeffs[i_v][2][1] + recomb_coeffs[i_v][2][2] * TeeV
-						+ recomb_coeffs[i_v][2][3] * Tesq + recomb_coeffs[i_v][2][4] * Te3);
+					rate = (recomb_coeffs[i_v][2][4] + recomb_coeffs[i_v][2][3] * TeeV
+						+ recomb_coeffs[i_v][2][2] * Tesq + recomb_coeffs[i_v][2][1] * Te3);
 					if (i_v < 7) {
 						rate /= (1.0 - recomb_coeffs[i_v][2][0] * TeeV);
 					} else {
@@ -130,6 +131,149 @@ __device__ f64 GetRecombinationRate_given_v(f64 const Te, int i_v)
 }
 
 __device__ f64 GetIonizationRate_given_v(f64 const Te, int i_v)
+{
+
+	f64 TeeV = Te / kB;
+	if (Te > ionize_temps[i_v][9]) {
+		TeeV = ionize_temps[i_v][9] / kB;
+	}
+	f64 Tesq = TeeV*TeeV;
+	f64 Te3 = Tesq*TeeV;
+	f64 Te4 = Tesq*Tesq;
+
+	f64 rate, rate1, rate2;
+
+	bool b_exp[5];
+	memset(b_exp, 0, sizeof(bool) * 5);
+	if (i_v < 18) {
+		b_exp[0] = true; b_exp[1] = true; b_exp[2] = true;
+	};
+	if (i_v == 18) {
+		b_exp[0] = true; b_exp[1] = true;
+	}
+	//printf("i_v %d b_exp %d %d %d %d %d \n", i_v, (b_exp[0]) ? 1 : 0, (b_exp[1]) ? 1 : 0, (b_exp[2]) ? 1 : 0, (b_exp[3]) ? 1 : 0, (b_exp[4]) ? 1 : 0);
+	if (Te < ionize_temps[i_v][0]) {
+		rate = 0.0;
+	}
+	else {
+		if (Te < ionize_temps[i_v][1]) {
+			rate = (ionize_coeffs[i_v][0][4] + ionize_coeffs[i_v][0][3] * TeeV
+				+ ionize_coeffs[i_v][0][2] * Tesq + ionize_coeffs[i_v][0][1] * Te3
+				+ ionize_coeffs[i_v][0][0] * Te4);
+			if (b_exp[0]) rate = exp(rate);
+
+		}
+		else {
+			if (Te < ionize_temps[i_v][2]) {
+				rate1 = (ionize_coeffs[i_v][0][4] + ionize_coeffs[i_v][0][3] * TeeV
+					+ ionize_coeffs[i_v][0][2] * Tesq + ionize_coeffs[i_v][0][1] * Te3
+					+ ionize_coeffs[i_v][0][0] * Te4);
+				rate2 = (ionize_coeffs[i_v][1][4] + ionize_coeffs[i_v][1][3] * TeeV
+					+ ionize_coeffs[i_v][1][2] * Tesq + ionize_coeffs[i_v][1][1] * Te3
+					+ ionize_coeffs[i_v][1][0] * Te4);
+
+				if (b_exp[0]) rate1 = exp(rate1);
+				if (b_exp[1]) rate2 = exp(rate2);
+
+				f64 ppn_high = (Te - ionize_temps[i_v][1]) / (ionize_temps[i_v][2] - ionize_temps[i_v][1]);
+				f64 ppn_low = (ionize_temps[i_v][2] - Te) / (ionize_temps[i_v][2] - ionize_temps[i_v][1]);
+				rate = rate1*ppn_low + rate2*ppn_high;
+
+			}
+			else {
+				if (Te < ionize_temps[i_v][3])
+				{
+					rate = (ionize_coeffs[i_v][1][4] + ionize_coeffs[i_v][1][3] * TeeV
+						+ ionize_coeffs[i_v][1][2] * Tesq + ionize_coeffs[i_v][1][1] * Te3
+						+ ionize_coeffs[i_v][1][0] * Te4);
+					if (b_exp[1]) rate = exp(rate);
+
+				} else {
+					if (Te < ionize_temps[i_v][4]) {
+						rate1 = (ionize_coeffs[i_v][1][4] + ionize_coeffs[i_v][1][3] * TeeV
+							+ ionize_coeffs[i_v][1][2] * Tesq + ionize_coeffs[i_v][1][1] * Te3
+							+ ionize_coeffs[i_v][1][0] * Te4);
+						rate2 = (ionize_coeffs[i_v][2][4] + ionize_coeffs[i_v][2][3] * TeeV
+							+ ionize_coeffs[i_v][2][2] * Tesq + ionize_coeffs[i_v][2][1] * Te3
+							+ ionize_coeffs[i_v][2][0] * Te4);
+
+						if (b_exp[1]) rate1 = exp(rate1);
+						if (b_exp[2]) rate2 = exp(rate2);
+
+						f64 ppn_high = (Te - ionize_temps[i_v][3]) / (ionize_temps[i_v][4] - ionize_temps[i_v][3]);
+						f64 ppn_low = (ionize_temps[i_v][4] - Te) / (ionize_temps[i_v][4] - ionize_temps[i_v][3]);
+
+						rate = rate1*ppn_low + rate2*ppn_high;
+
+					}
+					else {
+						if (Te < ionize_temps[i_v][5]) {
+							rate = (ionize_coeffs[i_v][2][4] + ionize_coeffs[i_v][2][3] * TeeV
+								+ ionize_coeffs[i_v][2][2] * Tesq + ionize_coeffs[i_v][2][1] * Te3
+								+ ionize_coeffs[i_v][2][0] * Te4);
+							if (b_exp[2]) rate = exp(rate);
+
+						}
+						else {
+							if (Te < ionize_temps[i_v][6]) {
+								rate1 = (ionize_coeffs[i_v][2][4] + ionize_coeffs[i_v][2][3] * TeeV
+									+ ionize_coeffs[i_v][2][2] * Tesq + ionize_coeffs[i_v][2][1] * Te3
+									+ ionize_coeffs[i_v][2][0] * Te4);
+								rate2 = (ionize_coeffs[i_v][3][4] + ionize_coeffs[i_v][3][3] * TeeV
+									+ ionize_coeffs[i_v][3][2] * Tesq + ionize_coeffs[i_v][3][1] * Te3
+									+ ionize_coeffs[i_v][3][0] * Te4);
+
+								if (b_exp[2]) rate1 = exp(rate1);
+								if (b_exp[3]) rate2 = exp(rate2);
+
+								f64 ppn_high = (Te - ionize_temps[i_v][5]) / (ionize_temps[i_v][6] - ionize_temps[i_v][5]);
+								f64 ppn_low = (ionize_temps[i_v][6] - Te) / (ionize_temps[i_v][6] - ionize_temps[i_v][5]);
+
+								rate = rate1*ppn_low + rate2*ppn_high;
+
+							}
+							else {
+								if (Te < ionize_temps[i_v][7]) {
+									rate = (ionize_coeffs[i_v][3][4] + ionize_coeffs[i_v][3][3] * TeeV
+										+ ionize_coeffs[i_v][3][2] * Tesq + ionize_coeffs[i_v][3][1] * Te3
+										+ ionize_coeffs[i_v][3][0] * Te4);
+									if (b_exp[3]) rate = exp(rate); // it is always false anyway								
+								}
+								else {
+									if (Te < ionize_temps[i_v][8]) {
+
+										rate1 = (ionize_coeffs[i_v][3][4] + ionize_coeffs[i_v][3][3] * TeeV
+											+ ionize_coeffs[i_v][3][2] * Tesq + ionize_coeffs[i_v][3][1] * Te3
+											+ ionize_coeffs[i_v][3][0] * Te4);
+										rate2 = (ionize_coeffs[i_v][4][4] + ionize_coeffs[i_v][4][3] * TeeV
+											+ ionize_coeffs[i_v][4][2] * Tesq + ionize_coeffs[i_v][4][1] * Te3
+											+ ionize_coeffs[i_v][4][0] * Te4);
+										if (b_exp[3]) rate1 = exp(rate1); // it is always false anyway								
+										if (b_exp[4]) rate2 = exp(rate2); // it is always false anyway								
+										f64 ppn_high = (Te - ionize_temps[i_v][7]) / (ionize_temps[i_v][8] - ionize_temps[i_v][7]);
+										f64 ppn_low = (ionize_temps[i_v][8] - Te) / (ionize_temps[i_v][8] - ionize_temps[i_v][7]);
+
+										rate = rate1*ppn_low + rate2*ppn_high;
+									}
+									else {
+
+										rate = (ionize_coeffs[i_v][4][4] + ionize_coeffs[i_v][4][3] * TeeV
+											+ ionize_coeffs[i_v][4][2] * Tesq + ionize_coeffs[i_v][4][1] * Te3
+											+ ionize_coeffs[i_v][4][0] * Te4);
+										if (b_exp[4]) rate = exp(rate); // it is always false anyway								
+									};
+								}
+							};
+						};
+					};
+				};
+			};
+		};
+	};
+	return rate;
+}
+
+__device__ f64 GetIonizationRate_given_v_Debug(f64 const Te, int i_v)
 {
 	
 	f64 TeeV = Te / kB;
@@ -145,28 +289,32 @@ __device__ f64 GetIonizationRate_given_v(f64 const Te, int i_v)
 	bool b_exp[5];
 	memset(b_exp, 0, sizeof(bool) * 5);
 	if (i_v < 18) {
-		b_exp[0] = 1; b_exp[1] = 1; b_exp[2] = 1;
+		b_exp[0] = true; b_exp[1] = true; b_exp[2] = true;
 	};
 	if (i_v == 18) {
-		b_exp[0] = 1; b_exp[1] = 1;
+		b_exp[0] = true; b_exp[1] = true;
 	}
-
+	//printf("i_v %d b_exp %d %d %d %d %d \n", i_v, (b_exp[0]) ? 1 : 0, (b_exp[1]) ? 1 : 0, (b_exp[2]) ? 1 : 0, (b_exp[3]) ? 1 : 0, (b_exp[4]) ? 1 : 0);
 	if (Te < ionize_temps[i_v][0]) {
 		rate = 0.0;
 	} else {
 		if (Te < ionize_temps[i_v][1]) {
-			rate = (ionize_coeffs[i_v][0][0] + ionize_coeffs[i_v][0][1] * TeeV
-				+ ionize_coeffs[i_v][0][2] * Tesq + ionize_coeffs[i_v][0][3] * Te3
-				+ ionize_coeffs[i_v][0][4] * Te4);
+			rate = (ionize_coeffs[i_v][0][4] + ionize_coeffs[i_v][0][3] * TeeV
+				+ ionize_coeffs[i_v][0][2] * Tesq + ionize_coeffs[i_v][0][1] * Te3
+				+ ionize_coeffs[i_v][0][0] * Te4);
 			if (b_exp[0]) rate = exp(rate);
+
+			printf("i_v %d Te %1.8E b_exp[0] %d 0-1 rate %1.8E coeffs[0] \n", i_v, Te,
+				(b_exp[0] ? 1:0), rate, ionize_coeffs[i_v][0][0]);
+			
 		} else {
 			if (Te < ionize_temps[i_v][2]) {
-				rate1 = exp(ionize_coeffs[i_v][0][0] + ionize_coeffs[i_v][0][1] * TeeV
-					+ ionize_coeffs[i_v][0][2] * Tesq + ionize_coeffs[i_v][0][3] * Te3
-					+ ionize_coeffs[i_v][0][4] * Te4);
-				rate2 = exp(ionize_coeffs[i_v][1][0] + ionize_coeffs[i_v][1][1] * TeeV
-					+ ionize_coeffs[i_v][1][2] * Tesq + ionize_coeffs[i_v][1][3] * Te3
-					+ ionize_coeffs[i_v][1][4] * Te4);
+				rate1 = (ionize_coeffs[i_v][0][4] + ionize_coeffs[i_v][0][3] * TeeV
+					+ ionize_coeffs[i_v][0][2] * Tesq + ionize_coeffs[i_v][0][1] * Te3
+					+ ionize_coeffs[i_v][0][0] * Te4);
+				rate2 = (ionize_coeffs[i_v][1][4] + ionize_coeffs[i_v][1][3] * TeeV
+					+ ionize_coeffs[i_v][1][2] * Tesq + ionize_coeffs[i_v][1][1] * Te3
+					+ ionize_coeffs[i_v][1][0] * Te4);
 	
 				if (b_exp[0]) rate1 = exp(rate1);
 				if (b_exp[1]) rate2 = exp(rate2);
@@ -175,22 +323,27 @@ __device__ f64 GetIonizationRate_given_v(f64 const Te, int i_v)
 				f64 ppn_low = (ionize_temps[i_v][2] - Te) / (ionize_temps[i_v][2] - ionize_temps[i_v][1]);
 				rate = rate1*ppn_low + rate2*ppn_high;
 
+
+				printf("i_v %d Te %1.8E b_exp[0] %d b_exp[1] %d 1-2 rate %1.8E coeffs[1][0] \n", i_v, Te,
+					(b_exp[0] ? 1 : 0), (b_exp[1] ? 1 : 0), rate, ionize_coeffs[i_v][1][0]);
 			} else {
 				if (Te < ionize_temps[i_v][3])
 				{
-					rate = (ionize_coeffs[i_v][1][0] + ionize_coeffs[i_v][1][1] * TeeV
-						+ ionize_coeffs[i_v][1][2] * Tesq + ionize_coeffs[i_v][1][3] * Te3
-						+ ionize_coeffs[i_v][1][4] * Te4);
+					rate = (ionize_coeffs[i_v][1][4] + ionize_coeffs[i_v][1][3] * TeeV
+						+ ionize_coeffs[i_v][1][2] * Tesq + ionize_coeffs[i_v][1][1] * Te3
+						+ ionize_coeffs[i_v][1][0] * Te4);
 					if (b_exp[1]) rate = exp(rate);
 
+					printf("i_v %d Te %1.8E b_exp[0] %d b_exp[1] %d Temps2-3 = 1 rate %1.8E coeffs[1][0] \n", i_v, Te,
+						(b_exp[0] ? 1 : 0), (b_exp[1] ? 1 : 0), rate, ionize_coeffs[i_v][1][0]);
 				} else {
 					if (Te < ionize_temps[i_v][4]) {
-						rate1 = exp(ionize_coeffs[i_v][1][0] + ionize_coeffs[i_v][1][1] * TeeV
-							+ ionize_coeffs[i_v][1][2] * Tesq + ionize_coeffs[i_v][1][3] * Te3
-							+ ionize_coeffs[i_v][1][4] * Te4);
-						rate2 = (ionize_coeffs[i_v][2][0] + ionize_coeffs[i_v][2][1] * TeeV
-							+ ionize_coeffs[i_v][2][2] * Tesq + ionize_coeffs[i_v][2][3] * Te3
-							+ ionize_coeffs[i_v][2][4] * Te4);
+						rate1 = (ionize_coeffs[i_v][1][4] + ionize_coeffs[i_v][1][3] * TeeV
+							+ ionize_coeffs[i_v][1][2] * Tesq + ionize_coeffs[i_v][1][1] * Te3
+							+ ionize_coeffs[i_v][1][0] * Te4);
+						rate2 = (ionize_coeffs[i_v][2][4] + ionize_coeffs[i_v][2][3] * TeeV
+							+ ionize_coeffs[i_v][2][2] * Tesq + ionize_coeffs[i_v][2][1] * Te3
+							+ ionize_coeffs[i_v][2][0] * Te4);
 
 						if (b_exp[1]) rate1 = exp(rate1);
 						if (b_exp[2]) rate2 = exp(rate2);
@@ -200,21 +353,27 @@ __device__ f64 GetIonizationRate_given_v(f64 const Te, int i_v)
 
 						rate = rate1*ppn_low + rate2*ppn_high;
 	
+
+						printf("i_v %d Te %1.8E b_exp[1] %d b_exp[2] %d 3-4 -> 1-2 rate %1.8E coeffs[2][0] \n", i_v, Te,
+							(b_exp[1] ? 1 : 0), (b_exp[2] ? 1 : 0), rate, ionize_coeffs[i_v][2][0]);
+
 					} else {
 						if (Te < ionize_temps[i_v][5]) {
-							rate = (ionize_coeffs[i_v][2][0] + ionize_coeffs[i_v][2][1] * TeeV
-								+ ionize_coeffs[i_v][2][2] * Tesq + ionize_coeffs[i_v][2][3] * Te3
-								+ ionize_coeffs[i_v][2][4] * Te4);
+							rate = (ionize_coeffs[i_v][2][4] + ionize_coeffs[i_v][2][3] * TeeV
+								+ ionize_coeffs[i_v][2][2] * Tesq + ionize_coeffs[i_v][2][1] * Te3
+								+ ionize_coeffs[i_v][2][0] * Te4);
 							if (b_exp[2]) rate = exp(rate);
 
+							printf("i_v %d Te %1.8E b_exp[2] %d b_exp[3] %d 4-5 rate %1.8E coeffs[3][0] \n", i_v, Te,
+								(b_exp[2] ? 1 : 0), (b_exp[3] ? 1 : 0), rate, ionize_coeffs[i_v][3][0]);
 						} else {
 							if (Te < ionize_temps[i_v][6]) {
-								rate1 = exp(ionize_coeffs[i_v][2][0] + ionize_coeffs[i_v][2][1] * TeeV
-									+ ionize_coeffs[i_v][2][2] * Tesq + ionize_coeffs[i_v][2][3] * Te3
-									+ ionize_coeffs[i_v][2][4] * Te4);
-							rate2 = (ionize_coeffs[i_v][3][0] + ionize_coeffs[i_v][3][1] * TeeV
-								+ ionize_coeffs[i_v][3][2] * Tesq + ionize_coeffs[i_v][3][3] * Te3
-								+ ionize_coeffs[i_v][3][4] * Te4);
+								rate1 = (ionize_coeffs[i_v][2][4] + ionize_coeffs[i_v][2][3] * TeeV
+									+ ionize_coeffs[i_v][2][2] * Tesq + ionize_coeffs[i_v][2][1] * Te3
+									+ ionize_coeffs[i_v][2][0] * Te4);
+							rate2 = (ionize_coeffs[i_v][3][4] + ionize_coeffs[i_v][3][3] * TeeV
+								+ ionize_coeffs[i_v][3][2] * Tesq + ionize_coeffs[i_v][3][1] * Te3
+								+ ionize_coeffs[i_v][3][0] * Te4);
 
 							if (b_exp[2]) rate1 = exp(rate1);
 							if (b_exp[3]) rate2 = exp(rate2);
@@ -224,33 +383,48 @@ __device__ f64 GetIonizationRate_given_v(f64 const Te, int i_v)
 
 							rate = rate1*ppn_low + rate2*ppn_high;
 
+							printf("i_v %d Te %1.8E b_exp[2] %d b_exp[3] %d 5-6-> 2-3 rate %1.8E coeffs[3][0] \n", i_v, Te,
+								(b_exp[2] ? 1 : 0), (b_exp[3] ? 1 : 0), rate, ionize_coeffs[i_v][3][0]);
+
 							} else {
 								if (Te < ionize_temps[i_v][7]) {
-									rate = (ionize_coeffs[i_v][3][0] + ionize_coeffs[i_v][3][1] * TeeV
-										+ ionize_coeffs[i_v][3][2] * Tesq + ionize_coeffs[i_v][3][3] * Te3
-										+ ionize_coeffs[i_v][3][4] * Te4);
+									rate = (ionize_coeffs[i_v][3][4] + ionize_coeffs[i_v][3][3] * TeeV
+										+ ionize_coeffs[i_v][3][2] * Tesq + ionize_coeffs[i_v][3][1] * Te3
+										+ ionize_coeffs[i_v][3][0] * Te4);
 									if (b_exp[3]) rate = exp(rate); // it is always false anyway								
+
+									printf("i_v %d Te %1.8E b_exp[3] %d b_exp[3] %d 6-7 rate %1.8E coeffs[3][0] \n", i_v, Te,
+										(b_exp[3] ? 1 : 0), (b_exp[3] ? 1 : 0), rate, ionize_coeffs[i_v][3][0]);
+
 								} else {
 									if (Te < ionize_temps[i_v][8]) {
 
-										rate1 = (ionize_coeffs[i_v][3][0] + ionize_coeffs[i_v][3][1] * TeeV
-											+ ionize_coeffs[i_v][3][2] * Tesq + ionize_coeffs[i_v][3][3] * Te3
-											+ ionize_coeffs[i_v][3][4] * Te4);
+										rate1 = (ionize_coeffs[i_v][3][4] + ionize_coeffs[i_v][3][3] * TeeV
+											+ ionize_coeffs[i_v][3][2] * Tesq + ionize_coeffs[i_v][3][1] * Te3
+											+ ionize_coeffs[i_v][3][0] * Te4);
 										if (b_exp[3]) rate1 = exp(rate1); // it is always false anyway								
-										rate2 = (ionize_coeffs[i_v][4][0] + ionize_coeffs[i_v][4][1] * TeeV
-											+ ionize_coeffs[i_v][4][2] * Tesq + ionize_coeffs[i_v][4][3] * Te3
-											+ ionize_coeffs[i_v][4][4] * Te4);
+										rate2 = (ionize_coeffs[i_v][4][4] + ionize_coeffs[i_v][4][3] * TeeV
+											+ ionize_coeffs[i_v][4][2] * Tesq + ionize_coeffs[i_v][4][1] * Te3
+											+ ionize_coeffs[i_v][4][0] * Te4);
 										if (b_exp[4]) rate2 = exp(rate2); // it is always false anyway								
 										f64 ppn_high = (Te - ionize_temps[i_v][7]) / (ionize_temps[i_v][8] - ionize_temps[i_v][7]);
 										f64 ppn_low = (ionize_temps[i_v][8] - Te) / (ionize_temps[i_v][8] - ionize_temps[i_v][7]);
 
 										rate = rate1*ppn_low + rate2*ppn_high;
+
+										printf("i_v %d Te %1.8E b_exp[3] %d b_exp[4] %d 7-8 rate %1.8E coeffs[4][0] \n", i_v, Te,
+											(b_exp[3] ? 1 : 0), (b_exp[4] ? 1 : 0), rate, ionize_coeffs[i_v][4][0]);
+
 									} else {
 
-										rate = (ionize_coeffs[i_v][4][0] + ionize_coeffs[i_v][4][1] * TeeV
-											+ ionize_coeffs[i_v][4][2] * Tesq + ionize_coeffs[i_v][4][3] * Te3
-											+ ionize_coeffs[i_v][4][4] * Te4);
-										if (b_exp[4]) rate = exp(rate); // it is always false anyway								
+										rate = (ionize_coeffs[i_v][4][4] + ionize_coeffs[i_v][4][3] * TeeV
+											+ ionize_coeffs[i_v][4][2] * Tesq + ionize_coeffs[i_v][4][1] * Te3
+											+ ionize_coeffs[i_v][4][0] * Te4);
+										if (b_exp[4]) rate = exp(rate); // it is always false anyway				
+
+										printf("i_v %d Te %1.8E  b_exp[4] %d 8 -> 4 rate %1.8E coeffs[4][0] \n", i_v, Te,
+											(b_exp[4] ? 1 : 0), rate, ionize_coeffs[i_v][4][0]);
+
 									};
 								}
 							};
@@ -272,7 +446,9 @@ __device__ f64 GetIonizationRates(f64 const Te, f64 const v, f64 * p_Recombo_rat
 		i_vleft = (int)(v / 2.0e6);
 		i_vright = i_vleft + 1;
 		vleft = 2.0e6*(double)(i_vleft);
-		vright = 2.0e6*(double)(i_vleft); // at most 1e7		
+		vright = 2.0e6*(double)(i_vright); // at most 1e7	
+		ppn_right = (v - vleft) / (vright - vleft);
+		ppn_left = (vright - v) / (vright - vleft);
 	} else {
 		if (v > 2.7e8) {
 			i_vleft = 31;
@@ -306,6 +482,63 @@ __device__ f64 GetIonizationRates(f64 const Te, f64 const v, f64 * p_Recombo_rat
 	return rate;
 }
 
+
+__device__ f64 GetIonizationRatesDebug(f64 const Te, f64 const v, f64 * p_Recombo_rate)
+{
+	int i_vleft, i_vright;
+	f64 vleft, vright;
+	f64 ppn_right, ppn_left;
+	if (v < 1.0e7) {
+		i_vleft = (int)(v / 2.0e6);
+		i_vright = i_vleft + 1;
+		vleft = 2.0e6*(double)(i_vleft);
+		vright = 2.0e6*(double)(i_vright); // at most 1e7	
+		ppn_right = (v - vleft) / (vright - vleft);
+		ppn_left = (vright - v) / (vright - vleft);
+
+		printf("GIRD small v: vleft %1.8E vright %1.8E ppn %1.8E %1.8E \n",
+			vleft, vright, ppn_left, ppn_right);
+	}
+	else {
+		if (v > 2.7e8) {
+			i_vleft = 31;
+			i_vright = 31;
+			ppn_left = 1.0;
+			ppn_right = 0.0;
+			vleft = 1.0e7*(double)(i_vleft - 4);
+			vright = 1.0e7*(double)(i_vright - 4); // careful	
+
+			printf("GIRD high v: vleft %1.8E vright %1.8E ppn %1.8E %1.8E \n",
+				vleft, vright, ppn_left, ppn_right);
+		}
+		else {
+			i_vleft = 4 + (int)(v / 1.0e-7); // cHeck ?
+			if (i_vleft >= 31) i_vleft = 30;
+			i_vright = i_vleft + 1;
+			if (i_vright >= 32) i_vright = 31;
+
+			vleft = 1.0e7*(double)(i_vleft - 4);
+			vright = 1.0e7*(double)(i_vright - 4); // careful	
+			ppn_right = (v - vleft) / (vright - vleft);
+			ppn_left = (vright - v) / (vright - vleft);
+
+			printf("GIRD moderate v: vleft %1.8E vright %1.8E ppn %1.8E %1.8E \n",
+				vleft, vright, ppn_left, ppn_right);
+		};
+	};
+
+	f64 rate_left = GetIonizationRate_given_v_Debug(Te, i_vleft);
+	f64 rate_right = GetIonizationRate_given_v_Debug(Te, i_vright);
+	f64 recomb_rate_left = GetRecombinationRate_given_v(Te, i_vleft);
+	f64 recomb_rate_right = GetRecombinationRate_given_v(Te, i_vright);
+
+	printf("GIRD : rate_left %1.8E rate_right %1.8E \n", rate_left, rate_right);
+
+	// now we need to go again given which v column to another function!
+	f64 rate = rate_left*ppn_left + rate_right*ppn_right;
+	*p_Recombo_rate = recomb_rate_left*ppn_left + recomb_rate_right*ppn_right;
+	return rate;
+}
 
 
 __global__ void kernelCreateEpsilon_Visc(
@@ -3359,6 +3592,8 @@ __global__ void kernelCalculate_ita_visc(
 			// 0.5/(0.3*0.87+0.6) = 0.58 not 0.73
 		};
 		p_nu_elec_minor[index] = (0.3*0.87 + 0.6)*nu_eiBar + 0.6*nu_en_visc;
+
+		if (T.Te < 0.0) printf("ita calc: Negative Te encountered iMinor = %d /n", index);
 
 //		if ((index == 85822) || (index == 24335))
 //			printf("\n###################################\nindex %d nu_e %1.14E ita %1.14E n %1.14E Te %1.14E \nnu_eiBar %1.14E nu_en_visc %1.14E\n\n",
@@ -8025,7 +8260,7 @@ __global__ void kernelCreatePutativeTandsave(
 }
 
 
-__global__ void kernelIonisationRates(
+__global__ void kernelIonisationRates_Forward_Euler(
 	f64 const h_use,
 	structural * __restrict__ p_info_minor,
 	T3 * __restrict__ p_T_major,
@@ -8118,11 +8353,7 @@ __global__ void kernelIonisationRates(
 		// Now compute f(Tk) = T_k+1 given using T_k
 
 		f64 w = sqrt(0.5*(w0z*w0z + (v.vxy.x - v_n.x)*(v.vxy.x - v_n.x) + (v.vxy.y - v_n.y)*(v.vxy.y - v_n.y))); // CORRECTION FACTOR 0.5 ...
-																												 // ================
-																												 // Made a mistake and saved data for v that is sqrt(2) times greater by missing 0.5 out of lambda
-																												 // so
-																												 // data for "1e7" is actually for 1.4e7. Thus pass 1/sqrt(2) times our velocity 
-
+						
 		f64 T_image1, T2, T_image2, T_oldimage1, Tkplus2minus1;
 
 		hn = h_use*n_k;
@@ -8146,9 +8377,24 @@ __global__ void kernelIonisationRates(
 
 		// Skip over algorithm:
 
-		if (iVertex == 16700) printf("Tuse %1.10E w %1.8E Gamma %1.10E rec %1.10E w0z %1.10E Kconv %1.10E\n", T_use, w, Gamma_ion, Gamma_rec, w0z, Kconv);
+		if (Delta_ionise != Delta_ionise) printf("Nandelta %d Tuse %1.10E w %1.8E Gamma %1.10E rec %1.10E w0z %1.10E Kconv %1.10E\n", iVertex, T_use, w, Gamma_ion, Gamma_rec, w0z, Kconv);
 
-		if (iVertex == 16700) printf("Delta_ionise %1.10E rec %1.10E \n", Delta_ionise, Delta_rec);
+		//if (iVertex == 16700) printf("Delta_ionise %1.10E rec %1.10E \n", Delta_ionise, Delta_rec);
+
+		//f64 TeeV = T1/ kB;
+		//f64 Tesq = TeeV*TeeV;
+		//f64 Te3 = TeeV*Tesq;
+		//f64 Te4 = Tesq*Tesq;
+		//f64 calc1 = (ionize_coeffs[0][0][4] + ionize_coeffs[0][0][3] * TeeV
+		//	+ ionize_coeffs[0][0][2] * Tesq + ionize_coeffs[0][0][1] * Te3
+		//	+ ionize_coeffs[0][0][0] * Te4);
+		//f64 calc2 = (ionize_coeffs[0][0][0] + ionize_coeffs[0][0][1] * TeeV
+		//	+ ionize_coeffs[0][0][2] * Tesq + ionize_coeffs[0][0][3] * Te3
+		//	+ ionize_coeffs[0][0][4] * Te4);
+		//if (iVertex == 16700) printf("ionize_coeffs[0][0] %1.12E %1.12E %1.12E %1.12E %1.12E \n"
+		//	"TeeV %1.12E calc1  %1.12E calc2 %1.12E exp(calc1) %1.12E exp(calc2) %1.12E\n",
+		//	ionize_coeffs[0][0][0], ionize_coeffs[0][0][1], ionize_coeffs[0][0][2], ionize_coeffs[0][0][3], ionize_coeffs[0][0][4],
+		//	TeeV, calc1, calc2, exp(calc1), exp(calc2));
 
 
 		f64 dNdt_ionise = AreaMajor*Delta_ionise / h_use;
@@ -8216,7 +8462,7 @@ __global__ void kernelIonisationRates(
 			ve_kplus1 += (Delta_ionise*v_n - Delta_rec*v_use) / n_kplus1;
 
 		}
-		
+		if (MAR_elec.z != MAR_elec.z) printf("ivertex %d MAR_elec nan\n", iVertex);
 
 		// . Ionization cooling & recombination heating
 		//f64 coeff_on_ionizing = 0.5*T_k.Tn - 2.0*T_k.Te*13.6*kB*n_k / (3.0*T_k.Te*n_k + 2.0*Theta*Kconv);
@@ -8256,8 +8502,27 @@ __global__ void kernelIonisationRates(
 			(Energy_density_target - Energy_density_kplus1) / (3.0*h_use);
 
 		// DEBUG:
-		if ((ourrates.NeTe != ourrates.NeTe) && (iVertex == 16700)) printf("Nan NeTe %d \n", iVertex);
-		//if (ourrates.N != ourrates.N) printf("Nan N %d \n", iVertex);
+		if (TEST_IONIZE) printf("iVertex %d n_k %1.9E N_k %1.9E Te_k %1.9E NeTe %1.9E h*NeTe %1.9E \n"
+			"Ti_k %1.9E h*NiTi %1.9E Tn_k %1.9E h*NnTn %1.9E \n"
+			"Delta_ionise %1.9E rec %1.9E \n",
+			iVertex, n_k, n_k*AreaMajor, T_k.Te, ourrates.NeTe, h_use*ourrates.NeTe,
+			T_k.Ti, h_use*ourrates.NiTi, T_k.Tn, h_use*ourrates.NnTn,
+			Delta_ionise, Delta_rec
+		);
+
+
+		// DEBUG:
+		if (n_k*AreaMajor*T_k.Te + ourrates.NeTe*h_use < 0.0)
+			printf("%d Predicted Te %1.9E \n", iVertex, (n_k*AreaMajor*T_k.Te + ourrates.NeTe*h_use)/(n_k*AreaMajor));
+
+
+		// DEBUG:
+		if ((ourrates.NeTe != ourrates.NeTe)) printf("Nan NeTe %d \n", iVertex);
+		if ((ourrates.NeTe != ourrates.NeTe)) printf("Nan NeTe %d \n", iVertex);
+		if (MAR_elec.z != MAR_elec.z) printf("Nan MAR_elec.z %d \n", iVertex);
+		if (MAR_elec.x != MAR_elec.x) printf("Nan MAR_elec.x %d \n", iVertex);
+		if (MAR_neut.x != MAR_neut.x) printf("Nan MAR_neut.x %d \n", iVertex);
+		if (MAR_ion.y != MAR_ion.y) printf("Nan MAR_ion.y %d \n", iVertex);
 
 
 		memcpy(NTadditionrates + iVertex, &ourrates, sizeof(NTrates));
@@ -8351,7 +8616,7 @@ __global__ void kernelIonisationRates(
 		//memcpy(NTadditionrates + iVertex, &ourrates, sizeof(NTrates));
 	};
 }
-__global__ void kernelIonisationRates_full_version_with_nonovershooting_alg(
+__global__ void kernelIonisationRates(
 	f64 const h_use,
 	structural * __restrict__ p_info_minor,
 	T3 * __restrict__ p_T_major,
@@ -8391,6 +8656,7 @@ __global__ void kernelIonisationRates_full_version_with_nonovershooting_alg(
 		f64 lambda;
 		f64 AreaMajor = p_AreaMajor[iVertex];
 		T3 T_k = p_T_major[iVertex];
+		
 		if (b_useTuse) {
 			T3 T = p_T_use_major[iVertex];
 			T_use = T.Te;
@@ -8406,10 +8672,11 @@ __global__ void kernelIonisationRates_full_version_with_nonovershooting_alg(
 		memcpy(&v, p_v + iVertex, sizeof(v4));
 		memcpy(&v_n, p_v_n + iVertex, sizeof(f64_vec3));
 
+		if (TEST_IONIZE) printf("iVertex %d ourrates.NeTe original %1.10E \n", iVertex, ourrates.NeTe);
+
 		// 0 . What is lambda?
 		
-		f64 oldT1;
-		
+		f64 oldT1;		
 		f64 n_k = our_n.n;
 		f64 n_n_k = our_n.n_n;
 		f64 n_kplus1, n_n_kplus1, n_kplus2;
@@ -8469,17 +8736,21 @@ __global__ void kernelIonisationRates_full_version_with_nonovershooting_alg(
 		int sign_k = (T2 - T1 > 0.0) ? 1 : -1; // usually -1 , ie negative rate of change, net ionization
 		//  Torigmove = T2 - T1; -- no, it's T_image-T_k that we wanna use.
 
+		if (TEST_IONIZE) printf("iVertex %d original move T2 %1.9E T1 %1.9E \n", iVertex, T2, T1);
+
 		// it's ok to use sign_k for the sign of the T_use move
 		// because if it's different sign to fwd move we never do overshooting test
 		// But what about if it's T<0? so fwd is recombining but new shift of T
 		// brings T_k+1<0.
 		// In that case we should be detecting it right here.
-
-
-		// First check if fwd next temperature would be negative:
-		bool bAccept = false;
-		bool b_test = b_useTuse;
 		
+		// First check if fwd next temperature would be negative:
+		bool bAccept = false;		
+		
+		// Try allowing to access the b_test loop:
+		bool b_test = b_useTuse;
+		// check that this brings back the 77 - it doesn't
+
 		if ((T2 < 0.0) && (b_useTuse) && (T_use > T_k.Te))
 		{
 			// in this case we should switch to T1 = T_k:
@@ -8500,9 +8771,14 @@ __global__ void kernelIonisationRates_full_version_with_nonovershooting_alg(
 			T2 = T_image1;
 			sign_k = (T2 - T1 > 0.0) ? 1 : -1;
 			
+			if (TEST_IONIZE) printf("iVertex %d switch to Tk \n", iVertex);
+
 			// and turn off tests below involving assn of move?
 			b_test = false;
 		}
+		 // DEBUG 2 -- it worked with this bit and b_test cut out
+		
+
 
 		if (T2 < 0.0) {
 			
@@ -8526,6 +8802,9 @@ __global__ void kernelIonisationRates_full_version_with_nonovershooting_alg(
 					T_image1 = (n_k*T_k.Te + coeff_on_ionizing*Delta_ionise + TWOTHIRDS*13.6*kB*Delta_rec) / n_kplus1;
 				}
 				T2 = T_image1;
+
+				if (TEST_IONIZE) printf("iVertex %d T<0 loop: T2 %1.9E \n", iVertex, T2);
+
 			};
 
 			// 3(a) If 2^-i Tk is an acceptable point, accept it.
@@ -8541,6 +8820,9 @@ __global__ void kernelIonisationRates_full_version_with_nonovershooting_alg(
 				bAccept = false;
 				T_image1 = T_oldimage1;
 				T_image2 = T_image1;
+				
+				if (TEST_IONIZE) printf("iVertex %d T now rising: T1 %1.9E T2 %1.9E \n", iVertex, T1, T2);
+
 			} else {
 				// Test T1 for overshooting:
 				// T2 is already defined as image of T1
@@ -8566,6 +8848,7 @@ __global__ void kernelIonisationRates_full_version_with_nonovershooting_alg(
 				if (bAccept == false) {
 					// Overshooting:
 
+					if (TEST_IONIZE) printf("iVertex %d T overshooting 1\n", iVertex);
 					// No adjustment to T1, T2 needed.
 					// Compute image of T2 under f_k:		
 					Delta_ionise = (n_n_k*hn*Gamma_ion + (n_n_k + n_k)*hnn*Gamma_rec*hn*Gamma_ion) /
@@ -8583,15 +8866,19 @@ __global__ void kernelIonisationRates_full_version_with_nonovershooting_alg(
 			// 4. If we are so close to equilibrium that the proposed
 			// change in temperature is tiny like 10^{-9}T then just set
 			// the actual ionization to 0. We have only 10^{-6}/10^{-13}=10^{7} steps.
-
+			
 			if (fabs(T_image1 - T_k.Te) < 1.0e-9*T_k.Te) {
 				// do nothing for a tiny move:
 				Delta_ionise = 0.0;
 				Delta_rec = 0.0;
 				bAccept = true; 
+
+				if (TEST_IONIZE) printf("iVertex %d small move accepted\n", iVertex);
+
 				// To move 10% would take 1e8 moves, we have only 1e-6/1e-13 = 1e7.
 			} else {
 
+				if (TEST_IONIZE) printf("%d b_test %d \n",iVertex, (b_test ? 1 : 0));
 
 				if (b_test) {
 					// in this case we now want to check whether our move
@@ -8601,12 +8888,15 @@ __global__ void kernelIonisationRates_full_version_with_nonovershooting_alg(
 					// No, we pretty much need to work out which one is winning out.
 					Gamma_ion = GetIonizationRates(T_k.Te, w, &Gamma_rec);
 
-					Delta_ionise = (n_n_k*hn*Gamma_ion + (n_n_k + n_k)*hnn*Gamma_rec*hn*Gamma_ion) /
+					f64 Delta_ionise_k = (n_n_k*hn*Gamma_ion + (n_n_k + n_k)*hnn*Gamma_rec*hn*Gamma_ion) /
 						((1.0 + hn*Gamma_ion)*(1.0 + hnn*Gamma_rec) - hnn*Gamma_rec*hn*Gamma_ion);
-					Delta_rec = (n_k*hnn*Gamma_rec + (n_k + n_n_k)*hnn*Gamma_rec*hn*Gamma_ion) /
+					f64 Delta_rec_k = (n_k*hnn*Gamma_rec + (n_k + n_n_k)*hnn*Gamma_rec*hn*Gamma_ion) /
 						((1.0 + hn*Gamma_ion)*(1.0 + hnn*Gamma_rec) - hnn*Gamma_rec*hn*Gamma_ion);
 					n_kplus1 = n_k + Delta_ionise_k - Delta_rec_k; // Delta_rec is amount recombining.
 					f64 T_image_k = (n_k*T_k.Te + coeff_on_ionizing*Delta_ionise + TWOTHIRDS*13.6*kB*Delta_rec) / n_kplus1;
+					
+					if (TEST_IONIZE) printf("iVertex %d bTest was true; T_image_k %1.9E T_k %1.9E T_image1 %1.9E T1 %1.9E\n",
+						iVertex, T_image_k, T_k.Te, T_image1, T1);
 
 					if (((T_image_k > T_k.Te) && (T_image1 < T1))
 						||
@@ -8627,17 +8917,22 @@ __global__ void kernelIonisationRates_full_version_with_nonovershooting_alg(
 							Delta_ionise = 0.0;
 							Delta_rec = 0.0;
 							// A better solution may exist.
+							
+							if (TEST_IONIZE) printf("iVertex %d setted Delta_ionise to 0\n", iVertex);
 						};
 					} else {
 						// If it's the same sign, pass to the following code
 						// which asks if it is overshooting.
 						// We have not changed T2 or T1 or T_image1
+						
+						if (TEST_IONIZE) printf("iVertex %d pass to secant loop\n", iVertex);
 					};
 				};
 
 				// putative Fwd Euler move neither had T < 0 nor was tiny.
 				// Overshooting test for Fwd Euler:
 
+				if (TEST_IONIZE) printf("iVertex %d overshooting test for Fwd move\n", iVertex);
 				bAccept = false;
 
 				Gamma_ion = GetIonizationRates(T2, w, &Gamma_rec);
@@ -8654,27 +8949,35 @@ __global__ void kernelIonisationRates_full_version_with_nonovershooting_alg(
 				{
 					bAccept = true; // Accept forward Euler move; Delta was set.
 					// Or on main step, accept "T_k+1/2" move
+
+					if (TEST_IONIZE) printf("iVertex %d comparator same sign; accept\n",iVertex);
 				} else {
 					bAccept = (SAFETY_FACTOR*fabs(Tkplus2minus1) < fabs(T2-T_k.Te)+LEEWAY);
 					// Accept only if the comparator is smaller in magnitude.
-				};
 
+					if (TEST_IONIZE) printf("iVertex %d comparison %1.10E vs %1.10E\n", iVertex,
+						SAFETY_FACTOR*fabs(Tkplus2minus1) , fabs(T2 - T_k.Te) + LEEWAY);
+				};
+				// got rid of probs by commenting from here
 				if (bAccept == false) {
 					// construct f_k image of T2 for use in secant:
 					f64 hnGamma_ion = h_use*Gamma_ion*n_k;
 					f64 hnnGamma_rec = h_use*Gamma_rec*n_k*n_k;
-			Delta_ionise = (n_n_k*hn*Gamma_ion + (n_n_k + n_k)*hnn*Gamma_rec*hn*Gamma_ion) /
-				((1.0 + hn*Gamma_ion)*(1.0 + hnn*Gamma_rec) - hnn*Gamma_rec*hn*Gamma_ion);
-			Delta_rec = (n_k*hnn*Gamma_rec + (n_k + n_n_k)*hnn*Gamma_rec*hn*Gamma_ion) /
-				((1.0 + hn*Gamma_ion)*(1.0 + hnn*Gamma_rec) - hnn*Gamma_rec*hn*Gamma_ion);
+					Delta_ionise = (n_n_k*hn*Gamma_ion + (n_n_k + n_k)*hnn*Gamma_rec*hn*Gamma_ion) /
+						((1.0 + hn*Gamma_ion)*(1.0 + hnn*Gamma_rec) - hnn*Gamma_rec*hn*Gamma_ion);
+					Delta_rec = (n_k*hnn*Gamma_rec + (n_k + n_n_k)*hnn*Gamma_rec*hn*Gamma_ion) /
+						((1.0 + hn*Gamma_ion)*(1.0 + hnn*Gamma_rec) - hnn*Gamma_rec*hn*Gamma_ion);
 					n_kplus1 = n_k + Delta_ionise - Delta_rec; // Delta_rec is amount recombining.
 					T_image2 = (n_k*T_k.Te + coeff_on_ionizing*Delta_ionise + TWOTHIRDS*13.6*kB*Delta_rec) / n_kplus1;
 				}
+							
 			}; // whether small move
+			
 		}; // whether fwd T < 0
-
+		
 		// Main loop:				
 
+		
 		int ctr = 0;
 
 		while ((bAccept == false) && (ctr < 100)){
@@ -8692,7 +8995,13 @@ __global__ void kernelIonisationRates_full_version_with_nonovershooting_alg(
 			f64 T_est = 0.5*(T_sec + T1);
 
 			// Calculate image starting from T_k and using T_est
-			Gamma_ion = GetIonizationRates(T_est, w, &Gamma_rec);
+			
+			//if (TEST_IONIZE) {
+				//Gamma_ion = GetIonizationRatesDebug(T_est, w, &Gamma_rec);
+			//} else {
+				Gamma_ion = GetIonizationRates(T_est, w, &Gamma_rec);
+			//};
+
 			Delta_ionise = (n_n_k*hn*Gamma_ion + (n_n_k + n_k)*hnn*Gamma_rec*hn*Gamma_ion) /
 				((1.0 + hn*Gamma_ion)*(1.0 + hnn*Gamma_rec) - hnn*Gamma_rec*hn*Gamma_ion);
 			Delta_rec = (n_k*hnn*Gamma_rec + (n_k + n_n_k)*hnn*Gamma_rec*hn*Gamma_ion) /
@@ -8702,7 +9011,10 @@ __global__ void kernelIonisationRates_full_version_with_nonovershooting_alg(
 			n_n_kplus1 = n_n_k - Delta_ionise + Delta_rec;
 
 			f64 T_image_est = (n_k*T_k.Te + coeff_on_ionizing*Delta_ionise + TWOTHIRDS*13.6*kB*Delta_rec) / n_kplus1;
-			
+
+			if (TEST_IONIZE) printf("iVertex %d secant loop T1 %1.9E T2 %1.9E T_est %1.9E T_image_est %1.9E Gamma_ion %1.9E Gamma_rec %1.9E\n",
+				iVertex, T1, T2, T_est, T_image_est, Gamma_ion, Gamma_rec);
+
 			bAccept = false;
 			if ((T_image_est < 0.0) && (sign_k < 0)) // If T goes negative it does count as overshooting, supposing original dT was decreasing.
 			{
@@ -8725,6 +9037,8 @@ __global__ void kernelIonisationRates_full_version_with_nonovershooting_alg(
 					T_image2 = T_image_est;
 					bAccept = false;
 
+					if (TEST_IONIZE) printf("iVertex %d : T_est beyond bwd\n", iVertex);
+
 					// This is beyond bwd but do we need to check that we are not exceeding a fwd.
 					// .. If we got here then the fwd step is overshooting so that greater move would presumably be overshooting also.
 
@@ -8741,6 +9055,8 @@ __global__ void kernelIonisationRates_full_version_with_nonovershooting_alg(
 					// Test overshooting:
 					bAccept = false;
 
+					if (TEST_IONIZE) printf("iVertex %d : T_est overshooting test\n", iVertex);
+
 					// T_image_est is > 0 if we got here.
 					Gamma_ion = GetIonizationRates(T_image_est, w, &Gamma_rec);
 					// Comparator:
@@ -8756,8 +9072,14 @@ __global__ void kernelIonisationRates_full_version_with_nonovershooting_alg(
 						((Tkplus2minus1 < 0.0) && (T2-T_k.Te < 0.0)))
 					{
 						bAccept = true; // same sign onward => not overshooting eqm
+
+						if (TEST_IONIZE) printf("iVertex %d comparator same sign\n");
 					} else {
 						bAccept = (SAFETY_FACTOR*fabs(Tkplus2minus1) < fabs(T2-T_k.Te)+LEEWAY);
+
+						if (TEST_IONIZE) printf("iVertex %d comparison %1.10E vs %1.10E\n",
+							SAFETY_FACTOR*fabs(Tkplus2minus1), fabs(T2 - T_k.Te) + LEEWAY);
+
 						// Accept only if the comparator is smaller in magnitude.
 						if (bAccept == false) {
 							T1 = T_est; // still overshooting
@@ -8783,7 +9105,9 @@ __global__ void kernelIonisationRates_full_version_with_nonovershooting_alg(
 
 		ourrates.N += dNdt_ionise - dNdt_recombine;
 		ourrates.Nn += dNdt_recombine - dNdt_ionise;
-
+		
+		// Debug: do we get 77 w/o this bit? nope
+				
 		// Store existing energy density:
 		f64 Energy_k = 1.5*(n_k*(T_k.Te + T_k.Ti) + n_n_k*T_k.Tn) +
 			0.5*((m_e+m_i)*n_k*(v.vxy.dot(v.vxy)) + m_e*n_k*v.vez*v.vez + m_i*n_k*v.viz*v.viz + m_n*n_n_k*v_n.dot(v_n));
@@ -8797,12 +9121,19 @@ __global__ void kernelIonisationRates_full_version_with_nonovershooting_alg(
 
 		// Absorbed DKE:
 		f64 deltaKE = -(2.0*Theta*Kconv / (3.0*n_k*T_k.Te + 2.0*Theta*Kconv))*Delta_ionise*13.6*kB;
-		f64 new_vz_diff = sqrt(m_e*n_kplus1 + m_n*n_n_kplus1*
+		f64 new_vz_diff = sqrt((m_e*n_kplus1 + m_n*n_n_kplus1)*
 			((n_k*n_n_k / (m_e*n_k + m_n*n_n_k))*(w0z*w0z) + 2.0*deltaKE / (m_e*m_n)) /
-			n_kplus1*n_n_kplus1);
-		f64 delta_vez = m_n*n_n_kplus1*(w0z + new_vz_diff) /
+			(n_kplus1*n_n_kplus1));
+		
+		// Choose new_vz_diff to have same sign as w0z = diff_k:
+		if (w0z < 0.0) new_vz_diff = -new_vz_diff;
+
+		f64 delta_vez = m_n*n_n_kplus1*(-w0z + new_vz_diff) /
 					(m_n*n_n_kplus1 + m_e*n_kplus1);
 		f64 delta_vnz = -m_e*n_kplus1*delta_vez / (m_n*n_n_kplus1);
+		
+		if (TEST_IONIZE) printf("deltaKE %1.10E v.vez %1.10E w0z %1.9E new_vz_diff %1.9E \n",
+			deltaKE, v.vez, w0z, new_vz_diff);
 
 		// Check: w0 = vez-vnz - tick
 		// should change to scalar.
@@ -8825,6 +9156,12 @@ __global__ void kernelIonisationRates_full_version_with_nonovershooting_alg(
 		vn_kplus1 = v_n*(n_n_k/n_n_kplus1);
 		vn_kplus1.z += delta_vnz;
 		
+
+		if (TEST_IONIZE) printf("ve_kplus1 %1.9E %1.9E %1.9E vi_plus1 %1.9E %1.9E %1.9E vn_plus1 %1.9E %1.9E %1.9E delta_vez %1.9E\n",
+			ve_kplus1.x, ve_kplus1.y, ve_kplus1.z, vi_kplus1.x, vi_kplus1.y, vi_kplus1.z,
+			vn_kplus1.x, vn_kplus1.y, vn_kplus1.z, delta_vez);
+
+
 		// 2. Add the effect of xfers on momenta:
 
 		// What does MAR_neut mean? Nv?
@@ -8871,6 +9208,10 @@ __global__ void kernelIonisationRates_full_version_with_nonovershooting_alg(
 		f64 KE_result = 0.5*(m_e*n_kplus1*ve_kplus1.dot(ve_kplus1) + m_i*n_kplus1*vi_kplus1.dot(vi_kplus1)
 			+ m_n*n_n_kplus1*vn_kplus1.dot(vn_kplus1));
 
+		if (TEST_IONIZE) printf("n_kplus1 %1.12E ve_kplus1 %1.9E %1.9E %1.9E vi_plus1 %1.9E %1.9E %1.9E vn_plus1 %1.9E %1.9E %1.9E\n",
+			n_kplus1, ve_kplus1.x, ve_kplus1.y, ve_kplus1.z, vi_kplus1.x, vi_kplus1.y, vi_kplus1.z,
+			vn_kplus1.x, vn_kplus1.y, vn_kplus1.z);
+
 		f64 Energy_density_kplus1 = KE_result + 1.5*(nTe_kplus1 + nTi_kplus1 + n_nTn_kplus1);
 		f64 Energy_density_target = Energy_k - 13.6*kB*(Delta_ionise - Delta_rec);
 		
@@ -8880,9 +9221,35 @@ __global__ void kernelIonisationRates_full_version_with_nonovershooting_alg(
 		
 		// 1.5 nT += Frictional_heating
 		// NTe += (2/3) Area Frictional_heating
+		if (TEST_IONIZE) printf("AreaMajor %1.9E h_use %1.9E Delta_ionise %1.9E \n"
+			"0.6666 13.6 kB %1.9E Delta_ionise Area/h %1.10E \n",
+			AreaMajor, h_use, Delta_ionise,
+			0.666667*13.6*kB, Delta_ionise*AreaMajor/h_use
+			);
+
+		if (TEST_IONIZE) printf("DNeTe before balance: %1.9E dNdt_ionise %1.9E \n"
+			"Energy_density_target %1.9E k %1.9E kplus1 %1.9E ; KEk %1.9E KEresult %1.9E\n",
+			ourrates.NeTe, dNdt_ionise,
+			Energy_density_target, Energy_k, Energy_density_kplus1,
+			0.5*((m_e + m_i)*n_k*(v.vxy.dot(v.vxy)) + m_e*n_k*v.vez*v.vez + m_i*n_k*v.viz*v.viz + m_n*n_n_k*v_n.dot(v_n)),
+			KE_result);
+
 		ourrates.NeTe += 2.0*AreaMajor*
 			(Energy_density_target - Energy_density_kplus1)/ (3.0*h_use);
-				
+
+		// DEBUG:
+		if (TEST_IONIZE) printf("iVertex %d n_k %1.9E N_k %1.9E Te_k %1.9E NeTe %1.9E h*NeTe %1.9E \n"
+			"Ti_k %1.9E h*NiTi %1.9E Tn_k %1.9E h*NnTn %1.9E \n"
+			"Delta_ionise %1.9E rec %1.9E \n",
+			iVertex, n_k, n_k*AreaMajor, T_k.Te, ourrates.NeTe, h_use*ourrates.NeTe,
+			T_k.Ti, h_use*ourrates.NiTi, T_k.Tn, h_use*ourrates.NnTn,
+			Delta_ionise, Delta_rec
+		);
+		
+		// DEBUG:
+		if (TEST_IONIZE) //n_k*AreaMajor*T_k.Te + ourrates.NeTe*h_use < 0.0)
+			printf("%d Predicted Te %1.9E \n", iVertex, (n_k*AreaMajor*T_k.Te + ourrates.NeTe*h_use) / (n_k*AreaMajor));
+		
 		memcpy(NTadditionrates + iVertex, &ourrates, sizeof(NTrates));
 		memcpy(p_MAR_neut + iVertex, &MAR_neut, sizeof(f64_vec3));
 		memcpy(p_MAR_ion + iVertex, &MAR_ion, sizeof(f64_vec3));
@@ -17127,8 +17494,12 @@ __global__ void kernelCreate_pressure_gradT_and_gradA_CurlA_minor_noadvect(
 						T3 next_T = p_T_minor[izNeighMinor[inext]];
 						nextT.Te = next_T.Te; nextT.Ti = next_T.Ti;
 
-						next_T = p_T_minor[izNeighMinor[inext] - BEGINNING_OF_CENTRAL - StartMajor];
+						if ((izNeighMinor[inext] > 110592) || (izNeighMinor[inext] < 0))
+						{
+							printf("izNeighMinor[inext] %d iMinor %d\n", izNeighMinor[inext], iMinor);
+						}
 						nextpos = p_info_minor[izNeighMinor[inext]].pos;
+						
 					};
 				};
 				if (szPBC[inext] == ROTATE_ME_CLOCKWISE) nextpos = Clockwise_d*nextpos;
@@ -18127,7 +18498,7 @@ __global__ void kernelCreate_momflux_minor(
 // Not optimized: !!
 #define FACTOR_HALL (1.0/0.96)
 #define FACTOR_PERP (1.2/0.96)
-#define DEBUGNANS
+//#define DEBUGNANS
 
 
 __global__ void kernelCalculate_deps_WRT_beta_Visc(
@@ -21590,13 +21961,14 @@ kernelCreate_viscous_contrib_to_MAR_and_NT(
 								visc_htg += -THIRD*m_e*(htg_diff.dot(visc_contrib));
 						}
 
-//						if (iMinor == 42939)
-//							printf("\n%d : %d : ita %1.8E our_vez %1.10E opp_vez %1.10E \n"
-//								"gradvz %1.9E %1.9E ourpos %1.9E %1.9E opppos %1.9E %1.9E \n"
-//								"visc_contrib.z %1.10E visc_htg %1.10E\n", iMinor, izNeighMinor[i],
-//								ita_par, our_v.vez, opp_v.vez, 
-//								gradvez.x,gradvez.y, info.pos.x,info.pos.y,opppos.x,opppos.y,
-//								visc_contrib.z, visc_htg);
+						if (TESTVISC)
+							printf("\n%d : %d : ita %1.8E  \n"
+								"gradvz %1.9E %1.9E ourpos %1.9E %1.9E \n"
+								"visc_contrib.z %1.10E visc_htg %1.10E\n", 
+								iMinor, izNeighMinor[i],
+								ita_par, 
+								gradvez.x,gradvez.y, info.pos.x,info.pos.y,
+								visc_contrib.z, visc_htg);
 
 						// 42939: Find out why it makes too much heat. Probably a compound error.
 				//		if (iMinor == 42939) printf("42939\nour_v %1.8E %1.8E %1.8E \n"
@@ -21777,6 +22149,18 @@ kernelCreate_viscous_contrib_to_MAR_and_NT(
 
 			if (visc_htg != visc_htg) printf("iMinor e %d NAN VISC HTG\n", iMinor);
 #endif
+			if (TESTVISC) {
+
+				if (ownrates.x != ownrates.x)
+					printf("iMinor e %d NaN ownrates.x\n", iMinor);
+				if (ownrates.y != ownrates.y)
+					printf("iMinor e %d NaN ownrates.y\n", iMinor);
+				if (ownrates.z != ownrates.z)
+					printf("iMinor e %d NaN ownrates.z\n", iMinor);
+
+				if (visc_htg != visc_htg) printf("iMinor e %d NAN VISC HTG\n", iMinor);
+			}
+
 		} else {
 			// Not domain, not crossing_ins, not a frill			
 		} // non-domain tri

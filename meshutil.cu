@@ -5700,7 +5700,7 @@ void SetVertexColour(VertexPNT3 * pPNT, const plasma_data * pdata, int colourfla
 		case FLAG_SEGUE_COLOUR:
 		case FLAG_AZSEGUE_COLOUR:
 
-			ptr = ((real *)pdata) + offset_data;
+			ptr = ((real *)pdata) + offset_vcolour;
 			pPNT->tex0.x = (float)(*ptr);
 
 			break;

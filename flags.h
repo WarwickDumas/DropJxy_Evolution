@@ -80,21 +80,20 @@ int const REAL = 2;
 #define ID_DISPLAY_TOTAL                50003
 #define ID_DISPLAY_JZAZBXYEZ            50004
 #define ID_DISPLAY_SIGMAEJ              50005
-#define ID_DISPLAY_VIZVEZJZAZDOT        50006		
-#define ID_DISPLAY_ONE_D                50007
-#define ID_DISPLAY_JILL                 50008
+#define ID_DISPLAY_VIZVEZJZAZDOT        50006	
 
 #define SPECIES_NEUT         0
 #define SPECIES_NEUTRAL      0
 #define SPECIES_ION          1
-#define SPECIES_ELECTRON     2
-#define SPECIES_ELEC         2
-#define OVERALL              3
-#define JZAZBXYEZ                 4
-#define SIGMA_E_J                 5
-#define OHMSLAW                   5
-#define VIZVEZJZAZDOT             6
-#define ONE_D                     7
+#define SPECIES_ELECTRON     800
+#define SPECIES_ELEC         800
+#define OVERALL              2
+#define JZAZBXYEZ                 3
+#define SIGMA_E_J                 900
+#define OHMSLAW                   4
+#define VIZVEZJZAZDOT             1000
+#define ONE_D                     5
+#define IONIZEGRAPH               6
 
 #define LAPAZ_AZ                  10000
 
@@ -213,6 +212,12 @@ int const REAL = 2;
 #define GRAPH_CONDUCTIVITYOHMS  110
 #define GRAPH_NU_EFFECTIVE  111
 #define GRAPH_OPTI         112
+#define GRAPH_DNDT      200
+#define GRAPH_DNDT_OVER_n  201
+#define GRAPH_LOG10N       202
+#define GRAPH_DTEDT        203
+#define GRAPH_FRACTION     204
+#define GRAPH_AEZ1         205
 
 // Number of vars used to produce heights:
 int const FLAG_FLAT_MESH = 0;

@@ -64,9 +64,9 @@ BEGIN
         MENUITEM "Ion",                         ID_DISPLAY_ION
         MENUITEM "Total",                       ID_DISPLAY_TOTAL
         MENUITEM "JzAzBxyEz",                   ID_DISPLAY_JZAZBXYEZ
-        MENUITEM "OhmsLaw",                     ID_DISPLAY_SIGMAEJ
-        MENUITEM "jill",                        ID_DISPLAY_JILL
+        MENUITEM "OhmsLaw",                     ID_DISPLAY_OHMS
         MENUITEM "1D",                          ID_DISPLAY_ONE_D
+        MENUITEM "Ionization",                  ID_DISPLAY_IONIZEGRAPHS
     END
     POPUP "Help"
     BEGIN

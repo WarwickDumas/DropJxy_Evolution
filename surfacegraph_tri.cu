@@ -22,10 +22,10 @@ extern real GlobalRescaling;
 
 extern unsigned int cw;
 
-extern float Historic_max[100][HISTORY]; // if max is falling, use historic maximum for graph.
-extern float Historic_min[100][HISTORY];
-extern int Historic_powermax[100]; // if max is falling, use historic maximum for graph.
-extern int Historic_powermin[100];
+extern float Historic_max[512][HISTORY]; // if max is falling, use historic maximum for graph.
+extern float Historic_min[512][HISTORY];
+extern int Historic_powermax[512]; // if max is falling, use historic maximum for graph.
+extern int Historic_powermin[512];
 extern bool boolGlobalHistory;
 extern bool bCullNone;
 
@@ -206,7 +206,7 @@ HRESULT surfacegraph::InitialiseWithoutBuffers(int vpleft, int vptop, int vpwidt
 	vp.Width = vpwidth;
 	vp.Height = vpheight;
 	vp.MinZ = 0.0f;
-	vp.MaxZ = 0.0f;
+	vp.MaxZ = 1.0f; // WHY 0 ?
 	
 	float AspectRatio = ((float)vp.Width)/(float)vp.Height;
 	
@@ -1124,6 +1124,9 @@ HRESULT surfacegraph::SetDataWithColour(const TriMesh & X,
 			};	
 		break;
 		case FLAG_SEGUE_COLOUR:
+			colourmax = 1.0; 
+
+			break;
 		case FLAG_IONISE_COLOUR:
 		case FLAG_PPN_COLOUR:
 			// For temperature want the following absolute scale;
@@ -1131,7 +1134,9 @@ HRESULT surfacegraph::SetDataWithColour(const TriMesh & X,
 			// use code to determine if this is temperature or what.
 			break;
 		case FLAG_AZSEGUE_COLOUR:
-			
+
+			X.Return3rdmaxData(offset_vcolour, &maximum, &minimum,
+				this->boolDisplayInnerMesh);
 			colourmax = max(maximum, fabs(minimum)); // scale both + and - according to this.
 
 			break;
@@ -1727,6 +1732,8 @@ VOID surfacegraph::Render(const char * szTitle, bool RenderTriLabels,
 		DXChk(mFX->SetValue(mhEyePos, &Eye, sizeof(D3DXVECTOR3)));
 		DXChk(mFX->SetFloat(mhColourMax,colourmax));
 		
+		printf("Render: Setted colourmax == %f \n", colourmax);
+
 		DXChk(mFX->SetBool(mhbTransparency, false));
 		Direct3D.pd3dDevice->SetRenderState(D3DRS_ALPHABLENDENABLE , false);	
 		
@@ -2526,7 +2533,22 @@ void inline surfacegraph::RenderLabel2 (char * text, float x, float y, float z, 
 
 		D3DXVECTOR3 screencoord;
 
+		if (position.x == 0.0f) position.x = 1.0e-7f;
+		if (position.y == 0.0f) position.y = 1.0e-7f;
+		if (position.z == 0.0f) position.z = 1.0e-7f;
+
+	//	printf("Dbg position %1.9E %1.9E %1.9E matView 112233 %1.9E %1.9E %1.9E matProj %1.9E %1.9E %1.9E \n", position.x, position.y, position.z,
+	//		matView._11, matView._22, matView._33, matProj._11, matProj._22, matProj._33);
+
 		D3DXVec3TransformCoord(&transformed, &position,&(matView*matProj));
+
+		// it looks like FP trap is found above not here. smth bad about transformed here
+		// or, smth bad about the input to the line above.
+
+		// DEBUG:
+	//	printf("Dbg transformed %1.10E %1.10E %1.10E \n", transformed.x, transformed.y, transformed.z);
+	//	printf("Screenmat diag %1.10E %1.10E %1.10E \n", screenmat._11, screenmat._22, screenmat._33);
+
 		D3DXVec3TransformCoord(&screencoord, &transformed, &screenmat);
 
 		rect.top = (int)screencoord.y-15;

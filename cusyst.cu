@@ -734,7 +734,7 @@ void cuSyst::PopulateTriMesh(TriMesh * pX)
 		if (iMinor >= BEGINNING_OF_CENTRAL) {
 			data.n = p_n_major[iMinor - BEGINNING_OF_CENTRAL].n ;
 			data.n_n = p_n_major[iMinor - BEGINNING_OF_CENTRAL].n_n ;
-		}
+		} 
 		data.Tn = p_T_minor[iMinor].Tn;
 		data.Ti = p_T_minor[iMinor].Ti ;
 		data.Te = p_T_minor[iMinor].Te ;

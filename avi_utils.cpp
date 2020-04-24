@@ -123,15 +123,39 @@ HRESULT SetAviVideoCompression(HAVI avi, HBITMAP hbm, AVICOMPRESSOPTIONS *opts, 
 
 
 HRESULT AddAviFrame(HAVI avi, HBITMAP hbm)
-{ if (avi==NULL) return AVIERR_BADHANDLE;
-  if (hbm==NULL) return AVIERR_BADPARAM;
+{
+	if (avi == NULL) {
+		printf("avi == NULL   \n");
+		return AVIERR_BADHANDLE;
+	}
+	if (hbm == NULL) {
+		printf("hbm == NULL   \n");
+		return AVIERR_BADPARAM;
+	}
+  
+  printf("$");
+  
   DIBSECTION dibs; int sbm = GetObject(hbm,sizeof(dibs),&dibs);
+  
+  printf("&");
+
   if (sbm!=sizeof(DIBSECTION)) return AVIERR_BADPARAM;
+  
+  printf("$");
+
   TAviUtil *au = (TAviUtil*)avi;
+
+  if (au == 0) printf("it was 0\n");
+  printf("&");
+
   if (au->iserr) return AVIERR_ERROR;
+
+  printf("$");
   //
   if (au->ps==0) // create the stream, if it wasn't there before
-  { AVISTREAMINFO strhdr; ZeroMemory(&strhdr,sizeof(strhdr));
+  { 
+	  printf("au->ps was 0\n");
+	  AVISTREAMINFO strhdr; ZeroMemory(&strhdr,sizeof(strhdr));
     strhdr.fccType = streamtypeVIDEO;// stream type
     strhdr.fccHandler = 0; 
     strhdr.dwScale = au->period;
@@ -144,7 +168,10 @@ HRESULT AddAviFrame(HAVI avi, HBITMAP hbm)
   //
   // create an empty compression, if the user hasn't set any
   if (au->psCompressed==0)
-  { AVICOMPRESSOPTIONS opts; ZeroMemory(&opts,sizeof(opts));
+  { 
+
+	  printf("au->psCompressed was 0\n");
+	  AVICOMPRESSOPTIONS opts; ZeroMemory(&opts,sizeof(opts));
     opts.fccHandler=mmioFOURCC('D','I','B',' '); 
     HRESULT hr = AVIMakeCompressedStream(&au->psCompressed, au->ps, &opts, NULL);
     if (hr != AVIERR_OK) {au->iserr=true; return hr;}
@@ -153,6 +180,8 @@ HRESULT AddAviFrame(HAVI avi, HBITMAP hbm)
   }
   //
   //Now we can add the frame
+
+  printf("AVIStreamWrite:\n");
   HRESULT hr = AVIStreamWrite(au->psCompressed, au->nframe, 1, dibs.dsBm.bmBits, dibs.dsBmih.biSizeImage, AVIIF_KEYFRAME, NULL, NULL);
   if (hr!=AVIERR_OK) {au->iserr=true; return hr;}
   au->nframe++; return S_OK;

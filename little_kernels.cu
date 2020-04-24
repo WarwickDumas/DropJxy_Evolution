@@ -1632,6 +1632,97 @@ __global__ void kernelCalculate_kappa_nu(
 	}
 }
 
+__global__ void kernelPrepareNuGraphs(
+	structural * __restrict__ p_info_minor,
+	nvals * __restrict__ p_n_minor,
+	T3 * __restrict__ p_T_minor,
+	f64 * __restrict__ p_nu_e_MT,
+	f64 * __restrict__ p_nu_en_MT
+)
+{
+	long const iMinor = threadIdx.x + blockIdx.x * blockDim.x;
+	f64 TeV, sigma_MT, sigma_visc, sqrt_T, nu_en_MT;
+	T3 T;
+	f64 nu_in_visc, nu_ni_visc, nu_ii;
+	nvals our_n;
+	species3 nu;
+
+	structural info = p_info_minor[iMinor];
+	if ((info.flag == DOMAIN_TRIANGLE) || (info.flag == CROSSING_INS))
+	{
+		our_n = p_n_minor[iMinor];
+		T = p_T_minor[iMinor];
+
+		TeV = T.Te * one_over_kB;
+		Estimate_Ion_Neutral_Cross_sections_d(TeV, &sigma_MT, &sigma_visc);
+		sqrt_T = sqrt(T.Te);
+		nu_en_MT = our_n.n_n * sigma_MT * sqrt_T * over_sqrt_m_e;
+		f64 nu_eiBar = nu_eiBarconst * kB_to_3halves * our_n.n *
+			Get_lnLambda_d(our_n.n, T.Te) / (T.Te*sqrt_T);
+		
+		p_nu_e_MT[iMinor] = nu_en_MT + nu_eiBar; // just doing this roughly, it may not correspond to what is in PopOhms
+		p_nu_en_MT[iMinor] = nu_en_MT;
+
+	} else {
+		p_nu_e_MT[iMinor] = 0.0;
+		p_nu_en_MT[iMinor] = 0.0;
+	}
+}
+
+__global__ void kernelPrepareIonizationGraphs(
+	structural * __restrict__ p_info_major,
+	nvals * __restrict__ p_n_major,
+	f64 * __restrict__ p_AreaMajor,
+	NTrates * __restrict__ ratesNT, // dN/dt, dNeTe/dt
+	f64_vec3 * __restrict__ p_dNve, // --> d/dt v_e
+
+	f64 * __restrict__ p_graph1,
+	f64 * __restrict__ p_graph2,
+	f64 * __restrict__ p_graph3,
+	f64 * __restrict__ p_graph4,
+	f64 * __restrict__ p_graph5,
+	f64 * __restrict__ p_graph6) {
+	
+	long const iVertex = threadIdx.x + blockIdx.x*blockDim.x;
+	structural info = p_info_major[iVertex];
+
+	if (info.flag == DOMAIN_VERTEX) {
+
+		NTrates NT_rates = ratesNT[iVertex];
+		nvals n_nn = p_n_major[iVertex];
+		f64 dNvez = p_dNve[iVertex].z;
+		f64 Area = p_AreaMajor[iVertex];
+
+		p_graph1[iVertex] = NT_rates.N / Area; // dn/dt
+		p_graph2[iVertex] = p_graph1[iVertex] / (n_nn.n);
+		p_graph3[iVertex] = log10(n_nn.n);
+		p_graph4[iVertex] = NT_rates.NeTe / (Area*n_nn.n); // dT/dt
+		p_graph5[iVertex] = dNvez / (Area*n_nn.n); // dvez/dt
+		p_graph6[iVertex] = n_nn.n / (n_nn.n + n_nn.n_n); // ionization fraction
+
+	} else {
+		p_graph1[iVertex] = 0.0;
+		p_graph2[iVertex] = 0.0;
+		p_graph3[iVertex] = 0.0;
+		p_graph4[iVertex] = 0.0;
+		p_graph5[iVertex] = 0.0;
+		p_graph6[iVertex] = 0.0;
+	};
+
+}
+
+__global__ void kernelKillNeutral_v_OutsideRadius(
+	structural * __restrict__ p_info_minor,
+	f64_vec3 * __restrict__ p_v_n
+)
+{
+	long const index = threadIdx.x + blockIdx.x*blockDim.x;
+	structural info = p_info_minor[index];
+	if (info.pos.x*info.pos.x + info.pos.y*info.pos.y >
+		KILL_NEUTRAL_V_OUTSIDE_TEMP*KILL_NEUTRAL_V_OUTSIDE_TEMP
+		)
+		memset(&(p_v_n[index]), 0, sizeof(f64_vec3));
+}
 
 __global__ void kernelCreateTfromNTbydividing_bysqrtDN(
 	f64 * __restrict__ p_T_n,
@@ -2933,6 +3024,28 @@ __global__ void Augment_dNv_minor(
 				+ p_MAR_neut_major[tricornerindex.i2] * coeff2
 				+ p_MAR_neut_major[tricornerindex.i3] * coeff3;
 
+
+			//if (iMinor == 6100) {
+			//	printf("p_MAR_neut_major[tricornerindex.i1].z %1.10E coeff1 %1.10E \n"
+			//		"p_MAR_neut_major[tricornerindex.i2].z %1.10E coeff2 %1.10E \n"
+			//		"p_MAR_neut_major[tricornerindex.i3].z %1.10E coeff3 %1.10E \n"
+			//		"add_n.z %1.10E Nnhere %1.10E p_temp_Nntotalmajor[tricornerindex.i1] %1.10E  \n"
+			//		"tricornerindex %d %d %d\n"
+			//		,
+			//		p_MAR_neut_major[tricornerindex.i1].z , coeff1,
+			//		p_MAR_neut_major[tricornerindex.i2].z, coeff2,
+			//		p_MAR_neut_major[tricornerindex.i3].z, coeff3,
+			//		add_n.z, Nnhere,
+			//		p_temp_Nntotalmajor[tricornerindex.i1],
+			//		tricornerindex.i1, tricornerindex.i2, tricornerindex.i3
+			//	);
+			//}
+
+
+			if (add_n.z != add_n.z) printf("NaN add_n.z %d\n", iMinor);
+			if (add_i.z != add_i.z) printf("NaN add_i.z %d\n", iMinor);
+			if (add_e.x != add_e.x) printf("NaN add_e.x %d\n", iMinor);
+
 			p_MAR_neut[iMinor] += add_n;
 			p_MAR_ion[iMinor] += add_i;
 			p_MAR_elec[iMinor] += add_e;
@@ -2946,6 +3059,10 @@ __global__ void Augment_dNv_minor(
 			coeff = Nnhere / p_temp_Nntotalmajor[iMinor - BEGINNING_OF_CENTRAL];
 			f64_vec3 add_n = p_MAR_neut_major[iMinor - BEGINNING_OF_CENTRAL] * coeff;
 
+			if (add_n.z != add_n.z) printf("NaN add_n.z %d\n", iMinor);
+			if (add_i.z != add_i.z) printf("NaN add_i.z %d\n", iMinor);
+			if (add_e.x != add_e.x) printf("NaN add_e.x %d\n", iMinor);
+
 			p_MAR_neut[iMinor] += add_n;
 			p_MAR_ion[iMinor] += add_i;
 			p_MAR_elec[iMinor] += add_e;
@@ -2958,16 +3075,20 @@ __global__ void Collect_Ntotal_major(
 	structural * __restrict__ p_info_minor,
 	long * __restrict__ p_izTri,
 	nvals * __restrict__ p_n_minor,
-	f64 * __restrict__ p_AreaMinor, 
+	f64 * __restrict__ p_AreaMinor,
 	f64 * __restrict__ p_temp_Ntotalmajor,
 	f64 * __restrict__ p_temp_Nntotalmajor)
 {
 	long iVertex = blockDim.x*blockIdx.x + threadIdx.x;
-	structural info = p_info_minor[iVertex + BEGINNING_OF_CENTRAL];	
+	structural info = p_info_minor[iVertex + BEGINNING_OF_CENTRAL];
 	long izTri[MAXNEIGH_d];
 	short i;
-	
-	if (info.flag == DOMAIN_VERTEX) {
+	//if (iVertex == 3056) {
+	//	printf("\niVertex %d info.flag %d info.pos %1.8E %1.8E \n\n", iVertex, info.flag,
+	//		info.pos.x, info.pos.y);
+	//}
+
+	if ((info.flag == DOMAIN_VERTEX) || (info.flag == OUTERMOST)) {
 		memcpy(izTri, p_izTri + MAXNEIGH_d*iVertex, sizeof(long)*MAXNEIGH_d);
 		nvals ncentral = p_n_minor[iVertex + BEGINNING_OF_CENTRAL];
 		f64 areaminorhere = p_AreaMinor[iVertex + BEGINNING_OF_CENTRAL];
@@ -2977,14 +3098,20 @@ __global__ void Collect_Ntotal_major(
 		nvals nminor;
 		for (i = 0; i < info.neigh_len; i++)
 		{
+//			if (iVertex == 3056) {
+	//			printf("i %d izTri[i] %d flag %d \n", i, izTri[i], p_info_minor[izTri[i]].flag);
+		//	}
 			if (p_info_minor[izTri[i]].flag == DOMAIN_TRIANGLE) // see above
 			{
 				nminor = p_n_minor[izTri[i]];
 				areaminor = p_AreaMinor[izTri[i]];
 				sum_N += 0.33333333333333*nminor.n*areaminor;
 				sum_Nn += 0.33333333333333*nminor.n_n*areaminor;
+				
 			}
+			
 		};
+		if (sum_Nn == 0.0) printf("iVertex %d Nn == 0 %d \n",iVertex, info.flag);
 		p_temp_Ntotalmajor[iVertex] = sum_N;
 		p_temp_Nntotalmajor[iVertex] = sum_Nn;
 	};

@@ -50,8 +50,8 @@ extern surfacegraph Graph[7];
 extern float xzscale; // for graphs -- how to handle?
 extern bool boolDisplayInnerMesh;
 extern smartlong GlobalVertexScratchList;
-extern float Historic_max[100][HISTORY]; // if max is falling, use historic maximum for graph.
-extern float Historic_min[100][HISTORY];
+extern float Historic_max[512][HISTORY]; // if max is falling, use historic maximum for graph.
+extern float Historic_min[512][HISTORY];
 extern int GlobalWedgeSwitch; 
 extern smartlong GlobalAffectedTriIndexList;
 

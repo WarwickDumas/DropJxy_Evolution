@@ -44,6 +44,7 @@ cudaError_t addWithCuda(int *c, const int *a, const int *b, unsigned int size);
 
 extern f64 * temp_array_host;
 extern OhmsCoeffs * p_OhmsCoeffs_host;
+extern f64 * p_graphdata1_host,* p_graphdata2_host,* p_graphdata3_host, *p_graphdata4_host, *p_graphdata5_host, *p_graphdata6_host;
 
 // Global variables:
 // =================
@@ -103,18 +104,18 @@ char Functionalfilename[1024];
 int GlobalGraphSetting[7];
 surfacegraph Graph[7]; // why was it 5? // 5th one can be whole thing.
 
-float Historic_max[100][HISTORY]; // if max is falling, use historic maximum for graph.
-float Historic_min[100][HISTORY];
-int Historic_powermax[200];
-int Historic_powermin[200]; // just store previous value only.
+float Historic_max[512][HISTORY]; // if max is falling, use historic maximum for graph.
+float Historic_min[512][HISTORY];
+int Historic_powermax[512];
+int Historic_powermin[512]; // just store previous value only.
 
 bool boolGlobalHistory, GlobalboolDisplayMeshWireframe;
 
 // avi file -oriented variables
 int const NUMAVI = 5;
-HAVI hAvi[NUMAVI + 1];
-int const GraphFlags[NUMAVI] = { SPECIES_ION, OVERALL, JZAZBXYEZ, OHMSLAW, ONE_D};
-char szAvi[NUMAVI][128] = { "Elec","Total","JzAzBxy","Ohms","Test"};
+HAVI hAvi[NUMAVI + 1]; // does it work without OHMSLAW? //  OHMSLAW,
+int const GraphFlags[NUMAVI] = { SPECIES_ION, OVERALL, JZAZBXYEZ, ONE_D, IONIZEGRAPH};
+char szAvi[NUMAVI][128] = { "Elec","Total","JzAzBxy","Test", "Ionize"};
 
 AVICOMPRESSOPTIONS opts;
 int counter;
@@ -275,6 +276,7 @@ void surfacegraph::DrawSurface(const char * szname,
 		offset, offset_c,
 		code);
 
+	printf("got to here 3\n");
 	if (this->bDisplayTimestamp) {
 		sprintf(buff, "%6.2f ns", evaltime*1.0e9);
 		this->Render(szname, false, pX, buff);
@@ -282,6 +284,7 @@ void surfacegraph::DrawSurface(const char * szname,
 	else {
 		this->Render(szname, false, pX);
 	};
+
 }
 
 
@@ -849,7 +852,104 @@ void RefreshGraphs(TriMesh & X, // only not const because of such as Reset_verte
 
 		break;
 		*/
-	case OVERALL:
+
+case IONIZEGRAPH:
+
+	// When we come to speed up graphs, make it so we can
+	// just pass an array of f64. !!!!
+	// Investigate graphs half an hour: what's up with the rest?
+
+	// Move table, start running.
+	// Can we bring back cutaway any how? 
+	// Wanted acceleration graphs. 
+	// Want to do a big run. 
+
+	pVertex = X.X;
+	pdata = X.pData + BEGINNING_OF_CENTRAL;
+	for (iVertex = 0; iVertex < NUMVERTICES; iVertex++)
+	{
+		pdata->temp.x = p_graphdata1_host[iVertex];
+		pdata->temp.y = p_graphdata2_host[iVertex]; // dn/dt /n
+		++pVertex;
+		++pdata;
+	}
+	Graph[0].DrawSurface("dn/dt",
+		DATA_HEIGHT, (real *)(&(X.pData[0].temp.x)),
+		SEGUE_COLOUR, (real *)(&(X.pData[0].Te)),
+		false,
+		GRAPH_DNDT, &X);
+
+	Graph[1].DrawSurface("dn/dt / n",
+		DATA_HEIGHT, (real *)(&(X.pData[0].temp.y)),
+		SEGUE_COLOUR, (real *)(&(X.pData[0].Te)),
+		false,
+		GRAPH_DNDT_OVER_n, &X);
+	
+
+	pVertex = X.X;
+	pdata = X.pData + BEGINNING_OF_CENTRAL;
+	for (iVertex = 0; iVertex < NUMVERTICES; iVertex++)
+	{
+		pdata->temp.x = p_graphdata3_host[iVertex]; // log10 n
+		++pVertex;
+		++pdata;
+	}
+	Graph[3].DrawSurface("log10(n)",
+		DATA_HEIGHT, (real *)(&(X.pData[0].temp.x)),
+		AZSEGUE_COLOUR, (real *)(&(X.pData[0].temp.x)),
+		false,
+		GRAPH_LOG10N, &X);
+
+	pVertex = X.X;
+	pdata = X.pData + BEGINNING_OF_CENTRAL;
+	for (iVertex = 0; iVertex < NUMVERTICES; iVertex++)
+	{
+		pdata->temp.x = p_graphdata4_host[iVertex]; // dTe/dt
+		pdata->temp.y = p_graphdata6_host[iVertex]; // n/nn
+		++pVertex;
+		++pdata;
+	}
+	Graph[2].DrawSurface("dTe/dt[ionization]",
+		DATA_HEIGHT, (real *)(&(X.pData[0].temp.x)),
+		SEGUE_COLOUR, (real *)(&(X.pData[0].Te)),
+		false,
+		GRAPH_DTEDT, &X);
+
+	Graph[4].DrawSurface("n_e / n_total",
+		DATA_HEIGHT, (real *)(&(X.pData[0].temp.y)),
+		IONISE_COLOUR, (real *)(&(X.pData[0].temp.y)),
+		false,
+		GRAPH_FRACTION, &X);
+
+	pVertex = X.X;
+	pdata = X.pData + BEGINNING_OF_CENTRAL;
+	for (iVertex = 0; iVertex < NUMVERTICES; iVertex++)
+	{
+		pdata->temp.x = p_graphdata5_host[iVertex]; // dvez/dt
+		//if (pdata->vez != 0.0f) {
+		//	pdata->temp.y = pdata->temp.x / (pdata->vez);
+		//} else {
+		//	pdata->temp.y = 0.0;
+		//}
+		++pVertex;
+		++pdata;
+	}
+	printf("got to here 1");
+	Graph[5].DrawSurface("accel ez[ionization]",
+		DATA_HEIGHT, (real *)(&(X.pData[0].temp.x)),
+		AZSEGUE_COLOUR, (real *)(&(X.pData[0].vez)),
+		false,
+		GRAPH_AEZ1, &X);
+	// Do we need another shader? Or can we reset limits?
+	// see what scale is like.
+	printf("got to here 2");
+
+	break;
+
+
+
+
+case OVERALL:
 		
 		pVertex = X.X;
 		pdata = X.pData + BEGINNING_OF_CENTRAL;
@@ -1020,11 +1120,18 @@ case OHMSLAW:
 	
 	overc = 1.0 / c_;
 		pdata = X.pData + BEGINNING_OF_CENTRAL;
+		pVertex = X.X;
 		for (iVertex = 0; iVertex < NUMVERTICES; iVertex++)
 		{
-			pdata->temp.x = q_ / (m_e_ * (1.0 + p_temphost1[iVertex + BEGINNING_OF_CENTRAL]));
-			pdata->temp.y = p_temphost2[iVertex + BEGINNING_OF_CENTRAL]; // colour
+			if (pVertex->flags == DOMAIN_VERTEX) {
+				pdata->temp.x = q_ / (m_e_ * (1.0 + p_temphost1[iVertex + BEGINNING_OF_CENTRAL]));
+				pdata->temp.y = p_temphost2[iVertex + BEGINNING_OF_CENTRAL]; // colour
+			} else {
+				pdata->temp.x = 0.0;
+				pdata->temp.y = 0.0;
+			}
 			++pdata;
+			++pVertex;
 		};
 		Graph[0].DrawSurface("q over m nu_effective",
 			DATA_HEIGHT, (real *)(&(X.pData[0].temp.x)),
@@ -1034,14 +1141,21 @@ case OHMSLAW:
 
 		
 		pdata = X.pData + BEGINNING_OF_CENTRAL;
+		pVertex = X.X;
 		for (iVertex = 0; iVertex < NUMVERTICES; iVertex++)
 		{
-			pdata->temp.x = q_*X.pData[iVertex + BEGINNING_OF_CENTRAL].n /
-				(m_e_ * (1.0+p_temphost1[iVertex + BEGINNING_OF_CENTRAL]));
-
-			pdata->temp.y = p_temphost2[iVertex + BEGINNING_OF_CENTRAL]; // colour
+			if (pVertex->flags == DOMAIN_VERTEX) {
+				pdata->temp.x = q_*X.pData[iVertex + BEGINNING_OF_CENTRAL].n /
+					(m_e_ * (1.0 + p_temphost1[iVertex + BEGINNING_OF_CENTRAL]));
+				pdata->temp.y = p_temphost2[iVertex + BEGINNING_OF_CENTRAL]; // colour
+			} else {
+				pdata->temp.x = 0.0;
+				pdata->temp.y = 0.0;
+			};
 			++pdata;
+			++pVertex;
 		};
+
 		Graph[1].DrawSurface("qn / m nu_effective",
 			DATA_HEIGHT, (real *)(&(X.pData[0].temp.x)),
 			PPN_COLOUR, (real *)(&(X.pData[0].temp.y)),
@@ -1050,10 +1164,14 @@ case OHMSLAW:
 			
 
 		pdata = X.pData + BEGINNING_OF_CENTRAL;
+		pVertex = X.X;
 		for (iVertex = 0; iVertex < NUMVERTICES; iVertex++)
 		{
-			pdata->temp.x = p_temphost1[iVertex + BEGINNING_OF_CENTRAL];
-			pdata->temp.y = p_temphost2[iVertex + BEGINNING_OF_CENTRAL]; // colour
+			if (pVertex->flags == DOMAIN_VERTEX) {
+				pdata->temp.x = p_temphost1[iVertex + BEGINNING_OF_CENTRAL];
+				pdata->temp.y = p_temphost2[iVertex + BEGINNING_OF_CENTRAL]; // colour
+			};
+			++pVertex;
 			++pdata;
 		};
 		Graph[2].DrawSurface("nu_effective (blue=neut dominates)",
@@ -1064,10 +1182,13 @@ case OHMSLAW:
 			
 		
 		pdata = X.pData + BEGINNING_OF_CENTRAL;
+		pVertex = X.X;
 		for (iVertex = 0; iVertex < NUMVERTICES; iVertex++)
 		{
-			pdata->temp.x =  EzStrength_*q_*q_*X.pData[iVertex + BEGINNING_OF_CENTRAL].n /
-				(m_e_ * (1.0+p_temphost1[iVertex + BEGINNING_OF_CENTRAL]));
+			if (pVertex->flags == DOMAIN_VERTEX) {
+				pdata->temp.x = EzStrength_*q_*q_*X.pData[iVertex + BEGINNING_OF_CENTRAL].n /
+					(m_e_ * (1.0 + p_temphost1[iVertex + BEGINNING_OF_CENTRAL]));
+			};
 			++pdata;
 		};
 		Graph[3].DrawSurface("predict Jz (uniform Ez)",
@@ -1077,13 +1198,15 @@ case OHMSLAW:
 			GRAPH_JZ, &X);
 					
 		pdata = X.pData + BEGINNING_OF_CENTRAL;
+		pVertex = X.X;
 		for (iVertex = 0; iVertex < NUMVERTICES; iVertex++)
 		{
-			pdata->temp.x = (EzStrength_
-				- X.pData[iVertex + BEGINNING_OF_CENTRAL].Azdot*overc
-				)*q_*q_*X.pData[iVertex + BEGINNING_OF_CENTRAL].n /
-				(m_e_ * (1.0+p_temphost1[iVertex + BEGINNING_OF_CENTRAL]));
-
+			if (pVertex->flags == DOMAIN_VERTEX) {
+				pdata->temp.x = (EzStrength_
+					- X.pData[iVertex + BEGINNING_OF_CENTRAL].Azdot*overc
+					)*q_*q_*X.pData[iVertex + BEGINNING_OF_CENTRAL].n /
+					(m_e_ * (1.0 + p_temphost1[iVertex + BEGINNING_OF_CENTRAL]));
+			};
 			++pdata;
 		};
 		Graph[4].DrawSurface("predict Jz (Ez)",
@@ -1093,11 +1216,13 @@ case OHMSLAW:
 			GRAPH_JZ, &X);
 			
 		pdata = X.pData + BEGINNING_OF_CENTRAL;
+		pVertex = X.X;
 		for (iVertex = 0; iVertex < NUMVERTICES; iVertex++)
 		{
-			pdata->temp.x = q_*X.pData[iVertex + BEGINNING_OF_CENTRAL].n*
-				(X.pData[iVertex + BEGINNING_OF_CENTRAL].viz - X.pData[iVertex + BEGINNING_OF_CENTRAL].vez);
-
+			if (pVertex->flags == DOMAIN_VERTEX) {
+				pdata->temp.x = q_*X.pData[iVertex + BEGINNING_OF_CENTRAL].n*
+					(X.pData[iVertex + BEGINNING_OF_CENTRAL].viz - X.pData[iVertex + BEGINNING_OF_CENTRAL].vez);
+			};
 			++pdata;
 		};
 		Graph[5].DrawSurface("actual Jz",
@@ -1691,6 +1816,8 @@ case OHMSLAW:
 				
 		break;
 	}
+	printf("got to here 5");
+
 }
 
 
@@ -1701,6 +1828,8 @@ __global__ void addKernel(int *c, const int *a, const int *b)
     int i = threadIdx.x;
     c[i] = a[i] + b[i];
 }
+
+HRESULT hresult;
 
 int main()
 {
@@ -1717,15 +1846,43 @@ int main()
 	//HWND hwndConsole;
 	FILE * fp;
 	extern char Functionalfilename[1024];
-	
+
+	int nDevices, iWhich;
+	cudaDeviceProp prop;
+	cudaGetDeviceCount(&nDevices);
+	for (int i = 0; i < nDevices; i++) {
+		
+		cudaGetDeviceProperties(&prop, i);
+		printf("Device Number: %d\n", i);
+		printf("  Device name: %s\n", prop.name);
+		printf("  Memory Clock Rate (KHz): %d\n",
+			prop.memoryClockRate);
+		printf("  Memory Bus Width (bits): %d\n",
+			prop.memoryBusWidth);
+		printf("  Peak Memory Bandwidth (GB/s): %f\n\n",
+			2.0*prop.memoryClockRate*(prop.memoryBusWidth / 8) / 1.0e6);
+
+		if (prop.memoryBusWidth == 384) iWhich = i;
+	}
+	printf("Picked %d \n", iWhich);
+	getch(); 
+
+	cudaSetDevice(iWhich); // K40?
+	cudaDeviceReset();
+
+	size_t uFree, uTotal;
+	cudaMemGetInfo(&uFree, &uTotal);
+	printf("Memory on device: uFree %d uTotal %d\n", uFree, uTotal);
+
+
 	h = TIMESTEP;
 	evaltime = 0.0; // gets updated before advance
 
 	memset(Historic_powermax, 0, 200 * sizeof(int));
 	memset(Historic_powermin, 0, 200 * sizeof(int));
 
-	ZeroMemory(Historic_max, 100 * HISTORY * sizeof(float));
-	ZeroMemory(Historic_min, 100 * HISTORY * sizeof(float));
+	ZeroMemory(Historic_max, 512 * HISTORY * sizeof(float));
+	ZeroMemory(Historic_min, 512 * HISTORY * sizeof(float));
 	GlobalStepsCounter = 0; steps_remaining = 0; steps_remaining_CPU = 0;
 
 	SetConsoleTitle("2D 1/16 annulus DPF simulation");
@@ -1994,6 +2151,10 @@ int main()
 	{
 		sprintf(szInitialFilenameAvi, "%s%s_%s", FOLDER, szAvi[i], INITIALAVI);
 		hAvi[i] = CreateAvi(szInitialFilenameAvi, AVIFRAMEPERIOD, NULL);
+		if (hAvi[i] == 0) {
+			printf("Failed to create avi file %d", i);
+			getch(); getch(); getch();
+		}
 	};
 
 	// 1000/25 = 40
@@ -2002,10 +2163,14 @@ int main()
 	opts.dwFlags = 8;
 
 	for (i = 0; i < NUMAVI; i++)
-		SetAviVideoCompression(hAvi[i], dib, &opts, false, hWnd); // always run this for every avi file but can
+	{
+		hresult = SetAviVideoCompression(hAvi[i], dib, &opts, false, hWnd); // always run this for every avi file but can
 																  // call with false as long as we know opts contains valid information. 
-
-	printf("GOT TO HERE ---\n\n");
+		if (hresult != 0) {
+			printf("error: i = %d, hresult = %d", i, (long)hresult);
+			getch(); getch(); getch();
+		};
+	};
 
 	counter = 0;
 	//ReleaseDC(hWnd,surfdc);
@@ -2052,7 +2217,7 @@ void print_matrix(char* desc, lapack_int m, lapack_int n, double* a, lapack_int 
 		printf("\n");
 	}
 }
-
+ 
 /* Auxiliary routine: printing a vector of integers */
 void print_int_vector(char* desc, lapack_int n, lapack_int* a) {
 	lapack_int j;
@@ -2122,21 +2287,55 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 		switch (wmId)
 		{
 			
-		case 40024: // ID_DISPLAY_ONE_D
-			printf("\a\n");
+		case ID_DISPLAY_ONE_D:
+			// printf("\a\n");
 			// Don't know why resource.h is not working;
 			// Maybe some #define overwrites it with 40024.
-			wmId += 50007 - 40024;
-
+			//wmId += 50007 - 40024;
+			GlobalSpeciesToGraph = ONE_D;
+			printf("\nGlobalSpeciesToGraph = %d \n", GlobalSpeciesToGraph);
+			RefreshGraphs(*pX, GlobalSpeciesToGraph);
+			Direct3D.pd3dDevice->Present(NULL, NULL, NULL, NULL);
+			break;
+		// int const GraphFlags[NUMAVI] = { SPECIES_ION, OVERALL, JZAZBXYEZ, OHMSLAW, ONE_D, IONIZEGRAPH };
 		case ID_DISPLAY_ION:
+			GlobalSpeciesToGraph = SPECIES_ION;
+			printf("\nGlobalSpeciesToGraph = %d \n", GlobalSpeciesToGraph);
+			RefreshGraphs(*pX, GlobalSpeciesToGraph);
+			Direct3D.pd3dDevice->Present(NULL, NULL, NULL, NULL);
+			break;
+
 		case ID_DISPLAY_TOTAL:
+			GlobalSpeciesToGraph = OVERALL;
+			printf("\nGlobalSpeciesToGraph = %d \n", GlobalSpeciesToGraph);
+			RefreshGraphs(*pX, GlobalSpeciesToGraph);
+			Direct3D.pd3dDevice->Present(NULL, NULL, NULL, NULL);
+			break;
+
 		case ID_DISPLAY_JZAZBXYEZ:
+			GlobalSpeciesToGraph = JZAZBXYEZ;
+			printf("\nGlobalSpeciesToGraph = %d \n", GlobalSpeciesToGraph);
+			RefreshGraphs(*pX, GlobalSpeciesToGraph);
+			Direct3D.pd3dDevice->Present(NULL, NULL, NULL, NULL);
+			break;
+		case ID_DISPLAY_IONIZEGRAPHS:
+			GlobalSpeciesToGraph = IONIZEGRAPH;
+			printf("\nGlobalSpeciesToGraph = %d \n", GlobalSpeciesToGraph);
+			RefreshGraphs(*pX, GlobalSpeciesToGraph);
+			Direct3D.pd3dDevice->Present(NULL, NULL, NULL, NULL);
+			break;
+		case ID_DISPLAY_OHMS:
+			GlobalSpeciesToGraph = OHMSLAW;
+			printf("\nGlobalSpeciesToGraph = %d \n", GlobalSpeciesToGraph);
+			RefreshGraphs(*pX, GlobalSpeciesToGraph);
+			Direct3D.pd3dDevice->Present(NULL, NULL, NULL, NULL);
+			break;
 		case ID_DISPLAY_SIGMAEJ:
 
 			i = wmId - ID_DISPLAY_NEUT;
 			GlobalSpeciesToGraph = i;
-			printf("\nGraph: %d %s", i, szAvi[i]);
-			RefreshGraphs(*pX, i);
+			printf("\nGlobalSpeciesToGraph = %d \n", GlobalSpeciesToGraph);
+			RefreshGraphs(*pX, GlobalSpeciesToGraph);
 			Direct3D.pd3dDevice->Present(NULL, NULL, NULL, NULL);
 			break;
 
@@ -2519,20 +2718,42 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			// make video frames:
 			for (i = 0; i < NUMAVI; i++)
 			{
+				printf("i = %d \n", i);
 				RefreshGraphs(*pX, GraphFlags[i]); // sends data to graphs AND renders them
 															   //	::PlanViewGraphs1(*pX);
+				printf("..");
 				Direct3D.pd3dDevice->Present(NULL, NULL, NULL, NULL);
+				printf("got to here 7\n");
 
 				if (DXChk(p_backbuffer_surface->GetDC(&surfdc), 100))
 					MessageBox(NULL, "GetDC failed", "oh dear", MB_OK);
 				//SelectObject(surfdc,surfbit);
 				BitBlt(dibdc, 0, 0, VIDEO_WIDTH, VIDEO_HEIGHT, surfdc, 0, 0, SRCCOPY);
-					p_backbuffer_surface->ReleaseDC(surfdc);
-					AddAviFrame(hAvi[i], dib);
+				p_backbuffer_surface->ReleaseDC(surfdc);
+
+				printf("got to here 7a\n");
+
+				if (hAvi[i] == NULL) {
+					printf("nojxycu.cu agrees that hAvi[i] == NULL\n");
+				} else {
+					printf("hAvi[i] not NULL here\n");
+					// Debug
+				}
+
+				// getting hAvi[i] == 0 for the last one.
+				// But on debug? No such thing? Same.
+
+				hresult = AddAviFrame(hAvi[i], dib);
+				if (hresult != 0) printf("\n******************************************************* \n"
+					"hresult = %d\n********************************************** \n", hresult);
+				
+				printf("got to here 7b\n");
+
 			};
 			// sprintf(szFile, "System_%d", GlobalStepsCounter);
 			// pX->SaveText(szFile);
 		};
+		printf("got to here 8");
 		
 		if (GlobalStepsCounter % (AVI_FILE_PINCHOFF_FREQUENCY * GRAPHICS_FREQUENCY) == 0)
 		{
@@ -2542,13 +2763,19 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 				CloseAvi(hAvi[i]);
 				sprintf(buf1000, "%s%s_%d.avi", FOLDER, szAvi[i], GlobalStepsCounter);
 				hAvi[i] = CreateAvi(buf1000, AVIFRAMEPERIOD, NULL);
-				SetAviVideoCompression(hAvi[i], dib, &opts, false, hWnd);
+				hresult = SetAviVideoCompression(hAvi[i], dib, &opts, false, hWnd);
+				if (hresult != 0) printf("\n******************************************************* \n"
+					"SetAviVideoCompression: hresult = %d\n********************************************** \n", hresult);
+
 			};
 		};
 		 
 		RefreshGraphs(*pX,GlobalSpeciesToGraph); // sends data to graphs AND renders them
 		Direct3D.pd3dDevice->Present( NULL, NULL, NULL, NULL );
 		 
+		printf("got to here 9\n");
+
+
 		if (GlobalStepsCounter % REDELAUN_FREQUENCY == 0)
 		{
 			pX->RefreshVertexNeighboursOfVerticesOrdered();
