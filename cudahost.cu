@@ -5,16 +5,16 @@
        
 
 #pragma once  
-
+ 
 #include <stdlib.h>
 #include <stdio.h>
 #include "lapacke.h"
- 
+   
 /* Auxiliary routines prototypes */
 extern void print_matrix(char* desc, lapack_int m, lapack_int n, double* a, lapack_int lda);
 extern void print_int_vector(char* desc, lapack_int n, lapack_int* a);
-
-
+ 
+ 
 #define BWD_SUBCYCLE_FREQ  1
 #define BWD_STEP_RATIO     1    // divide substeps by this for bwd
 #define NUM_BWD_ITERATIONS 4
@@ -22,10 +22,10 @@ extern void print_int_vector(char* desc, lapack_int n, lapack_int* a);
          
 // This will be slow but see if it solves it.
                  
-#define CHOSEN  90721
+#define CHOSEN  105446
 #define CHOSEN1 1000110301
 #define CHOSEN2 1000110497 
-#define VERTCHOSEN 19706
+#define VERTCHOSEN 31718
 
 #define ITERATIONS_BEFORE_SWITCH  18
 #define REQUIRED_IMPROVEMENT_RATE  0.98
@@ -41,22 +41,22 @@ extern void print_int_vector(char* desc, lapack_int n, lapack_int* a);
 #include "kernel.h"
 #include "mesh.h"
 #include "matrix_real.h"
-      
+
 // This is the file for CUDA host code.
 #include "simulation.cu"
-
+ 
 #define p_sqrtDN_Tn p_NnTn
 #define p_sqrtDN_Ti p_NTi
 #define p_sqrtDN_Te p_NTe
-
-#define DEFAULTVERBOSITY true
-
+ 
+#define DEFAULTSUPPRESSVERBOSITY true
+ 
 extern surfacegraph Graph[7];
 extern D3D Direct3D;
-
+ 
 FILE * fp_trajectory;
 FILE * fp_dbg;
-bool GlobalSuppressSuccessVerbosity = DEFAULTVERBOSITY;
+bool GlobalSuppressSuccessVerbosity = DEFAULTSUPPRESSVERBOSITY;
 
 long VERTS[3] = {15559, 15405, 15251};
 
@@ -1050,7 +1050,7 @@ void SolveBackwardAzAdvanceJ3LS(f64 hsub,
 	} while (bContinue);
 //	fclose(fpdbg);
 
-	GlobalSuppressSuccessVerbosity = DEFAULTVERBOSITY;
+	GlobalSuppressSuccessVerbosity = DEFAULTSUPPRESSVERBOSITY;
 
 }
 
@@ -2765,7 +2765,7 @@ int RunBwdJnLSForHeat(f64 * p_T_k, f64 * p_T, f64 hsub, cuSyst * pX_use, bool bU
 	
 	// To test whether this is sane, we need to spit out typical element in 0th and 8th iterate.
 	
-	GlobalSuppressSuccessVerbosity = DEFAULTVERBOSITY;
+	GlobalSuppressSuccessVerbosity = DEFAULTSUPPRESSVERBOSITY;
 
 	return 0;	
 }
@@ -3373,7 +3373,7 @@ int RunBackwardJLSForHeat(T3 * p_T_k, T3 * p_T, f64 hsub, cuSyst * pX_use,
 		(p_T, p_Tn, p_Ti, p_Te);	 // we did division since we updated NT.
 	Call(cudaThreadSynchronize(), "cudaTS packup");
 
-	GlobalSuppressSuccessVerbosity = DEFAULTVERBOSITY;
+	GlobalSuppressSuccessVerbosity = DEFAULTSUPPRESSVERBOSITY;
 
 	return (bFailedTest == false) ? 0 : 1;
 
@@ -5197,7 +5197,7 @@ void RunBackwardJLSForViscosity(v4 * p_vie_k, v4 * p_vie, f64 const hsub, cuSyst
 	//	NT_addition_tri_d
 	//	);
 	//Call(cudaThreadSynchronize(), "cudaTS sum up heat 1");
-	GlobalSuppressSuccessVerbosity = DEFAULTVERBOSITY;
+	GlobalSuppressSuccessVerbosity = DEFAULTSUPPRESSVERBOSITY;
 }
 
 int Compare_f64_vec2(f64_vec2 * p1, f64_vec2 * p2, long N);
@@ -6138,7 +6138,7 @@ void PerformCUDA_Invoke_Populate(
 
 	//pX1->PerformCUDA_Advance(&pX2, &pX_half);
 
-	GlobalSuppressSuccessVerbosity = DEFAULTVERBOSITY;
+	GlobalSuppressSuccessVerbosity = DEFAULTSUPPRESSVERBOSITY;
 }
 
 // Sequence:
@@ -7668,8 +7668,8 @@ SetConsoleTextAttribute(hConsole, 15);
 		this->p_info, this->p_tri_neigh_index, pX_half->p_AAdot);
 	Call(cudaThreadSynchronize(), "cudaTS ResetFrills I");
 	
-	//printf("\nDebugNaN pX_half\n\n");
-	//DebugNaN(pX_half);
+	printf("\nDebugNaN pX_half\n\n");
+	DebugNaN(pX_half);
 
 	// ))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
 	// 
@@ -8451,8 +8451,8 @@ SetConsoleTextAttribute(hConsole, 15);
 //
 	// CHANGE TO hsub NOT PROPAGATED TO THE CPU COMPARISON DEBUG ROUTINE!!!
 	
-	//printf("\nDebugNaN target \n\n");
-	//DebugNaN(pX_target);
+	printf("\nDebugNaN target \n\n");
+	DebugNaN(pX_target);
 	
 	kernelPullAzFromSyst << <numTilesMinor, threadsPerTileMinor >> >(
 		this->p_AAdot,
@@ -10524,7 +10524,7 @@ void cuSyst::PerformCUDA_Advance_noadvect(//const
 	FILE * fp_2;
 	static int iHistory = 0;
 
-	GlobalSuppressSuccessVerbosity = DEFAULTVERBOSITY;
+	GlobalSuppressSuccessVerbosity = DEFAULTSUPPRESSVERBOSITY;
 
 	HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
 
@@ -11070,8 +11070,8 @@ void cuSyst::PerformCUDA_Advance_noadvect(//const
 	// Add in a test for T<0 !!!
 	Call(cudaThreadSynchronize(), "cudaTS Advance_n_and_T _noadvect"); // vertex
 
-	//printf("\nDebugNaN pX_half\n\n");
-	//DebugNaN(pX_half);
+	printf("\nDebugNaN pX_half\n\n");
+	DebugNaN(pX_half);
 
 	kernelAverage_n_T_x_to_tris << <numTriTiles, threadsPerTileMinor >> > (
 		pX_half->p_n_minor,
@@ -11127,7 +11127,7 @@ void cuSyst::PerformCUDA_Advance_noadvect(//const
 		this->p_v_n,
 		this->p_AAdot,
 		this->p_AreaMinor,
-
+   
 		p_vn0,
 		p_v0,
 		p_OhmsCoeffs,
@@ -12006,8 +12006,8 @@ void cuSyst::PerformCUDA_Advance_noadvect(//const
 	cudaMemcpy(pX_target->p_n_minor + BEGINNING_OF_CENTRAL,
 		pX_target->p_n_major, sizeof(nvals)*NUMVERTICES, cudaMemcpyDeviceToDevice);
 
-	//printf("DebugNaN pX_target\n");
-	//DebugNaN(pX_target);
+	printf("DebugNaN pX_target\n");
+	DebugNaN(pX_target);
 
 
 
@@ -12282,7 +12282,7 @@ void cuSyst::PerformCUDA_Advance_noadvect(//const
 		p_GradTe,
 		pX_target->p_n_minor,
 		pX_target->p_T_minor,
-
+		 
 		this->p_vie,
 		this->p_v_n,
 		this->p_AAdot,

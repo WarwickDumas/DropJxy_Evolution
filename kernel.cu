@@ -15,7 +15,7 @@
 
 
 #define FOUR_PI 12.5663706143592
-#define TEST  (0) // iVertex == VERTCHOSEN
+#define TEST  (0)//
 #define TEST1 (0)
 #define TESTTRI (0)
 #define TESTADVECT (0)// // iVertex == VERTCHOSEN)
@@ -26,7 +26,7 @@
 #define TESTTRI3 (0)
 #define TESTHEAT2 (0)
 #define TESTIONISE (0)
-#define TESTOHMS (0) // iMinor == CHOSEN
+#define TESTOHMS (0)
 #define TESTVISC (0)
 #define TEST_IONIZE (0)
 #define VISCMAG 1 
@@ -153,9 +153,16 @@ __device__ f64 GetIonizationRate_given_v(f64 const Te, int i_v)
 	}
 	//printf("i_v %d b_exp %d %d %d %d %d \n", i_v, (b_exp[0]) ? 1 : 0, (b_exp[1]) ? 1 : 0, (b_exp[2]) ? 1 : 0, (b_exp[3]) ? 1 : 0, (b_exp[4]) ? 1 : 0);
 	if (Te < ionize_temps[i_v][0]) {
-		rate = 0.0;
-	}
-	else {
+		if (i_v < 19) {
+			rate = 0.0;
+		} // let's say 18 is where we treat as over critical velocity.
+		else {
+			TeeV = ionize_temps[i_v][0] / kB; // return low end value
+			rate = (ionize_coeffs[i_v][0][4] + ionize_coeffs[i_v][0][3] * TeeV
+				+ ionize_coeffs[i_v][0][2] * Tesq + ionize_coeffs[i_v][0][1] * Te3
+				+ ionize_coeffs[i_v][0][0] * Te4);
+		};
+	} else {
 		if (Te < ionize_temps[i_v][1]) {
 			rate = (ionize_coeffs[i_v][0][4] + ionize_coeffs[i_v][0][3] * TeeV
 				+ ionize_coeffs[i_v][0][2] * Tesq + ionize_coeffs[i_v][0][1] * Te3
@@ -294,9 +301,20 @@ __device__ f64 GetIonizationRate_given_v_Debug(f64 const Te, int i_v)
 	if (i_v == 18) {
 		b_exp[0] = true; b_exp[1] = true;
 	}
-	//printf("i_v %d b_exp %d %d %d %d %d \n", i_v, (b_exp[0]) ? 1 : 0, (b_exp[1]) ? 1 : 0, (b_exp[2]) ? 1 : 0, (b_exp[3]) ? 1 : 0, (b_exp[4]) ? 1 : 0);
+	printf("i_v %d b_exp %d %d %d %d %d \n", i_v, (b_exp[0]) ? 1 : 0, (b_exp[1]) ? 1 : 0, (b_exp[2]) ? 1 : 0, (b_exp[3]) ? 1 : 0, (b_exp[4]) ? 1 : 0);
 	if (Te < ionize_temps[i_v][0]) {
-		rate = 0.0;
+		if (i_v < 19) {
+			rate = 0.0;
+			printf("Te %1.12E was below %1.12E and we returned 0 ionization rate.\n", Te, ionize_temps[i_v][0]);
+		} // let's say 18 is where we treat as over critical velocity.
+		else {
+			TeeV = ionize_temps[i_v][0] / kB; // return low end value
+			rate = (ionize_coeffs[i_v][0][4] + ionize_coeffs[i_v][0][3] * TeeV
+				+ ionize_coeffs[i_v][0][2] * Tesq + ionize_coeffs[i_v][0][1] * Te3
+				+ ionize_coeffs[i_v][0][0] * Te4);
+			printf("used low end rate: %1.9E \n", rate);
+		};
+		
 	} else {
 		if (Te < ionize_temps[i_v][1]) {
 			rate = (ionize_coeffs[i_v][0][4] + ionize_coeffs[i_v][0][3] * TeeV
@@ -459,7 +477,7 @@ __device__ f64 GetIonizationRates(f64 const Te, f64 const v, f64 * p_Recombo_rat
 			vright = 1.0e7*(double)(i_vright - 4); // careful	
 
 		} else {
-			i_vleft = 4 + (int)(v / 1.0e-7); // cHeck ?
+			i_vleft = 4 + (int)(v / 1.0e7); // cHeck ?
 			if (i_vleft >= 31) i_vleft = 30;
 			i_vright = i_vleft + 1;
 			if (i_vright >= 32) i_vright = 31;
@@ -512,10 +530,9 @@ __device__ f64 GetIonizationRatesDebug(f64 const Te, f64 const v, f64 * p_Recomb
 				vleft, vright, ppn_left, ppn_right);
 		}
 		else {
-			i_vleft = 4 + (int)(v / 1.0e-7); // cHeck ?
+			i_vleft = 4 + (int)(v / 1.0e7); // cHeck ?
 			if (i_vleft >= 31) i_vleft = 30;
 			i_vright = i_vleft + 1;
-			if (i_vright >= 32) i_vright = 31;
 
 			vleft = 1.0e7*(double)(i_vleft - 4);
 			vright = 1.0e7*(double)(i_vright - 4); // careful	
@@ -8648,6 +8665,7 @@ __global__ void kernelIonisationRates(
 	v4 v;
 	f64_vec3 v_n;
 	f64 T_use;
+	bool bZero_out = false;
 	
 	if (info.flag == DOMAIN_VERTEX)
 	{
@@ -8704,6 +8722,9 @@ __global__ void kernelIonisationRates(
 		// Available KE:
 		f64 Kconv = 0.5*m_e*m_n*n_k*n_n_k*(w0z*w0z) / (m_e*n_k + m_n*n_n_k);
 
+		if (TEST_IONIZE) printf("iVertex %d w0z %1.10E Kconv %1.10E Theta %1.9E \n", iVertex,
+			w0z, Kconv, Theta);
+
 		f64 coeff_on_ionizing = 0.5*T_k.Tn - 2.0*T_k.Te*13.6*kB*n_k / (3.0*T_k.Te*n_k + 2.0*Theta*Kconv);
 
 		// Now compute f(Tk) = T_k+1 given using T_k
@@ -8721,7 +8742,11 @@ __global__ void kernelIonisationRates(
 
 		f64 T1 = T_use;  // first go. = Tk if b_useTuse == false.
 		{
-			Gamma_ion = GetIonizationRates(T1, w, &Gamma_rec);
+		//	if (TEST_IONIZE) {
+		//		Gamma_ion = GetIonizationRatesDebug(T1, w, &Gamma_rec);
+		//	} else {
+				Gamma_ion = GetIonizationRates(T1, w, &Gamma_rec);
+		//	};
 
 			Delta_ionise = (n_n_k*hn*Gamma_ion + (n_n_k + n_k)*hnn*Gamma_rec*hn*Gamma_ion) /
 				((1.0 + hn*Gamma_ion)*(1.0 + hnn*Gamma_rec) - hnn*Gamma_rec*hn*Gamma_ion);
@@ -8867,13 +8892,16 @@ __global__ void kernelIonisationRates(
 			// change in temperature is tiny like 10^{-9}T then just set
 			// the actual ionization to 0. We have only 10^{-6}/10^{-13}=10^{7} steps.
 			
-			if (fabs(T_image1 - T_k.Te) < 1.0e-9*T_k.Te) {
+			// Changed factor to 1.0e-10
+			if (fabs(T_image1 - T_k.Te) < 1.0e-10*T_k.Te) {
 				// do nothing for a tiny move:
 				Delta_ionise = 0.0;
 				Delta_rec = 0.0;
 				bAccept = true; 
 
 				if (TEST_IONIZE) printf("iVertex %d small move accepted\n", iVertex);
+
+				bZero_out = true;
 
 				// To move 10% would take 1e8 moves, we have only 1e-6/1e-13 = 1e7.
 			} else {
@@ -9100,161 +9128,195 @@ __global__ void kernelIonisationRates(
 
 		// 0. What is ROC of N:
 
-		f64 dNdt_ionise = AreaMajor*Delta_ionise/ h_use;
-		f64 dNdt_recombine = AreaMajor*Delta_rec / h_use;
+		if (bZero_out) {
+			// do nothing to MAR_elec, ourrates etc
+		} else {
+			f64 dNdt_ionise = AreaMajor*Delta_ionise / h_use;
+			f64 dNdt_recombine = AreaMajor*Delta_rec / h_use;
 
-		ourrates.N += dNdt_ionise - dNdt_recombine;
-		ourrates.Nn += dNdt_recombine - dNdt_ionise;
-		
-		// Debug: do we get 77 w/o this bit? nope
-				
-		// Store existing energy density:
-		f64 Energy_k = 1.5*(n_k*(T_k.Te + T_k.Ti) + n_n_k*T_k.Tn) +
-			0.5*((m_e+m_i)*n_k*(v.vxy.dot(v.vxy)) + m_e*n_k*v.vez*v.vez + m_i*n_k*v.viz*v.viz + m_n*n_n_k*v_n.dot(v_n));
+			ourrates.N += dNdt_ionise - dNdt_recombine;
+			ourrates.Nn += dNdt_recombine - dNdt_ionise;
 
+			if (TEST_IONIZE) printf("Delta_ionise %1.10E Delta_rec %1.10E ourrates.N %1.10E \n",
+				Delta_ionise, Delta_rec, ourrates.N);
 
-		// 1. Calculate kinetic energy absorption impact on vez, vnz
-		// ie Ionization resistance to current
-
-		n_kplus1 = n_k + Delta_ionise - Delta_rec;
-		n_n_kplus1 = n_n_k - Delta_ionise + Delta_rec;
-
-		// Absorbed DKE:
-		f64 deltaKE = -(2.0*Theta*Kconv / (3.0*n_k*T_k.Te + 2.0*Theta*Kconv))*Delta_ionise*13.6*kB;
-		f64 new_vz_diff = sqrt((m_e*n_kplus1 + m_n*n_n_kplus1)*
-			((n_k*n_n_k / (m_e*n_k + m_n*n_n_k))*(w0z*w0z) + 2.0*deltaKE / (m_e*m_n)) /
-			(n_kplus1*n_n_kplus1));
-		
-		// Choose new_vz_diff to have same sign as w0z = diff_k:
-		if (w0z < 0.0) new_vz_diff = -new_vz_diff;
-
-		f64 delta_vez = m_n*n_n_kplus1*(-w0z + new_vz_diff) /
-					(m_n*n_n_kplus1 + m_e*n_kplus1);
-		f64 delta_vnz = -m_e*n_kplus1*delta_vez / (m_n*n_n_kplus1);
-		
-		if (TEST_IONIZE) printf("deltaKE %1.10E v.vez %1.10E w0z %1.9E new_vz_diff %1.9E \n",
-			deltaKE, v.vez, w0z, new_vz_diff);
-
-		// Check: w0 = vez-vnz - tick
-		// should change to scalar.
-
-		MAR_neut.z += AreaMajor*n_n_kplus1*delta_vnz / h_use;
-		MAR_elec.z += AreaMajor*n_kplus1*delta_vez / h_use;
-
-		f64_vec3 ve_kplus1, vi_kplus1, vn_kplus1;
-
-		// Store alongside: v_k+1 so that we can follow the anticipated change in energy,
-		// to create energy balance:
-		ve_kplus1.x = v.vxy.x*(n_k/n_kplus1);
-		ve_kplus1.y = v.vxy.y*(n_k / n_kplus1);
-		ve_kplus1.z = v.vez*(n_k / n_kplus1) + delta_vez; // we need to store v, we could also store nv if we wanted.
-
-		vi_kplus1.x = v.vxy.x*(n_k / n_kplus1);
-		vi_kplus1.y = v.vxy.y*(n_k / n_kplus1);
-		vi_kplus1.z = v.viz*(n_k / n_kplus1);
-
-		vn_kplus1 = v_n*(n_n_k/n_n_kplus1);
-		vn_kplus1.z += delta_vnz;
-		
-
-		if (TEST_IONIZE) printf("ve_kplus1 %1.9E %1.9E %1.9E vi_plus1 %1.9E %1.9E %1.9E vn_plus1 %1.9E %1.9E %1.9E delta_vez %1.9E\n",
-			ve_kplus1.x, ve_kplus1.y, ve_kplus1.z, vi_kplus1.x, vi_kplus1.y, vi_kplus1.z,
-			vn_kplus1.x, vn_kplus1.y, vn_kplus1.z, delta_vez);
+			// Store existing energy density:
+			f64 Energy_k = 1.5*(n_k*(T_k.Te + T_k.Ti) + n_n_k*T_k.Tn) +
+				0.5*((m_e + m_i)*n_k*(v.vxy.dot(v.vxy)) + m_e*n_k*v.vez*v.vez + m_i*n_k*v.viz*v.viz + m_n*n_n_k*v_n.dot(v_n));
 
 
-		// 2. Add the effect of xfers on momenta:
+			// 1. Calculate kinetic energy absorption impact on vez, vnz
+			// ie Ionization resistance to current
 
-		// What does MAR_neut mean? Nv?
-		{
-			f64_vec3 v_use; 
-			v_use.x = v.vxy.x;
-			v_use.y = v.vxy.y;
-			v_use.z = (m_e*v.vez + m_i*v.viz) / (m_e + m_i);
-			MAR_neut += -dNdt_ionise*v_n + dNdt_recombine*v_use;
-			MAR_ion += dNdt_ionise*v_n - dNdt_recombine*v_use;
-			MAR_elec += dNdt_ionise*v_n - dNdt_recombine*v_use;	
-			
-			vn_kplus1 -= (Delta_ionise*v_n - Delta_rec*v_use) / n_n_kplus1;
-			// n_k+1 v_k+1 = n_k v_k + Delta_n*v_use => v_k+1 = (n_k/n_k+1) v_k + (Delta_n/n_k+1) v_use
-			vi_kplus1 += (Delta_ionise*v_n - Delta_rec*v_use) / n_kplus1;
-			ve_kplus1 += (Delta_ionise*v_n - Delta_rec*v_use) / n_kplus1;
+			n_kplus1 = n_k + Delta_ionise - Delta_rec;
+			n_n_kplus1 = n_n_k - Delta_ionise + Delta_rec;
 
-		}
+			// Absorbed DKE:
+			f64 deltaKE = -(2.0*Theta*Kconv / (3.0*n_k*T_k.Te + 2.0*Theta*Kconv))*Delta_ionise*13.6*kB;
+			f64 new_vz_diff = sqrt(
+				(m_e*n_kplus1 + m_n*n_n_kplus1)*
+				((n_k*n_n_k / (m_e*n_k + m_n*n_n_k))*(w0z*w0z) + 2.0*deltaKE / (m_e*m_n)) /
+				(n_kplus1*n_n_kplus1));
 
-	
-		
-		// . Ionization cooling & recombination heating
-		//f64 coeff_on_ionizing = 0.5*T_k.Tn - 2.0*T_k.Te*13.6*kB*n_k / (3.0*T_k.Te*n_k + 2.0*Theta*Kconv);
-//		ourrates.NeTe +=
-//			dNdt_recombine*2.0*13.6*kB / 3.0
-//			- (2.0*T_k.Te*13.6*kB*n_k / (3.0*T_k.Te*n_k + 2.0*Theta*Kconv))*dNdt_ionise;
-		// We can drop this: it will be accounted for by the final energy balance.
-		
-		// 3. Add to nT for x-fers due to species converting
+			// Choose new_vz_diff to have same sign as w0z = diff_k:
+			if (w0z < 0.0) new_vz_diff = -new_vz_diff;
 
-		ourrates.NiTi += 0.5*dNdt_ionise*T_k.Tn;
-		ourrates.NeTe += 0.5*dNdt_ionise*T_k.Tn;
-		ourrates.NnTn -= dNdt_ionise*T_k.Tn;
-		
-		f64 nTe_kplus1 = T_k.Te*(n_k ) + 0.5*Delta_ionise*T_k.Tn ;
-		f64 nTi_kplus1 = T_k.Ti*(n_k ) + 0.5*Delta_ionise*T_k.Tn ;
-		f64 n_nTn_kplus1 = T_k.Tn*(n_n_k) - Delta_ionise*T_k.Tn;
+			f64 delta_vez = m_n*n_n_kplus1*(-w0z + new_vz_diff) /
+				(m_n*n_n_kplus1 + m_e*n_kplus1);
+			f64 delta_vnz = -m_e*n_kplus1*delta_vez / (m_n*n_n_kplus1);
 
-		// 4. Energy balance through Te:
-		// Maybe we should rather be seeking OVERALL energy balance where KE_result is from n_k+1, v_k+1
-		// and we ensure that we have lost the right amount of energy overall.
-		// That is the better way:
-		
-		f64 KE_result = 0.5*(m_e*n_kplus1*ve_kplus1.dot(ve_kplus1) + m_i*n_kplus1*vi_kplus1.dot(vi_kplus1)
-			+ m_n*n_n_kplus1*vn_kplus1.dot(vn_kplus1));
+			if (TEST_IONIZE) printf("deltaKE %1.10E v.vez %1.10E w0z %1.9E new_vz_diff %1.9E \n",
+				deltaKE, v.vez, w0z, new_vz_diff);
 
-		if (TEST_IONIZE) printf("n_kplus1 %1.12E ve_kplus1 %1.9E %1.9E %1.9E vi_plus1 %1.9E %1.9E %1.9E vn_plus1 %1.9E %1.9E %1.9E\n",
-			n_kplus1, ve_kplus1.x, ve_kplus1.y, ve_kplus1.z, vi_kplus1.x, vi_kplus1.y, vi_kplus1.z,
-			vn_kplus1.x, vn_kplus1.y, vn_kplus1.z);
+			// Check: w0 = vez-vnz - tick
+			// should change to scalar.
 
-		f64 Energy_density_kplus1 = KE_result + 1.5*(nTe_kplus1 + nTi_kplus1 + n_nTn_kplus1);
-		f64 Energy_density_target = Energy_k - 13.6*kB*(Delta_ionise - Delta_rec);
-		
-		// Additional_heat = (KE_k + deltaKE) - KE_result; // usually positive
-		// 1*1+3*3 > 2*2 + 2*2  so KE is generally decreasing by friction; KE_result < KE_k+deltaKE
-		// KE_result + Added_heat + existing heat = desired total energy = KE_k + heat_k + deltaKE
-		
-		// 1.5 nT += Frictional_heating
-		// NTe += (2/3) Area Frictional_heating
-		if (TEST_IONIZE) printf("AreaMajor %1.9E h_use %1.9E Delta_ionise %1.9E \n"
-			"0.6666 13.6 kB %1.9E Delta_ionise Area/h %1.10E \n",
-			AreaMajor, h_use, Delta_ionise,
-			0.666667*13.6*kB, Delta_ionise*AreaMajor/h_use
+			MAR_neut.z += AreaMajor*n_n_kplus1*delta_vnz / h_use;
+			MAR_elec.z += AreaMajor*n_kplus1*delta_vez / h_use;
+
+			f64_vec3 ve_kplus1, vi_kplus1, vn_kplus1;
+
+			// Store alongside: v_k+1 so that we can follow the anticipated change in energy,
+			// to create energy balance:
+			ve_kplus1.x = v.vxy.x*(n_k / n_kplus1);
+			ve_kplus1.y = v.vxy.y*(n_k / n_kplus1);
+			ve_kplus1.z = v.vez*(n_k / n_kplus1) + delta_vez; // we need to store v, we could also store nv if we wanted.
+
+			vi_kplus1.x = v.vxy.x*(n_k / n_kplus1);
+			vi_kplus1.y = v.vxy.y*(n_k / n_kplus1);
+			vi_kplus1.z = v.viz*(n_k / n_kplus1);
+
+			vn_kplus1 = v_n*(n_n_k / n_n_kplus1);
+			vn_kplus1.z += delta_vnz;
+
+			// 2. Add the effect of xfers on momenta:
+
+			// What does MAR_neut mean? Nv?
+			{
+				f64_vec3 v_use;
+				v_use.x = v.vxy.x;
+				v_use.y = v.vxy.y;
+				v_use.z = (m_e*v.vez + m_i*v.viz) / (m_e + m_i);
+				MAR_neut += -dNdt_ionise*v_n + dNdt_recombine*v_use;
+				MAR_ion += dNdt_ionise*v_n - dNdt_recombine*v_use;
+				MAR_elec += dNdt_ionise*v_n - dNdt_recombine*v_use;
+
+				// Some double-counting here?:
+				vn_kplus1 -= (Delta_ionise*v_n - Delta_rec*v_use) / n_n_kplus1;
+				// n_k+1 v_k+1 = n_k v_k + Delta_n*v_use => v_k+1 = (n_k/n_k+1) v_k + (Delta_n/n_k+1) v_use
+				vi_kplus1 += (Delta_ionise*v_n - Delta_rec*v_use) / n_kplus1;
+				ve_kplus1 += (Delta_ionise*v_n - Delta_rec*v_use) / n_kplus1;
+
+			}
+			if (TEST_IONIZE) printf("__ ve_kplus1 %1.9E %1.9E %1.9E vi_plus1 %1.9E %1.9E %1.9E vn_plus1 %1.9E %1.9E %1.9E delta_vez %1.9E\n",
+				ve_kplus1.x, ve_kplus1.y, ve_kplus1.z, vi_kplus1.x, vi_kplus1.y, vi_kplus1.z,
+				vn_kplus1.x, vn_kplus1.y, vn_kplus1.z, delta_vez);
+
+			// . Ionization cooling & recombination heating
+			//f64 coeff_on_ionizing = 0.5*T_k.Tn - 2.0*T_k.Te*13.6*kB*n_k / (3.0*T_k.Te*n_k + 2.0*Theta*Kconv);
+	//		ourrates.NeTe +=
+	//			dNdt_recombine*2.0*13.6*kB / 3.0
+	//			- (2.0*T_k.Te*13.6*kB*n_k / (3.0*T_k.Te*n_k + 2.0*Theta*Kconv))*dNdt_ionise;
+			// We can drop this: it will be accounted for by the final energy balance.
+
+			// 3. Add to nT for x-fers due to species converting
+
+			ourrates.NiTi += 0.5*dNdt_ionise*T_k.Tn;
+			ourrates.NeTe += 0.5*dNdt_ionise*T_k.Tn;
+			ourrates.NnTn -= dNdt_ionise*T_k.Tn;
+
+			f64 nTe_kplus1 = T_k.Te*(n_k)+0.5*Delta_ionise*T_k.Tn;
+			f64 nTi_kplus1 = T_k.Ti*(n_k)+0.5*Delta_ionise*T_k.Tn;
+			f64 n_nTn_kplus1 = T_k.Tn*(n_n_k)-Delta_ionise*T_k.Tn;
+
+			// 4. Energy balance through Te:
+			// Maybe we should rather be seeking OVERALL energy balance where KE_result is from n_k+1, v_k+1
+			// and we ensure that we have lost the right amount of energy overall.
+			// That is the better way:
+
+			f64 KE_result = 0.5*(m_e*n_kplus1*ve_kplus1.dot(ve_kplus1) + m_i*n_kplus1*vi_kplus1.dot(vi_kplus1)
+				+ m_n*n_n_kplus1*vn_kplus1.dot(vn_kplus1));
+
+			if (TEST_IONIZE) printf("n_kplus1 %1.12E ve_kplus1 %1.9E %1.9E %1.9E vi_plus1 %1.9E %1.9E %1.9E vn_plus1 %1.9E %1.9E %1.9E\n",
+				n_kplus1, ve_kplus1.x, ve_kplus1.y, ve_kplus1.z, vi_kplus1.x, vi_kplus1.y, vi_kplus1.z,
+				vn_kplus1.x, vn_kplus1.y, vn_kplus1.z);
+
+			f64 Energy_density_kplus1 = KE_result + 1.5*(nTe_kplus1 + nTi_kplus1 + n_nTn_kplus1);
+			f64 Energy_density_target = Energy_k - 13.6*kB*(Delta_ionise - Delta_rec);
+
+			// Additional_heat = (KE_k + deltaKE) - KE_result; // usually positive
+			// 1*1+3*3 > 2*2 + 2*2  so KE is generally decreasing by friction; KE_result < KE_k+deltaKE
+			// KE_result + Added_heat + existing heat = desired total energy = KE_k + heat_k + deltaKE
+
+			// 1.5 nT += Frictional_heating
+			// NTe += (2/3) Area Frictional_heating
+			if (TEST_IONIZE) printf("AreaMajor %1.9E h_use %1.9E Delta_ionise %1.9E \n"
+				"0.6666 13.6 kB %1.9E Delta_ionise Area/h %1.10E \n",
+				AreaMajor, h_use, Delta_ionise,
+				0.666667*13.6*kB, Delta_ionise*AreaMajor / h_use
 			);
 
-		if (TEST_IONIZE) printf("DNeTe before balance: %1.9E dNdt_ionise %1.9E \n"
-			"Energy_density_target %1.9E k %1.9E kplus1 %1.9E ; KEk %1.9E KEresult %1.9E\n",
-			ourrates.NeTe, dNdt_ionise,
-			Energy_density_target, Energy_k, Energy_density_kplus1,
-			0.5*((m_e + m_i)*n_k*(v.vxy.dot(v.vxy)) + m_e*n_k*v.vez*v.vez + m_i*n_k*v.viz*v.viz + m_n*n_n_k*v_n.dot(v_n)),
-			KE_result);
+			if (TEST_IONIZE) printf("DNeTe before balance: %1.9E dNdt_ionise %1.9E \n"
+				"Energy_density_target %1.9E k %1.9E kplus1 %1.9E ; KEk %1.9E KEresult %1.9E\n",
+				ourrates.NeTe, dNdt_ionise,
+				Energy_density_target, Energy_k, Energy_density_kplus1,
+				0.5*((m_e + m_i)*n_k*(v.vxy.dot(v.vxy)) + m_e*n_k*v.vez*v.vez + m_i*n_k*v.viz*v.viz + m_n*n_n_k*v_n.dot(v_n)),
+				KE_result);
 
-		ourrates.NeTe += 2.0*AreaMajor*
-			(Energy_density_target - Energy_density_kplus1)/ (3.0*h_use);
+			ourrates.NeTe += 2.0*AreaMajor*
+				(Energy_density_target - Energy_density_kplus1) / (3.0*h_use);
 
-		// DEBUG:
-		if (TEST_IONIZE) printf("iVertex %d n_k %1.9E N_k %1.9E Te_k %1.9E NeTe %1.9E h*NeTe %1.9E \n"
-			"Ti_k %1.9E h*NiTi %1.9E Tn_k %1.9E h*NnTn %1.9E \n"
-			"Delta_ionise %1.9E rec %1.9E \n",
-			iVertex, n_k, n_k*AreaMajor, T_k.Te, ourrates.NeTe, h_use*ourrates.NeTe,
-			T_k.Ti, h_use*ourrates.NiTi, T_k.Tn, h_use*ourrates.NnTn,
-			Delta_ionise, Delta_rec
-		);
-		
-		// DEBUG:
-		if (TEST_IONIZE) //n_k*AreaMajor*T_k.Te + ourrates.NeTe*h_use < 0.0)
-			printf("%d Predicted Te %1.9E \n", iVertex, (n_k*AreaMajor*T_k.Te + ourrates.NeTe*h_use) / (n_k*AreaMajor));
-		
+			if ((Energy_density_target - Energy_density_kplus1) / (n_k*AreaMajor) > 1.0e-8)
+			{
+				printf("Vertex %d dTe/dt %1.9E vez(k+1) %1.9E vezk %1.9E delta_vez %1.9E\n"
+					"iVertex %d n_k %1.9E N_k %1.9E Te_k %1.9E NeTe %1.9E h*NeTe %1.9E \n"
+					"Ti_k %1.9E h*NiTi %1.9E Tn_k %1.9E h*NnTn %1.9E \n"
+					"Delta_ionise %1.9E rec %1.9E deltaKE %1.9E deltavez %1.9E\n"
+					"Predicted Te %1.12E Theta %1.12E \n"
+					"Energy_k %1.12E w0z %1.9E energy_kplus1 %1.12E energy_target %1.12E \n"
+					"KEk %1.12E Heat_k %1.12E KEresult %1.12E \n",
+					iVertex, (Energy_density_target - Energy_density_kplus1) / (n_k*AreaMajor),
+					ve_kplus1.z, v.vez, delta_vez,
+					iVertex, n_k, n_k*AreaMajor, T_k.Te, ourrates.NeTe, h_use*ourrates.NeTe,
+					T_k.Ti, h_use*ourrates.NiTi, T_k.Tn, h_use*ourrates.NnTn,
+					Delta_ionise, Delta_rec, deltaKE, delta_vez,
+					(n_k*AreaMajor*T_k.Te + ourrates.NeTe*h_use) / (n_k*AreaMajor),
+					Theta, Energy_k, w0z, Energy_density_kplus1, Energy_density_target,
+					0.5*((m_e + m_i)*n_k*(v.vxy.dot(v.vxy)) + m_e*n_k*v.vez*v.vez + m_i*n_k*v.viz*v.viz + m_n*n_n_k*v_n.dot(v_n)),
+					1.5*(n_k*T_k.Te + n_k*T_k.Ti + n_n_k*T_k.Tn),
+					KE_result);
+				printf("iVertex %d "
+					"ve_kplus1 %1.9E %1.9E %1.9E vi_plus1 %1.9E %1.9E %1.9E vn_plus1 %1.9E %1.9E %1.9E\n"
+					"v_n %1.9E %1.9E %1.9E n_n_k %1.9E  n_n_kplus1 %1.9E n_k %1.9E n_kplus1 %1.9E \n"
+					"Theta %1.10E Kconv %1.10E deltaKE %1.10E ppnK %1.10E full_loss %1.10E\n",
+					iVertex,
+					ve_kplus1.x, ve_kplus1.y, ve_kplus1.z,
+					vi_kplus1.x, vi_kplus1.y, vi_kplus1.z,
+					vn_kplus1.x, vn_kplus1.y, vn_kplus1.z,
+					v_n.x, v_n.y, v_n.z, n_n_k, n_n_kplus1, n_k, n_kplus1,
+					Theta, Kconv, deltaKE,
+					(2.0*Theta*Kconv / (3.0*n_k*T_k.Te + 2.0*Theta*Kconv)),Delta_ionise*13.6*kB
+				);
+			}
+
+			// DEBUG:
+			if (TEST_IONIZE) printf("iVertex %d n_k %1.9E N_k %1.9E Te_k %1.9E NeTe %1.9E h*NeTe %1.9E \n"
+				"Ti_k %1.9E h*NiTi %1.9E Tn_k %1.9E h*NnTn %1.9E \n"
+				"Delta_ionise %1.9E rec %1.9E \n",
+				iVertex, n_k, n_k*AreaMajor, T_k.Te, ourrates.NeTe, h_use*ourrates.NeTe,
+				T_k.Ti, h_use*ourrates.NiTi, T_k.Tn, h_use*ourrates.NnTn,
+				Delta_ionise, Delta_rec
+			);
+
+			// DEBUG:
+			if (TEST_IONIZE) //n_k*AreaMajor*T_k.Te + ourrates.NeTe*h_use < 0.0)
+				printf("%d Predicted Te %1.9E \n", iVertex, (n_k*AreaMajor*T_k.Te + ourrates.NeTe*h_use) / (n_k*AreaMajor));
+		}
 		memcpy(NTadditionrates + iVertex, &ourrates, sizeof(NTrates));
 		memcpy(p_MAR_neut + iVertex, &MAR_neut, sizeof(f64_vec3));
 		memcpy(p_MAR_ion + iVertex, &MAR_ion, sizeof(f64_vec3));
 		memcpy(p_MAR_elec + iVertex, &MAR_elec, sizeof(f64_vec3));
-
+		
 
 //******************************************************************************************************
 
@@ -12028,11 +12090,11 @@ __global__ void kernelPopulateBackwardOhmsLaw_noadvect(
 
 			if (v0.vez != v0.vez) printf("NANVEZ %d v_k %1.9E MAR.z %1.9E \n", iMinor, vie_k.vez, MAR.z);
 
-			if (((TESTTRI))) printf("\nGPU %d a:MAR_e %1.10E %1.10E MAR.y %1.10E 1/n %1.10E Area %1.10E\n", iMinor,
+			if (((TESTTRI))) printf("\nGPU %d MAR: changexy %1.10E %1.10E vezchange %1.10E Area %1.10E\n", iMinor,
 				h_use * (m_e*MAR.x / (n_use.n*(m_i + m_e)*AreaMinor)),
 				h_use * (m_e*MAR.y / (n_use.n*(m_i + m_e)*AreaMinor)),
-				MAR.y,
-				p_one_over_n[iMinor].n, AreaMinor);
+				h_use * MAR.z / (n_use.n*AreaMinor),
+				AreaMinor);
 		}
 
 		OhmsCoeffs ohm;
@@ -12484,11 +12546,12 @@ __global__ void kernelPopulateBackwardOhmsLaw(
 
 			if (v0.vez != v0.vez) printf("NANVEZ %d v_k %1.9E MAR.z %1.9E \n", iMinor, vie_k.vez, MAR.z);
 
-			if (((TESTTRI))) printf("\nGPU %d a:MAR_e %1.10E %1.10E MAR.y %1.10E 1/n %1.10E Area %1.10E\n", iMinor,
+			if (((TESTTRI))) printf("\nGPU %d a:MAR_e %1.10E %1.10E z %1.10E MAR.y %1.10E Area %1.10E\n", iMinor,
 				h_use * (m_e*MAR.x / (n_use.n*(m_i + m_e)*AreaMinor)),
 				h_use * (m_e*MAR.y / (n_use.n*(m_i + m_e)*AreaMinor)),
+				MAR.z,
 				MAR.y,
-				p_one_over_n[iMinor].n, AreaMinor);
+				AreaMinor);
 		}
 
 		OhmsCoeffs ohm;
@@ -15069,7 +15132,6 @@ __global__ void kernelGetLap_minor(
 		p_LapAz[iMinor] = Our_integral_Lap_Az / AreaMinor;
 
 		p_AreaMinor[iMinor] = AreaMinor; // reset for each substep
-
 
 
 										 //	f64 AreaStored = p_AreaMinor[iMinor];

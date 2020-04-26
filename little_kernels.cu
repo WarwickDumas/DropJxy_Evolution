@@ -3025,21 +3025,20 @@ __global__ void Augment_dNv_minor(
 				+ p_MAR_neut_major[tricornerindex.i3] * coeff3;
 
 
-			//if (iMinor == 6100) {
-			//	printf("p_MAR_neut_major[tricornerindex.i1].z %1.10E coeff1 %1.10E \n"
-			//		"p_MAR_neut_major[tricornerindex.i2].z %1.10E coeff2 %1.10E \n"
-			//		"p_MAR_neut_major[tricornerindex.i3].z %1.10E coeff3 %1.10E \n"
-			//		"add_n.z %1.10E Nnhere %1.10E p_temp_Nntotalmajor[tricornerindex.i1] %1.10E  \n"
-			//		"tricornerindex %d %d %d\n"
-			//		,
-			//		p_MAR_neut_major[tricornerindex.i1].z , coeff1,
-			//		p_MAR_neut_major[tricornerindex.i2].z, coeff2,
-			//		p_MAR_neut_major[tricornerindex.i3].z, coeff3,
-			//		add_n.z, Nnhere,
-			//		p_temp_Nntotalmajor[tricornerindex.i1],
-			//		tricornerindex.i1, tricornerindex.i2, tricornerindex.i3
-			//	);
-			//}
+		//	if (iMinor == 6100) 
+		//		printf("p_MAR_neut_major[tricornerindex.i1].z %1.10E coeff1 %1.10E \n"
+		//			"p_MAR_neut_major[tricornerindex.i2].z %1.10E coeff2 %1.10E \n"
+		//			"p_MAR_neut_major[tricornerindex.i3].z %1.10E coeff3 %1.10E \n"
+		//			"add_n.z %1.10E Nnhere %1.10E p_temp_Nntotalmajor[tricornerindex.i1] %1.10E  \n"
+		//			"tricornerindex %d %d %d\n"
+		//			,
+		//			p_MAR_neut_major[tricornerindex.i1].z , coeff1,
+		//			p_MAR_neut_major[tricornerindex.i2].z, coeff2,
+		//			p_MAR_neut_major[tricornerindex.i3].z, coeff3,
+		//			add_n.z, Nnhere,
+		//			p_temp_Nntotalmajor[tricornerindex.i1],
+		//			tricornerindex.i1, tricornerindex.i2, tricornerindex.i3
+		//		);
 
 
 			if (add_n.z != add_n.z) printf("NaN add_n.z %d\n", iMinor);
@@ -3051,11 +3050,18 @@ __global__ void Augment_dNv_minor(
 			p_MAR_elec[iMinor] += add_e;
 		} else {
 			nvals nminor = p_n_minor[iMinor];
-			f64 Nhere = p_AreaMinor[iMinor] * nminor.n_n;
-			f64 coeff = Nhere / p_temp_Ntotalmajor[iMinor - BEGINNING_OF_CENTRAL];
-			f64_vec3 add_i = p_MAR_ion_major[iMinor - BEGINNING_OF_CENTRAL] * coeff;
-			f64_vec3 add_e = p_MAR_elec_major[iMinor - BEGINNING_OF_CENTRAL] * coeff;
-			f64 Nnhere = p_AreaMinor[iMinor] * nminor.n;
+			f64 Nhere = p_AreaMinor[iMinor] * nminor.n;
+			long const iVertex = iMinor - BEGINNING_OF_CENTRAL;
+			f64 coeff = Nhere / p_temp_Ntotalmajor[iVertex];
+			f64_vec3 add_i = p_MAR_ion_major[iVertex] * coeff;
+			f64_vec3 add_e = p_MAR_elec_major[iVertex] * coeff;
+
+			if (TEST_IONIZE) {
+				printf("iMinor %d coeff %1.8E add_e.z %1.8E MAR %1.9E Nhere %1.9E Ntotal %1.9E \n",
+					iMinor, coeff, add_e.z, p_MAR_elec_major[iVertex].z, Nhere, p_temp_Ntotalmajor[iVertex]);
+			}
+			
+			f64 Nnhere = p_AreaMinor[iMinor] * nminor.n_n;
 			coeff = Nnhere / p_temp_Nntotalmajor[iMinor - BEGINNING_OF_CENTRAL];
 			f64_vec3 add_n = p_MAR_neut_major[iMinor - BEGINNING_OF_CENTRAL] * coeff;
 
@@ -3098,16 +3104,18 @@ __global__ void Collect_Ntotal_major(
 		nvals nminor;
 		for (i = 0; i < info.neigh_len; i++)
 		{
-//			if (iVertex == 3056) {
-	//			printf("i %d izTri[i] %d flag %d \n", i, izTri[i], p_info_minor[izTri[i]].flag);
-		//	}
+			if (TEST_IONIZE)
+				printf("iVertex %d i %d izTri[i] %d flag %d sum_N %1.9E\n", 
+					iVertex ,i, izTri[i], p_info_minor[izTri[i]].flag, sum_N);
+		
 			if (p_info_minor[izTri[i]].flag == DOMAIN_TRIANGLE) // see above
 			{
 				nminor = p_n_minor[izTri[i]];
 				areaminor = p_AreaMinor[izTri[i]];
 				sum_N += 0.33333333333333*nminor.n*areaminor;
 				sum_Nn += 0.33333333333333*nminor.n_n*areaminor;
-				
+				if (TEST_IONIZE)
+					printf("nminor %1.9E areaminor %1.8E sum_N %1.8E \n", nminor.n, areaminor, sum_N);
 			}
 			
 		};
