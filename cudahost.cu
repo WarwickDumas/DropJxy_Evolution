@@ -2,31 +2,31 @@
 // Version 1.0 23/04/19:
 // Changing to use upwind T for advection. We could do better in future. Interp gives negative T sometimes.
 // Corrected ionisation rate.
-       
+        
 
 #pragma once  
- 
+   
 #include <stdlib.h>
 #include <stdio.h>
 #include "lapacke.h"
-   
+       
 /* Auxiliary routines prototypes */
 extern void print_matrix(char* desc, lapack_int m, lapack_int n, double* a, lapack_int lda);
 extern void print_int_vector(char* desc, lapack_int n, lapack_int* a);
- 
- 
+  
+  
 #define BWD_SUBCYCLE_FREQ  1
 #define BWD_STEP_RATIO     1    // divide substeps by this for bwd
 #define NUM_BWD_ITERATIONS 4
 #define FWD_STEP_FACTOR    2    // multiply substeps by this for fwd
-         
+           
 // This will be slow but see if it solves it.
-                 
+                  
 #define CHOSEN  105446
 #define CHOSEN1 1000110301
 #define CHOSEN2 1000110497 
-#define VERTCHOSEN 31718
-
+#define VERTCHOSEN 19572
+ 
 #define ITERATIONS_BEFORE_SWITCH  18
 #define REQUIRED_IMPROVEMENT_RATE  0.98
 #define REQUIRED_IMPROVEMENT_RATE_J  0.985
@@ -50,7 +50,7 @@ extern void print_int_vector(char* desc, lapack_int n, lapack_int* a);
 #define p_sqrtDN_Te p_NTe
  
 #define DEFAULTSUPPRESSVERBOSITY true
- 
+  
 extern surfacegraph Graph[7];
 extern D3D Direct3D;
  
@@ -914,13 +914,13 @@ void SolveBackwardAzAdvanceJ3LS(f64 hsub,
 //		sumvec.z = 0.0;
 //
 		mat.Inverse(mat2);
-		printf(
-			" ( %1.6E %1.6E %1.6E ) ( beta0 )   ( %1.6E )\n"
-			" ( %1.6E %1.6E %1.6E ) ( beta1 ) = ( %1.6E )\n"
-			" ( %1.6E %1.6E %1.6E ) ( beta2 )   ( %1.6E )\n",
-			mat.xx, mat.xy, mat.xz, sumvec.x,
-			mat.yx, mat.yy, mat.yz, sumvec.y,
-			mat.zx, mat.zy, mat.zz, sumvec.z);
+		//printf(
+		//	" ( %1.6E %1.6E %1.6E ) ( beta0 )   ( %1.6E )\n"
+		//	" ( %1.6E %1.6E %1.6E ) ( beta1 ) = ( %1.6E )\n"
+		//	" ( %1.6E %1.6E %1.6E ) ( beta2 )   ( %1.6E )\n",
+		//	mat.xx, mat.xy, mat.xz, sumvec.x,
+		//	mat.yx, mat.yy, mat.yz, sumvec.y,
+		//	mat.zx, mat.zy, mat.zz, sumvec.z);
 		f64_vec3 product = mat2*sumvec;
 
 		beta[0] = -product.x; beta[1] = -product.y; beta[2] = -product.z;
@@ -938,7 +938,7 @@ void SolveBackwardAzAdvanceJ3LS(f64 hsub,
 		// Try running with matrix s.t. beta1 = beta2 = 0. Do we get more improvement ever or a different coefficient than Jacobi?
 		// If we always do better than Jacobi we _could_ still end up with worse result due to different trajectory but this is unlikely 
 		// to be the explanation so we should track it down.
-		
+		 
 	//	cudaMemcpy(p_temphost2, p_Jacobi_x, sizeof(f64)*NMINOR, cudaMemcpyDeviceToHost);
 
 		kernelAddRegressors << <numTilesMinor, threadsPerTileMinor >> >(
@@ -7116,7 +7116,10 @@ void cuSyst::PerformCUDA_Advance(//const
 		if (i < numTilesMajorClever) bContinue = true;
 		iPass++;
 	} while (bContinue);
-	       
+
+	cudaMemcpy(&tempf64, &(NT_addition_rates_d[VERTCHOSEN].NiTi), sizeof(f64), cudaMemcpyDeviceToHost);
+	printf("\nNiTi rate [%d] : %1.13E\n\n", VERTCHOSEN, tempf64);
+
 	cudaMemset(p_temp3_1, 0, sizeof(f64_vec3)*numTilesMajor*threadsPerTileMajor);
 	cudaMemset(p_temp3_2, 0, sizeof(f64_vec3)*numTilesMajor*threadsPerTileMajor);
 	cudaMemset(p_temp3_3, 0, sizeof(f64_vec3)*numTilesMajor*threadsPerTileMajor);
@@ -7165,6 +7168,9 @@ void cuSyst::PerformCUDA_Advance(//const
 		p_MAR_ion,
 		p_MAR_elec);
 	Call(cudaThreadSynchronize(), "cudaTS Augment_dNv_minor");
+
+	cudaMemcpy(&tempf64, &(NT_addition_rates_d[VERTCHOSEN].NiTi), sizeof(f64), cudaMemcpyDeviceToHost);
+	printf("\nNiTi rate [%d] : %1.13E\n\n", VERTCHOSEN, tempf64);
 
 	// &&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&
 	// &&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&
@@ -10666,10 +10672,12 @@ void cuSyst::PerformCUDA_Advance_noadvect(//const
 	SetConsoleTextAttribute(hConsole, 11);
 
 
-	// Report NnTn:
-	cudaMemcpy(&tempf64, &(NT_addition_rates_d[VERTCHOSEN].NnTn), sizeof(f64), cudaMemcpyDeviceToHost);
-	printf("NnTn rate [%d] : %1.13E\n", VERTCHOSEN, tempf64);
-
+	if (!DEFAULTSUPPRESSVERBOSITY)
+	{
+		// Report NnTn:
+		cudaMemcpy(&tempf64, &(NT_addition_rates_d[VERTCHOSEN].NnTn), sizeof(f64), cudaMemcpyDeviceToHost);
+		printf("NnTn rate [%d] : %1.13E\n", VERTCHOSEN, tempf64);
+	}
 
 	// . Create best estimate of n on cc (and avg T to cc:)
 
@@ -10887,10 +10895,13 @@ void cuSyst::PerformCUDA_Advance_noadvect(//const
 	} while (bContinue);
 
 	cudaMemcpy(store_heatcond_NTrates, NT_addition_rates_d, sizeof(NTrates)*NUMVERTICES, cudaMemcpyDeviceToDevice);
-	
-	// Report NnTn:
-	cudaMemcpy(&tempf64, &(NT_addition_rates_d[VERTCHOSEN].NnTn), sizeof(f64), cudaMemcpyDeviceToHost);
-	printf("\nNnTn rate [%d] : %1.13E\n\n", VERTCHOSEN, tempf64);
+
+	if (!DEFAULTSUPPRESSVERBOSITY)
+	{
+		// Report NnTn:
+		cudaMemcpy(&tempf64, &(NT_addition_rates_d[VERTCHOSEN].NiTi), sizeof(f64), cudaMemcpyDeviceToHost);
+		printf("\nNiTi rate [%d] : %1.13E\n\n", VERTCHOSEN, tempf64);
+	};
 
 	cudaMemset(p_temp3_1, 0, sizeof(f64_vec3)*numTilesMajor*threadsPerTileMajor);
 	cudaMemset(p_temp3_2, 0, sizeof(f64_vec3)*numTilesMajor*threadsPerTileMajor);
@@ -10941,12 +10952,14 @@ void cuSyst::PerformCUDA_Advance_noadvect(//const
 	// &&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&
 	// &&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&
 
-	// Report NnTn:
-	cudaMemcpy(&tempf64, &(NT_addition_rates_d[VERTCHOSEN].NnTn), sizeof(f64), cudaMemcpyDeviceToHost);
-	printf("\nNnTn rate [%d] : %1.13E\n\n", VERTCHOSEN, tempf64);
-	cudaMemcpy(&tempf64, &(p_MAR_elec[VERTCHOSEN+BEGINNING_OF_CENTRAL].z), sizeof(f64), cudaMemcpyDeviceToHost);
-	printf("\nMAR_elec.z [%d] : %1.13E\n\n", VERTCHOSEN, tempf64);
-	
+	if (!DEFAULTSUPPRESSVERBOSITY)
+	{
+		// Report NnTn:
+		cudaMemcpy(&tempf64, &(NT_addition_rates_d[VERTCHOSEN].NiTi), sizeof(f64), cudaMemcpyDeviceToHost);
+		printf("\nNiTi rate [%d] : %1.13E\n\n", VERTCHOSEN, tempf64);
+		cudaMemcpy(&tempf64, &(p_MAR_elec[VERTCHOSEN + BEGINNING_OF_CENTRAL].z), sizeof(f64), cudaMemcpyDeviceToHost);
+		printf("\nMAR_elec.z [%d] : %1.13E\n\n", VERTCHOSEN, tempf64);
+	};
 
 	kernelReset_v_in_outer_frill_and_outermost << <numTilesMinor, threadsPerTileMinor >> >
 	(
@@ -11042,16 +11055,19 @@ void cuSyst::PerformCUDA_Advance_noadvect(//const
 		NT_addition_tri_d
 		);
 	Call(cudaThreadSynchronize(), "cudaTS sum up heat 1");
-	 
-	SetConsoleTextAttribute(hConsole, 14);
-	cudaMemcpy(&tempf64, &(NT_addition_rates_d[VERTCHOSEN].NeTe), sizeof(f64), cudaMemcpyDeviceToHost);
-	printf("\nNT_addition_rates_d[%d].NeTe %1.10E\n\n", VERTCHOSEN, tempf64);
-	cudaMemcpy(&tempf64, &(NT_addition_rates_d[VERTCHOSEN].NiTi), sizeof(f64), cudaMemcpyDeviceToHost);
-	printf("\nNT_addition_rates_d[%d].NiTi %1.10E\n\n", VERTCHOSEN, tempf64);
-	SetConsoleTextAttribute(hConsole, 15);
-	// Report NnTn:
-	cudaMemcpy(&tempf64, &(NT_addition_rates_d[VERTCHOSEN].NnTn), sizeof(f64), cudaMemcpyDeviceToHost);
-	printf("\nNnTn rate [%d] : %1.13E\n\n", VERTCHOSEN, tempf64);
+	
+	if (!DEFAULTSUPPRESSVERBOSITY)
+	{
+		SetConsoleTextAttribute(hConsole, 14);
+		cudaMemcpy(&tempf64, &(NT_addition_rates_d[VERTCHOSEN].NeTe), sizeof(f64), cudaMemcpyDeviceToHost);
+		printf("\nNT_addition_rates_d[%d].NeTe %1.10E\n\n", VERTCHOSEN, tempf64);
+		cudaMemcpy(&tempf64, &(NT_addition_rates_d[VERTCHOSEN].NiTi), sizeof(f64), cudaMemcpyDeviceToHost);
+		printf("\nNT_addition_rates_d[%d].NiTi %1.10E\n\n", VERTCHOSEN, tempf64);
+		SetConsoleTextAttribute(hConsole, 15);
+		// Report NnTn:
+		cudaMemcpy(&tempf64, &(NT_addition_rates_d[VERTCHOSEN].NnTn), sizeof(f64), cudaMemcpyDeviceToHost);
+		printf("\nNnTn rate [%d] : %1.13E\n\n", VERTCHOSEN, tempf64);
+	}
 
 	kernelAdvanceDensityAndTemperature_noadvectioncompression << <numTilesMajor, threadsPerTileMajor >> > (
 		0.5*Timestep,
@@ -11070,8 +11086,10 @@ void cuSyst::PerformCUDA_Advance_noadvect(//const
 	// Add in a test for T<0 !!!
 	Call(cudaThreadSynchronize(), "cudaTS Advance_n_and_T _noadvect"); // vertex
 
-	printf("\nDebugNaN pX_half\n\n");
-	DebugNaN(pX_half);
+	if (!DEFAULTSUPPRESSVERBOSITY) {
+		printf("\nDebugNaN pX_half\n\n");
+		DebugNaN(pX_half);
+	};
 
 	kernelAverage_n_T_x_to_tris << <numTriTiles, threadsPerTileMinor >> > (
 		pX_half->p_n_minor,
@@ -11776,8 +11794,8 @@ void cuSyst::PerformCUDA_Advance_noadvect(//const
 	// 28/09/19: This sometimes fails because only T_k + h NeTe / Ne is guaranteed to be positive.
 
 
-	cudaMemcpy(&tempf64, &(NT_addition_rates_d[VERTCHOSEN].NeTe), sizeof(f64), cudaMemcpyDeviceToHost);
-	printf("%d NeTe rate %1.10E \n", VERTCHOSEN, tempf64);
+	cudaMemcpy(&tempf64, &(NT_addition_rates_d[VERTCHOSEN].NiTi), sizeof(f64), cudaMemcpyDeviceToHost);
+	printf("%d NiTi rate %1.10E \n", VERTCHOSEN, tempf64);
 	
 	cudaMemset(p_temp3_1, 0, sizeof(f64_vec3)*numTilesMajor*threadsPerTileMajor);
 	cudaMemset(p_temp3_2, 0, sizeof(f64_vec3)*numTilesMajor*threadsPerTileMajor);
@@ -11815,7 +11833,7 @@ void cuSyst::PerformCUDA_Advance_noadvect(//const
 		p_temp2  // Nntotal major
 		);
 	Call(cudaThreadSynchronize(), "cudaTS Gather Ntotal");
-
+	  
 	Augment_dNv_minor << <numTilesMinor, threadsPerTileMinor >> >(
 		pX_half->p_info,
 		pX_half->p_n_minor,
@@ -11824,13 +11842,13 @@ void cuSyst::PerformCUDA_Advance_noadvect(//const
 		p_temp2,
 		pX_half->p_AreaMinor,
 		p_temp3_1, p_temp3_2, p_temp3_3,
-		p_MAR_neut,
+		p_MAR_neut, 
 		p_MAR_ion,
 		p_MAR_elec);
 	Call(cudaThreadSynchronize(), "cudaTS Augment_dNv_minor");
 	
-	cudaMemcpy(&tempf64, &(NT_addition_rates_d[VERTCHOSEN].NeTe), sizeof(f64), cudaMemcpyDeviceToHost);
-	printf("%d NeTe rate %1.10E \n", VERTCHOSEN, tempf64);
+	cudaMemcpy(&tempf64, &(NT_addition_rates_d[VERTCHOSEN].NiTi), sizeof(f64), cudaMemcpyDeviceToHost);
+	printf("%d NiTi rate %1.10E \n", VERTCHOSEN, tempf64);
 	cudaMemcpy(&tempf64, &(p_MAR_elec[VERTCHOSEN + BEGINNING_OF_CENTRAL].z), sizeof(f64), cudaMemcpyDeviceToHost);
 	printf("\nMAR_elec.z [%d] : %1.13E\n\n", VERTCHOSEN, tempf64);
 	
@@ -12006,9 +12024,10 @@ void cuSyst::PerformCUDA_Advance_noadvect(//const
 	cudaMemcpy(pX_target->p_n_minor + BEGINNING_OF_CENTRAL,
 		pX_target->p_n_major, sizeof(nvals)*NUMVERTICES, cudaMemcpyDeviceToDevice);
 
-	printf("DebugNaN pX_target\n");
-	DebugNaN(pX_target);
-
+	if (!DEFAULTSUPPRESSVERBOSITY) {
+		printf("DebugNaN pX_target\n");
+		DebugNaN(pX_target);
+	}
 
 
 	//////////////////////////////////////////////////////////////////////////
