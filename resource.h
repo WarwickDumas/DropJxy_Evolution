@@ -34,6 +34,7 @@
 #define ID_DISPLAY_JILL                 50008
 #define ID_DISPLAY_IONIZEGRAPHS         40028 // seems to be what it wants
 #define ID_DISPLAY_OHMS                 40026 // seems to be what it wants
+#define ID_DISPLAY_DTGRAPH              40029
 #define IDC_STATIC                      -1
 #define ID_RUN_CPUSTEP                  40021
 #define ID_FILE_LOADGPU                 40022

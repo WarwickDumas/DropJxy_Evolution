@@ -1712,7 +1712,7 @@ public:
 	void Reset_vertex_nvT(int species) ;
 
 	long GetVertsRightOfCutawayLine_Sorted(long VertexIndexArray[],
-										real radiusArray[]) const;
+										real radiusArray[], bool bUseInner) const;
 
 	real ReturnMaximumDataAux(int iLevel, int offset);
 

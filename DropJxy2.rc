@@ -67,6 +67,7 @@ BEGIN
         MENUITEM "OhmsLaw",                     ID_DISPLAY_OHMS
         MENUITEM "1D",                          ID_DISPLAY_ONE_D
         MENUITEM "Ionization",                  ID_DISPLAY_IONIZEGRAPHS
+        MENUITEM "DTgraph",                     ID_DISPLAY_DTGRAPH
     END
     POPUP "Help"
     BEGIN

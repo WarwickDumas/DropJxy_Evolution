@@ -2123,6 +2123,7 @@ __global__ void kernelReset_v_in_outer_frill_and_outermost
 	structural * __restrict__ p_info,
 	v4 * __restrict__ p_vie,
 	f64_vec3 * __restrict__ p_v_n,
+	T3 * __restrict__ p_T_minor,
 	LONG3 * __restrict__ trineighbourindex,
 	long * __restrict__ p_izNeigh_vert
 	) {
@@ -2133,6 +2134,8 @@ __global__ void kernelReset_v_in_outer_frill_and_outermost
 		LONG3 izNeigh = trineighbourindex[index];
 		p_vie[index] = p_vie[izNeigh.i1];
 		p_v_n[index] = p_v_n[izNeigh.i1];
+		p_T_minor[index] = p_T_minor[izNeigh.i1];
+		// memcpy may be more efficient than operator =.
 	}
 	if ((info.flag == OUTERMOST))
 	{
@@ -2141,8 +2144,10 @@ __global__ void kernelReset_v_in_outer_frill_and_outermost
 		memcpy(izNeigh, p_izNeigh_vert + MAXNEIGH_d*iVertex, sizeof(long)*MAXNEIGH_d);
 		v4 result, temp4;
 		f64_vec3 v_n, temp3;
+		T3 T, temp5;
 		memset(&result, 0, sizeof(v4));
 		memset(&v_n, 0, sizeof(f64_vec3));
+		memset(&T, 0, sizeof(T3));
 		long iDomain = 0;
 		for (short i = 0; i < 4; i++)
 		{
@@ -2151,11 +2156,15 @@ __global__ void kernelReset_v_in_outer_frill_and_outermost
 			{
 				temp4 = p_vie[izNeigh[i] + BEGINNING_OF_CENTRAL];
 				temp3 = p_v_n[izNeigh[i] + BEGINNING_OF_CENTRAL];
+				temp5 = p_T_minor[izNeigh[i] + BEGINNING_OF_CENTRAL];
 				iDomain++;
 				result.vxy += temp4.vxy;
 				result.vez += temp4.vez;
 				result.viz += temp4.viz;
 				v_n += temp3;
+				T.Tn += temp5.Tn;
+				T.Ti += temp5.Ti;
+				T.Te += temp5.Te;
 			}
 		}
 		if (iDomain > 0) {
@@ -2164,9 +2173,13 @@ __global__ void kernelReset_v_in_outer_frill_and_outermost
 			result.vez *= fac;
 			result.viz *= fac;
 			v_n *= fac;
+			T.Tn *= fac;
+			T.Ti *= fac;
+			T.Te *= fac;
 		}
 		p_vie[index] = result;
 		p_v_n[index] = v_n;
+		p_T_minor[index] = T;
 	}
 }
 
@@ -3076,7 +3089,41 @@ __global__ void Augment_dNv_minor(
 	};
 }
 
+__global__ void DivideNeTeDifference_by_N(
+		NTrates * __restrict__ NT_addition_rates_initial,
+		NTrates * __restrict__ NT_addition_rates_final,
+		f64 * __restrict__ p_AreaMajor,
+		nvals * __restrict__ p_n_major,
+		f64 * __restrict__ p_dTbydt)
+{
+	long iVertex = blockDim.x*blockIdx.x + threadIdx.x;
+	f64 diff = NT_addition_rates_final[iVertex].NeTe -
+		NT_addition_rates_initial[iVertex].NeTe;
+	f64 N = p_n_major[iVertex].n*p_AreaMajor[iVertex];
+	
+	if (N == 0) {
+		p_dTbydt[iVertex] = 0.0;
+	} else {
+		p_dTbydt[iVertex] = diff / N;
+	}
+}
 
+__global__ void DivideNeTe_by_N(
+	NTrates * __restrict__ NT_rates,
+	f64 * __restrict__ p_AreaMajor,
+	nvals * __restrict__ p_n_major,
+	f64 * __restrict__ p_dTbydt)
+{
+	long iVertex = blockDim.x*blockIdx.x + threadIdx.x;
+	f64 diff = NT_rates[iVertex].NeTe;
+	f64 N = p_n_major[iVertex].n*p_AreaMajor[iVertex];
+	if (N == 0) {
+		p_dTbydt[iVertex] = 0.0;
+	}
+	else {
+		p_dTbydt[iVertex] = diff / N;
+	}
+}
 __global__ void Collect_Ntotal_major(
 	structural * __restrict__ p_info_minor,
 	long * __restrict__ p_izTri,

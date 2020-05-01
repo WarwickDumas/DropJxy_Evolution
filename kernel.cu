@@ -27,7 +27,7 @@
 #define TESTHEAT2 (0)
 #define TESTIONISE (0)
 #define TESTOHMS (0)
-#define TESTVISC (0)
+#define TESTVISC (iVertex == VERTCHOSEN)
 #define TEST_IONIZE (0)
 #define VISCMAG 1 
 #define MIDPT_A
@@ -10033,7 +10033,8 @@ __global__ void kernelAdvanceDensityAndTemperature_noadvectioncompression(
 	f64_vec3 * __restrict__ p_v_n_use, 
 	f64 * __restrict__ p_AreaMajor, 
 	nvals * __restrict__ p_n_major_dest,
-	T3 * __restrict__ p_T_major_dest
+	T3 * __restrict__ p_T_major_dest,
+	f64_vec3 * __restrict__ p_B_major
 )
 {
 	// runs for major tile
@@ -10103,10 +10104,13 @@ __global__ void kernelAdvanceDensityAndTemperature_noadvectioncompression(
 			}
 		}
 		
-		f64 nu_ne_MT, nu_en_MT, nu_ni_MT, nu_in_MT, nu_ei; // optimize after
+		f64 nu_ne_MT, nu_en_MT, nu_ni_MT, nu_in_MT, nu_ei_effective; // optimize after
+		f64 nu_eiBar;
 		{
 			// Dimensioning inside a brace allows the following vars to go out of scope at the end of the brace.
 			f64 sqrt_Te, ionneut_thermal, electron_thermal, lnLambda, s_in_MT, s_en_MT, s_en_visc;
+
+			
 
 			n_src_or_use[threadIdx.x] = p_n_use[iVertex];
 			T3 T_use = p_T_use[iVertex];
@@ -10142,12 +10146,18 @@ __global__ void kernelAdvanceDensityAndTemperature_noadvectioncompression(
 			nu_en_MT = s_en_MT * n_src_or_use[threadIdx.x].n_n*electron_thermal;
 			nu_in_MT = s_in_MT * n_src_or_use[threadIdx.x].n_n*ionneut_thermal;
 
-			nu_ei = nu_eiBarconst * kB_to_3halves*n_src_or_use[threadIdx.x].n*lnLambda /
-				(T_use.Te*sqrt_Te);
-
 			if (TEST) printf("n %1.10E nn %1.10E electron_therm %1.10E Te %1.10E \n",
 				n_src_or_use[threadIdx.x].n, n_src_or_use[threadIdx.x].n_n, electron_thermal, T_use.Te);
 
+			nu_eiBar = nu_eiBarconst * kB_to_3halves*n_src_or_use[threadIdx.x].n*lnLambda / (T_use.Te*sqrt_Te);
+			f64 nu_eHeart = 1.87*nu_eiBar + n_src_or_use[threadIdx.x].n_n*s_en_visc*electron_thermal;
+
+			f64_vec3 omega = p_B_major[iVertex] * qovermc;
+			// Confusing, why does this say that? We used visc en in nu_eHeart, explanation?
+
+			f64 nu_ei_effective = nu_eiBar * (1.0 - 0.9*nu_eiBar*
+				(nu_eHeart*nu_eHeart + omega.z*omega.z) /
+				(nu_eHeart*(nu_eHeart*nu_eHeart + omega.dot(omega))));
 
 			//		nu_ie = nu_ei;
 
@@ -10164,44 +10174,52 @@ __global__ void kernelAdvanceDensityAndTemperature_noadvectioncompression(
 			f64_vec3 v_n = p_v_n_use[iVertex];
 			v4 vie = p_vie_use[iVertex];
 
-			newdata.NeTe += h_use*(AreaMajor[threadIdx.x] * TWOTHIRDS*nu_en_MT*m_en*(
+
+			newdata.NeTe += h_use*(AreaMajor[threadIdx.x]*n_src_or_use[threadIdx.x].n * TWOTHIRDS*nu_en_MT*m_en*(
 				(v_n.x - vie.vxy.x)*(v_n.x - vie.vxy.x)
 				+ (v_n.y - vie.vxy.y)*(v_n.y - vie.vxy.y)
 				+ (v_n.z - vie.vez)*(v_n.z - vie.vez))
 
-				+ AreaMajor[threadIdx.x] * TWOTHIRDS*nu_ei*m_ei*(vie.vez - vie.viz)*(vie.vez - vie.viz));
+				+ AreaMajor[threadIdx.x] * n_src_or_use[threadIdx.x].n* TWOTHIRDS*nu_ei_effective*m_ei*(vie.vez - vie.viz)*(vie.vez - vie.viz));
 
-			newdata.NiTi += h_use*(AreaMajor[threadIdx.x] * TWOTHIRDS*nu_in_MT*M_in*m_n*(
+
+
+			// I see that I did resistive heating for nu_ei but did something much more complicated in the acceleration routine.
+			// That isn't quite right then.
+
+
+
+			newdata.NiTi += h_use*(AreaMajor[threadIdx.x] * n_src_or_use[threadIdx.x].n * TWOTHIRDS*nu_in_MT*M_in*m_n*(
 				(v_n.x - vie.vxy.x)*(v_n.x - vie.vxy.x)
 				+ (v_n.y - vie.vxy.y)*(v_n.y - vie.vxy.y)
 				+ (v_n.z - vie.viz)*(v_n.z - vie.viz)));
 
-			newdata.NnTn += h_use*(AreaMajor[threadIdx.x] * TWOTHIRDS*nu_ni_MT*M_in*m_i*(
+			newdata.NnTn += h_use*(AreaMajor[threadIdx.x] * n_src_or_use[threadIdx.x].n_n * TWOTHIRDS*nu_ni_MT*M_in*m_i*(
 				(v_n.x - vie.vxy.x)*(v_n.x - vie.vxy.x)
 				+ (v_n.y - vie.vxy.y)*(v_n.y - vie.vxy.y)
 				+ (v_n.z - vie.viz)*(v_n.z - vie.viz)));
 
-		if (TEST) 
-			printf("%d v_n.z %1.9E vie_use.viz %1.9E vie_use.vez %1.9E \n areamajor %1.8E\n"
-				"nu_in %1.10E nu_en %1.8E \n"
-				"Frictional htg (NT+=): n i e %1.10E %1.10E %1.10E\n",
-				VERTCHOSEN, v_n.z, vie.viz, vie.vez, AreaMajor[threadIdx.x],
-				nu_in_MT, nu_en_MT,
-				h_use*(AreaMajor[threadIdx.x] * TWOTHIRDS*nu_ni_MT*M_in*m_i*(
-				(v_n.x - vie.vxy.x)*(v_n.x - vie.vxy.x)
-					+ (v_n.y - vie.vxy.y)*(v_n.y - vie.vxy.y)
-					+ (v_n.z - vie.viz)*(v_n.z - vie.viz))),
-				h_use*(AreaMajor[threadIdx.x] * TWOTHIRDS*nu_in_MT*M_in*m_n*(
-				(v_n.x - vie.vxy.x)*(v_n.x - vie.vxy.x)
-					+ (v_n.y - vie.vxy.y)*(v_n.y - vie.vxy.y)
-					+ (v_n.z - vie.viz)*(v_n.z - vie.viz))),
-				h_use*(AreaMajor[threadIdx.x] * TWOTHIRDS*nu_en_MT*m_en*(
-				(v_n.x - vie.vxy.x)*(v_n.x - vie.vxy.x)
-					+ (v_n.y - vie.vxy.y)*(v_n.y - vie.vxy.y)
-					+ (v_n.z - vie.vez)*(v_n.z - vie.vez))
+		//if (TEST) 
+		//	printf("%d v_n.z %1.9E vie_use.viz %1.9E vie_use.vez %1.9E \n areamajor %1.8E\n"
+		//		"nu_in %1.10E nu_en %1.8E \n"
+		//		"Frictional htg (NT+=): n i e %1.10E %1.10E %1.10E\n",
+		//		VERTCHOSEN, v_n.z, vie.viz, vie.vez, AreaMajor[threadIdx.x],
+		//		nu_in_MT, nu_en_MT,
+		//		h_use*(AreaMajor[threadIdx.x] * TWOTHIRDS*nu_ni_MT*M_in*m_i*(
+		//		(v_n.x - vie.vxy.x)*(v_n.x - vie.vxy.x)
+		//			+ (v_n.y - vie.vxy.y)*(v_n.y - vie.vxy.y)
+		//			+ (v_n.z - vie.viz)*(v_n.z - vie.viz))),
+		//		h_use*(AreaMajor[threadIdx.x] * TWOTHIRDS*nu_in_MT*M_in*m_n*(
+		//		(v_n.x - vie.vxy.x)*(v_n.x - vie.vxy.x)
+		//			+ (v_n.y - vie.vxy.y)*(v_n.y - vie.vxy.y)
+		//			+ (v_n.z - vie.viz)*(v_n.z - vie.viz))),
+		//		h_use*(AreaMajor[threadIdx.x] * TWOTHIRDS*nu_en_MT*m_en*(
+		//		(v_n.x - vie.vxy.x)*(v_n.x - vie.vxy.x)
+		//			+ (v_n.y - vie.vxy.y)*(v_n.y - vie.vxy.y)
+		//			+ (v_n.z - vie.vez)*(v_n.z - vie.vez))
 
-					+ AreaMajor[threadIdx.x] * TWOTHIRDS*nu_ei*m_ei*(vie.vez - vie.viz)*(vie.vez - vie.viz))
-			);			
+		//			+ AreaMajor[threadIdx.x] * TWOTHIRDS*nu_ei_effective*m_ei*(vie.vez - vie.viz)*(vie.vez - vie.viz))
+		//	);			
 		}
 		f64_tens3 inverted;
 		{
@@ -10210,7 +10228,7 @@ __global__ void kernelAdvanceDensityAndTemperature_noadvectioncompression(
 			// y = ion
 			// z = elec
 			// This is for NT
-			f64 nu_ie = nu_ei;
+			f64 nu_ie = nu_eiBar;
 	
 			// gonna have to change to Backward Euler :/
 			// 6th Nov 2019 : add 2* so that it all goes here.
@@ -10221,11 +10239,11 @@ __global__ void kernelAdvanceDensityAndTemperature_noadvectioncompression(
 
 			LHS.yx = -2.0*h_use *  M_in * nu_ni_MT;
 			LHS.yy = 1.0 - 2.0*h_use * (-M_in * nu_in_MT - M_ei * nu_ie);
-			LHS.yz = -2.0*h_use * M_ei * nu_ei;
+			LHS.yz = -2.0*h_use * M_ei * nu_eiBar;
 
 			LHS.zx = -2.0*h_use * M_en * nu_ne_MT;
 			LHS.zy = -2.0*h_use * M_ei * nu_ie; 
-			LHS.zz = 1.0 - 2.0*h_use * (-M_en * nu_en_MT - M_ei * nu_ei);
+			LHS.zz = 1.0 - 2.0*h_use * (-M_en * nu_en_MT - M_ei * nu_eiBar);
 			
 			// some indices appear reversed because NT not T.
 			if (TEST) printf("LHS.zz %1.10E h_use %1.10E M_en %1.10E nu_en_MT %1.10E \n",
@@ -10243,7 +10261,7 @@ __global__ void kernelAdvanceDensityAndTemperature_noadvectioncompression(
 		}
 
 		f64_vec3 RHS;
-		f64 nu_ie = nu_ei;
+		f64 nu_ie = nu_eiBar;
 
 		// gonna have to change to Backward Euler :/
 
@@ -10296,6 +10314,327 @@ __global__ void kernelAdvanceDensityAndTemperature_noadvectioncompression(
 
 		p_T_major_dest[iVertex] = T_dest;
 
+	} else {
+		// nothing to do ??
+		if (info.flag == OUTERMOST) {
+			p_n_major_dest[iVertex] = p_n_major[iVertex];
+			p_T_major_dest[iVertex] = p_T_major[iVertex];
+		}
+		else {
+			memset(p_n_major_dest + iVertex, 0, sizeof(nvals));
+			memset(p_T_major_dest + iVertex, 0, sizeof(T3));
+		};
+	};
+}
+
+__global__ void kernelAdvanceDensityAndTemperature_noadvectioncompression_Copy(
+	f64 h_use,
+	structural * __restrict__ p_info_major,
+	nvals * p_n_major,
+	T3 * p_T_major,
+	NTrates * __restrict__ NTadditionrates,
+	nvals * p_n_use,
+	T3 * p_T_use,
+	v4 * __restrict__ p_vie_use,
+	f64_vec3 * __restrict__ p_v_n_use,
+	f64 * __restrict__ p_AreaMajor,
+	nvals * __restrict__ p_n_major_dest,
+	T3 * __restrict__ p_T_major_dest,
+	f64_vec3 * __restrict__ p_B_major,
+	f64 * __restrict__ p_Tgraph_resistive,
+	f64 * __restrict__ p_Tgraph_other,
+	f64 * __restrict__ p_Tgraph_total,
+	f64 * __restrict__ p_Tgraph_dNT
+)
+{
+	// runs for major tile
+	// nu would have been a better choice to go in shared as it coexists with the 18 doubles in "LHS","inverted".
+	// Important to set 48K L1 for this routine.
+
+	__shared__ nvals n_src_or_use[threadsPerTileMajor];
+	__shared__ f64 AreaMajor[threadsPerTileMajor];
+
+	long const iVertex = threadIdx.x + blockIdx.x * blockDim.x; // iVertex OF VERTEX
+	structural info = p_info_major[iVertex];
+	//	if (iVertex == CHOSEN) printf("GPU iVertex %d info.flag %d \n", CHOSEN, info.flag);
+
+	if ((info.flag == DOMAIN_VERTEX) || (info.flag == OUTERMOST)) {
+
+		n_src_or_use[threadIdx.x] = p_n_major[iVertex];  // used throughout so a good candidate to stick in shared mem
+		AreaMajor[threadIdx.x] = p_AreaMajor[iVertex]; // ditto
+
+		NTrates newdata;
+		{
+			NTrates AdditionNT = NTadditionrates[iVertex];
+			newdata.N = n_src_or_use[threadIdx.x].n*AreaMajor[threadIdx.x] + h_use * AdditionNT.N;
+			newdata.Nn = n_src_or_use[threadIdx.x].n_n*AreaMajor[threadIdx.x] + h_use * AdditionNT.Nn;
+			newdata.NnTn = h_use * AdditionNT.NnTn; // start off without knowing 'factor' so we can ditch AdditionNT
+			newdata.NiTi = h_use * AdditionNT.NiTi;
+			newdata.NeTe = h_use * AdditionNT.NeTe;
+
+			if (TEST)
+				printf("Advance_nT  %d : nsrc %1.12E nn %1.12E *AreaMajor %1.12E %1.12E\n"
+					"newdata.Nn %1.12E newdata.Ni %1.12E AreaMajor %1.10E \n"
+					"h*additionNiTi %1.12E for e %1.12E for n %1.12E \n"
+					"AdditionNT.e %1.10E h_use %1.10E\n"
+
+					, VERTCHOSEN,
+					n_src_or_use[threadIdx.x].n, n_src_or_use[threadIdx.x].n_n,
+					n_src_or_use[threadIdx.x].n*AreaMajor[threadIdx.x],
+					n_src_or_use[threadIdx.x].n_n*AreaMajor[threadIdx.x],
+					newdata.Nn, newdata.N, AreaMajor[threadIdx.x],
+					newdata.NiTi, newdata.NeTe, newdata.NnTn,
+					AdditionNT.NeTe, h_use);
+		}
+
+		{
+			nvals n_dest;
+			n_dest.n = newdata.N / (AreaMajor[threadIdx.x]);
+			n_dest.n_n = newdata.Nn / (AreaMajor[threadIdx.x]);
+			p_n_major_dest[iVertex] = n_dest;
+
+		}
+
+		f64 factor, factor_neut; // used again at end
+		
+		T3 T_src = p_T_major[iVertex];
+			newdata.NnTn += n_src_or_use[threadIdx.x].n_n*AreaMajor[threadIdx.x] * T_src.Tn;
+			newdata.NiTi += n_src_or_use[threadIdx.x].n*AreaMajor[threadIdx.x] * T_src.Ti;
+			newdata.NeTe += n_src_or_use[threadIdx.x].n*AreaMajor[threadIdx.x] * T_src.Te;
+
+			//
+			if (TEST) {
+				printf("\nAdvance_nT %d : n %1.12E Area %1.12E compressfac %1.10E \n"
+					"newdata.NiTi %1.12E Ti_k %1.12E newdata.NeTe %1.10E Te_k %1.10E\n"
+					"newdata.NnTn %1.12E Tn_k %1.12E \n"
+					,
+					VERTCHOSEN, n_src_or_use[threadIdx.x].n, AreaMajor[threadIdx.x], factor,
+					newdata.NiTi, T_src.Ti, newdata.NeTe, T_src.Te,
+					newdata.NnTn, T_src.Tn);
+			}
+		
+
+		f64 nu_ne_MT, nu_en_MT, nu_ni_MT, nu_in_MT, nu_ei_effective; // optimize after
+		f64 nu_eiBar;
+		{
+			// Dimensioning inside a brace allows the following vars to go out of scope at the end of the brace.
+			f64 sqrt_Te, ionneut_thermal, electron_thermal, lnLambda, s_in_MT, s_en_MT, s_en_visc;
+
+
+
+			n_src_or_use[threadIdx.x] = p_n_use[iVertex];
+			T3 T_use = p_T_use[iVertex];
+
+			sqrt_Te = sqrt(T_use.Te); // should be "usedata"
+			ionneut_thermal = sqrt(T_use.Ti / m_ion + T_use.Tn / m_n); // hopefully not sqrt(0)
+			electron_thermal = sqrt_Te * over_sqrt_m_e;
+			lnLambda = Get_lnLambda_d(n_src_or_use[threadIdx.x].n, T_use.Te);
+
+			{
+				f64 s_in_visc_dummy;
+				Estimate_Ion_Neutral_Cross_sections_d(T_use.Ti*one_over_kB,
+					&s_in_MT, &s_in_visc_dummy);
+			}
+			Estimate_Ion_Neutral_Cross_sections_d(T_use.Te*one_over_kB, // call with T in electronVolts
+				&s_en_MT,
+				&s_en_visc);
+			//s_en_MT = Estimate_Ion_Neutral_MT_Cross_section(T_use.Te*one_over_kB);
+			//s_en_visc = Estimate_Ion_Neutral_Viscosity_Cross_section(T_use.Te*one_over_kB);
+
+			if (n_src_or_use[threadIdx.x].n_n > ARTIFICIAL_RELATIVE_THRESH_HEAT *n_src_or_use[threadIdx.x].n) {
+				s_en_MT *= n_src_or_use[threadIdx.x].n_n / (ARTIFICIAL_RELATIVE_THRESH_HEAT *n_src_or_use[threadIdx.x].n);
+				s_in_MT *= n_src_or_use[threadIdx.x].n_n / (ARTIFICIAL_RELATIVE_THRESH_HEAT *n_src_or_use[threadIdx.x].n);
+				// So at 1e18 vs 1e8 it's 10 times stronger
+				// At 1e18 vs 1e6 it's 1000 times stronger
+				// nu starts at about 1e11 at the place it failed at 35ns. So 10000 times stronger gives us 1e15.
+			}
+
+			// Need nu_ne etc to be defined:
+
+			nu_ne_MT = s_en_MT * n_src_or_use[threadIdx.x].n * electron_thermal; // have to multiply by n_e for nu_ne_MT
+			nu_ni_MT = s_in_MT * n_src_or_use[threadIdx.x].n * ionneut_thermal;
+			nu_en_MT = s_en_MT * n_src_or_use[threadIdx.x].n_n*electron_thermal;
+			nu_in_MT = s_in_MT * n_src_or_use[threadIdx.x].n_n*ionneut_thermal;
+
+			if (TEST) printf("n %1.10E nn %1.10E electron_therm %1.10E Te %1.10E \n",
+				n_src_or_use[threadIdx.x].n, n_src_or_use[threadIdx.x].n_n, electron_thermal, T_use.Te);
+
+			nu_eiBar = nu_eiBarconst * kB_to_3halves*n_src_or_use[threadIdx.x].n*lnLambda / (T_use.Te*sqrt_Te);
+			f64 nu_eHeart = 1.87*nu_eiBar + n_src_or_use[threadIdx.x].n_n*s_en_visc*electron_thermal;
+
+			f64_vec3 omega = p_B_major[iVertex] * qovermc;
+			// Confusing, why does this say that? We used visc en in nu_eHeart, explanation?
+
+			f64 nu_ei_effective = nu_eiBar * (1.0 - 0.9*nu_eiBar*
+				(nu_eHeart*nu_eHeart + omega.z*omega.z) /
+				(nu_eHeart*(nu_eHeart*nu_eHeart + omega.dot(omega))));
+
+			//		nu_ie = nu_ei;
+
+			//		nu_eHeart = 1.87*nu_eiBar + data_k.n_n*s_en_visc*electron_thermal;
+		}
+
+
+		// For now doing velocity-independent resistive heating.
+		// Because although we have a magnetic correction Upsilon_zz involved, we ignored it
+		// since we are also squashing the effect of velocity-dependent collisions on vx and vy (which
+		// would produce a current in the plane) and this squashing should create heat, which
+		// maybe means it adds up to the velocity-independent amount of heating. 
+		{
+			f64_vec3 v_n = p_v_n_use[iVertex];
+			v4 vie = p_vie_use[iVertex];
+
+
+			newdata.NeTe += h_use*(AreaMajor[threadIdx.x] * n_src_or_use[threadIdx.x].n * TWOTHIRDS*nu_en_MT*m_en*(
+				(v_n.x - vie.vxy.x)*(v_n.x - vie.vxy.x)
+				+ (v_n.y - vie.vxy.y)*(v_n.y - vie.vxy.y)
+				+ (v_n.z - vie.vez)*(v_n.z - vie.vez))
+
+				+ AreaMajor[threadIdx.x] * n_src_or_use[threadIdx.x].n* TWOTHIRDS*nu_ei_effective*m_ei*(vie.vez - vie.viz)*(vie.vez - vie.viz));
+
+			p_Tgraph_resistive[iVertex] = TWOTHIRDS*nu_en_MT*m_en*(
+				(v_n.x - vie.vxy.x)*(v_n.x - vie.vxy.x)
+				+ (v_n.y - vie.vxy.y)*(v_n.y - vie.vxy.y)
+				+ (v_n.z - vie.vez)*(v_n.z - vie.vez))
+
+				+ TWOTHIRDS*nu_ei_effective*m_ei*(vie.vez - vie.viz)*(vie.vez - vie.viz);
+
+
+
+			// I see that I did resistive heating for nu_ei but did something much more complicated in the acceleration routine.
+			// That isn't quite right then.
+
+
+
+			newdata.NiTi += h_use*(AreaMajor[threadIdx.x] * n_src_or_use[threadIdx.x].n * TWOTHIRDS*nu_in_MT*M_in*m_n*(
+				(v_n.x - vie.vxy.x)*(v_n.x - vie.vxy.x)
+				+ (v_n.y - vie.vxy.y)*(v_n.y - vie.vxy.y)
+				+ (v_n.z - vie.viz)*(v_n.z - vie.viz)));
+
+			newdata.NnTn += h_use*(AreaMajor[threadIdx.x] * n_src_or_use[threadIdx.x].n_n * TWOTHIRDS*nu_ni_MT*M_in*m_i*(
+				(v_n.x - vie.vxy.x)*(v_n.x - vie.vxy.x)
+				+ (v_n.y - vie.vxy.y)*(v_n.y - vie.vxy.y)
+				+ (v_n.z - vie.viz)*(v_n.z - vie.viz)));
+
+			//if (TEST) 
+			//	printf("%d v_n.z %1.9E vie_use.viz %1.9E vie_use.vez %1.9E \n areamajor %1.8E\n"
+			//		"nu_in %1.10E nu_en %1.8E \n"
+			//		"Frictional htg (NT+=): n i e %1.10E %1.10E %1.10E\n",
+			//		VERTCHOSEN, v_n.z, vie.viz, vie.vez, AreaMajor[threadIdx.x],
+			//		nu_in_MT, nu_en_MT,
+			//		h_use*(AreaMajor[threadIdx.x] * TWOTHIRDS*nu_ni_MT*M_in*m_i*(
+			//		(v_n.x - vie.vxy.x)*(v_n.x - vie.vxy.x)
+			//			+ (v_n.y - vie.vxy.y)*(v_n.y - vie.vxy.y)
+			//			+ (v_n.z - vie.viz)*(v_n.z - vie.viz))),
+			//		h_use*(AreaMajor[threadIdx.x] * TWOTHIRDS*nu_in_MT*M_in*m_n*(
+			//		(v_n.x - vie.vxy.x)*(v_n.x - vie.vxy.x)
+			//			+ (v_n.y - vie.vxy.y)*(v_n.y - vie.vxy.y)
+			//			+ (v_n.z - vie.viz)*(v_n.z - vie.viz))),
+			//		h_use*(AreaMajor[threadIdx.x] * TWOTHIRDS*nu_en_MT*m_en*(
+			//		(v_n.x - vie.vxy.x)*(v_n.x - vie.vxy.x)
+			//			+ (v_n.y - vie.vxy.y)*(v_n.y - vie.vxy.y)
+			//			+ (v_n.z - vie.vez)*(v_n.z - vie.vez))
+
+			//			+ AreaMajor[threadIdx.x] * TWOTHIRDS*nu_ei_effective*m_ei*(vie.vez - vie.viz)*(vie.vez - vie.viz))
+			//	);			
+		}
+		f64_tens3 inverted;
+		{
+			f64_tens3 LHS;
+			// x = neutral
+			// y = ion
+			// z = elec
+			// This is for NT
+			f64 nu_ie = nu_eiBar;
+
+			// gonna have to change to Backward Euler :/
+			// 6th Nov 2019 : add 2* so that it all goes here.
+
+			LHS.xx = 1.0 - 2.0*h_use * (-M_en * nu_ne_MT - M_in * nu_ni_MT);
+			LHS.xy = -2.0*h_use * (M_in * nu_in_MT);
+			LHS.xz = -2.0*h_use *(M_en * nu_en_MT);
+
+			LHS.yx = -2.0*h_use *  M_in * nu_ni_MT;
+			LHS.yy = 1.0 - 2.0*h_use * (-M_in * nu_in_MT - M_ei * nu_ie);
+			LHS.yz = -2.0*h_use * M_ei * nu_eiBar;
+
+			LHS.zx = -2.0*h_use * M_en * nu_ne_MT;
+			LHS.zy = -2.0*h_use * M_ei * nu_ie;
+			LHS.zz = 1.0 - 2.0*h_use * (-M_en * nu_en_MT - M_ei * nu_eiBar);
+
+			// some indices appear reversed because NT not T.
+			if (TEST) printf("LHS.zz %1.10E h_use %1.10E M_en %1.10E nu_en_MT %1.10E \n",
+				LHS.zz, h_use, M_en, nu_en_MT);
+
+
+
+			// Verify. 2343.
+
+
+
+
+			if (TEST) {
+				printf("LHS | \n %1.14E %1.14E %1.14E |\n %1.14E %1.14E %1.14E |  \n %1.14E %1.14E %1.14E | \n",
+					LHS.xx, LHS.xy, LHS.xz,
+					LHS.yx, LHS.yy, LHS.yz,
+					LHS.zx, LHS.zy, LHS.zz);
+				printf("GPU %d : NnTn %1.14E NeTe %1.14E \n", VERTCHOSEN, newdata.NnTn, newdata.NeTe);
+				printf("GPU nu_en_MT %1.14E\n", nu_en_MT);
+			}
+			LHS.Inverse(inverted);
+		}
+
+		f64_vec3 RHS;
+		f64 nu_ie = nu_eiBar;
+
+		// gonna have to change to Backward Euler :/
+
+		//RHS.x = newdata.NnTn - h_use * (nu_ni_MT*M_in + nu_ne_MT * M_en)*newdata.NnTn
+		//	+ h_use * nu_in_MT*M_in*newdata.NiTi + h_use * nu_en_MT*M_en*newdata.NeTe;
+
+		//RHS.y = newdata.NiTi - h_use * (nu_in_MT*M_in + nu_ie * M_ei)*newdata.NiTi
+		//	+ h_use * nu_ni_MT*M_in*newdata.NnTn + h_use * nu_ei*M_ei*newdata.NeTe;
+
+		//RHS.z = newdata.NeTe - h_use * (nu_en_MT*M_en + nu_ei * M_ei)*newdata.NeTe
+		//	+ h_use * nu_ie*M_ei*newdata.NiTi + h_use * nu_ne_MT*M_en*newdata.NnTn;
+
+		RHS.x = newdata.NnTn;
+		RHS.y = newdata.NiTi;
+		RHS.z = newdata.NeTe;
+
+		f64_vec3 NT;
+		NT = inverted * RHS;
+		newdata.NnTn = NT.x;
+		newdata.NiTi = NT.y;
+		newdata.NeTe = NT.z;
+
+		T3 T_dest;
+		T_dest.Tn = newdata.NnTn / newdata.Nn;
+		T_dest.Ti = newdata.NiTi / newdata.N;
+		T_dest.Te = newdata.NeTe / newdata.N;
+
+		if (TEST) {
+			printf("\ninverted | RHS \n %1.14E %1.14E %1.14E | %1.14E \n %1.14E %1.14E %1.14E | %1.14E \n %1.14E %1.14E %1.14E | %1.14E \n",
+				inverted.xx, inverted.xy, inverted.xz, RHS.x,
+				inverted.yx, inverted.yy, inverted.yz, RHS.y,
+				inverted.zx, inverted.zy, inverted.zz, RHS.z);
+			printf("GPU %d : NnTn %1.14E NiTi %1.14E NeTe %1.14E \n"
+				"Tn Ti Te %1.14E %1.14E %1.14E\n", VERTCHOSEN, newdata.NnTn, newdata.NiTi, newdata.NeTe,
+				T_dest.Tn, T_dest.Ti, T_dest.Te);
+		} // This came out with a value.
+
+		if (TEST) printf("%d : T_dest %1.8E %1.8E %1.8E \n"
+			"newdata .NeTe %1.10E .N %1.10E factor %1.10E\n\n",
+			iVertex, T_dest.Tn, T_dest.Ti, T_dest.Te,
+			newdata.NeTe, newdata.N, factor
+		);
+
+		p_T_major_dest[iVertex] = T_dest;
+
+		p_Tgraph_other[iVertex] = 2.0 * M_en * nu_en_MT*(T_dest.Tn - T_dest.Te)
+								+ 2.0 * M_ei * nu_eiBar*(T_dest.Ti - T_dest.Te);
+		p_Tgraph_total[iVertex] = (T_dest.Te - T_src.Te) / h_use;
+		p_Tgraph_dNT[iVertex] = (T_dest.Te - T_src.Te)* newdata.N / (AreaMajor[threadIdx.x] * h_use);
 	} else {
 		// nothing to do ??
 		if (info.flag == OUTERMOST) {
@@ -12218,7 +12557,10 @@ __global__ void kernelPopulateBackwardOhmsLaw_noadvect(
 			cross_section_times_thermal_in = s_in_MT * ionneut_thermal;
 
 			nu_eiBar = nu_eiBarconst * kB_to_3halves*n_use.n*lnLambda / (T.Te*sqrt_Te);
-			nu_eHeart = 1.87*nu_eiBar + n_use.n_n*s_en_visc*electron_thermal;
+			nu_eHeart = 1.87*nu_eiBar + n_use.n_n*s_en_visc*electron_thermal; 
+			
+			// Confusing, why does this say that? We used visc en in nu_eHeart, explanation?
+
 			if (nu_eiBar != nu_eiBar) printf("&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&\n"
 				"iMinor %d n_use.n %1.9E lnLambda %1.9E Te %1.9E sqrt %1.9E \n",
 				iMinor, n_use.n, lnLambda, T.Te, sqrt_Te);
@@ -21641,7 +21983,8 @@ kernelCreate_viscous_contrib_to_MAR_and_NT(
 						// The alternative, that may or may not run faster, is to test for ita == 0 before we do all the calcs
 						// and then set ita == 0 in all the places not to look, including OUTERMOST, and do not do traffic to or from it.
 	//
-						if (TESTVISC) printf("iVertex %d tri %d ELEC ita_par %1.9E own ita %1.9E\n"
+						if (0) // (TESTVISC) 
+							printf("iVertex %d tri %d ELEC ita_par %1.9E own ita %1.9E\n"
 							"gradvx %1.8E %1.8E gradvy %1.8E %1.8E gradvez %1.8E %1.8E\n"
 							"edgenormal %1.8E %1.8E\n"
 							"Pi_xx %1.8E xy %1.8E yy %1.8E zx %1.8E\n"
@@ -21655,7 +21998,7 @@ kernelCreate_viscous_contrib_to_MAR_and_NT(
 							visc_contrib.x, visc_contrib.y, visc_contrib.z,
 							visc_htg,
 							-TWOTHIRDS*m_e*(htg_diff.dot(visc_contrib))
-						);
+							);
 
 						// -= !!!
 						// So we are saying if edge_normal.x > 0 and gradviz.x > 0
@@ -21803,7 +22146,7 @@ kernelCreate_viscous_contrib_to_MAR_and_NT(
 							//	+ (our_v.vxy.y - opp_v.vxy.y)*visc_contrib.y
 							//	+ (our_v.vez - opp_v.vez)*visc_contrib.z);
 						};
-						if (TESTVISC) {
+						if (0){ // TESTVISC) {
 
 							// Most efficient way: compute mom flux in magnetic coords
 
@@ -21843,8 +22186,9 @@ kernelCreate_viscous_contrib_to_MAR_and_NT(
 			ownrates += ownrates_visc;
 			memcpy(p_MAR_elec + iVertex + BEGINNING_OF_CENTRAL, &ownrates, sizeof(f64_vec3));
 
+			if (TESTVISC) printf("iVertex %d NeTe recorded %1.10E  \n", iVertex, p_NT_addition_rate[iVertex].NeTe);
 			p_NT_addition_rate[iVertex].NeTe += visc_htg;
-
+			if (TESTVISC) printf("iVertex %d NeTe recorded %1.10E  \n", iVertex, p_NT_addition_rate[iVertex].NeTe);
 #ifdef DEBUGNANS
 			if (ownrates.x != ownrates.x)
 				printf("iVertex e %d NaN ownrates.x\n", iVertex);

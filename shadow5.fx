@@ -1,4 +1,3 @@
-
 uniform extern float4x4 gWVP;
 uniform extern float3 LightVecW;
 uniform extern float4 DiffuseMtrl;

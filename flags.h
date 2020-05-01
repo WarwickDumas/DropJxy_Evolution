@@ -218,6 +218,10 @@ int const REAL = 2;
 #define GRAPH_DTEDT        203
 #define GRAPH_FRACTION     204
 #define GRAPH_AEZ1         205
+#define DTGRAPH            206
+#define GRAPH_DTE          207
+#define GRAPH_DNT          208
+
 
 // Number of vars used to produce heights:
 int const FLAG_FLAT_MESH = 0;

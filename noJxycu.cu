@@ -45,6 +45,7 @@ cudaError_t addWithCuda(int *c, const int *a, const int *b, unsigned int size);
 extern f64 * temp_array_host;
 extern OhmsCoeffs * p_OhmsCoeffs_host;
 extern f64 * p_graphdata1_host,* p_graphdata2_host,* p_graphdata3_host, *p_graphdata4_host, *p_graphdata5_host, *p_graphdata6_host;
+extern f64 * p_Tgraph_host[9];
 
 // Global variables:
 // =================
@@ -112,10 +113,11 @@ int Historic_powermin[512]; // just store previous value only.
 bool boolGlobalHistory, GlobalboolDisplayMeshWireframe;
 
 // avi file -oriented variables
-int const NUMAVI = 5;
+int const NUMAVI = 6;
 HAVI hAvi[NUMAVI + 1]; // does it work without OHMSLAW? //  OHMSLAW,
-int const GraphFlags[NUMAVI] = { SPECIES_ION, OVERALL, JZAZBXYEZ, ONE_D, IONIZEGRAPH};
-char szAvi[NUMAVI][128] = { "Elec","Total","JzAzBxy","Test", "Ionize"};
+int const GraphFlags[NUMAVI] = { SPECIES_ION, OVERALL, JZAZBXYEZ, ONE_D, IONIZEGRAPH,
+				DTGRAPH};
+char szAvi[NUMAVI][128] = { "Elec","Total","JzAzBxy","Test", "Ionize", "dT"};
 
 AVICOMPRESSOPTIONS opts;
 int counter;
@@ -124,11 +126,11 @@ HDC surfdc, dibdc;
 LPVOID lpvBits;
 BITMAPINFO bitmapinfo;
 
-f64 graphdata[4][10000]; // 40000*8=320 KB
+f64 graphdata[9][10000]; // 40000*8=320 KB
 f64 graph_r[10000];
 int numgraphs = 4;
 int num_graph_data_points = 10000;
-f64 maximum[4];
+f64 maximum[9];
 
 extern TriMesh * pTriMesh;
 
@@ -288,7 +290,7 @@ void surfacegraph::DrawSurface(const char * szname,
 }
 
 
-void Create1DGraphingData(TriMesh * pX)
+void Create1DGraphingData(TriMesh * pX, bool bTdata = false)
 {
 	// Takes p_temphost3,4,5,6 and turns them into graphdata[iGraph=0,1,2,3][]
 
@@ -302,11 +304,9 @@ void Create1DGraphingData(TriMesh * pX)
 
 	long VertexIndexArray[10000];
 
-	num_graph_data_points = pX->GetVertsRightOfCutawayLine_Sorted(VertexIndexArray, graph_r);
-	maximum[0] = 0.0;
-	maximum[1] = 0.0;
-	maximum[2] = 0.0;
-	maximum[3] = 0.0;
+	num_graph_data_points = pX->GetVertsRightOfCutawayLine_Sorted(VertexIndexArray, graph_r, true);
+	
+	memset(maximum, 0, sizeof(f64) * 9);
 
 	// Method used in Render routine looks quite reasonable: find tri that crosses cutaway,
 	// use some kind of interp on tri. But we need to use values from p_temphost array not a graph position.
@@ -386,38 +386,62 @@ void Create1DGraphingData(TriMesh * pX)
 			wt2 /= wttotal;
 			// Not a great way it has to be said.
 
-			y0 = p_temphost3[(pTri->cornerptr[0] - pX->X) + BEGINNING_OF_CENTRAL];
-			y1 = p_temphost3[(pTri->cornerptr[1] - pX->X) + BEGINNING_OF_CENTRAL];
-			y2 = p_temphost3[(pTri->cornerptr[2] - pX->X) + BEGINNING_OF_CENTRAL];
-			graphdata[0][asdf] = wt0*y0 + wt1*y1 + wt2*y2;
-			if (fabs(graphdata[0][asdf]) > maximum[0]) maximum[0] = fabs(graphdata[0][asdf]);
+			if (bTdata == false) {
+				y0 = p_temphost3[(pTri->cornerptr[0] - pX->X) + BEGINNING_OF_CENTRAL];
+				y1 = p_temphost3[(pTri->cornerptr[1] - pX->X) + BEGINNING_OF_CENTRAL];
+				y2 = p_temphost3[(pTri->cornerptr[2] - pX->X) + BEGINNING_OF_CENTRAL];
+				graphdata[0][asdf] = wt0*y0 + wt1*y1 + wt2*y2;
+				if (fabs(graphdata[0][asdf]) > maximum[0]) maximum[0] = fabs(graphdata[0][asdf]);
 
-			if (numgraphs > 1) {
-				y0 = p_temphost4[(pTri->cornerptr[0] - pX->X) + BEGINNING_OF_CENTRAL];
-				y1 = p_temphost4[(pTri->cornerptr[1] - pX->X) + BEGINNING_OF_CENTRAL];
-				y2 = p_temphost4[(pTri->cornerptr[2] - pX->X) + BEGINNING_OF_CENTRAL];
-				graphdata[1][asdf] = wt0*y0 + wt1*y1 + wt2*y2;
-				if (fabs(graphdata[1][asdf]) > maximum[1]) maximum[1] = fabs(graphdata[1][asdf]);
-			};
-			
-			if (numgraphs > 2) {
-				y0 = p_temphost5[(pTri->cornerptr[0] - pX->X) + BEGINNING_OF_CENTRAL];
-				y1 = p_temphost5[(pTri->cornerptr[1] - pX->X) + BEGINNING_OF_CENTRAL];
-				y2 = p_temphost5[(pTri->cornerptr[2] - pX->X) + BEGINNING_OF_CENTRAL];
-				graphdata[2][asdf] = wt0*y0 + wt1*y1 + wt2*y2;
-				if (fabs(graphdata[2][asdf]) > maximum[2]) maximum[2] = fabs(graphdata[2][asdf]);
-			};
-			if (numgraphs > 3) {
-				y0 = p_temphost6[(pTri->cornerptr[0] - pX->X) + BEGINNING_OF_CENTRAL];
-				y1 = p_temphost6[(pTri->cornerptr[1] - pX->X) + BEGINNING_OF_CENTRAL];
-				y2 = p_temphost6[(pTri->cornerptr[2] - pX->X) + BEGINNING_OF_CENTRAL];
-				graphdata[3][asdf] = wt0*y0 + wt1*y1 + wt2*y2;
-				if (fabs(graphdata[3][asdf]) > maximum[3]) maximum[3] = fabs(graphdata[3][asdf]);
+				if (numgraphs > 1) {
+					y0 = p_temphost4[(pTri->cornerptr[0] - pX->X) + BEGINNING_OF_CENTRAL];
+					y1 = p_temphost4[(pTri->cornerptr[1] - pX->X) + BEGINNING_OF_CENTRAL];
+					y2 = p_temphost4[(pTri->cornerptr[2] - pX->X) + BEGINNING_OF_CENTRAL];
+					graphdata[1][asdf] = wt0*y0 + wt1*y1 + wt2*y2;
+					if (fabs(graphdata[1][asdf]) > maximum[1]) maximum[1] = fabs(graphdata[1][asdf]);
+				};
+
+				if (numgraphs > 2) {
+					y0 = p_temphost5[(pTri->cornerptr[0] - pX->X) + BEGINNING_OF_CENTRAL];
+					y1 = p_temphost5[(pTri->cornerptr[1] - pX->X) + BEGINNING_OF_CENTRAL];
+					y2 = p_temphost5[(pTri->cornerptr[2] - pX->X) + BEGINNING_OF_CENTRAL];
+					graphdata[2][asdf] = wt0*y0 + wt1*y1 + wt2*y2;
+					if (fabs(graphdata[2][asdf]) > maximum[2]) maximum[2] = fabs(graphdata[2][asdf]);
+				};
+				if (numgraphs > 3) {
+					y0 = p_temphost6[(pTri->cornerptr[0] - pX->X) + BEGINNING_OF_CENTRAL];
+					y1 = p_temphost6[(pTri->cornerptr[1] - pX->X) + BEGINNING_OF_CENTRAL];
+					y2 = p_temphost6[(pTri->cornerptr[2] - pX->X) + BEGINNING_OF_CENTRAL];
+					graphdata[3][asdf] = wt0*y0 + wt1*y1 + wt2*y2;
+					if (fabs(graphdata[3][asdf]) > maximum[3]) maximum[3] = fabs(graphdata[3][asdf]);
+				}
+			} else {
+				// go through from 0 = conduction to 5 = dTe/dt itself
+				// we have missed out compressive...
+
+				for (int j = 0; j < 8; j++)
+				{
+					y0 = p_Tgraph_host[j][(pTri->cornerptr[0] - pX->X)];
+					y1 = p_Tgraph_host[j][(pTri->cornerptr[1] - pX->X)];
+					y2 = p_Tgraph_host[j][(pTri->cornerptr[2] - pX->X)];
+					graphdata[j][asdf] = wt0*y0 + wt1*y1 + wt2*y2;
+					if (fabs(graphdata[j][asdf]) > maximum[j]) maximum[j] = fabs(graphdata[j][asdf]);
+				}
+
 			}
 		}; // found triangle		
 	}; // asdf	
-	maximum[3] = max(maximum[3], maximum[2]);
-	maximum[2] = maximum[3];
+	if (bTdata == false) {		
+		maximum[3] = max(maximum[3], maximum[2]);
+		maximum[2] = maximum[3];
+	} else {
+		// for dT graphs, let maximum be overall
+		for (int j = 1; j <= 6; j++)
+			maximum[j] = max(maximum[j], maximum[j - 1]);
+		for (int j = 5; j >= 0; j--)
+			maximum[j] = maximum[j + 1];
+
+	}
 }
 
 
@@ -439,7 +463,9 @@ void RefreshGraphs(TriMesh & X, // only not const because of such as Reset_verte
 	int i;
 	int iGraph;
 	char graphname[4][128] = { "Azdot","Azdotdot","Lap Az","-4pi/c Jz" };
-
+	char Tgraphname[9][128] = { "conduction","ionization","viscosity","frictional","interspecies","dTe/dt total","compressive" ,
+	"DnT","undefined"};
+	
 	float const MAXX = 11.0f;
 	float const MAXY = 6.0f;
 
@@ -664,6 +690,198 @@ void RefreshGraphs(TriMesh & X, // only not const because of such as Reset_verte
 			true,
 			GRAPH_JZ, &X);
 		
+		break;
+
+	case DTGRAPH:
+
+		// We are going to have to think about using LineTo the way it is done in RenderGraphs
+		// let's start by rendering in the x-y plane and we can let the present camera look at it
+		printf("\n\nGot to here: DTGRAPHS\n\n");
+
+		// Create data:
+		Create1DGraphingData(&X, true);
+
+		Graph[6].SetEyeAndLookat(newEye, newLookat); // sets matView not matProj
+		printf("Eye %f %f %f\n", newEye.x, newEye.y, newEye.z);
+		Direct3D.pd3dDevice->SetViewport(&(Graph[6].vp));
+
+		D3DXMatrixIdentity(&matWorld);
+		//D3DXMatrixIdentity(&Graph[6].matProj); // ???????????????
+		Direct3D.pd3dDevice->SetTransform(D3DTS_WORLD, &matWorld);
+		Direct3D.pd3dDevice->SetTransform(D3DTS_VIEW, &(Graph[6].matView));
+		Direct3D.pd3dDevice->SetTransform(D3DTS_PROJECTION, &(Graph[6].matProj));
+
+		Direct3D.pd3dDevice->Clear(0, NULL, D3DCLEAR_TARGET | D3DCLEAR_ZBUFFER,
+			D3DCOLOR_XRGB(250, 255, 250), 1.0f, 0);
+
+		if (SUCCEEDED(Direct3D.pd3dDevice->BeginScene()))
+		{
+			
+			Direct3D.pd3dDevice->SetFVF(point_fvf);
+
+			real theta = -HALFANGLE;
+			real r = 3.44;
+
+			linedata[0].x = -MAXX;
+			linedata[0].z = 3.44*xzscale;
+			linedata[0].y = 0.0f;
+			linedata[0].colour = 0xff888888; // grey
+
+			linedata[1].x = -linedata[0].x;
+			linedata[1].y = 0.0f;
+			linedata[1].z = linedata[0].z;
+			linedata[1].colour = linedata[0].colour;
+
+			Direct3D.pd3dDevice->DrawPrimitiveUP(D3DPT_LINESTRIP, 1, linedata, sizeof(vertex1));
+
+			D3DCOLOR colour;
+			for (iGraph = 0; iGraph < 7; iGraph++)
+			{
+				colour = 0xffffaa00; // conduction: orange red
+				if (iGraph == 1) colour = 0xff0000ff; // ionization: royal blue
+				if (iGraph == 2) colour = 0xff009999; // viscosity: aqua
+				if (iGraph == 3) colour = 0xffd500ff; // resistive: heliotrope
+				if (iGraph == 4) colour = 0xff00ff00; // soak: green
+				if (iGraph == 5) colour = 0xff000000; // total
+				if (iGraph == 6) colour = 0xff906545; // compressive: brown
+
+
+				linedata[0].x = -MAXX;
+				linedata[0].z = 3.44*xzscale;
+				linedata[0].y = MAXY + 4.0f - 0.9f*(float)iGraph;
+				int asdf = 0;
+				linedata[asdf].colour = colour;
+				linedata[1].x = linedata[0].x + 1.0f;
+				linedata[1].y = linedata[0].y;
+				linedata[1].z = linedata[0].z;
+				linedata[1].colour = linedata[0].colour;
+				Direct3D.pd3dDevice->DrawPrimitiveUP(D3DPT_LINESTRIP, 1, linedata, sizeof(vertex1));
+
+				Graph[6].RenderLabel2(Tgraphname[iGraph], linedata[1].x + 1.0f, linedata[1].y - 0.3f, linedata[1].z, 0);
+
+				for (asdf = 0; asdf < num_graph_data_points; asdf++)
+				{
+					linedata[asdf].x = (float)(MAXX - 2.0*MAXX*((graph_r[asdf] - INNER_A_BOUNDARY) /
+						(DOMAIN_OUTER_RADIUS - INNER_A_BOUNDARY)));
+
+					// map 0 to 0.0f, maximum[iGraph] to MAXY and -maximum[iGraph] to MINY
+					// Decide on graph scales maximum[] in preceding bit of code
+					linedata[asdf].y = (float)(MAXY*graphdata[iGraph][asdf] / maximum[iGraph]);
+					linedata[asdf].z = 3.44f*xzscale;
+					linedata[asdf].colour = colour; // conduction: orange red		
+
+					if (asdf == 200) printf("linedata[200].y %1.9E  | ", linedata[asdf].y);
+
+				};
+				Direct3D.pd3dDevice->DrawPrimitiveUP(D3DPT_LINESTRIP, num_graph_data_points - 1, linedata, sizeof(vertex1));
+
+				sprintf(buffer, "%2.2E", maximum[iGraph]);
+				Graph[6].RenderLabel2(buffer,  // text
+					MAXX*0.4f + 1.6f*(float)iGraph,
+					MAXY,
+					linedata[0].z, 0, linedata[0].colour);
+				sprintf(buffer, "0.0");
+				Graph[6].RenderLabel2(buffer,  // text
+					MAXX*0.4f + 1.6f*(float)iGraph,
+					0.0f,
+					linedata[0].z, 0, linedata[0].colour);
+				sprintf(buffer, "-%2.2E", maximum[iGraph]);
+				Graph[6].RenderLabel2(buffer,  // text
+					MAXX*0.4f + 1.6f*(float)iGraph,
+					-MAXY,
+					linedata[0].z, 0, linedata[0].colour);
+			};
+
+
+			// Vertical lines:
+			for (int i = 0; i < 9; i++)
+			{
+				x = 0.16*(-r*xzscale + 2.0*r*xzscale*(((real)i) / 8.0));
+				z = 3.44*xzscale;// (float)(cos(HALFANGLE)*DEVICE_RADIUS_INSULATOR_OUTER)*xzscale;
+
+				linedata[0].x = x; linedata[0].z = z;
+				linedata[1].x = x; linedata[1].z = z;
+				linedata[0].colour = 0xff220011;
+				linedata[1].colour = 0xff220011;
+				linedata[0].y = -6.8f;// GRAPHIC_MIN_Y - 1.0f;  
+				linedata[1].y = ((i == 0) || (i == 8)) ? 6.0f : 0.0f;// GRAPHIC_MAX_Y + 2.5f;
+
+				Direct3D.pd3dDevice->DrawPrimitiveUP(D3DPT_LINESTRIP, 1, linedata, sizeof(vertex1));
+
+				sprintf(buffer, "%5.2f", INNER_A_BOUNDARY + (1.0 - ((real)i) / 8.0)*(DOMAIN_OUTER_RADIUS - INNER_A_BOUNDARY));
+				Graph[6].RenderLabel2(buffer,  // text
+					linedata[0].x,
+					-7.6f,
+					linedata[0].z, 0);
+
+			};
+			//DXChk(mFX->SetValue(mhEyePos, &Eye, sizeof(D3DXVECTOR3)));
+
+			linedata[0].x = -0.16*r*xzscale;
+			linedata[0].y = 0.0f;
+			linedata[0].z = 3.44*xzscale;
+			linedata[0].colour = 0xff000000; // 
+
+			linedata[1].x = 0.16*r*xzscale;
+			linedata[1].y = 0.0f;
+			linedata[1].z = linedata[0].z;
+			linedata[1].colour = linedata[0].colour;
+
+			Direct3D.pd3dDevice->DrawPrimitiveUP(D3DPT_LINESTRIP, 1, linedata, sizeof(vertex1));
+
+			Direct3D.pd3dDevice->EndScene();
+		}
+		else {
+			printf("BeginScene failed!\n\n");
+			getch();
+		}
+
+		pVertex = X.X;
+		pdata = X.pData + BEGINNING_OF_CENTRAL;
+		for (iVertex = 0; iVertex < NUMVERTICES; iVertex++)
+		{
+			pdata->temp.x = p_Tgraph_host[5][iVertex];
+			++pVertex;
+			++pdata;
+		}
+		Graph[4].DrawSurface("dTe/dt",
+			DATA_HEIGHT, (real *)(&(X.pData[0].temp.x)),
+			SEGUE_COLOUR, (real *)(&(X.pData[0].Te)),
+			false,
+			GRAPH_DTE, &X);
+
+		pVertex = X.X;
+		pdata = X.pData + BEGINNING_OF_CENTRAL;
+		for (iVertex = 0; iVertex < NUMVERTICES; iVertex++)
+		{
+			pdata->temp.x = p_Tgraph_host[7][iVertex];
+			++pVertex;
+			++pdata;
+		}
+		Graph[1].DrawSurface("d/dt nTe",
+			DATA_HEIGHT, (real *)(&(X.pData[0].temp.x)),
+			AZSEGUE_COLOUR, (real *)(&(X.pData[0].temp.x)),
+			false,
+			GRAPH_DNT, &X);
+
+		pdata = X.pData + BEGINNING_OF_CENTRAL;
+		for (iVertex = 0; iVertex < NUMVERTICES; iVertex++)
+		{
+			pdata->temp.x = p_Tgraph_host[5][iVertex];
+			++pdata;
+		}
+		Graph[3].DrawSurface("n",
+			DATA_HEIGHT, (real *)(&(X.pData[0].n)),
+			AZSEGUE_COLOUR, (real *)(&(X.pData[0].temp.x)),
+			false,
+			GRAPH_ION_N, &X);
+
+		Graph[5].DrawSurface("Te",
+			DATA_HEIGHT, (real *)(&(X.pData[0].Te)),
+			SEGUE_COLOUR, (real *)(&(X.pData[0].Te)),
+			false,
+			GRAPH_ELEC_T, &X);
+
 		break;
 
 		/*
@@ -908,7 +1126,7 @@ case IONIZEGRAPH:
 		pdata->temp.y = p_graphdata6_host[iVertex]; // n/nn
 		++pVertex;
 		++pdata;
-	}
+	} 
 	Graph[2].DrawSurface("dTe/dt[ionization]",
 		DATA_HEIGHT, (real *)(&(X.pData[0].temp.x)),
 		SEGUE_COLOUR, (real *)(&(X.pData[0].Te)),
@@ -2175,7 +2393,7 @@ int main()
 	counter = 0;
 	//ReleaseDC(hWnd,surfdc);
 	p_backbuffer_surface->ReleaseDC(surfdc);
-	GlobalCutaway = false; // dies if true
+	GlobalCutaway = true; // dies if true
 	
 	RefreshGraphs(*pX, GlobalSpeciesToGraph);
 	
@@ -2329,6 +2547,14 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			printf("\nGlobalSpeciesToGraph = %d \n", GlobalSpeciesToGraph);
 			RefreshGraphs(*pX, GlobalSpeciesToGraph);
 			Direct3D.pd3dDevice->Present(NULL, NULL, NULL, NULL);
+			break;
+		case ID_DISPLAY_DTGRAPH:
+
+			GlobalSpeciesToGraph = DTGRAPH;
+			printf("\nGlobalSpeciesToGraph = %d \n", GlobalSpeciesToGraph);
+			RefreshGraphs(*pX, GlobalSpeciesToGraph);
+			Direct3D.pd3dDevice->Present(NULL, NULL, NULL, NULL);
+
 			break;
 		case ID_DISPLAY_SIGMAEJ:
 

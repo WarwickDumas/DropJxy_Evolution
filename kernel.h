@@ -1377,14 +1377,15 @@ __global__ void kernelPopulateBackwardOhmsLaw(
 
 	bool const bSwitchSave);
 
-__global__ void kernelReset_v_in_outer_frill_and_outermost 
+__global__ void kernelReset_v_in_outer_frill_and_outermost
 (
 	structural * __restrict__ p_info,
 	v4 * __restrict__ p_vie,
 	f64_vec3 * __restrict__ p_v_n,
+	T3 * __restrict__ p_T_minor,
 	LONG3 * __restrict__ trineighbourindex,
 	long * __restrict__ p_izNeigh_vert
-	);
+);
 
 __global__ void kernelAddRegressors(
 	f64 * __restrict__ p_AzNext,
@@ -1883,6 +1884,21 @@ __global__ void kernelNeutral_momflux(
 );
 
 
+__global__ void DivideNeTe_by_N(
+	NTrates * __restrict__ NT_rates,
+	f64 * __restrict__ p_AreaMajor,
+	nvals * __restrict__ p_n_major,
+	f64 * __restrict__ p_dTbydt);
+
+
+__global__ void DivideNeTeDifference_by_N(
+	NTrates * __restrict__ NT_addition_rates_initial,
+	NTrates * __restrict__ NT_addition_rates_final,
+	f64 * __restrict__ p_AreaMajor,
+	nvals * __restrict__ p_n_major,
+	f64 * __restrict__ p_dTbydt);
+
+
 __global__ void kernelAdvanceDensityAndTemperature_noadvectioncompression(
 	f64 h_use,
 	structural * __restrict__ p_info_major,
@@ -1898,7 +1914,28 @@ __global__ void kernelAdvanceDensityAndTemperature_noadvectioncompression(
 	f64 * __restrict__ p_AreaMajor,
 
 	nvals * __restrict__ p_n_major_dest,
-	T3 * __restrict__ p_T_major_dest
+	T3 * __restrict__ p_T_major_dest,
+
+	f64_vec3 * __restrict__ p_B_major
+);
+__global__ void kernelAdvanceDensityAndTemperature_noadvectioncompression_Copy(
+	f64 h_use,
+	structural * __restrict__ p_info_major,
+	nvals * p_n_major,
+	T3 * p_T_major,
+	NTrates * __restrict__ NTadditionrates,
+	nvals * p_n_use,
+	T3 * p_T_use,
+	v4 * __restrict__ p_vie_use,
+	f64_vec3 * __restrict__ p_v_n_use,
+	f64 * __restrict__ p_AreaMajor,
+	nvals * __restrict__ p_n_major_dest,
+	T3 * __restrict__ p_T_major_dest,
+	f64_vec3 * __restrict__ p_B_major,
+	f64 * __restrict__ p_Tgraph_resistive,
+	f64 * __restrict__ p_Tgraph_other,
+	f64 * __restrict__ p_Tgraph_total,
+	f64 * __restrict__ p_Tgraph_dNT
 );
 
 __global__ void kernelNeutral_pressure(

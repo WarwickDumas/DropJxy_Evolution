@@ -6862,7 +6862,7 @@ void QuickSort (long VertexIndexArray[], real radiusArray[],
 //
 
 long TriMesh::GetVertsRightOfCutawayLine_Sorted(long * VertexIndexArray,
-										real * radiusArray) const
+										real * radiusArray, bool bUseInner) const
 {
 	const Vertex * pNeigh;
 	const Vertex * pVertex;
@@ -6893,24 +6893,27 @@ long TriMesh::GetVertsRightOfCutawayLine_Sorted(long * VertexIndexArray,
 
 		//	printf("\nYES iVertex %d --- ", iVertex);
 
-			neigh_len = pVertex->GetNeighIndexArray(izNeighs);
-			for (int i = 0; i < neigh_len; i++)
+			if ((bUseInner) || (pVertex->pos.x*pVertex->pos.x+pVertex->pos.y*pVertex->pos.y > 
+				DEVICE_RADIUS_INSULATOR_OUTER*DEVICE_RADIUS_INSULATOR_OUTER))
 			{
-				pNeigh = X + izNeighs[i];
-				if (pNeigh->pos.x/pNeigh->pos.y < CUTAWAYANGLE) {
-					// count this vertex
-					VertexIndexArray[iCaret] = iVertex;
-					radiusArray[iCaret] = pVertex->pos.modulus();
-					iCaret++;
-					i = 100000; // skip out
-			//		printf("%d tick %1.9E", izNeighs[i], pNeigh->pos.x / pNeigh->pos.y);
-				}
-				else {
-					//printf("%d NO %1.9E | ", izNeighs[i], pNeigh->pos.x / pNeigh->pos.y);
-				}
-			};
-		//	printf("\n");
-
+				neigh_len = pVertex->GetNeighIndexArray(izNeighs);
+				for (int i = 0; i < neigh_len; i++)
+				{
+					pNeigh = X + izNeighs[i];
+					if (pNeigh->pos.x / pNeigh->pos.y < CUTAWAYANGLE) {
+						// count this vertex
+						VertexIndexArray[iCaret] = iVertex;
+						radiusArray[iCaret] = pVertex->pos.modulus();
+						iCaret++;
+						i = 100000; // skip out
+				//		printf("%d tick %1.9E", izNeighs[i], pNeigh->pos.x / pNeigh->pos.y);
+					}
+					else {
+						//printf("%d NO %1.9E | ", izNeighs[i], pNeigh->pos.x / pNeigh->pos.y);
+					}
+				};
+				//	printf("\n");
+			}
 		} else {
 			
 		}
@@ -6920,19 +6923,21 @@ long TriMesh::GetVertsRightOfCutawayLine_Sorted(long * VertexIndexArray,
 
 	// Now sort them!
 	// No way round this.
-	FILE * debuglist = fopen("debuglist.txt", "w");
+/*	FILE * debuglist = fopen("debuglist.txt", "w");
 	fprintf(debuglist, "iCaret %d \n", iCaret);
 	for (iVertex = 0; iVertex < iCaret; iVertex++)
 	{
 		fprintf(debuglist, "%d VertIndex %d radius %d\n",  iVertex, VertexIndexArray[iVertex], radiusArray[iVertex]);		
 	}
-	fclose(debuglist);
+	fclose(debuglist);*/
 	printf("\nGetVertsRightofCutawayLineSorted iCaret %d \n", iCaret);
 
 	QuickSort (VertexIndexArray, radiusArray,
 		0,iCaret-1); // lowest and highest elements to be sorted
 			
 	printf("got to here!! \n");
+
+	// Clearly we could skip constantly calling this routine --- at least do only 1x per set of graphs!
 
 	return iCaret;
 }

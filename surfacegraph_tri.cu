@@ -1623,9 +1623,8 @@ VOID surfacegraph::Render(const char * szTitle, bool RenderTriLabels,
 						
 			// Now do 3.6, 3.75, 3.9, 4.05, 4.2
 			r = 3.45;
-			for (i = 0; i < 5; i++) {
+			for (i = 0; i < 10; i++) {
 				theta = -HALFANGLE*1.1;
-				r += 0.15;
 				for (int asdf = 0; asdf < 10000; asdf++)
 				{
 					theta += FULLANGLE*1.1/10000.0; 
@@ -1641,7 +1640,8 @@ VOID surfacegraph::Render(const char * szTitle, bool RenderTriLabels,
 				Direct3D.pd3dDevice->DrawPrimitiveUP(D3DPT_LINESTRIP,9999,linedata,sizeof(vertex1));
 
 				sprintf(buffer,"%1.2f",r);
-				RenderLabel(buffer, linedata[5000].x,zeroplane,linedata[5000].z,true);
+				RenderLabel(buffer, linedata[3500].x,zeroplane,linedata[3500].z,true);
+				r += 0.09;
 			};
 
 			// Vertical lines:
@@ -2018,7 +2018,9 @@ VOID surfacegraph::Render(const char * szTitle, bool RenderTriLabels,
 			// prevents z-fighting: overwrite graphics from here
 
 			// draw black line graph at cutaway:
-			if (GlobalCutaway) {
+			if ((GlobalCutaway)) {
+
+				// Skip it for now, build up to it.
 
 				real * radiusArray8000;
 				long * VertexIndexArray8000;
@@ -2034,16 +2036,18 @@ VOID surfacegraph::Render(const char * szTitle, bool RenderTriLabels,
 					getch();
 				};		
 		
-				long numVertsCutawayUse = pX->GetVertsRightOfCutawayLine_Sorted(VertexIndexArray8000, radiusArray8000);
+				long numVertsCutawayUse = pX->GetVertsRightOfCutawayLine_Sorted(VertexIndexArray8000, radiusArray8000, this->boolDisplayInnerMesh);
+				// does not involve test for rr > 3.44*3.44 but so easily could do.
+
 
 				// Render a line along the cutaway? Ambitious....
 				// quite a dirty way for now: exploit that there is only 1 array of vertex positions in graphic space
-
 				// In general, better to use TriMesh object
 				// and create a function to return graphic positions.
 				
-				long diff = pX->Xdomain-pX->X;
-				if (this->boolDisplayInnerMesh) diff = 0 ;
+				//long diff = pX->Xdomain-pX->X;
+				//if (this->boolDisplayInnerMesh) diff = 0 ;
+				long diff = 0;
 
 				for (int iSubpass = 1; iSubpass < 2; iSubpass++ )
 				{
@@ -2065,7 +2069,7 @@ VOID surfacegraph::Render(const char * szTitle, bool RenderTriLabels,
 						// from the TriMesh object
 						for (int asdf = 0; asdf < numVertsCutawayUse; asdf++)
 						{
-							if (VertexIndexArray8000[asdf]-diff >= 0)
+							if (VertexIndexArray8000[asdf] >= 0) // VertexIndexArray8000[asdf]-diff >=0
 							{
 								pVertex = pX->X + VertexIndexArray8000[asdf];
 
@@ -2102,42 +2106,44 @@ VOID surfacegraph::Render(const char * szTitle, bool RenderTriLabels,
 									}									
 								};
 									
-								if (iWhich == -1) {// give up, do nothing} 
+								if ((iWhich == -1) || ((this->boolDisplayInnerMesh == false) && (
+									(pX->T + izTri[iWhich])->u8domain_flag != DOMAIN_TRIANGLE))) {
+									// give up, do nothing
+									// but how to set position?
+									// use own point:
+
+									pPNT = &(vertices_buffer[VertexIndexArray8000[asdf]]); // - diff
+									pPNT->pos = vertices_buffer[(pVertex - pX->X)].pos;	// - diff
+
 								} else {
 									pTri = pX->T + izTri[iWhich];
-									if (this->boolDisplayInnerMesh == false)
-									{
-										while (pTri->u8domain_flag != DOMAIN_TRIANGLE) {
-											iWhich--;
-											if (iWhich == -1) {
-												printf("give up!");
-												getch();
-												return;
-											};
-											pTri = pX->T + izTri[iWhich];
-										}
-									};
+									//if (this->boolDisplayInnerMesh == false) && 
+									//{
+									//	while (pTri->u8domain_flag != DOMAIN_TRIANGLE) {
+									//		iWhich--;
+									//		if (iWhich == -1) {
+									//			printf("give up! iVertex %d asdf %d", pVertex-X, asdf);
+
+									//			// Looks like it tries to move clockwise to attain a domain triangle rather than crossing_ins
+
+									//			getch();
+									//			return;
+									//		};
+									//		pTri = pX->T + izTri[iWhich];
+									//	}
+									//};
 									// 2. shift this pos.xyz to be on the line and y-interpolated.
 									
 									// is our origin also the pos origin?
-									pPNT = &(vertices_buffer[VertexIndexArray8000[asdf]-diff]);
+									pPNT = &(vertices_buffer[VertexIndexArray8000[asdf]]); // -diff
 									
 									newpos.z = pPNT->pos.z;
 									newpos.x = pPNT->pos.z*(float)(CUTAWAYANGLE);
 									
-									pPNT0 = &(vertices_buffer[(pTri->cornerptr[0]-pX->X)-diff]);
-									pPNT1 = &(vertices_buffer[(pTri->cornerptr[1]-pX->X)-diff]);
-									pPNT2 = &(vertices_buffer[(pTri->cornerptr[2]-pX->X)-diff]);
-									
-									// Possible it picks up a point that is not within ?
-									if (((pTri->cornerptr[2]-pX->X)-diff < 0)
-										||
-										((pTri->cornerptr[1]-pX->X)-diff < 0)
-										||
-										((pTri->cornerptr[0]-pX->X)-diff < 0))
-									{
-										iWhich = iWhich;
-									}
+									pPNT0 = &(vertices_buffer[(pTri->cornerptr[0]-pX->X)]);  // -diff
+									pPNT1 = &(vertices_buffer[(pTri->cornerptr[1]-pX->X)]);
+									pPNT2 = &(vertices_buffer[(pTri->cornerptr[2]-pX->X)]);
+																		
 									dist0 = sqrt((pPNT0->pos.x-newpos.x)*(pPNT0->pos.x-newpos.x)
 												+ (pPNT0->pos.z-newpos.z)*(pPNT0->pos.z-newpos.z));
 									dist1 = sqrt((pPNT1->pos.x-newpos.x)*(pPNT1->pos.x-newpos.x)
@@ -2159,47 +2165,24 @@ VOID surfacegraph::Render(const char * szTitle, bool RenderTriLabels,
 							};
 						}; // asdf
 					}; // if iSubpass == 0
-			
-					long diff = pX->Xdomain-pX->X;
-					if (this->boolDisplayInnerMesh) {
 
-						for (int asdf = 0; asdf < numVertsCutawayUse; asdf++)
-						{
-							pPNT = &(vertices_buffer[VertexIndexArray8000[asdf]]);
-							linedata[asdf].x = pPNT->pos.x;
-							linedata[asdf].y = pPNT->pos.y; // will this help make it show up?
-							linedata[asdf].z = pPNT->pos.z;
-							linedata[asdf].colour = 0;
-						};
-					} else {
-						long unused = -1;
-						for (int asdf = 0; asdf < numVertsCutawayUse; asdf++)
-						{
-							if (VertexIndexArray8000[asdf]-diff >= 0)
-							{
-								pPNT = &(vertices_buffer[VertexIndexArray8000[asdf]-diff]); 
-								// relative to Xdomain here
-								linedata[asdf].x = pPNT->pos.x;
-								linedata[asdf].y = pPNT->pos.y; // will this help make it show up?
-								linedata[asdf].z = pPNT->pos.z;
-								linedata[asdf].colour = 0;
-							} else {
-								// inner cutaway vertex but inner are not displayed.
-								unused = asdf;
-							};
-						};
-						for (int asdf = 0; asdf <= unused; asdf++)
-						{
-							linedata[asdf] = linedata[unused+1];
-						};
+					for (int asdf = 0; asdf < numVertsCutawayUse; asdf++)
+					{
+						pPNT = &(vertices_buffer[VertexIndexArray8000[asdf]]);
+						linedata[asdf].x = pPNT->pos.x;
+						linedata[asdf].y = pPNT->pos.y; // will this help make it show up?
+						linedata[asdf].z = pPNT->pos.z;
+						linedata[asdf].colour = 0;
 					};
 					
 					Direct3D.pd3dDevice->SetFVF(point_fvf);
 					Direct3D.pd3dDevice->DrawPrimitiveUP(D3DPT_LINESTRIP,numVertsCutawayUse-1,linedata,sizeof(vertex1));
 
+					// chop from here:
+
 					int asdf = 0;			
 					real r = 3.439999999;
-					for (i = 0; i < 6; i++) {
+					for (i = 0; i < 10; i++) {
 
 						while ((asdf < 8000) && (radiusArray8000[asdf] < r)) asdf++;	
 						if (asdf == 8000) {
@@ -2208,12 +2191,7 @@ VOID surfacegraph::Render(const char * szTitle, bool RenderTriLabels,
 							while (1) getch(); // on debug we get here & it's unpopulated.
 						}
 
-						if (this->boolDisplayInnerMesh)
-						{
-							pPNT = &(vertices_buffer[VertexIndexArray8000[asdf]]);
-						} else {
-							pPNT = &(vertices_buffer[VertexIndexArray8000[asdf]-diff]);
-						};
+						pPNT = &(vertices_buffer[VertexIndexArray8000[asdf]]);
 
 						x = pPNT->pos.x;
 						y = zeroplane;
@@ -2228,7 +2206,7 @@ VOID surfacegraph::Render(const char * szTitle, bool RenderTriLabels,
 						strip_0(buffer);
 						RenderLabel(buffer, CUTAWAYANGLE*pPNT->pos.z,zeroplane,pPNT->pos.z);
 						if (i == 0) r = 3.45;
-						r += 0.15;
+						r += 0.09;
 					}; 
 					// line underneath:
 					linedata[0].x = sin(CUTAWAYANGLE)*DEVICE_RADIUS_INSULATOR_OUTER*xzscale;
@@ -2238,6 +2216,7 @@ VOID surfacegraph::Render(const char * szTitle, bool RenderTriLabels,
 					linedata[1].y = zeroplane;
 					linedata[1].z = cos(CUTAWAYANGLE)*DOMAIN_OUTER_RADIUS*xzscale;
 					Direct3D.pd3dDevice->DrawPrimitiveUP(D3DPT_LINESTRIP,1,linedata,sizeof(vertex1));
+					
 
 					// Not sure we had to lock to read anyway?
 					VertexBuffer[1]->Unlock();
