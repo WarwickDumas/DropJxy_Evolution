@@ -25,6 +25,8 @@ long GlobalTrianglesInfluencing;
 bool GlobalPeriodicSearch;
 extern int globaldebugswitch ;
 
+extern long numVerticesKey;
+
 real InitialIonDensity(real x, real y)
 {
 	static const real XCENTRE2 = DEVICE_RADIUS_INITIAL_FILAMENT_CENTRE*sin(PI/32.0);
@@ -5769,12 +5771,14 @@ void TriMesh::SetVerticesKeyButton(VertexPNT3 * vertices, DWORD * indices, real 
 
 	if (maximum_v == 0.0) maximum_v = 1.0;
 
-	//printf("Key button maximum v %1.9E ",maximum_v);
+	printf("Key button maximum v %1.9E ",maximum_v);
 
 	for (iRing = 0; iRing < NUMRINGS; iRing++)
 	{
 		for (iAngle = 0; iAngle < NUMANGLES; iAngle++)
 		{
+			if (totalVertices >= 1998) printf("%d ", totalVertices);
+	
 			r = RSTEP*(real)(iRing+1);           // 1/20 to 20/20
 			theta = THETASTEP*(real)iAngle + 0.5*(real)(iRing % 2); // 0/100 to 99/100
 			x = KeyCentre_x + r*cos(theta);
@@ -5803,16 +5807,20 @@ void TriMesh::SetVerticesKeyButton(VertexPNT3 * vertices, DWORD * indices, real 
 				pPNT->tex0.y = r*maximum_v*(sin(theta));
 				// actually same formula for x and y as in 2D v case.
 			};
+			
+			if (totalVertices >= numVerticesKey) printf("~!!");
 			++pPNT; 
 			++totalVertices;
 		};
 	};
+	printf("here\n");
+
 	--pPNT;
 //	printf("tex0.x tex0.y tex0.z %1.9E %1.9E %1.9E \n",(real)(pPNT->tex0.x),(real)(pPNT->tex0.y),(real)(pPNT->tex0.z));
 	++pPNT;
 
 	// Now set up the triangles.
-
+	printf("SVKB halfway: totalVertices %d\n", totalVertices);
 	// Start at innermost circle:
 
 	iRing = 0;
@@ -6871,16 +6879,13 @@ long TriMesh::GetVertsRightOfCutawayLine_Sorted(long * VertexIndexArray,
 	long neigh_len;
 	long izNeighs[128];
 
-	printf("made it here..\n");
-
 	pVertex = X;
 
 	if (radiusArray == NULL) {
 		printf("ADJSA???");
 		getch();
 	}
-	printf("numVertices %d \n", numVertices);
-
+	
 	for (iVertex = 0; iVertex < numVertices; iVertex++)
 	{
 		// We want this one if and only if, it is to the right of the 
@@ -6930,12 +6935,12 @@ long TriMesh::GetVertsRightOfCutawayLine_Sorted(long * VertexIndexArray,
 		fprintf(debuglist, "%d VertIndex %d radius %d\n",  iVertex, VertexIndexArray[iVertex], radiusArray[iVertex]);		
 	}
 	fclose(debuglist);*/
-	printf("\nGetVertsRightofCutawayLineSorted iCaret %d \n", iCaret);
+//	printf("\nGetVertsRightofCutawayLineSorted iCaret %d \n", iCaret);
 
 	QuickSort (VertexIndexArray, radiusArray,
 		0,iCaret-1); // lowest and highest elements to be sorted
 			
-	printf("got to here!! \n");
+//	printf("got to here!! \n");
 
 	// Clearly we could skip constantly calling this routine --- at least do only 1x per set of graphs!
 

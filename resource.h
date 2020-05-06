@@ -22,7 +22,7 @@
 #define ID_RUN_SIMULATIONSTEPS          40009
 #define ID_HELP_ABOUT                   40010
 #define ID_RUN_STOP                     40020
-#define ID_RUN_SIMULATIONSTEPS_CPU      40030
+#define ID_RUN_SIMULATIONSTEPS_CPU      40040
 #define ID_DISPLAY_NEUT                 50000
 #define ID_DISPLAY_ELECTRON             50002
 #define ID_DISPLAY_ION                  50001
@@ -35,6 +35,7 @@
 #define ID_DISPLAY_IONIZEGRAPHS         40028 // seems to be what it wants
 #define ID_DISPLAY_OHMS                 40026 // seems to be what it wants
 #define ID_DISPLAY_DTGRAPH              40029
+#define ID_DISPLAY_ACCELGRAPH           40030
 #define IDC_STATIC                      -1
 #define ID_RUN_CPUSTEP                  40021
 #define ID_FILE_LOADGPU                 40022

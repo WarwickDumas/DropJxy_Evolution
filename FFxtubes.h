@@ -36,7 +36,7 @@ bool const bScrewPinch = false;
 // 1 frame = 0.01 so 100 frames == 1 ns
 
 // milliseconds between frames:
-#define AVIFRAMEPERIOD         40 // 50 = 20 fps which is ok with our setting of 25 frames/ns [running 2e-11 x 2 = 4e-11 per frame]
+#define AVIFRAMEPERIOD         20  // milliseconds; 20 ms => 50 fps.
 
 #define DATA_SAVE_FREQUENCY					 8
 
@@ -251,9 +251,9 @@ real const FULLANGLE = 2.0*PI/16.0;
 real const TIMESTEP = 1.0e-13;// 7.8125e-14; 
 real const SUBSTEP = 1.0e-13; // 7.8125e-14;
 int const SUBCYCLES = 1; 
-int const GPU_STEPS = 100; // 128
+int const GPU_STEPS = 200; // 128
 int const ADVECT_FREQUENCY = 50; // 1e-11 = 1e-4/1e7 // 64
-int const ADVECT_STEPS_PER_GPU_VISIT = 2;
+int const ADVECT_STEPS_PER_GPU_VISIT = 4;
 
 
 //long const NUM_VERTICES_PER_CM_SQ = 10000; // 60000; //12000; // use 262144 = 2^18. 2^9 = 512

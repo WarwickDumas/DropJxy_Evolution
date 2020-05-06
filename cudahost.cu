@@ -6,6 +6,10 @@
 
 #pragma once   
    
+
+#define PRECISE_VISCOSITY
+
+ 
 #include <stdlib.h>
 #include <stdio.h>
 #include "lapacke.h"
@@ -14,18 +18,18 @@
 extern void print_matrix(char* desc, lapack_int m, lapack_int n, double* a, lapack_int lda);
 extern void print_int_vector(char* desc, lapack_int n, lapack_int* a);
   
-  
+   
 #define BWD_SUBCYCLE_FREQ  1
 #define BWD_STEP_RATIO     1    // divide substeps by this for bwd
 #define NUM_BWD_ITERATIONS 4
 #define FWD_STEP_FACTOR    2    // multiply substeps by this for fwd
            
 // This will be slow but see if it solves it.
-                  
+                   
 #define CHOSEN  93434
 #define CHOSEN1 1000110301
 #define CHOSEN2 1000110497 
-#define VERTCHOSEN 19706
+#define VERTCHOSEN 16349
  
 #define ITERATIONS_BEFORE_SWITCH  18
 #define REQUIRED_IMPROVEMENT_RATE  0.98
@@ -123,9 +127,12 @@ __device__ f64 * p_temp1, *p_temp2, *p_temp3, *p_temp4,*p_temp5, *p_temp6, *p_de
 __device__ f64_vec3 * p_temp3_1, *p_temp3_2, *p_temp3_3;
 __device__ f64 * p_graphdata1, *p_graphdata2, *p_graphdata3, *p_graphdata4, *p_graphdata5, *p_graphdata6;
 f64 * p_graphdata1_host, *p_graphdata2_host, *p_graphdata3_host, *p_graphdata4_host, *p_graphdata5_host, *p_graphdata6_host;
-
+__device__ f64_vec3* p_MAR_ion_temp_central, *p_MAR_elec_temp_central;
 __device__ f64 * p_Tgraph[9];
 f64 * p_Tgraph_host[9];
+
+__device__ f64 * p_accelgraph[12];
+f64 * p_accelgraph_host[12];
 
 __device__ long * p_longtemp;
 __device__ bool * p_bool;
@@ -5967,6 +5974,12 @@ void PerformCUDA_Invoke_Populate(
 	for (i = 0; i < 9; i++)
 		CallMAC(cudaMalloc((void **)&p_Tgraph[i], NUMVERTICES * sizeof(f64)));
 
+	for (i = 0; i < 12; i++)
+		CallMAC(cudaMalloc((void **)&p_accelgraph[i], NUMVERTICES * sizeof(f64)));
+
+	CallMAC(cudaMalloc((void **)&p_MAR_ion_temp_central, NUMVERTICES * sizeof(f64_vec3)));
+	CallMAC(cudaMalloc((void **)&p_MAR_elec_temp_central, NUMVERTICES * sizeof(f64_vec3)));
+
 	CallMAC(cudaMalloc((void **)&p_bool, NMINOR * sizeof(bool)));
 	CallMAC(cudaMalloc((void **)&p_denom_i, NMINOR * sizeof(f64)));
 	CallMAC(cudaMalloc((void **)&p_denom_e, NMINOR * sizeof(f64)));
@@ -6046,6 +6059,8 @@ void PerformCUDA_Invoke_Populate(
 
 	for (i = 0; i < 9; i++)
 		p_Tgraph_host[i] = (f64 *)malloc(NUMVERTICES * sizeof(f64));
+	for (i = 0; i < 12; i++)
+		p_accelgraph_host[i] = (f64 *)malloc(NUMVERTICES * sizeof(f64)); // 3.6 MB
 
 	p_boolhost = (bool *)malloc(NMINOR * sizeof(bool));
 	p_sum_vec_host = (f64_vec3 *)malloc(numTilesMinor * sizeof(f64_vec3));
@@ -6188,10 +6203,12 @@ void PerformCUDA_RunStepsAndReturnSystem(cuSyst * pX_host)
 	cudaEventSynchronize(start1);
 
 	long iSubstep;
-
+	int i;
 	// Ultimately this 10 steps .. so 1e-11? .. can be 1 advective step.
 
 	// B is set for pX_half and pX1. So take pX_half value and spit it to host.
+	for (i = 0; i < 12; i++)
+		cudaMemset(p_accelgraph[i], 0, sizeof(f64)*NUMVERTICES);
 
 	pX_half->CopyStructuralDetailsFrom(*pX1);
 	pX2->CopyStructuralDetailsFrom(*pX1);
@@ -6254,6 +6271,7 @@ void PerformCUDA_RunStepsAndReturnSystem(cuSyst * pX_host)
 						NUMTRIANGLES * 6 * sizeof(char), cudaMemcpyDeviceToDevice);*/
 		};
 
+		// bGlobalSaveTGraphs == true when we reach this point
 		printf("Advection step:\n");
 		pX1->PerformCUDA_AdvectionCompressionInstantaneous(TIMESTEP*(real)ADVECT_FREQUENCY, pX2, pX_half);
 
@@ -6345,9 +6363,11 @@ void PerformCUDA_RunStepsAndReturnSystem(cuSyst * pX_host)
 	cudaMemcpy(p_graphdata4_host, p_graphdata4, sizeof(f64)*NUMVERTICES, cudaMemcpyDeviceToHost);
 	cudaMemcpy(p_graphdata5_host, p_graphdata5, sizeof(f64)*NUMVERTICES, cudaMemcpyDeviceToHost);
 	cudaMemcpy(p_graphdata6_host, p_graphdata6, sizeof(f64)*NUMVERTICES, cudaMemcpyDeviceToHost);
-	int i;
+	
 	for (i = 0; i < 9; i++)
 		cudaMemcpy(p_Tgraph_host[i], p_Tgraph[i], sizeof(f64)*NUMVERTICES, cudaMemcpyDeviceToHost);
+	for (i = 0; i < 12; i++)
+		cudaMemcpy(p_accelgraph_host[i], p_accelgraph[i], sizeof(f64)*NUMVERTICES, cudaMemcpyDeviceToHost);
 
 	f64 Integral_Azdotdot = 0.0;
 	f64 Integral_fabsAzdotdot = 0.0;
@@ -6374,7 +6394,13 @@ void PerformCUDA_RunStepsAndReturnSystem(cuSyst * pX_host)
 	// That is bad.
 	// Next: We should find that the actual change in Azdot sums to zero.
 	// We should also therefore be finding that Azdot sums to zero.
-
+//
+//	FILE * fpaccel = fopen("accel.txt", "w");
+//	for (i = 0; i < NUMVERTICES; i++)
+//		fprintf(fpaccel, "%d %1.10E \n", i, p_accelgraph_host[10][i]);
+//	fclose(fpaccel);
+//	printf("FP ACCEL PRINTED");
+//	getch(); getch(); getch();
 	 
 }
 
@@ -10448,7 +10474,7 @@ void cuSyst::PerformCUDA_AdvectionCompressionInstantaneous(//const
 
 	kernelAccelerate_v_from_advection << <numTilesMinor, threadsPerTileMinor >> >
 		(
-			Timestep,
+			Timestep, 
 			this->p_info,
 			this->p_n_minor,    // multiply by old mass ..
 			pX_target->p_n_minor, // divide by new mass ..
@@ -10467,6 +10493,18 @@ void cuSyst::PerformCUDA_AdvectionCompressionInstantaneous(//const
 			);
 	Call(cudaThreadSynchronize(), "cudaTS Accelerate_v_from_advection");
 
+
+	if (bGlobalSaveTGraphs)
+	{
+		Divide_diff_get_accel << <numTilesMajor, threadsPerTileMajor >> >(
+			pX_target->p_vie + BEGINNING_OF_CENTRAL,
+			this->p_vie + BEGINNING_OF_CENTRAL,
+			Timestep,
+			p_accelgraph[10]
+		); 
+		Call(cudaThreadSynchronize(), "cudaTS Divide_diff_get_accel");
+
+	}
 	// get grad Az, Azdot and anti-advect:
 	 
 	kernelAntiAdvect << <numTriTiles, threadsPerTileMinor >> >(
@@ -10677,7 +10715,7 @@ void cuSyst::PerformCUDA_Advance_noadvect(//const
 		);
 	Call(cudaThreadSynchronize(), "cudaTS GetLapMinor zz");
 
-
+	
 	kernelNeutral_pressure << <numTriTiles, threadsPerTileMinor >> > (
 		this->p_info,
 
@@ -11013,7 +11051,9 @@ void cuSyst::PerformCUDA_Advance_noadvect(//const
 		false // 
 		); // call before CreateShardModel 
 	Call(cudaThreadSynchronize(), "cudaTS Average_nTx pos this");
-	 
+
+#ifdef PRECISE_VISCOSITY
+
 	kernelCalculate_ita_visc << <numTilesMinor, threadsPerTileMinor >> > (
 		this->p_info,
 		this->p_n_minor,
@@ -11085,6 +11125,16 @@ void cuSyst::PerformCUDA_Advance_noadvect(//const
 		);
 	Call(cudaThreadSynchronize(), "cudaTS sum up heat 1");
 	
+#endif
+
+	// Well here's a thought.
+	// We ARE expecting v to change when we do a backward viscosity.
+	// Yet, we will find v off from its trajectory towards that point.
+	// That's when we tune the viscous flow.
+
+
+
+
 	if (!DEFAULTSUPPRESSVERBOSITY)
 	{
 		SetConsoleTextAttribute(hConsole, 14);
@@ -11306,6 +11356,23 @@ void cuSyst::PerformCUDA_Advance_noadvect(//const
 		p_MAR_neut
 		);
 	Call(cudaThreadSynchronize(), "cudaTS kernelNeutral_pressure_and_momflux pX_half");
+
+	if (bGlobalSaveTGraphs) {
+		DivideMAR_get_accel << <numTilesMajor, threadsPerTileMajor >> > (
+			p_MAR_ion + BEGINNING_OF_CENTRAL,
+			p_MAR_elec + BEGINNING_OF_CENTRAL,
+			this->p_n_minor + BEGINNING_OF_CENTRAL,
+			this->p_AreaMinor + BEGINNING_OF_CENTRAL, // we'll look in the minor central cell, this is where MAR applies.
+			p_accelgraph[4],
+			p_accelgraph[5]
+			);
+		Call(cudaThreadSynchronize(), "cudaTS DivideMAR_get_accel");
+
+		cudaMemcpy(p_MAR_ion_temp_central, p_MAR_ion + BEGINNING_OF_CENTRAL, sizeof(f64_vec3)*NUMVERTICES,
+			cudaMemcpyDeviceToDevice);
+		cudaMemcpy(p_MAR_elec_temp_central, p_MAR_elec + BEGINNING_OF_CENTRAL, sizeof(f64_vec3)*NUMVERTICES,
+			cudaMemcpyDeviceToDevice);
+	}
 
 	kernelAverage_n_T_x_to_tris << <numTriTiles, threadsPerTileMinor >> > (
 		pX_half->p_n_minor,
@@ -11877,6 +11944,24 @@ void cuSyst::PerformCUDA_Advance_noadvect(//const
 
 		// Store into temp array:
 		cudaMemcpy(NT_addition_rates_d_temp2, NT_addition_rates_d, sizeof(NTrates)*NUMVERTICES, cudaMemcpyDeviceToDevice);
+
+
+		DivideMARDifference_get_accel_y << <numTilesMajor, threadsPerTileMajor >> > (
+				p_MAR_ion + BEGINNING_OF_CENTRAL,
+				p_MAR_elec + BEGINNING_OF_CENTRAL,
+			p_MAR_ion_temp_central,
+			p_MAR_elec_temp_central,
+				this->p_n_minor + BEGINNING_OF_CENTRAL,
+				this->p_AreaMinor + BEGINNING_OF_CENTRAL, // we'll look in the minor central cell, this is where MAR applies.
+				p_accelgraph[9]
+				);
+		Call(cudaThreadSynchronize(), "cudaTS DivideMARdiff_get_accel");
+
+		cudaMemcpy(p_MAR_ion_temp_central, p_MAR_ion + BEGINNING_OF_CENTRAL, sizeof(f64_vec3)*NUMVERTICES,
+				cudaMemcpyDeviceToDevice);
+		cudaMemcpy(p_MAR_elec_temp_central, p_MAR_elec + BEGINNING_OF_CENTRAL, sizeof(f64_vec3)*NUMVERTICES,
+				cudaMemcpyDeviceToDevice);
+		
 	};
 	//
 	//cudaMemcpy(&tempf64, &(NT_addition_rates_d[VERTCHOSEN].NiTi), sizeof(f64), cudaMemcpyDeviceToHost);
@@ -11909,6 +11994,8 @@ void cuSyst::PerformCUDA_Advance_noadvect(//const
 		false // calculate n and T on centroids
 		); // call before CreateShardModel 
 	Call(cudaThreadSynchronize(), "cudaTS Average_nTx pos");
+
+#ifdef PRECISE_VISCOSITY
 
 	kernelCalculate_ita_visc << <numTilesMinor, threadsPerTileMinor >> >(
 		pX_half->p_info,
@@ -11971,6 +12058,23 @@ void cuSyst::PerformCUDA_Advance_noadvect(//const
 
 		// Store into temp array:
 		cudaMemcpy(NT_addition_rates_d_temp2, NT_addition_rates_d, sizeof(NTrates)*NUMVERTICES, cudaMemcpyDeviceToDevice);
+
+
+		DivideMARDifference_get_accel_y << <numTilesMajor, threadsPerTileMajor >> > (
+			p_MAR_ion + BEGINNING_OF_CENTRAL,
+			p_MAR_elec + BEGINNING_OF_CENTRAL,
+			p_MAR_ion_temp_central,
+			p_MAR_elec_temp_central,
+			this->p_n_minor + BEGINNING_OF_CENTRAL,
+			this->p_AreaMinor + BEGINNING_OF_CENTRAL, // we'll look in the minor central cell, this is where MAR applies.
+			p_accelgraph[8] // viscosity y
+			);
+		Call(cudaThreadSynchronize(), "cudaTS DivideMARdiff_get_accel");
+
+		cudaMemcpy(p_MAR_ion_temp_central, p_MAR_ion + BEGINNING_OF_CENTRAL, sizeof(f64_vec3)*NUMVERTICES,
+			cudaMemcpyDeviceToDevice);
+		cudaMemcpy(p_MAR_elec_temp_central, p_MAR_elec + BEGINNING_OF_CENTRAL, sizeof(f64_vec3)*NUMVERTICES,
+			cudaMemcpyDeviceToDevice);
 	};
 	// This must be where most runtime cost lies.
 	// 2 ways to reduce: reduce frequency to 1e-12, introduce masking.
@@ -11997,48 +12101,7 @@ void cuSyst::PerformCUDA_Advance_noadvect(//const
 	cudaMemcpy(&tempf64, &(NT_addition_rates_d[VERTCHOSEN].NeTe), sizeof(f64), cudaMemcpyDeviceToHost);
 	printf("%d NeTe rate %1.10E \n", VERTCHOSEN, tempf64);
 
-
-	//
-	//	fprintf(fpdat, "wViscous MARion ");
-	//	for (i = 0; i < 3; i++) {
-	//		cudaMemcpy(&tempf64, &(p_MAR_ion[VERTS[i] + BEGINNING_OF_CENTRAL].y), sizeof(f64), cudaMemcpyDeviceToHost);
-	//		fprintf(fpdat, " %1.12E ", tempf64);
-	//	};
-	//	fprintf(fpdat, "wViscous MARelec ");
-	//	for (i = 0; i < 3; i++) {
-	//		cudaMemcpy(&tempf64, &(p_MAR_elec[VERTS[i] + BEGINNING_OF_CENTRAL].y), sizeof(f64), cudaMemcpyDeviceToHost);
-	//		fprintf(fpdat, " %1.12E ", tempf64);
-	//	};
-	//	fprintf(fpdat, "wViscous_NiTi ");
-	//	for (i = 0; i < 3; i++) {
-	//		cudaMemcpy(&tempf64, &(NT_addition_rates_d[VERTS[i]].NiTi), sizeof(f64), cudaMemcpyDeviceToHost);
-	//		fprintf(fpdat, " %1.12E ", tempf64);
-	//	};
-	//
-	//
-	//	fprintf(fpdat, "Bx ");
-	//	for (i = 0; i < 3; i++) {
-	//		cudaMemcpy(&tempf64, &(pX_half->p_B[VERTS[i] + BEGINNING_OF_CENTRAL].x), sizeof(f64), cudaMemcpyDeviceToHost);
-	//		fprintf(fpdat, " %1.12E ", tempf64);
-	//	};
-	//	fprintf(fpdat, "By ");
-	//	for (i = 0; i < 3; i++) {
-	//		cudaMemcpy(&tempf64, &(pX_half->p_B[VERTS[i] + BEGINNING_OF_CENTRAL].y), sizeof(f64), cudaMemcpyDeviceToHost);
-	//		fprintf(fpdat, " %1.12E ", tempf64);
-	//	};
-	//	fprintf(fpdat, "viz ");
-	//	for (i = 0; i < 3; i++) {
-	//		cudaMemcpy(&tempf64, &(pX_half->p_vie[VERTS[i] + BEGINNING_OF_CENTRAL].viz), sizeof(f64), cudaMemcpyDeviceToHost);
-	//		fprintf(fpdat, " %1.12E ", tempf64);
-	//	};
-	//	fprintf(fpdat, "vez ");
-	//	for (i = 0; i < 3; i++) {
-	//		cudaMemcpy(&tempf64, &(pX_half->p_vie[VERTS[i] + BEGINNING_OF_CENTRAL].vez), sizeof(f64), cudaMemcpyDeviceToHost);
-	//		fprintf(fpdat, " %1.12E ", tempf64);
-	//	};
-	//	fprintf(fpdat, "\n");
-	//	fclose(fpdat);
-
+#endif
 	 
 	if (bGlobalSaveTGraphs == false) {
 		kernelAdvanceDensityAndTemperature_noadvectioncompression << <numTilesMajor, threadsPerTileMajor >> > (
@@ -12273,11 +12336,12 @@ void cuSyst::PerformCUDA_Advance_noadvect(//const
 	// Electrons travel from cathode to anode so Jz is down in filament,
 	// up around anode.
 	printf("\nGPU: Iz0 = %1.14E SigmaIzz %1.14E EzStrength = %1.14E \n\n", Iz0, Sigma_Izz, EzStrength_);
-	 
-	FILE * jillium = fopen("Ez1a.txt", "a");
-	fprintf(jillium, "Runs %d GPU: Izpresc %1.14E Iz0 = %1.14E SigmaIzz %1.14E EzStrength = %1.14E \n",
-		runs, Iz_prescribed_endtime ,Iz0, Sigma_Izz, EzStrength_);
-	fclose(jillium);
+	// 
+	//FILE * jillium = fopen("Ez1a.txt", "a");
+	//fprintf(jillium, "Runs %d GPU: Izpresc %1.14E Iz0 = %1.14E SigmaIzz %1.14E EzStrength = %1.14E \n",
+	//	runs, Iz_prescribed_endtime ,Iz0, Sigma_Izz, EzStrength_);
+	//fclose(jillium);
+
 	if (EzStrength_ > 1.0e5) {
 		printf("time to stop, press p");
 		while (getch() != 'p');
@@ -12434,12 +12498,37 @@ void cuSyst::PerformCUDA_Advance_noadvect(//const
 							   // Are we even going to be advecting points every step?
 							   // Maybe make advection its own thing.
 		p_LapAz,
-
 		pX_target->p_AAdot,
 		pX_target->p_vie,
 		pX_target->p_v_n
 		);
 	Call(cudaThreadSynchronize(), "cudaTS kernelUpdate_v ");
+
+	 
+	if (bGlobalSaveTGraphs) {
+
+		MeasureAccelxy_and_JxB_and_soak << <numTilesMajor, threadsPerTileMajor >> >(
+			pX_target->p_vie + BEGINNING_OF_CENTRAL,
+			this->p_vie + BEGINNING_OF_CENTRAL,
+			Timestep,
+			p_GradAz + BEGINNING_OF_CENTRAL,
+			pX_half->p_n_minor + BEGINNING_OF_CENTRAL,
+			pX_half->p_T_minor + BEGINNING_OF_CENTRAL,
+			this->p_v_n + BEGINNING_OF_CENTRAL,
+			pX_target->p_v_n + BEGINNING_OF_CENTRAL,
+			p_accelgraph[0],
+			p_accelgraph[1], // accel xy
+			p_accelgraph[2],
+			p_accelgraph[3], // vxB accel xy
+			p_accelgraph[11], // grad_y Az
+			p_accelgraph[6]
+		);
+		Call(cudaThreadSynchronize(), "cudaTS MeasureAccelxy ");
+
+	}
+
+
+
 
 	kernelAdvanceAzBwdEuler << <numTilesMinor, threadsPerTileMinor >> > (
 		hsub,
@@ -12594,6 +12683,11 @@ void PerformCUDA_Revoke()
 	CallMAC(cudaFree(p_graphdata6));
 	for (int i = 0; i < 9; i++)
 		CallMAC(cudaFree(p_Tgraph[i]));
+	for (int i = 0; i < 12; i++)
+		CallMAC(cudaFree(p_accelgraph[i]));
+
+	CallMAC(cudaFree(p_MAR_ion_temp_central));
+	CallMAC(cudaFree(p_MAR_elec_temp_central));
 
 	CallMAC(cudaFree(p_InvertedMatrix_i));
 	CallMAC(cudaFree(p_InvertedMatrix_e));
@@ -12676,6 +12770,8 @@ void PerformCUDA_Revoke()
 
 	for (int i = 0; i < 9; i++)
 		free(p_Tgraph_host[i]);
+	for (int i = 0; i < 12; i++)
+		free(p_accelgraph_host[i]);
 
 	GlobalSuppressSuccessVerbosity = false;
 	printf("revoke done\n");

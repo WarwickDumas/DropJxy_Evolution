@@ -3124,6 +3124,149 @@ __global__ void DivideNeTe_by_N(
 		p_dTbydt[iVertex] = diff / N;
 	}
 }
+
+
+__global__ void DivideMAR_get_accel(
+	f64_vec3 * __restrict__ pMAR_ion,
+	f64_vec3 * __restrict__ pMAR_elec,
+	nvals * __restrict__ p_n,
+	f64 * __restrict__ p_AreaMinor,
+	f64 * __restrict__ p_output_x,
+	f64 * __restrict__ p_output_y
+) {
+	long const iVertex = threadIdx.x + blockDim.x*blockIdx.x;
+
+	f64_vec3 MAR_ion = pMAR_ion[iVertex];
+	f64_vec3 MAR_elec = pMAR_elec[iVertex];
+
+	f64 N = p_n[iVertex].n*p_AreaMinor[iVertex];
+	if (N == 0.0) {
+		p_output_x[iVertex] = 0.0;
+		p_output_y[iVertex] = 0.0;
+	} else {
+		p_output_x[iVertex] = (m_i*MAR_ion.x + m_e*MAR_elec.x) /
+			((m_i + m_e)*N);
+		p_output_y[iVertex] = (m_i*MAR_ion.y + m_e*MAR_elec.y) /
+			((m_i + m_e)*N);
+	};
+}
+
+
+__global__ void Divide_diff_get_accel(
+	v4 * __restrict__ p_vie_f,
+	v4 * __restrict__ p_vie_i,
+	f64 const h_use,
+	f64 * __restrict__ p_output
+) {
+	long const iVertex = threadIdx.x + blockDim.x*blockIdx.x;
+
+	p_output[iVertex] = (p_vie_f[iVertex].vxy.y -
+		p_vie_i[iVertex].vxy.y) / h_use;
+}
+
+
+__global__ void DivideMARDifference_get_accel_y(
+	f64_vec3 * __restrict__ pMAR_ion,
+	f64_vec3 * __restrict__ pMAR_elec,
+	f64_vec3 * __restrict__ pMAR_ion_old,
+	f64_vec3 * __restrict__ pMAR_elec_old,
+	nvals * __restrict__ p_n,
+	f64 * __restrict__ p_AreaMinor,
+	f64 * __restrict__ p_output_y
+) {
+	long const iVertex = threadIdx.x + blockDim.x*blockIdx.x;
+
+	f64_vec3 MAR_ion = pMAR_ion[iVertex];
+	f64_vec3 MAR_elec = pMAR_elec[iVertex];
+	f64_vec3 MAR_ion_old = pMAR_ion_old[iVertex];
+	f64_vec3 MAR_elec_old = pMAR_elec_old[iVertex];
+
+	f64 N = p_n[iVertex].n*p_AreaMinor[iVertex];
+	if (N == 0.0) {
+		p_output_y[iVertex] = 0.0;
+	} else {
+		p_output_y[iVertex] = (m_i*(MAR_ion.y - MAR_ion_old.y) + m_e*(MAR_elec.y - MAR_elec_old.y)) /
+			((m_i + m_e)*N);
+	};
+}
+
+
+__global__ void MeasureAccelxy_and_JxB_and_soak(
+	v4 * __restrict__ p_vie_final,
+	v4 * __restrict__ p_vie_initial,
+	f64 const h_use,
+	f64_vec2 * __restrict__ pGradAz,
+	nvals * __restrict__ p_n_central,
+	T3 * __restrict__ p_T_central,
+	f64_vec3 * __restrict__ p_v_nk,
+	f64_vec3 * __restrict__ p_v_nkplus1,
+
+	f64 * __restrict__ p_accel_x,
+	f64 * __restrict__ p_accel_y,
+	f64 * __restrict__ p_vxB_x,
+	f64 * __restrict__ p_vxB_y,
+	f64 * __restrict__ p_grad_y_Az,
+	f64 * __restrict__ p_soak_y
+) {
+	long const iVertex = threadIdx.x + blockDim.x*blockIdx.x;
+
+	v4 vie_f = p_vie_final[iVertex];
+	v4 vie_i = p_vie_initial[iVertex];
+	f64_vec2 accel;
+	p_accel_x[iVertex] = (vie_f.vxy.x - vie_i.vxy.x) / h_use;
+	p_accel_y[iVertex] = (vie_f.vxy.y - vie_i.vxy.y) / h_use;
+
+	if (TESTACCEL) printf("%d MeasureAccel y %1.9E initvy %1.9E finvy %1.9E\n\n",
+		iVertex, p_accel_y[iVertex],
+		vie_i.vxy.y, vie_f.vxy.y);
+
+	f64_vec2 Grad_Az = pGradAz[iVertex];
+	p_vxB_x[iVertex] = (q / (c*(m_i + m_e)))*Grad_Az.x*(vie_f.viz-vie_f.vez);
+	p_vxB_y[iVertex] = (q / (c*(m_i + m_e)))*Grad_Az.y*(vie_f.viz-vie_f.vez);
+
+	p_grad_y_Az[iVertex] = Grad_Az.y;
+
+	nvals n_use = p_n_central[iVertex];
+	T3 T = p_T_central[iVertex];
+	f64_vec3 v_nk = p_v_nk[iVertex];
+	f64_vec3 v_nkplus1 = p_v_nkplus1[iVertex];
+
+	if ((n_use.n == 0.0) || (T.Te == 0.0)) {
+
+		p_soak_y[iVertex] = 0.0;
+
+	} else {
+				
+		f64 cross_section_times_thermal_en, cross_section_times_thermal_in;
+		f64 ionneut_thermal, electron_thermal;
+		f64 sqrt_Te = sqrt(T.Te);
+
+		ionneut_thermal = sqrt(T.Ti / m_ion + T.Tn / m_n); // hopefully not sqrt(0)
+		electron_thermal = sqrt_Te * over_sqrt_m_e;
+		f64 s_in_MT, s_en_MT, s_en_visc, s_in_visc;
+
+		Estimate_Ion_Neutral_Cross_sections_d(T.Ti*one_over_kB, &s_in_MT, &s_in_visc);
+		Estimate_Ion_Neutral_Cross_sections_d(T.Te*one_over_kB, &s_en_MT, &s_en_visc);
+
+		cross_section_times_thermal_en = s_en_MT * electron_thermal;
+		cross_section_times_thermal_in = s_in_MT * ionneut_thermal;
+
+		p_soak_y[iVertex] = (1.0 / (m_i + m_e))*
+			(m_n*M_i_over_in*cross_section_times_thermal_in*n_use.n_n
+				+ m_n * M_e_over_en*cross_section_times_thermal_en*n_use.n_n)*(v_nk.y - vie_f.vxy.y);
+
+		if (TESTACCEL) printf("p_soak_y rate %1.10E v_n.y %1.10E v.y %1.10E v_n diff: %1.10E\n", p_soak_y[iVertex],
+			v_nk.y, vie_f.vxy.y, v_nkplus1.y - v_nk.y);
+
+		// Do we get no component of Upsilon that gives us a contribution from another dimension?
+		// Not sure on that -- don't think we can push both species same way due to a difference in vz.
+
+	};
+}
+
+
+
+
 __global__ void Collect_Ntotal_major(
 	structural * __restrict__ p_info_minor,
 	long * __restrict__ p_izTri,

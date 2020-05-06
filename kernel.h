@@ -1377,6 +1377,49 @@ __global__ void kernelPopulateBackwardOhmsLaw(
 
 	bool const bSwitchSave);
 
+__global__ void Divide_diff_get_accel(
+	v4 * __restrict__ p_vie_f,
+	v4 * __restrict__ p_vie_i,
+	f64 const h_use,
+	f64 * __restrict__ p_output
+);
+
+__global__ void DivideMARDifference_get_accel_y(
+	f64_vec3 * __restrict__ pMAR_ion,
+	f64_vec3 * __restrict__ pMAR_elec,
+	f64_vec3 * __restrict__ pMAR_ion_old,
+	f64_vec3 * __restrict__ pMAR_elec_old,
+	nvals * __restrict__ p_n,
+	f64 * __restrict__ p_AreaMinor,
+	f64 * __restrict__ p_output_y
+);
+__global__ void DivideMAR_get_accel(
+	f64_vec3 * __restrict__ pMAR_ion,
+	f64_vec3 * __restrict__ pMAR_elec,
+	nvals * __restrict__ p_n,
+	f64 * __restrict__ p_AreaMinor,
+	f64 * __restrict__ p_output_x,
+	f64 * __restrict__ p_output_y
+);
+
+__global__ void MeasureAccelxy_and_JxB_and_soak(
+	v4 * __restrict__ p_vie_final,
+	v4 * __restrict__ p_vie_initial,
+	f64 const h_use,
+	f64_vec2 * __restrict__ pGradAz,
+	nvals * __restrict__ p_n_central,
+	T3 * __restrict__ p_T_central,
+	f64_vec3 * __restrict__ p_v_nk,
+	f64_vec3 * __restrict__ p_v_nkplus1,
+
+	f64 * __restrict__ p_accel_x,
+	f64 * __restrict__ p_accel_y,
+	f64 * __restrict__ p_vxB_x,
+	f64 * __restrict__ p_vxB_y,
+	f64 * __restrict__ p_grad_y_Az,
+	f64 * __restrict__ p_soak_y
+);
+
 __global__ void kernelReset_v_in_outer_frill_and_outermost
 (
 	structural * __restrict__ p_info,

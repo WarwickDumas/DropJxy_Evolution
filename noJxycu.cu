@@ -2,7 +2,7 @@
 #define f64 double
 
 #define HISTORY										4
-
+ 
 #include <stdlib.h>
 #include <stdio.h>
 #include "lapacke.h"
@@ -46,6 +46,7 @@ extern f64 * temp_array_host;
 extern OhmsCoeffs * p_OhmsCoeffs_host;
 extern f64 * p_graphdata1_host,* p_graphdata2_host,* p_graphdata3_host, *p_graphdata4_host, *p_graphdata5_host, *p_graphdata6_host;
 extern f64 * p_Tgraph_host[9];
+extern f64 * p_accelgraph_host[12];
 
 // Global variables:
 // =================
@@ -113,11 +114,11 @@ int Historic_powermin[512]; // just store previous value only.
 bool boolGlobalHistory, GlobalboolDisplayMeshWireframe;
 
 // avi file -oriented variables
-int const NUMAVI = 6;
+int const NUMAVI = 7;
 HAVI hAvi[NUMAVI + 1]; // does it work without OHMSLAW? //  OHMSLAW,
 int const GraphFlags[NUMAVI] = { SPECIES_ION, OVERALL, JZAZBXYEZ, ONE_D, IONIZEGRAPH,
-				DTGRAPH};
-char szAvi[NUMAVI][128] = { "Elec","Total","JzAzBxy","Test", "Ionize", "dT"};
+				DTGRAPH, ACCELGRAPHS};
+char szAvi[NUMAVI][128] = { "Elec","Total","JzAzBxy","Test", "Ionize", "dT", "Accel"};
 
 AVICOMPRESSOPTIONS opts;
 int counter;
@@ -126,15 +127,13 @@ HDC surfdc, dibdc;
 LPVOID lpvBits;
 BITMAPINFO bitmapinfo;
 
-f64 graphdata[9][10000]; // 40000*8=320 KB
+f64 graphdata[12][10000]; 
 f64 graph_r[10000];
 int numgraphs = 4;
 int num_graph_data_points = 10000;
-f64 maximum[9];
+f64 maximum[12];
 
 extern TriMesh * pTriMesh;
-
-
 
 
 char * report_time(int action)
@@ -278,7 +277,7 @@ void surfacegraph::DrawSurface(const char * szname,
 		offset, offset_c,
 		code);
 
-	printf("got to here 3\n");
+	printf("DrawSurface code %d : calling Render:\n", code);
 	if (this->bDisplayTimestamp) {
 		sprintf(buff, "%6.2f ns", evaltime*1.0e9);
 		this->Render(szname, false, pX, buff);
@@ -290,7 +289,7 @@ void surfacegraph::DrawSurface(const char * szname,
 }
 
 
-void Create1DGraphingData(TriMesh * pX, bool bTdata = false)
+void Create1DGraphingData(TriMesh * pX, bool bTdata = false, bool bAcceldata = false)
 {
 	// Takes p_temphost3,4,5,6 and turns them into graphdata[iGraph=0,1,2,3][]
 
@@ -306,13 +305,17 @@ void Create1DGraphingData(TriMesh * pX, bool bTdata = false)
 
 	num_graph_data_points = pX->GetVertsRightOfCutawayLine_Sorted(VertexIndexArray, graph_r, true);
 	
-	memset(maximum, 0, sizeof(f64) * 9);
+	printf("Xebeques furious\n");
+
+	memset(maximum, 0, sizeof(f64) * 12);
 
 	// Method used in Render routine looks quite reasonable: find tri that crosses cutaway,
 	// use some kind of interp on tri. But we need to use values from p_temphost array not a graph position.
 
 	for (asdf = 0; asdf < num_graph_data_points; asdf++)
 	{
+		if (asdf % 10 == 0) printf("<");
+		
 		pVertex = pX->X + VertexIndexArray[asdf];
 
 		// We want the tri directly to the left of it, through which (-1,0) passes.
@@ -355,8 +358,7 @@ void Create1DGraphingData(TriMesh * pX, bool bTdata = false)
 			graphdata[1][asdf] = 0.0;
 			graphdata[2][asdf] = 0.0;
 			graphdata[3][asdf] = 0.0;
-		}
-		else {
+		} else {
 			pTri = pX->T + izTri[iWhich];
 			while ((pTri->u8domain_flag != DOMAIN_TRIANGLE) && (iWhich >= 0)) {
 				pTri = pX->T + izTri[iWhich];
@@ -386,7 +388,7 @@ void Create1DGraphingData(TriMesh * pX, bool bTdata = false)
 			wt2 /= wttotal;
 			// Not a great way it has to be said.
 
-			if (bTdata == false) {
+			if ((bTdata == false) && (bAcceldata == false)) {
 				y0 = p_temphost3[(pTri->cornerptr[0] - pX->X) + BEGINNING_OF_CENTRAL];
 				y1 = p_temphost3[(pTri->cornerptr[1] - pX->X) + BEGINNING_OF_CENTRAL];
 				y2 = p_temphost3[(pTri->cornerptr[2] - pX->X) + BEGINNING_OF_CENTRAL];
@@ -419,28 +421,99 @@ void Create1DGraphingData(TriMesh * pX, bool bTdata = false)
 				// go through from 0 = conduction to 5 = dTe/dt itself
 				// we have missed out compressive...
 
-				for (int j = 0; j < 8; j++)
-				{
-					y0 = p_Tgraph_host[j][(pTri->cornerptr[0] - pX->X)];
-					y1 = p_Tgraph_host[j][(pTri->cornerptr[1] - pX->X)];
-					y2 = p_Tgraph_host[j][(pTri->cornerptr[2] - pX->X)];
-					graphdata[j][asdf] = wt0*y0 + wt1*y1 + wt2*y2;
-					if (fabs(graphdata[j][asdf]) > maximum[j]) maximum[j] = fabs(graphdata[j][asdf]);
-				}
+				if (bTdata) {
+					for (int j = 0; j < 8; j++)
+					{
+						y0 = p_Tgraph_host[j][(pTri->cornerptr[0] - pX->X)];
+						y1 = p_Tgraph_host[j][(pTri->cornerptr[1] - pX->X)];
+						y2 = p_Tgraph_host[j][(pTri->cornerptr[2] - pX->X)];
+						graphdata[j][asdf] = wt0*y0 + wt1*y1 + wt2*y2;
+						if (fabs(graphdata[j][asdf]) > maximum[j]) maximum[j] = fabs(graphdata[j][asdf]);
+					}
+				} else {
+					int j;
+					j = 1; // total
+					y0 = p_accelgraph_host[j][(pTri->cornerptr[0] - pX->X)];
+					y1 = p_accelgraph_host[j][(pTri->cornerptr[1] - pX->X)];
+					y2 = p_accelgraph_host[j][(pTri->cornerptr[2] - pX->X)];
+					graphdata[0][asdf] = wt0*y0 + wt1*y1 + wt2*y2;
 
+					
+					j = 3; // vxB
+					y0 = p_accelgraph_host[j][(pTri->cornerptr[0] - pX->X)];
+					y1 = p_accelgraph_host[j][(pTri->cornerptr[1] - pX->X)];
+					y2 = p_accelgraph_host[j][(pTri->cornerptr[2] - pX->X)];
+					graphdata[1][asdf] = wt0*y0 + wt1*y1 + wt2*y2;
+					j = 5; // pressure
+					y0 = p_accelgraph_host[j][(pTri->cornerptr[0] - pX->X)];
+					y1 = p_accelgraph_host[j][(pTri->cornerptr[1] - pX->X)];
+					y2 = p_accelgraph_host[j][(pTri->cornerptr[2] - pX->X)];
+					graphdata[2][asdf] = wt0*y0 + wt1*y1 + wt2*y2;
+					j = 6; // neutral soak
+					y0 = p_accelgraph_host[j][(pTri->cornerptr[0] - pX->X)];
+					y1 = p_accelgraph_host[j][(pTri->cornerptr[1] - pX->X)];
+					y2 = p_accelgraph_host[j][(pTri->cornerptr[2] - pX->X)];
+					graphdata[3][asdf] = wt0*y0 + wt1*y1 + wt2*y2;
+										
+					j = 8; // viscosity
+					y0 = p_accelgraph_host[j][(pTri->cornerptr[0] - pX->X)];
+					y1 = p_accelgraph_host[j][(pTri->cornerptr[1] - pX->X)];
+					y2 = p_accelgraph_host[j][(pTri->cornerptr[2] - pX->X)];
+					graphdata[4][asdf] = wt0*y0 + wt1*y1 + wt2*y2;
+
+					j = 9; // ionization
+					y0 = p_accelgraph_host[j][(pTri->cornerptr[0] - pX->X)];
+					y1 = p_accelgraph_host[j][(pTri->cornerptr[1] - pX->X)];
+					y2 = p_accelgraph_host[j][(pTri->cornerptr[2] - pX->X)];
+					graphdata[5][asdf] = wt0*y0 + wt1*y1 + wt2*y2;
+					
+					j = 10; // advection
+					y0 = p_accelgraph_host[j][(pTri->cornerptr[0] - pX->X)];
+					y1 = p_accelgraph_host[j][(pTri->cornerptr[1] - pX->X)];
+					y2 = p_accelgraph_host[j][(pTri->cornerptr[2] - pX->X)];
+					graphdata[6][asdf] = wt0*y0 + wt1*y1 + wt2*y2;
+
+					// works if comment here
+					
+				//	printf("%d ", asdf);
+					for (int j = 0; j < 7; j++)
+					{
+				//		printf("%d", j);
+						if (fabs(graphdata[j][asdf]) > maximum[0]) {
+							maximum[0] = fabs(graphdata[j][asdf]);
+				//			printf("maximum %1.9E\n", maximum[0]);
+						}
+					}
+
+					// does it work if comment here? no
+					
+					j = 11; // grad_y Az
+					y0 = p_accelgraph_host[j][(pTri->cornerptr[0] - pX->X)];
+					y1 = p_accelgraph_host[j][(pTri->cornerptr[1] - pX->X)];
+					y2 = p_accelgraph_host[j][(pTri->cornerptr[2] - pX->X)];
+					graphdata[7][asdf] = wt0*y0 + wt1*y1 + wt2*y2;
+					if (fabs(graphdata[7][asdf]) > maximum[7]) maximum[7] = fabs(graphdata[7][asdf]);
+					
+				}
 			}
 		}; // found triangle		
 	}; // asdf	
-	if (bTdata == false) {		
+	if ((bTdata == false) && (bAcceldata == false)) {		
 		maximum[3] = max(maximum[3], maximum[2]);
 		maximum[2] = maximum[3];
 	} else {
 		// for dT graphs, let maximum be overall
-		for (int j = 1; j <= 6; j++)
-			maximum[j] = max(maximum[j], maximum[j - 1]);
-		for (int j = 5; j >= 0; j--)
-			maximum[j] = maximum[j + 1];
+		if (bTdata) {
+			for (int j = 1; j <= 6; j++)
+				maximum[j] = max(maximum[j], maximum[j - 1]);
+			for (int j = 5; j >= 0; j--)
+				maximum[j] = maximum[j + 1];
+		} else {
+			printf("here:\n");
 
+			for (int j = 1; j < 7; j++)
+				maximum[j] = maximum[0];
+		}
 	}
 }
 
@@ -465,13 +538,14 @@ void RefreshGraphs(TriMesh & X, // only not const because of such as Reset_verte
 	char graphname[4][128] = { "Azdot","Azdotdot","Lap Az","-4pi/c Jz" };
 	char Tgraphname[9][128] = { "conduction","ionization","viscosity","frictional","interspecies","dTe/dt total","compressive" ,
 	"DnT","undefined"};
-	
+	char accelgraphname[9][128] = { "dvy/dt total", "v x B", "pressure", "neutral soak","viscosity", "ionization", "advection","grad_y Az"};
+
 	float const MAXX = 11.0f;
 	float const MAXY = 6.0f;
 
 	vertex1 linedata[10000];
 	vertex1 linedata2[12];
-
+	
 	switch (iGraphsFlag) {
 		
 	case ONE_D:
@@ -696,7 +770,7 @@ void RefreshGraphs(TriMesh & X, // only not const because of such as Reset_verte
 
 		// We are going to have to think about using LineTo the way it is done in RenderGraphs
 		// let's start by rendering in the x-y plane and we can let the present camera look at it
-		printf("\n\nGot to here: DTGRAPHS\n\n");
+		printf("\n\nRefreshGraphs: DTGRAPHS\n\n");
 
 		// Create data:
 		Create1DGraphingData(&X, true);
@@ -882,6 +956,201 @@ void RefreshGraphs(TriMesh & X, // only not const because of such as Reset_verte
 			false,
 			GRAPH_ELEC_T, &X);
 
+		break;
+
+	case ACCELGRAPHS:
+
+		// We are going to have to think about using LineTo the way it is done in RenderGraphs
+		// let's start by rendering in the x-y plane and we can let the present camera look at it
+		printf("\n\nRefreshGraphs: ACCELGRAPHS\n\n");
+
+		// Create data:
+		Create1DGraphingData(&X, false, true);
+		
+		Graph[6].SetEyeAndLookat(newEye, newLookat); // sets matView not matProj
+		printf("Eye %f %f %f\n", newEye.x, newEye.y, newEye.z);
+		Direct3D.pd3dDevice->SetViewport(&(Graph[6].vp));
+
+		D3DXMatrixIdentity(&matWorld);
+		//D3DXMatrixIdentity(&Graph[6].matProj); // ???????????????
+		Direct3D.pd3dDevice->SetTransform(D3DTS_WORLD, &matWorld);
+		Direct3D.pd3dDevice->SetTransform(D3DTS_VIEW, &(Graph[6].matView));
+		Direct3D.pd3dDevice->SetTransform(D3DTS_PROJECTION, &(Graph[6].matProj));
+
+		Direct3D.pd3dDevice->Clear(0, NULL, D3DCLEAR_TARGET | D3DCLEAR_ZBUFFER,
+			D3DCOLOR_XRGB(250, 255, 250), 1.0f, 0);
+
+		if (SUCCEEDED(Direct3D.pd3dDevice->BeginScene()))
+		{
+			Direct3D.pd3dDevice->SetFVF(point_fvf);
+
+			real theta = -HALFANGLE;
+			real r = 3.44;
+
+			linedata[0].x = -MAXX;
+			linedata[0].z = 3.44*xzscale;
+			linedata[0].y = 0.0f;
+			linedata[0].colour = 0xff888888; // grey
+
+			linedata[1].x = -linedata[0].x;
+			linedata[1].y = 0.0f;
+			linedata[1].z = linedata[0].z;
+			linedata[1].colour = linedata[0].colour;
+
+			Direct3D.pd3dDevice->DrawPrimitiveUP(D3DPT_LINESTRIP, 1, linedata, sizeof(vertex1));
+			
+			D3DCOLOR colour;
+			for (iGraph = 0; iGraph < 8; iGraph++)
+			{
+				colour = 0xff000000; // total: 
+				if (iGraph == 1) colour = 0xffd500ff; // vxB: heliotrope
+				if (iGraph == 2) colour = 0xffff2200; // pressure: red
+				if (iGraph == 3) colour = 0xff00ff33; // soak:   use green
+				if (iGraph == 4) colour = 0xff009999; // viscosity: aqua
+				if (iGraph == 5) colour = 0xff0000ff; // ionization : royal blue
+				if (iGraph == 6) colour = 0xff906545; // advection :  brown
+				if (iGraph == 7) colour = 0xffeecd00; // grady_Az : olive?
+
+				linedata[0].x = -MAXX;
+				linedata[0].z = 3.44*xzscale;
+				linedata[0].y = MAXY + 4.0f - 0.9f*(float)iGraph;
+				int asdf = 0;
+				linedata[asdf].colour = colour;
+				linedata[1].x = linedata[0].x + 1.0f;
+				linedata[1].y = linedata[0].y;
+				linedata[1].z = linedata[0].z;
+				linedata[1].colour = linedata[0].colour;
+				Direct3D.pd3dDevice->DrawPrimitiveUP(D3DPT_LINESTRIP, 1, linedata, sizeof(vertex1));
+
+				Graph[6].RenderLabel2(accelgraphname[iGraph], linedata[1].x + 1.0f, linedata[1].y - 0.3f, linedata[1].z, 0);
+
+				for (asdf = 0; asdf < num_graph_data_points; asdf++)
+				{
+					linedata[asdf].x = (float)(MAXX - 2.0*MAXX*((graph_r[asdf] - INNER_A_BOUNDARY) /
+						(DOMAIN_OUTER_RADIUS - INNER_A_BOUNDARY)));
+
+					// map 0 to 0.0f, maximum[iGraph] to MAXY and -maximum[iGraph] to MINY
+					// Decide on graph scales maximum[] in preceding bit of code
+					linedata[asdf].y = (float)(MAXY*graphdata[iGraph][asdf] / maximum[iGraph]);
+					linedata[asdf].z = 3.44f*xzscale;
+					linedata[asdf].colour = colour; // conduction: orange red		
+
+				//	if (asdf == 200) printf("linedata[200].y %1.9E  | ", linedata[asdf].y);
+
+				};
+				Direct3D.pd3dDevice->DrawPrimitiveUP(D3DPT_LINESTRIP, num_graph_data_points - 1, linedata, sizeof(vertex1));
+
+				sprintf(buffer, "%2.2E", maximum[iGraph]);
+				Graph[6].RenderLabel2(buffer,  // text
+					MAXX*0.4f + ((iGraph == 7)?1.6f:0.0f),
+					MAXY,
+					linedata[0].z, 0, 0xff000000);
+				sprintf(buffer, "0.0");
+				Graph[6].RenderLabel2(buffer,  // text
+					MAXX*0.4f + ((iGraph == 7) ? 1.6f : 0.0f),
+					0.0f,
+					linedata[0].z, 0, 0xff000000);
+				sprintf(buffer, "-%2.2E", maximum[iGraph]);
+				Graph[6].RenderLabel2(buffer,  // text
+					MAXX*0.4f + ((iGraph == 7) ? 1.6f : 0.0f),
+					-MAXY,
+					linedata[0].z, 0, 0xff000000);
+			};
+			
+			// Vertical lines:
+			for (int i = 0; i < 9; i++)
+			{
+				x = 0.16*(-r*xzscale + 2.0*r*xzscale*(((real)i) / 8.0));
+				z = 3.44*xzscale;// (float)(cos(HALFANGLE)*DEVICE_RADIUS_INSULATOR_OUTER)*xzscale;
+
+				linedata[0].x = x; linedata[0].z = z;
+				linedata[1].x = x; linedata[1].z = z;
+				linedata[0].colour = 0xff220011;
+				linedata[1].colour = 0xff220011;
+				linedata[0].y = -6.8f;// GRAPHIC_MIN_Y - 1.0f;  
+				linedata[1].y = ((i == 0) || (i == 8)) ? 6.0f : 0.0f;// GRAPHIC_MAX_Y + 2.5f;
+
+				Direct3D.pd3dDevice->DrawPrimitiveUP(D3DPT_LINESTRIP, 1, linedata, sizeof(vertex1));
+
+				sprintf(buffer, "%5.2f", INNER_A_BOUNDARY + (1.0 - ((real)i) / 8.0)*(DOMAIN_OUTER_RADIUS - INNER_A_BOUNDARY));
+				Graph[6].RenderLabel2(buffer,  // text
+					linedata[0].x,
+					-7.6f,
+					linedata[0].z, 0);
+
+			};
+			//DXChk(mFX->SetValue(mhEyePos, &Eye, sizeof(D3DXVECTOR3)));
+
+			linedata[0].x = -0.16*r*xzscale;
+			linedata[0].y = 0.0f;
+			linedata[0].z = 3.44*xzscale;
+			linedata[0].colour = 0xff000000; // 
+
+			linedata[1].x = 0.16*r*xzscale;
+			linedata[1].y = 0.0f;
+			linedata[1].z = linedata[0].z;
+			linedata[1].colour = linedata[0].colour;
+
+			Direct3D.pd3dDevice->DrawPrimitiveUP(D3DPT_LINESTRIP, 1, linedata, sizeof(vertex1));
+
+			Direct3D.pd3dDevice->EndScene();
+		}
+		else {
+			printf("BeginScene failed!\n\n");
+			getch();
+		}
+
+		printf("here3 ... \n");
+
+		pVertex = X.X;
+		pdata = X.pData + BEGINNING_OF_CENTRAL;
+		for (iVertex = 0; iVertex < NUMVERTICES; iVertex++)
+		{
+			pdata->temp.x = p_accelgraph_host[0][iVertex];
+			pdata->temp.y = p_accelgraph_host[1][iVertex];
+			++pVertex;
+			++pdata;
+		}
+		Graph[4].DrawSurface("dvxy/dt",
+			VELOCITY_HEIGHT, (real *)(&(X.pData[0].temp.x)),
+			VELOCITY_COLOUR, (real *)(&(X.pData[0].temp.x)),
+			false,
+			GRAPH_AXY, &X);
+
+		pVertex = X.X;
+		pdata = X.pData + BEGINNING_OF_CENTRAL;
+		for (iVertex = 0; iVertex < NUMVERTICES; iVertex++)
+		{
+			pdata->temp.x = p_accelgraph_host[2][iVertex];
+			pdata->temp.y = p_accelgraph_host[3][iVertex];
+			++pVertex;
+			++pdata;
+		}
+		Graph[1].DrawSurface("axy : v x B",
+			VELOCITY_HEIGHT, (real *)(&(X.pData[0].temp.x)),
+			VELOCITY_COLOUR, (real *)(&(X.pData[0].temp.x)),
+			false,
+			GRAPH_AXY2, &X);
+
+		pdata = X.pData + BEGINNING_OF_CENTRAL;
+		for (iVertex = 0; iVertex < NUMVERTICES; iVertex++)
+		{
+			pdata->temp.x = p_accelgraph_host[4][iVertex];
+			pdata->temp.y = p_accelgraph_host[5][iVertex];
+			++pdata;
+		}
+		Graph[3].DrawSurface("axy : pressure",
+			VELOCITY_HEIGHT, (real *)(&(X.pData[0].temp.x)),
+			VELOCITY_COLOUR, (real *)(&(X.pData[0].temp.x)),
+			false,
+			GRAPH_AXY3, &X);
+
+		Graph[5].DrawSurface("vxy",
+			VELOCITY_HEIGHT, (real *)(&(X.pData[0].vxy)),
+			VELOCITY_COLOUR, (real *)(&(X.pData[0].vxy)),
+			false,
+			GRAPH_ION_V, &X);
+		
 		break;
 
 		/*
@@ -1072,6 +1341,7 @@ void RefreshGraphs(TriMesh & X, // only not const because of such as Reset_verte
 		*/
 
 case IONIZEGRAPH:
+	printf("\n\nRefreshGraphs: IONIZEGRAPHS\n\n");
 
 	// When we come to speed up graphs, make it so we can
 	// just pass an array of f64. !!!!
@@ -1168,7 +1438,8 @@ case IONIZEGRAPH:
 
 
 case OVERALL:
-		
+	printf("\n\nRefreshGraphs: OVERALL\n\n");
+
 		pVertex = X.X;
 		pdata = X.pData + BEGINNING_OF_CENTRAL;
 		for (iVertex = 0; iVertex < NUMVERTICES; iVertex++)
@@ -1261,7 +1532,8 @@ case OVERALL:
 		
 		break;
 	case SPECIES_ION:
-		
+		printf("\n\nRefreshGraphs: SPECIES_ION\n\n");
+
 		Graph[3].TickRescaling = 1.0 / kB_;
 		Graph[3].DrawSurface("Ion T",
 			DATA_HEIGHT, (real *)(&(X.pData[0].Ti)),
@@ -1319,6 +1591,7 @@ case OVERALL:
 		*/
 
 case OHMSLAW:
+	printf("\n\nRefreshGraphs: OHMSLAW\n\n");
 
 		// 0. q/ m_e nu_sum 
 		// 1. qn / m_e nu_sum
@@ -1452,6 +1725,8 @@ case OHMSLAW:
 		break;
 
 	case JZAZBXYEZ:
+		printf("\n\nRefreshGraphs: JZAZBXYEZ\n\n");
+
 		pdata = X.pData + BEGINNING_OF_CENTRAL;
 		for (iVertex = 0; iVertex < NUMVERTICES; iVertex++)
 		{
@@ -1512,6 +1787,7 @@ case OHMSLAW:
 		break;
 
 	case VIZVEZJZAZDOT:
+		printf("\n\nRefreshGraphs: VIZVEZJZAZDOT\n\n");
 
 		// Set Jz:
 		pdata = X.pData + BEGINNING_OF_CENTRAL;
@@ -1637,6 +1913,8 @@ case OHMSLAW:
 
 		break;*/
 	case LAPAZ_AZ:
+		
+		printf("\n\nRefreshGraphs: LAPAZ_AZ\n\n");
 		// Assume temp.x contains Lap Az
 		Graph[0].DrawSurface("Lap Az",
 			DATA_HEIGHT, (real *)(&(X.pData[0].temp.x)),
@@ -1890,6 +2168,7 @@ case OHMSLAW:
 		}*/
 		//X.CalculateTotalGraphingData();
 
+		printf("\n\nRefreshGraphs: TOTAL\n\n");
 		// ought to change this to use variables n,v,T !
 		pVertex = X.X;
 		pdata = X.pData + BEGINNING_OF_CENTRAL;
@@ -2019,6 +2298,9 @@ case OHMSLAW:
 
 		// =================================================================================
 
+		printf("\ngot to here; graph [4]:\n\n");
+
+		Graph[4].boolDisplayKeyButton = false; // it's temperature
 		Graph[4].SetEyePlan(GlobalPlanEye);
 		Graph[4].boolDisplayMeshWireframe = true;
 		Graph[4].boolClearZBufferBeforeWireframe = true;
@@ -2034,7 +2316,7 @@ case OHMSLAW:
 				
 		break;
 	}
-	printf("got to here 5");
+	printf("End of Refreshgraphs\n");
 
 }
 
@@ -2484,10 +2766,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 	static const real XCENTRE2 = DEVICE_RADIUS_INITIAL_FILAMENT_CENTRE * sin(PI / 32.0);
 	static const real XCENTRE1 = -XCENTRE2;
 	static const real YCENTRE = DEVICE_RADIUS_INITIAL_FILAMENT_CENTRE * cos(PI / 32.0);
-
+	 
 	switch (message)
 	{
-	case WM_CREATE:
+	case WM_CREATE: 
 
 		// Don't ever try doing initialisation here;
 		// That should be done manually from the menus.		
@@ -2498,8 +2780,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 		wmId = LOWORD(wParam);
 		wmEvent = HIWORD(wParam);
 
-		printf("wmId %d\n", wmId);
-
+		printf("\nWM_COMMAND: wmId %d\n\n", wmId);
+	
 		// Ensure that display menu items are consecutive IDs.
 		// Parse the menu selections:
 		switch (wmId)
@@ -2556,6 +2838,15 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			Direct3D.pd3dDevice->Present(NULL, NULL, NULL, NULL);
 
 			break;
+		case ID_DISPLAY_ACCELGRAPH:
+
+			GlobalSpeciesToGraph = ACCELGRAPHS;
+			printf("\nGlobalSpeciesToGraph = %d \n", GlobalSpeciesToGraph);
+			RefreshGraphs(*pX, GlobalSpeciesToGraph);
+			Direct3D.pd3dDevice->Present(NULL, NULL, NULL, NULL);
+
+			break;
+
 		case ID_DISPLAY_SIGMAEJ:
 
 			i = wmId - ID_DISPLAY_NEUT;
@@ -2947,7 +3238,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 				printf("i = %d \n", i);
 				RefreshGraphs(*pX, GraphFlags[i]); // sends data to graphs AND renders them
 															   //	::PlanViewGraphs1(*pX);
-				printf("..");
+				printf(".DISHMOPS.\n");
 				Direct3D.pd3dDevice->Present(NULL, NULL, NULL, NULL);
 				printf("got to here 7\n");
 

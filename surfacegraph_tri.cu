@@ -29,6 +29,8 @@ extern int Historic_powermin[512];
 extern bool boolGlobalHistory;
 extern bool bCullNone;
 
+long numVerticesKey;
+
 D3D Direct3D;
 
 void strip_0(char * buffer)
@@ -452,7 +454,7 @@ HRESULT surfacegraph::InitialiseBuffers(const TriMesh & X)
 	// For now we stuff all into one buffer.
 	long numTrianglesKey;
 
-	long numVerticesKey = X.GetNumKeyVerticesGraphics(&numTrianglesKey);
+	numVerticesKey = X.GetNumKeyVerticesGraphics(&numTrianglesKey);
 
 	// Dimension buffer[0] for key. 
 
@@ -533,6 +535,7 @@ HRESULT surfacegraph::InitialiseBuffers(const TriMesh & X)
 	if (numVerticesTotal > VERTICES_PER_ARRAY) 
 	{
 		printf("Warning -- too many vertices for array? Code needs adding.\n");
+		getch();
 	};
 	{
 		if( (numVerticesTotal != numVertices[1]) || (numTrianglesTotal != numTriangles[1]))
@@ -1038,8 +1041,8 @@ HRESULT surfacegraph::SetDataWithColour(const TriMesh & X,
 					this->boolDisplayInnerMesh);
 				X.ReturnL5Data(offset_data, &maximum, &minimum,
 					this->boolDisplayInnerMesh);
-				printf("*****+++++++\ncode %d minimum %1.3E maximum %1.3E store_max %1.3E store_min %1.4E \n",
-					code, minimum, maximum, store_max, store_min);
+				printf("SDWC colourflag %d code %d minimum %1.3E maximum %1.3E store_max %1.3E store_min %1.4E \n",
+					colourflag, code, minimum, maximum, store_max, store_min);
 
 			};
 		};
@@ -1151,9 +1154,10 @@ HRESULT surfacegraph::SetDataWithColour(const TriMesh & X,
 			};	
 			break;
 	};
-
+	printf("Lock vertex buffers :\n");
 	for (N = 0; N < NUMBER_VERTEX_ARRAYS; N++)
 	{
+		
 		if ( VertexBuffer[N] != NULL)
 		{
 			if (DXChk(VertexBuffer[N]->Lock(0,0,(void **)&vertices[N],0)) ||
@@ -1161,9 +1165,9 @@ HRESULT surfacegraph::SetDataWithColour(const TriMesh & X,
 					MessageBox(NULL,"oh dear","lock failed",MB_OK);
 		};
 	};
-	
 	if (this->boolDisplayMainMesh) // should be always on!
 	{
+		printf("Call SetVerticesAndIndices:\n");
 		// At the moment this now just pours information into vertices[2], indices[2] :
 		X.SetVerticesAndIndices(vertices, indices,       // better to do in the other class...
 							numVertices, numTriangles, // pass it the integer counts so that it can test for overrun & redim
@@ -1176,7 +1180,9 @@ HRESULT surfacegraph::SetDataWithColour(const TriMesh & X,
 	
 	if ((this->boolDisplayKeyButton) && (bScrewPinch == 0))
 	{
+		printf("Call SetVerticesKeyButton: %d", numVerticesKey);
 		X.SetVerticesKeyButton(vertices[0],indices[0],colourmax,colourflag);
+		printf(" done\n");
 		numVerticesUsed[0] = X.GetNumKeyVerticesGraphics(&(numTrianglesUsed[0]));
 	} else {
 		numVerticesUsed[0] = 0;
@@ -1198,10 +1204,12 @@ HRESULT surfacegraph::SetDataWithColour(const TriMesh & X,
 	
 	//for (N = 0; N < NUMBER_VERTEX_ARRAYS; N++)
 	//	numTrianglesUsed[N] = numIndicesUsed[N]/3;
-
+	printf("Invert normals:\n");
 	for (N = 0; N < NUMBER_VERTEX_ARRAYS; N++)
 		for (i = 0; i < numVerticesUsed[N]; i++)
 			vertices[N][i].normal = -vertices[N][i].normal;
+
+	printf("Unlock vertex arrays:\n");
 
 	for (N = 0; N < NUMBER_VERTEX_ARRAYS; N++)
 	{
@@ -1212,6 +1220,8 @@ HRESULT surfacegraph::SetDataWithColour(const TriMesh & X,
 		};
 	};
 		
+	printf("end SDWC\n");
+
 	return S_OK;
 }
 /*
@@ -1466,7 +1476,8 @@ VOID surfacegraph::Render(const char * szTitle, bool RenderTriLabels,
 						  const TriMesh * pX, // = 0 by default
 						  char * szLinebelow) // = 0 by default
 {
-	
+	printf("Render: szTitle %s \n", szTitle);
+
 	long tri_len, izTri[128];
 
 	static DWORD time = timeGetTime();

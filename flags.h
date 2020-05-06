@@ -221,7 +221,9 @@ int const REAL = 2;
 #define DTGRAPH            206
 #define GRAPH_DTE          207
 #define GRAPH_DNT          208
-
+#define ACCELGRAPHS        209
+#define GRAPH_AXY2         210
+#define GRAPH_AXY3         211
 
 // Number of vars used to produce heights:
 int const FLAG_FLAT_MESH = 0;

@@ -27,8 +27,10 @@
 #define TESTHEAT2 (0)
 #define TESTIONISE (0)
 #define TESTOHMS (0)
-#define TESTVISC (iVertex == VERTCHOSEN)
+#define TESTVISC (0)
 #define TEST_IONIZE (0)
+#define TESTACCEL (0)// iVertex == VERTCHOSEN)
+#define TESTACCEL2 (0) // iMinor - BEGINNING_OF_CENTRAL == VERTCHOSEN)
 #define VISCMAG 1 
 #define MIDPT_A
 
@@ -12510,15 +12512,17 @@ __global__ void kernelPopulateBackwardOhmsLaw_noadvect(
 			// p_one_over_n[iMinor].n_n/ (AreaMinor));
 			vn0.y += h_use * (MAR.y / (AreaMinor*n_use.n_n));// MomAddRate is addition rate for Nv. Divide by N.
 
-			if (iMinor == VERTCHOSEN + BEGINNING_OF_CENTRAL) printf("MAR %1.9E %1.9E\n", MAR.x, MAR.y);
-
 			memcpy(&MAR, p_MAR_ion + iMinor, sizeof(f64_vec3));
 			v0.vxy = vie_k.vxy + h_use * (m_i*MAR.xypart() / (n_use.n*(m_i + m_e)*AreaMinor));
 			v0.viz = vie_k.viz + h_use * MAR.z / (n_use.n*AreaMinor);
 
+			if (TESTACCEL2) printf("%d vy_k %1.9E with MARi %1.9E\n", iMinor-BEGINNING_OF_CENTRAL, vie_k.vxy.y, v0.vxy.y);
+
 			memcpy(&MAR, p_MAR_elec + iMinor, sizeof(f64_vec3));
 			v0.vxy += h_use * (m_e*MAR.xypart() / (n_use.n*(m_i + m_e)*AreaMinor));
 			v0.vez = vie_k.vez + h_use * MAR.z / (n_use.n*AreaMinor);   
+
+			if (TESTACCEL2) printf("%d  with MARi+e %1.9E\n", iMinor - BEGINNING_OF_CENTRAL, v0.vxy.y);
 
 			if (v0.vez != v0.vez) printf("NANVEZ %d v_k %1.9E MAR.z %1.9E \n", iMinor, vie_k.vez, MAR.z);
 
@@ -12598,15 +12602,23 @@ __global__ void kernelPopulateBackwardOhmsLaw_noadvect(
 		if (((TESTTRI))) printf("GPU %d: LapAz %1.14E\n", CHOSEN, LapAz);
 
 		v0.vxy +=
-			- (h_use / ((m_i + m_e)))*(m_n*M_i_over_in*(cross_section_times_thermal_in*n_use.n_n)
+			  (h_use / ((m_i + m_e)))*(m_n*M_i_over_in*(cross_section_times_thermal_in*n_use.n_n)
 				+ m_n * M_e_over_en*(cross_section_times_thermal_en*n_use.n_n))*
-				( vn0.xypart());
+				( vn0.xypart()); // this reflects v_n and the next reflects minus itself
+
+		// The issue here seems to be we were subtracting instead of adding.
+		
+
+		// Wouldn't documentation be a grand thing?
+		
 
 		denom = 1.0 + (h_use / (m_i + m_e))*(
 			m_n* M_i_over_in* (cross_section_times_thermal_in*n_use.n_n)
 			+ m_n * M_e_over_en*(cross_section_times_thermal_en*n_use.n_n))*(1.0 - ohm.beta_ne - ohm.beta_ni);
 		v0.vxy /= denom;
-		
+
+		if (TESTACCEL2) printf("%d  with neut soak %1.9E\n", iMinor - BEGINNING_OF_CENTRAL, v0.vxy.y);
+
 		ohm.beta_xy_z = (h_use * q / (c*(m_i + m_e)*denom)) * grad_Az[threadIdx.x]; // coeff on viz-vez
 		
 		omega[threadIdx.x] = qovermc*p_B[iMinor].xypart();
@@ -13526,11 +13538,24 @@ __global__ void kernelCalculateVelocityAndAzdot_noadvect(
 		OhmsCoeffs ohm = p_OhmsCoeffs[iMinor];
 		v4 v0 = p_v0[iMinor];
 		f64_vec3 v_n = p_vn0[iMinor];							 // 3 sep
+		
+		// debug:
+		long iVertex = iMinor - BEGINNING_OF_CENTRAL;
+		if (TESTACCEL) printf("iVertex %d v0.y %1.9E\n",
+			iVertex, v0.vxy.y);
 
 		v.vez = v0.vez + ohm.sigma_e_zz * Ez_strength;  // 2
 		v.viz = v0.viz + ohm.sigma_i_zz * Ez_strength;  // 2
 
 		v.vxy = v0.vxy + ohm.beta_xy_z * (v.viz - v.vez);   // 4
+
+		if (TESTACCEL) printf("iVertex %d ohm.beta_yz %1.9E viz %1.9E vez %1.9E effect %1.9E\n",
+			iVertex,
+			ohm.beta_xy_z.y,
+			v.viz,
+			v.vez,
+			ohm.beta_xy_z * (v.viz - v.vez));
+
 		v_n.x += (ohm.beta_ne + ohm.beta_ni)*v.vxy.x;    // 2
 		v_n.y += (ohm.beta_ne + ohm.beta_ni)*v.vxy.y;
 		v_n.z += ohm.beta_ne * v.vez + ohm.beta_ni * v.viz;
@@ -13551,6 +13576,8 @@ __global__ void kernelCalculateVelocityAndAzdot_noadvect(
 			// BACKWARD:
 			temp.Azdot += h_use*c*FOUR_PI*q*n_use.n*(v.viz - v.vez); // logical for C_INS too
 		}
+		
+		if (TESTACCEL) printf("CVAA:iVertex %d v_out.y %1.9E\n", iVertex, v.vxy.y);
 
 		if (TESTOHMS) printf("%d vez %1.9E v0 %1.9E Ez %1.9E sigma %1.9E\n", iMinor, v.vez, v0.vez,
 			Ez_strength, ohm.sigma_e_zz);

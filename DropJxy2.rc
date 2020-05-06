@@ -68,6 +68,7 @@ BEGIN
         MENUITEM "1D",                          ID_DISPLAY_ONE_D
         MENUITEM "Ionization",                  ID_DISPLAY_IONIZEGRAPHS
         MENUITEM "DTgraph",                     ID_DISPLAY_DTGRAPH
+        MENUITEM "Accelgraph",                  ID_RUN_SIMULATIONSTEPS_CPU
     END
     POPUP "Help"
     BEGIN
