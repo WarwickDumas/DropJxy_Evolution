@@ -31,6 +31,7 @@ extern void print_int_vector(char* desc, lapack_int n, lapack_int* a);
 #include <commdlg.h>    // probably used by avi_utils
 #include "surfacegraph_tri.h"
 #include "avi_utils.cpp"     // for making .avi
+#include "kernel.h"
 
 //=======================================================
 // Declarations of functions:
@@ -56,6 +57,12 @@ extern cuSyst cuSyst1, cuSyst2, cuSyst3;
 extern D3D Direct3D;
 extern f64 * p_temphost1, *p_temphost2,
 *p_temphost3, *p_temphost4, *p_temphost5, *p_temphost6;
+
+extern __device__ f64 * p_LapCoeffself;
+extern __device__ f64 * p_temp1;
+extern __device__ long * p_longtemp;
+extern __device__ f64 * p_Az, *p_LapAz;
+
 
 float xzscale;
 
@@ -110,6 +117,8 @@ float Historic_max[512][HISTORY]; // if max is falling, use historic maximum for
 float Historic_min[512][HISTORY];
 int Historic_powermax[512];
 int Historic_powermin[512]; // just store previous value only.
+
+bool flaglist[NMINOR];
 
 bool boolGlobalHistory, GlobalboolDisplayMeshWireframe;
 
@@ -3001,6 +3010,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			// Debug: redelaun on load:
 			pX->RefreshVertexNeighboursOfVerticesOrdered();
 			pX->Redelaunerize(true, true);
+
+			// This isn't actually helpful?
+
 			// pX->RefreshVertexNeighboursOfVerticesOrdered();
 			// pX->X[89450-BEGINNING_OF_CENTRAL].GetTriIndexArray(izTri);
 //			printf("89450 : %d %d %d %d %d %d \n",
@@ -3210,7 +3222,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 				(GlobalStepsCounter % REDELAUN_FREQUENCY == 0) ||
 				(steps_remaining == 0))
 			{
-				cuSyst_host.PopulateTriMesh(pX);
+				cuSyst_host.PopulateTriMesh(pX); // vertex n is populated into the minor array available on CPU
 				printf("pulled back to host\n");
 			}
 		}
@@ -3296,21 +3308,17 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 		if (GlobalStepsCounter % REDELAUN_FREQUENCY == 0)
 		{
 			pX->RefreshVertexNeighboursOfVerticesOrdered();
-			pX->Redelaunerize(true, true);
+			long iFlips = pX->Redelaunerize(true, true);
 			// Send back to GPU:
 			pX->EnsureAnticlockwiseTriangleCornerSequences_SetupTriMinorNeighboursLists();
-//
-//			printf("tri 340: %d %d %d \n%1.14E %1.14E \n%1.14E %1.14E \n%1.14E %1.14E\n",
-//				pX->T[340].cornerptr[0] - pX->X, pX->T[340].cornerptr[1] - pX->X, pX->T[340].cornerptr[2] - pX->X,
-//				pX->T[340].cornerptr[0]->pos.x, pX->T[340].cornerptr[0]->pos.y,
-//				pX->T[340].cornerptr[1]->pos.x, pX->T[340].cornerptr[1]->pos.y,
-//				pX->T[340].cornerptr[2]->pos.x, pX->T[340].cornerptr[2]->pos.y);
-//			printf("tri 340 periodic %d \n", pX->T[340].periodic);
-			
+
 			//	pX->Average_n_T_to_tris_and_calc_centroids_and_minorpos(); // Obviates some of our flip calcs to replace tri n,T 
 			// not sure if needed .. just for calc centroid .. they do soon get wiped out anyway.
 			
 			cuSyst_host.PopulateFromTriMesh(pX);// 1. Does it update lists? --- some had to be updated on CPU first.
+
+			// Seems to copy structural information as well as data. n is copied from n_minor on CPU.
+			
 			//cuSyst1.SendToHost(cuSyst_host2);
 			//cuSyst_host.ReportDifferencesHost(cuSyst_host2);
 			cuSyst_host.SendToDevice(cuSyst1); 
@@ -3320,6 +3328,69 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			// It certainly does not work as it stands if you don't populate them all the same, put it that way!!
 
 			printf("sent back re-delaunerized system\n");
+
+			// Now reset A values more carefully in the sent-back system:
+
+			f64 LapAz, viz, vez, n, coeffself, Az;
+			int iRepeat;
+
+			if (iFlips > 0) {
+				kernelGetLapCoeffs_and_min << <numTriTiles, threadsPerTileMinor >> >(
+					cuSyst1.p_info,
+					cuSyst1.p_izTri_vert,
+					cuSyst1.p_izNeigh_TriMinor,
+					cuSyst1.p_szPBCtri_vert,
+					cuSyst1.p_szPBC_triminor,
+					p_LapCoeffself,
+					p_temp1, // collect min
+					p_longtemp
+					);
+				Call(cudaThreadSynchronize(), "cudaTS GetLapCoeffs x");
+
+				for (iRepeat = 0; iRepeat < 3; iRepeat++) {
+					// 1. Calculate Lap Az and coeffself Lap Az; including at our few points.
+
+					kernelPullAzFromSyst << <numTilesMinor, threadsPerTileMinor >> > (
+						cuSyst1.p_AAdot,
+						p_Az
+						);
+					Call(cudaThreadSynchronize(), "cudaTS PullAz");
+
+					kernelGetLap_minor << <numTriTiles, threadsPerTileMinor >> > (
+						cuSyst1.p_info, // populated position... not neigh_len apparently
+						p_Az,
+						cuSyst1.p_izTri_vert,
+						cuSyst1.p_izNeigh_TriMinor,
+						cuSyst1.p_szPBCtri_vert,
+						cuSyst1.p_szPBC_triminor,
+						p_LapAz,
+						cuSyst1.p_AreaMinor // OUTPUT
+						);
+					Call(cudaThreadSynchronize(), "cudaTS GetLapMinor addaa2");
+					
+					// 2. For each of our points bring Lap Az, Jz and coeffself to CPU
+					for (i = 0; i < BEGINNING_OF_CENTRAL; i++)
+					{
+						if (flaglist[i]) {
+							cudaMemcpy(&LapAz, &(p_LapAz[i]), sizeof(f64), cudaMemcpyDeviceToHost);
+							cudaMemcpy(&coeffself, &(p_LapCoeffself[i]), sizeof(f64), cudaMemcpyDeviceToHost);
+							cudaMemcpy(&viz, &(cuSyst1.p_vie[i].viz), sizeof(f64), cudaMemcpyDeviceToHost);
+							cudaMemcpy(&vez, &(cuSyst1.p_vie[i].vez), sizeof(f64), cudaMemcpyDeviceToHost);
+							cudaMemcpy(&n, &(cuSyst1.p_n_minor[i].n), sizeof(f64), cudaMemcpyDeviceToHost);
+							cudaMemcpy(&Az, &(cuSyst1.p_AAdot[i].Az), sizeof(f64), cudaMemcpyDeviceToHost);
+							// 3. For each of our points, adjust Az per Jacobi:
+							printf("%d Az %1.11E ", i, Az);
+							Az += 0.7* (-FOUR_PI_Q_OVER_C_*n*(viz - vez) - LapAz) / coeffself; // correct signs?
+							// Aiming Lap Az = - 4pi/c Jz.
+							// Therefore adjust LapAz by (-4pi/c Jz - LapAz).
+							// underrelaxation & repeat 3 times
+							printf("newAz %1.11E\n", Az);
+
+							cudaMemcpy(&(cuSyst1.p_AAdot[i].Az), &Az, sizeof(f64), cudaMemcpyHostToDevice);
+						};
+					};
+				};
+			};
 			
 		};
 		

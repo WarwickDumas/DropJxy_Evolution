@@ -567,6 +567,12 @@ void cuSyst::PopulateFromTriMesh(TriMesh * pX)
 		p_vie[iMinor].vxy = data.vxy;
 		p_vie[iMinor].vez = data.vez;
 		p_vie[iMinor].viz = data.viz;
+
+		if (iMinor == 25964 - BEGINNING_OF_CENTRAL) {
+			printf("iMinor %d p_vie[iMinor].vez %1.10E viz %1.10E\n", iMinor, p_vie[iMinor].vez, p_vie[iMinor].viz);
+			getch();
+		}
+
 		p_B[iMinor] = data.B;
 		p_AreaMinor[iMinor] = pX->AreaMinorArray[iMinor];
 	}

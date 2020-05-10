@@ -16,7 +16,7 @@
 bool const bScrewPinch = false;
 
 #define FOLDER "C:/outputs/"
-#define INITIALAVI "start.avi"		
+#define INITIALAVI "start2.avi"		
   
 #define FUNCTIONALFILE_START FOLDER "functionals"
 #define DATAFILENAME FOLDER "Data_"
@@ -38,7 +38,7 @@ bool const bScrewPinch = false;
 // milliseconds between frames:
 #define AVIFRAMEPERIOD         20  // milliseconds; 20 ms => 50 fps.
 
-#define DATA_SAVE_FREQUENCY					 8
+#define DATA_SAVE_FREQUENCY					 20
 
 // Program Mechanics:
 // ==================
@@ -248,11 +248,11 @@ real const FULLANGLE = 2.0*PI/16.0;
 // Need to be careful in case of thermal pressure messing up mesh.
 // Let's assume we do recalculation of parameters as often as we do recalculation of pressure.
 
-real const TIMESTEP = 1.0e-13;// 7.8125e-14; 
+real const TIMESTEP = 1.0e-12;// 7.8125e-14; 
 real const SUBSTEP = 1.0e-13; // 7.8125e-14;
-int const SUBCYCLES = 1; 
-int const GPU_STEPS = 200; // 128
-int const ADVECT_FREQUENCY = 50; // 1e-11 = 1e-4/1e7 // 64
+int const SUBCYCLES = 10; 
+int const GPU_STEPS = 20; // 2e-11
+int const ADVECT_FREQUENCY = 5; // 5e-12; 1e-11 = 1e-4/1e7 // 64
 int const ADVECT_STEPS_PER_GPU_VISIT = 4;
 
 

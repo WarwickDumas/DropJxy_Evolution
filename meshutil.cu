@@ -2,6 +2,8 @@
 #define MESHUTILCPP
 
 #define DEFINEexp  exp
+#define VERBOSEGRAPHICS 0
+// also in surfacegraph_tri
 
 #include "headers.h"
 
@@ -5771,7 +5773,7 @@ void TriMesh::SetVerticesKeyButton(VertexPNT3 * vertices, DWORD * indices, real 
 
 	if (maximum_v == 0.0) maximum_v = 1.0;
 
-	printf("Key button maximum v %1.9E ",maximum_v);
+	if (VERBOSEGRAPHICS) printf("Key button maximum v %1.9E ",maximum_v);
 
 	for (iRing = 0; iRing < NUMRINGS; iRing++)
 	{
@@ -5813,14 +5815,13 @@ void TriMesh::SetVerticesKeyButton(VertexPNT3 * vertices, DWORD * indices, real 
 			++totalVertices;
 		};
 	};
-	printf("here\n");
-
+	
 	--pPNT;
 //	printf("tex0.x tex0.y tex0.z %1.9E %1.9E %1.9E \n",(real)(pPNT->tex0.x),(real)(pPNT->tex0.y),(real)(pPNT->tex0.z));
 	++pPNT;
 
 	// Now set up the triangles.
-	printf("SVKB halfway: totalVertices %d\n", totalVertices);
+	if (VERBOSEGRAPHICS) printf("SVKB halfway: totalVertices %d\n", totalVertices);
 	// Start at innermost circle:
 
 	iRing = 0;
@@ -6325,7 +6326,7 @@ void TriMesh::SetVerticesAndIndices(VertexPNT3 * vertices[],			// better to do i
 	};
 
 	// debug:
-	printf("%f \n",pVertex->pos.modulus());
+	//printf("%f \n",pVertex->pos.modulus());
 	
 	float ydata;
 
@@ -7181,8 +7182,8 @@ void TriMesh::ReturnMaxMinData(int offset, real * pmax, real * pmin, bool bDispl
 	};
 	*pmax = maxA2z;
 	*pmin = minA2z;
-	printf("Max %1.8E found at vertex %d \n",*pmax,iVertMax);
-	printf("Min %1.8E found at vertex %d \n",*pmin,iVertMin);
+	if (VERBOSEGRAPHICS) printf("Max %1.8E found at vertex %d \n",*pmax,iVertMax);
+	if (VERBOSEGRAPHICS) printf("Min %1.8E found at vertex %d \n",*pmin,iVertMin);
 //	printf("value at 11830: %1.8E \n",*((real *)(X+11830)+offset));
 }
 
@@ -7239,7 +7240,7 @@ void TriMesh::Return3rdmaxData(int offset, real * pmax, real * pmin, bool bDispl
 	}
 	else {
 		// debug:
-		printf("Xdomain-X %d offset %d \n",
+		if (VERBOSEGRAPHICS) printf("Xdomain-X %d offset %d \n",
 			(long)(Xdomain - X), offset);
 
 		pdata += Xdomain - X;

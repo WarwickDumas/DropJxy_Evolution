@@ -195,7 +195,8 @@ __global__ void kernelCalculateOverallVelocitiesVertices(
 	ShardModel * __restrict__ p_shards_n,
 	ShardModel * __restrict__ p_shards_n_n,
 	long * __restrict__ p_izTri,
-	char * __restrict__ p_szPBCtri_verts
+	char * __restrict__ p_szPBCtri_verts,
+	f64 const h_full_adv
 );
 
 __global__ void kernelAdvectPositionsVertex(
@@ -1341,7 +1342,8 @@ __global__ void kernelAdvanceAzBwdEuler(
 	f64 const h_use,
 	AAdot * __restrict__ p_AAdot_use,
 	AAdot * __restrict__ p_AAdot_dest,
-	f64 * __restrict__ p_ROCAzduetoAdvection);
+	f64 * __restrict__ p_ROCAzduetoAdvection,
+	bool const bUseROC);
 
 __global__ void kernelPopulateBackwardOhmsLaw(
 	f64 h_use,

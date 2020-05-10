@@ -11,6 +11,7 @@
 // Yes, very much a waste. The edge positions should be calculated from the vertex positions, we can
 // load flags to determine if it is an insulator-crossing triangle and that is the proper way to handle that.
 
+#define TEST_OVERALL_V (0) //index == 38799)
 
 #define FOUR_PI 12.5663706143592
 
@@ -1002,7 +1003,8 @@ __global__ void kernelCalculateOverallVelocitiesVertices(
 	ShardModel * __restrict__ p_shards_n,
 	ShardModel * __restrict__ p_shards_n_n,
 	long * __restrict__ p_izTri,
-	char * __restrict__ p_szPBCtri_verts
+	char * __restrict__ p_szPBCtri_verts,
+	f64 const h_full_adv
 	)
 {
 	__shared__ f64_vec2 shared_pos[threadsPerTileMinor];
@@ -1041,8 +1043,9 @@ __global__ void kernelCalculateOverallVelocitiesVertices(
 			((m_e + m_i)*n.n + m_n*n.n_n);
 		f64_vec2 v_adv = v_overall;
 
-		if (TEST) printf("%d vie.vxy %1.9E %1.9E v_n %1.9E %1.9E n %1.9E nn %1.9E\n",
-			iVertex, vie.vxy.x, vie.vxy.y, v_n.x, v_n.y, n.n, n.n_n);
+		if (TEST3) printf("%d vie.vxy %1.9E %1.9E v_n %1.9E %1.9E n %1.9E nn %1.9E\n"
+			"v_overall %1.9E %1.9E\n",
+			iVertex, vie.vxy.x, vie.vxy.y, v_n.x, v_n.y, n.n, n.n_n, v_overall.x, v_overall.y);
 
 		// Now add in drift towards barycenter
 
@@ -1135,13 +1138,14 @@ __global__ void kernelCalculateOverallVelocitiesVertices(
 
 		f64_vec2 to_bary = barycenter - info.pos;
 		
-		f64 factor = min( 4.0 * to_bary.dot(to_bary) / Areatot, 1.0); // r = sqrt(Area)/pi and we take (delta/r)^2
+		f64 factor = min( 4.0 * to_bary.dot(to_bary) / Areatot, 1.0);
+		// r = sqrt(Area)/pi and we take (delta/r)^2
 		// uplift by 4/PI
 
 		//f64 distance = to_bary.modulus();
 		//f64_vec2 unit_to_bary = to_bary / distance;
 		
-		if (TEST) {
+		if (TEST3) {
 			printf("iVertex %d pos %1.9E %1.9E barycenter %1.9E %1.9E v_overall %1.9E %1.9E \n"
 				"factor %1.9E sqrt(Areatot) %1.9E |to_bary| %1.9E \n",
 				iVertex, info.pos.x, info.pos.y, barycenter.x, barycenter.y, v_overall.x, v_overall.y,
@@ -1158,7 +1162,7 @@ __global__ void kernelCalculateOverallVelocitiesVertices(
 		// We can use 1e10 if ||to_bary|| is 1e-2 or more.
 		// We need to multiply by distance/1e-2
 
-		v_overall += to_bary * factor * 1.0e12;
+		v_overall += to_bary * factor / h_full_adv; 
 
 		// So then we do want to cancel some of hv as an extra term in case v = ~1e8 and the cell is only 2 micron wide?
 		// Hmm
@@ -1167,18 +1171,16 @@ __global__ void kernelCalculateOverallVelocitiesVertices(
 		// There is almost certainly a more elegant way that puts them together.
 		// If v faces to_bary then we do nothing.
 		
-		if (TEST) 
+		if (TEST3) 
 			printf("%d additional v %1.9E %1.9E cancelv addition %1.9E %1.9E\n\n", 
-				iVertex, to_bary.x * factor * 1.0e12,
-				to_bary.y * factor * 1.0e12, 
+				iVertex, to_bary.x * factor / h_full_adv,
+				to_bary.y * factor / h_full_adv,
 				to_bary.x * factor * max(-v_adv.dot(to_bary) / to_bary.dot(to_bary), 0.0),
 				to_bary.y * factor * max(-v_adv.dot(to_bary) / to_bary.dot(to_bary), 0.0)				
 				);
 		
 		// To watch out for: overshooting because hv takes us towards barycenter
-
-
-
+		
 		// Hope this stuff works well because the equal masses takes a bit of doing.		
 	};
 	p_v_overall_major[iVertex] = v_overall;
@@ -1291,10 +1293,22 @@ __global__ void kernelAverageOverallVelocitiesTriangles(
 		f64 temp = sqrt(vcorner0.dot(vcorner0) + vcorner1.dot(vcorner1) + vcorner2.dot(vcorner2));
 		f64 h_deriv = 1.0e-9 / temp;
 
+		if (TEST_OVERALL_V) 
+			printf("iMinor %d poscorner0 %1.12E %1.12E | %1.12E %1.12E | %1.11E %1.11E \n",
+				index, poscorner0.x, poscorner0.y,
+				poscorner1.x, poscorner1.y,
+				poscorner2.x, poscorner2.y
+			);
 		poscorner0 += h_deriv*vcorner0;
 		poscorner1 += h_deriv*vcorner1;
 		poscorner2 += h_deriv*vcorner2;
 
+		if (TEST_OVERALL_V) 
+			printf("iMinor %d poscorner0 %1.12E %1.12E | %1.12E %1.12E | %1.11E %1.11E \n",
+				index, poscorner0.x, poscorner0.y,
+				poscorner1.x, poscorner1.y,
+				poscorner2.x, poscorner2.y
+			);
 		f64_vec2 newpos;
 		Bb = poscorner1 - poscorner0;
 		C = poscorner2 - poscorner0;
@@ -1305,6 +1319,13 @@ __global__ void kernelAverageOverallVelocitiesTriangles(
 		newpos.y = (Bb.x*modC - C.x*modB) / D + poscorner0.y;
 
 		if (info.flag == CROSSING_INS) {
+			if (TEST_OVERALL_V)
+				printf("iMinor %d info.flag %d :  %d %d %d \n"
+					"v %1.8E %1.8E newpos %1.12E %1.12E pos %1.12E %1.12E\n",
+					index, info.flag, tri_corner_index.i1, tri_corner_index.i2, tri_corner_index.i3,
+					v.x, v.y, newpos.x, newpos.y, pos.x, pos.y);
+					
+
 			f64_vec2 pos2 = pos;
 			pos2.project_to_radius(pos, DEVICE_RADIUS_INSULATOR_OUTER);
 			pos2 = newpos;
@@ -1312,6 +1333,20 @@ __global__ void kernelAverageOverallVelocitiesTriangles(
 		};
 
 		v = (newpos - pos) / h_deriv;
+		
+
+		if (TEST_OVERALL_V)
+			printf("iMinor %d info.flag %d :  %d %d %d \n"
+				"v %1.8E %1.8E newpos %1.12E %1.12E pos %1.12E %1.12E\n"
+				"vcorner0 %1.8E %1.8E vcorner1 %1.8E %1.8E vcorner2 %1.8E %1.8E\n"
+				"hderiv %1.9E \n",
+				index, info.flag, tri_corner_index.i1, tri_corner_index.i2, tri_corner_index.i3,
+				v.x, v.y, newpos.x, newpos.y, pos.x, pos.y,
+				vcorner0.x, vcorner0.y, vcorner1.x, vcorner1.y, vcorner2.x, vcorner2.y,
+				h_deriv);
+				
+		
+
 		// Empirical estimate of derivative. Saves me messing about with taking derivative of circumcenter position.
 
 		//if (index == 42940)	
@@ -1475,7 +1510,10 @@ __global__ void kernelAdvectPositionsTris(
 	f64_vec2 overall_v = p_v_overall_minor[index];
 	f64_vec2 oldpos = info.pos;
 	info.pos += h_use*overall_v;
-
+	if (0) //index == VERTCHOSEN + BEGINNING_OF_CENTRAL)
+		printf("iVertex %d oldpos %1.10E %1.10E info.pos %1.10E %1.10E overall_v %1.10E %1.10E h_use %1.10E\n",
+			VERTCHOSEN, oldpos.x, oldpos.y, info.pos.x, info.pos.y, overall_v.x, overall_v.y, h_use);
+	
 	p_info_dest[index] = info;
 }
 
@@ -1935,14 +1973,19 @@ __global__ void kernelAdvanceAzBwdEuler(
 	f64 const h_use,
 	AAdot * __restrict__ p_AAdot_use,
 	AAdot * __restrict__ p_AAdot_dest,
-	f64 * __restrict__ p_ROCAzduetoAdvection)
+	f64 * __restrict__ p_ROCAzduetoAdvection,
+	bool const bUseROC)
 {
 
 	long const index = blockDim.x*blockIdx.x + threadIdx.x;
 	AAdot AAdot_use = p_AAdot_use[index];
 	AAdot AAdot_dest = p_AAdot_dest[index];
-	f64 ROCAz = p_ROCAzduetoAdvection[index];
-	AAdot_use.Az += h_use*(AAdot_dest.Azdot + ROCAz);
+	if (bUseROC) {
+		f64 ROCAz = p_ROCAzduetoAdvection[index];
+		AAdot_use.Az += h_use*(AAdot_dest.Azdot + ROCAz);
+	} else {
+		AAdot_use.Az += h_use*(AAdot_dest.Azdot);
+	}
 	AAdot_use.Azdot = AAdot_dest.Azdot;
 	p_AAdot_dest[index] = AAdot_use;
 	// So we did not predict how Az would change due to ROCAz -- it's neglected when we solve for A(Adot(LapAz))

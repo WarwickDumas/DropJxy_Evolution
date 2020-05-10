@@ -1429,7 +1429,7 @@ public:
 
 	void CheckDoubleEdges(int numTris);
 
-	void Redelaunerize(bool exhaustion, bool bReplace);	
+	long Redelaunerize(bool exhaustion, bool bReplace);	
 	void Flip(Triangle * pTri1, Triangle * pTri2, int iLevel);//, int flag = 0);
 	//void Flip(AuxTriangle *pTri1, AuxTriangle * pTri2, int iLevel);
 	// we will need something similar if we do construct Delaunay at each level.

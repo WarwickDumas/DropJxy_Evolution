@@ -15,10 +15,11 @@
 
 
 #define FOUR_PI 12.5663706143592
-#define TEST  (0)
+#define TEST  (0) // iVertex == VERTCHOSEN)
+#define TEST3  (0) // iVertex == VERTCHOSEN)
 #define TEST1 (0)
 #define TESTTRI (0)
-#define TESTADVECT (0)// // iVertex == VERTCHOSEN)
+#define TESTADVECT (0) // iVertex == VERTCHOSEN)
 #define TESTHEAT (0)
 #define TESTHEATFULL (0)
 #define TESTHEAT1 (0)
@@ -29,8 +30,9 @@
 #define TESTOHMS (0)
 #define TESTVISC (0)
 #define TEST_IONIZE (0)
-#define TESTACCEL (0)// iVertex == VERTCHOSEN)
+#define TESTACCEL (0)
 #define TESTACCEL2 (0) // iMinor - BEGINNING_OF_CENTRAL == VERTCHOSEN)
+#define TESTLAP (0)// iVertex == VERTCHOSEN)
 #define VISCMAG 1 
 #define MIDPT_A
 
@@ -3487,7 +3489,7 @@ __global__ void kernelInferMinorDensitiesFromShardModel(
 			result.n_n = 0.0;
 			if (info.flag == OUTERMOST) {
 				result.n_n = 1.0e18;
-				result.n = 1.0e12;
+				result.n = UNIFORM_n_d;
 			};
 			p_n_minor[iMinor] = result;
 			result.n_n = 1.0 / result.n_n;
@@ -9919,7 +9921,7 @@ __global__ void kernelAdvanceDensityAndTemperature_nosoak_etc(
 			newdata.NeTe = h_use * AdditionNT.NeTe;
 
 			if (TEST)
-				printf("Advance_nT  %d : nsrc %1.12E nn %1.12E *AreaMajor %1.12E %1.12E\n"
+				printf("Advance_nT NOSOAK %d : nsrc %1.12E nn %1.12E *AreaMajor %1.12E %1.12E\n"
 					"newdata.Nn %1.12E newdata.Ni %1.12E AreaMajor %1.10E \n"
 					"h*additionNiTi %1.12E for e %1.12E for n %1.12E \n"
 					"AdditionNT.e %1.10E h_use %1.10E\n"
@@ -9987,8 +9989,8 @@ __global__ void kernelAdvanceDensityAndTemperature_nosoak_etc(
 			newdata.NeTe += n_src_or_use[threadIdx.x].n*AreaMajor[threadIdx.x] * T_src.Te*factor;
 			//
 			if (TEST) {
-				printf("\nAdvance_nT %d : n %1.12E Area %1.12E compressfac %1.10E \n"
-					"newdate.NiTi %1.12E Ti_k %1.12E newdata.NeTe %1.10E Te_k %1.10E\n",
+				printf("\nAdvance_nT NOSOAK %d : n %1.12E Area %1.12E compressfac %1.10E \n"
+					"newdata.NiTi (the new Ni Ti) %1.12E Ti_k %1.12E newdata.NeTe %1.10E Te_k %1.10E\n",
 					VERTCHOSEN, n_src_or_use[threadIdx.x].n, AreaMajor[threadIdx.x], factor,
 					newdata.NiTi, T_src.Ti, newdata.NeTe, T_src.Te);
 			}
@@ -9999,7 +10001,10 @@ __global__ void kernelAdvanceDensityAndTemperature_nosoak_etc(
 		T_dest.Tn = newdata.NnTn* factor_neut / newdata.Nn;
 		T_dest.Ti = newdata.NiTi* factor / newdata.N;
 		T_dest.Te = newdata.NeTe* factor / newdata.N;
-
+		if (TEST) {
+			printf("\nAdvance_nT NOSOAK %d : newdata.N %1.9E T_dest.Ti %1.10E\n",
+				VERTCHOSEN, newdata.N, T_dest.Ti);
+		}
 		if (T_dest.Te != T_dest.Te) {
 			printf("Advance_n_T %d : Te NaN factor %1.8E newdata.N %1.10E flag %d \n"
 				"n %1.10E Area %1.10E hd/dtNT %1.10E\n",
@@ -10112,8 +10117,6 @@ __global__ void kernelAdvanceDensityAndTemperature_noadvectioncompression(
 			// Dimensioning inside a brace allows the following vars to go out of scope at the end of the brace.
 			f64 sqrt_Te, ionneut_thermal, electron_thermal, lnLambda, s_in_MT, s_en_MT, s_en_visc;
 
-			
-
 			n_src_or_use[threadIdx.x] = p_n_use[iVertex];
 			T3 T_use = p_T_use[iVertex];
 
@@ -10121,7 +10124,6 @@ __global__ void kernelAdvanceDensityAndTemperature_noadvectioncompression(
 			ionneut_thermal = sqrt(T_use.Ti / m_ion + T_use.Tn / m_n); // hopefully not sqrt(0)
 			electron_thermal = sqrt_Te * over_sqrt_m_e;
 			lnLambda = Get_lnLambda_d(n_src_or_use[threadIdx.x].n, T_use.Te);
-
 			{
 				f64 s_in_visc_dummy;
 				Estimate_Ion_Neutral_Cross_sections_d(T_use.Ti*one_over_kB,
@@ -10154,6 +10156,8 @@ __global__ void kernelAdvanceDensityAndTemperature_noadvectioncompression(
 			nu_eiBar = nu_eiBarconst * kB_to_3halves*n_src_or_use[threadIdx.x].n*lnLambda / (T_use.Te*sqrt_Te);
 			f64 nu_eHeart = 1.87*nu_eiBar + n_src_or_use[threadIdx.x].n_n*s_en_visc*electron_thermal;
 
+			if (TEST) printf("nu_eiBar: %1.10E n %1.10E lnLambda %1.10E T_use %1.10E \n",
+				nu_eiBar, n_src_or_use[threadIdx.x].n, lnLambda, T_use.Te);
 			f64_vec3 omega = p_B_major[iVertex] * qovermc;
 			// Confusing, why does this say that? We used visc en in nu_eHeart, explanation?
 
@@ -10161,10 +10165,23 @@ __global__ void kernelAdvanceDensityAndTemperature_noadvectioncompression(
 				(nu_eHeart*nu_eHeart + omega.z*omega.z) /
 				(nu_eHeart*(nu_eHeart*nu_eHeart + omega.dot(omega))));
 
+			if (TEST) printf("nu_eHeart %1.10E omega %1.8E %1.8E %1.8E qovermc %1.8E nu_eiBar/nu_eHeart %1.8E \n"
+				"nunuomegaomegafac %1.9E ratio %1.9E  1.0-0.9* = %1.9E nu_ei_effective %1.9E\n",
+				nu_eHeart, omega.x, omega.y, omega.z, qovermc,
+				nu_eiBar / nu_eHeart,
+				(nu_eHeart*nu_eHeart + omega.z*omega.z) / (nu_eHeart*nu_eHeart + omega.dot(omega)),
+				nu_eiBar*
+				(nu_eHeart*nu_eHeart + omega.z*omega.z) /
+				(nu_eHeart*(nu_eHeart*nu_eHeart + omega.dot(omega))),
+				(1.0 - 0.9*nu_eiBar*
+				(nu_eHeart*nu_eHeart + omega.z*omega.z) /
+					(nu_eHeart*(nu_eHeart*nu_eHeart + omega.dot(omega)))),
+				nu_ei_effective
+			);
 			//		nu_ie = nu_ei;
-
 			//		nu_eHeart = 1.87*nu_eiBar + data_k.n_n*s_en_visc*electron_thermal;
 		}
+		if (TEST) printf("nu_ei_effective %1.10E \n", nu_ei_effective);
 
 
 		// For now doing velocity-independent resistive heating.
@@ -10175,7 +10192,7 @@ __global__ void kernelAdvanceDensityAndTemperature_noadvectioncompression(
 		{
 			f64_vec3 v_n = p_v_n_use[iVertex];
 			v4 vie = p_vie_use[iVertex];
-
+			if (TEST) printf("nu_ei_effective %1.10E \n", nu_ei_effective);
 
 			newdata.NeTe += h_use*(AreaMajor[threadIdx.x]*n_src_or_use[threadIdx.x].n * TWOTHIRDS*nu_en_MT*m_en*(
 				(v_n.x - vie.vxy.x)*(v_n.x - vie.vxy.x)
@@ -10183,14 +10200,10 @@ __global__ void kernelAdvanceDensityAndTemperature_noadvectioncompression(
 				+ (v_n.z - vie.vez)*(v_n.z - vie.vez))
 
 				+ AreaMajor[threadIdx.x] * n_src_or_use[threadIdx.x].n* TWOTHIRDS*nu_ei_effective*m_ei*(vie.vez - vie.viz)*(vie.vez - vie.viz));
-
-
-
+			
 			// I see that I did resistive heating for nu_ei but did something much more complicated in the acceleration routine.
 			// That isn't quite right then.
-
-
-
+			
 			newdata.NiTi += h_use*(AreaMajor[threadIdx.x] * n_src_or_use[threadIdx.x].n * TWOTHIRDS*nu_in_MT*M_in*m_n*(
 				(v_n.x - vie.vxy.x)*(v_n.x - vie.vxy.x)
 				+ (v_n.y - vie.vxy.y)*(v_n.y - vie.vxy.y)
@@ -10201,27 +10214,27 @@ __global__ void kernelAdvanceDensityAndTemperature_noadvectioncompression(
 				+ (v_n.y - vie.vxy.y)*(v_n.y - vie.vxy.y)
 				+ (v_n.z - vie.viz)*(v_n.z - vie.viz)));
 
-		//if (TEST) 
-		//	printf("%d v_n.z %1.9E vie_use.viz %1.9E vie_use.vez %1.9E \n areamajor %1.8E\n"
-		//		"nu_in %1.10E nu_en %1.8E \n"
-		//		"Frictional htg (NT+=): n i e %1.10E %1.10E %1.10E\n",
-		//		VERTCHOSEN, v_n.z, vie.viz, vie.vez, AreaMajor[threadIdx.x],
-		//		nu_in_MT, nu_en_MT,
-		//		h_use*(AreaMajor[threadIdx.x] * TWOTHIRDS*nu_ni_MT*M_in*m_i*(
-		//		(v_n.x - vie.vxy.x)*(v_n.x - vie.vxy.x)
-		//			+ (v_n.y - vie.vxy.y)*(v_n.y - vie.vxy.y)
-		//			+ (v_n.z - vie.viz)*(v_n.z - vie.viz))),
-		//		h_use*(AreaMajor[threadIdx.x] * TWOTHIRDS*nu_in_MT*M_in*m_n*(
-		//		(v_n.x - vie.vxy.x)*(v_n.x - vie.vxy.x)
-		//			+ (v_n.y - vie.vxy.y)*(v_n.y - vie.vxy.y)
-		//			+ (v_n.z - vie.viz)*(v_n.z - vie.viz))),
-		//		h_use*(AreaMajor[threadIdx.x] * TWOTHIRDS*nu_en_MT*m_en*(
-		//		(v_n.x - vie.vxy.x)*(v_n.x - vie.vxy.x)
-		//			+ (v_n.y - vie.vxy.y)*(v_n.y - vie.vxy.y)
-		//			+ (v_n.z - vie.vez)*(v_n.z - vie.vez))
+			if (TEST) {
+				printf("%d v_n.z %1.9E vie_use.viz %1.9E vie_use.vez %1.9E \n areamajor %1.8E\n"
+					"nu_in %1.10E nu_en %1.8E nu_ei_effective %1.8E \n",
+					VERTCHOSEN, v_n.z, vie.viz, vie.vez, AreaMajor[threadIdx.x],
+					nu_in_MT, nu_en_MT, nu_ei_effective);
+				printf(
+					"%d Frictional htg (NT+=):e %1.10E\n"
+					"elec e-n z htg: %1.10E i-e z htg: %1.10E \n",
+					VERTCHOSEN,
+					h_use*(AreaMajor[threadIdx.x] * n_src_or_use[threadIdx.x].n* TWOTHIRDS*nu_en_MT*m_en*(
+					(v_n.x - vie.vxy.x)*(v_n.x - vie.vxy.x)
+						+ (v_n.y - vie.vxy.y)*(v_n.y - vie.vxy.y)
+						+ (v_n.z - vie.vez)*(v_n.z - vie.vez))
+						+ AreaMajor[threadIdx.x] * n_src_or_use[threadIdx.x].n*TWOTHIRDS*nu_ei_effective*m_ei*(vie.vez - vie.viz)*(vie.vez - vie.viz)),
 
-		//			+ AreaMajor[threadIdx.x] * TWOTHIRDS*nu_ei_effective*m_ei*(vie.vez - vie.viz)*(vie.vez - vie.viz))
-		//	);			
+					h_use*AreaMajor[threadIdx.x] * n_src_or_use[threadIdx.x].n*TWOTHIRDS*nu_en_MT*m_en*(v_n.z - vie.vez)*(v_n.z - vie.vez),
+					h_use*AreaMajor[threadIdx.x] * n_src_or_use[threadIdx.x].n*TWOTHIRDS*nu_ei_effective*m_ei*(vie.vez - vie.viz)*(vie.vez - vie.viz)
+				);
+			};
+			if (TEST) printf("nu_ei_effective %1.10E \n", nu_ei_effective);
+
 		}
 		f64_tens3 inverted;
 		{
@@ -11390,7 +11403,41 @@ __global__ void kernelAccumulateAdvectiveMassHeatRate(
 								+ nn_next*(v_n_next-v_overall_next)).dot(edge_normal);
 			totalheatflux_out.Tn += 0.5*(nn_prev*Tn_prev*(v_n_prev-v_overall_prev)
 								+ nn_next*Tn_next*(v_n_next-v_overall_next)).dot(edge_normal);
-//
+
+			if (TEST1) printf("advect GPU %d : "
+			"i %d iTri %d heatfluxout_contrib e %1.14E \n"
+				"nprev %1.14E nnext %1.14E\n"
+				"Te_prev next %1.14E %1.14E \nrel vxy %1.14E %1.14E ; %1.14E %1.14E\n"
+				"edge_normal %1.14E %1.14E \n"
+				"-------------------------\n",
+				iVertex, i, iTri,
+				0.5*(n_prev*Te_prev*(vxy_prev - v_overall_prev)
+					+ n_next*Te_next*(vxy_next - v_overall_next)).dot(edge_normal),
+				n_prev, n_next,
+				Ti_prev, Te_next, (vxy_prev - v_overall_prev).x, (vxy_prev - v_overall_prev).y,
+				(vxy_next - v_overall_next).x, (vxy_next - v_overall_next).y,
+				edge_normal.x, edge_normal.y);
+
+			if (TESTADVECT) printf("AccumulateAdvectiveMassHeatRate iVertex %d : inext %d iTri %d \n"
+				"NTiflux %1.9E cumu %1.9E n_prev %1.9E n_next %1.9E vxyprev %1.7E %1.7E\n"
+				"vxy_prev.edgenml %1.9E v_overall_prev. %1.9E vxy_next. %1.9E v_overall_next. %1.9E\n"
+				"Ti_prev %1.9E Ti_next %1.9E prev contrib %1.9E nex cntrib %1.9E\n"
+				"v_overall_next %1.9E %1.9E\n"
+				"------------------------------------------------\n",
+				iVertex, i, iTri,
+				0.5*(n_prev*Ti_prev*(vxy_prev - v_overall_prev)
+					+ n_next*Ti_next*(vxy_next - v_overall_next)).dot(edge_normal),
+				totalheatflux_out.Ti, n_prev, n_next, vxy_prev.x, vxy_prev.y,
+				vxy_prev.dot(edge_normal),
+				v_overall_prev.dot(edge_normal),
+				vxy_next.dot(edge_normal),
+				v_overall_next.dot(edge_normal),
+				Ti_prev, Ti_next,
+				0.5*n_prev*Ti_prev*(vxy_prev - v_overall_prev).dot(edge_normal),
+				0.5*n_next*Ti_next*(vxy_next - v_overall_next).dot(edge_normal),
+				v_overall_next.x, v_overall_next.y
+			);
+
 		//	if (TEST) printf("advect GPU %d : "
 		//		"i %d iTri %d heatfluxout_contrib %1.14E \n"
 		//		"nprev %1.14E nnext %1.14E\n"
@@ -11417,6 +11464,8 @@ __global__ void kernelAccumulateAdvectiveMassHeatRate(
 				Ti_prev, Te_next, (vxy_prev - v_overall_prev).x, (vxy_prev - v_overall_prev).y,
 				(vxy_next - v_overall_next).x, (vxy_next - v_overall_next).y,
 				edge_normal.x, edge_normal.y);
+
+
 //
 			endpt0 = endpt1;
 			n_prev = n_next;
@@ -12526,11 +12575,12 @@ __global__ void kernelPopulateBackwardOhmsLaw_noadvect(
 
 			if (v0.vez != v0.vez) printf("NANVEZ %d v_k %1.9E MAR.z %1.9E \n", iMinor, vie_k.vez, MAR.z);
 
-			if (((TESTTRI))) printf("\nGPU %d MAR: changexy %1.10E %1.10E vezchange %1.10E Area %1.10E\n", iMinor,
+			if (TESTOHMS) printf("\nGPU %d MAR: changexy %1.10E %1.10E vezchange %1.10E Area %1.10E v0.vez %1.9E vie_k.vez %1.9E\n", iMinor,
 				h_use * (m_e*MAR.x / (n_use.n*(m_i + m_e)*AreaMinor)),
 				h_use * (m_e*MAR.y / (n_use.n*(m_i + m_e)*AreaMinor)),
 				h_use * MAR.z / (n_use.n*AreaMinor),
-				AreaMinor);
+				AreaMinor, v0.vez, vie_k.vez);
+
 		}
 
 		OhmsCoeffs ohm;
@@ -12608,9 +12658,7 @@ __global__ void kernelPopulateBackwardOhmsLaw_noadvect(
 
 		// The issue here seems to be we were subtracting instead of adding.
 		
-
-		// Wouldn't documentation be a grand thing?
-		
+		// Wouldn't documentation be a grand thing?		
 
 		denom = 1.0 + (h_use / (m_i + m_e))*(
 			m_n* M_i_over_in* (cross_section_times_thermal_in*n_use.n_n)
@@ -12654,7 +12702,7 @@ __global__ void kernelPopulateBackwardOhmsLaw_noadvect(
 
 		v0.viz /= denom;
 
-		if (((TESTTRI))) printf("viz0 divided %1.14E denom %1.14E \n", v0.viz, denom);
+		//if (((TESTTRI))) printf("viz0 divided %1.14E denom %1.14E \n", v0.viz, denom);
 
 		
 		ohm.sigma_i_zz = h_use * qoverM / denom;
@@ -12662,18 +12710,29 @@ __global__ void kernelPopulateBackwardOhmsLaw_noadvect(
 			+ h_use*qoverMc*(grad_Az[threadIdx.x].dot(ohm.beta_xy_z))
 			+ h_use * M_n_over_ni*(cross_section_times_thermal_in*n_use.n_n) *ohm.beta_ne
 			+ h_use * moverM*nu_ei_effective) / denom;
-		
+
+		if (TESTOHMS) printf("%d v0.vez %1.12E before Azdot LapAz and JxB\n", iMinor, v0.vez);
+
 		v0.vez +=
 			h_use *qovermc*(AAzdot_k.Azdot
 				+ h_use * c*c*(LapAz + FOURPI_Q_OVER_C*n_use.n*v0.viz))
 			+ h_use*qovermc*(v0.vxy + ohm.beta_xy_z*v0.viz ).dot(grad_Az[threadIdx.x]);
-		
+
+		if (TESTOHMS) printf("%d vh_use *qovermc*(AAzdot_k.Azdot) %1.9E hhqc_overm(LapAz) %1.9E LapAz %1.9E \n"
+			"hh4piqqoverm n viz %1.9E  hq/mc v0.vxy.gradAz %1.9E hq/mc beta_xyz viz.gradAz %1.9E \n", 
+			iMinor, h_use *qovermc*(AAzdot_k.Azdot), 
+			h_use *qovermc*(h_use * c*c*(LapAz )),
+			h_use *qovermc*(h_use * c*c*(FOURPI_Q_OVER_C*n_use.n*v0.viz)),
+			h_use*qovermc*v0.vxy.dot(grad_Az[threadIdx.x]),
+			h_use*qovermc*(ohm.beta_xy_z*v0.viz).dot(grad_Az[threadIdx.x])
+			);
+
 		// implies:
 		f64 effect_of_viz0_on_vez0 =
 			h_use * qovermc*h_use * c*c* FOURPI_Q_OVER_C*n_use.n
 			+ h_use*qovermc*(ohm.beta_xy_z.dot(grad_Az[threadIdx.x]));
 
-		if (TESTOHMS) printf("%d v0.vez %1.12E \n", iMinor, v0.vez);
+		if (TESTOHMS) printf("%d v0.vez %1.12E before thermal force\n", iMinor, v0.vez);
 
 		v0.vez -=
 			1.5*h_use*nu_eiBar*((omega[threadIdx.x].x*qovermc*BZ_CONSTANT - nu_eHeart * omega[threadIdx.x].y)*gradTe[threadIdx.x].x +
@@ -12683,8 +12742,7 @@ __global__ void kernelPopulateBackwardOhmsLaw_noadvect(
 		// could store this from above and put opposite -- dividing by m_e instead of m_i
 		// overdue..?
 
-		v0.vez += h_use*M_n_over_ne*(cross_section_times_thermal_en*n_use.n_n) *(vn0.z + ohm.beta_ni * v0.viz)
-				+ h_use*nu_ei_effective*v0.viz;
+		if (TESTOHMS) printf("%d v0.vez %1.12E MARKER1 \n", iMinor, v0.vez);
 
 		
 		// implies:
@@ -12697,8 +12755,8 @@ __global__ void kernelPopulateBackwardOhmsLaw_noadvect(
 			+ h_use*nu_ei_effective*(1.0 - beta_ie_z);
 
 		if (TESTOHMS) printf("%d v0.vez %1.12E nu_ei_effective %1.10E v0.viz %1.10E \n"
-			"beta_ie_z %1.8E  nu_en %1.9E \n", iMinor, v0.vez, nu_ei_effective, v0.viz, beta_ie_z,
-			M_n_over_ne*(cross_section_times_thermal_en*n_use.n_n) );
+			"beta_ie_z %1.8E  nu_en %1.9E denom %1.9E\n", iMinor, v0.vez, nu_ei_effective, v0.viz, beta_ie_z,
+			M_n_over_ne*(cross_section_times_thermal_en*n_use.n_n), denom);
 
 
 		//		vez0_coeff_on_Lap_Az = h_use * h_use*0.5*qovermc* c*c / denom; 
@@ -12711,8 +12769,12 @@ __global__ void kernelPopulateBackwardOhmsLaw_noadvect(
 				+ h_use*nu_ei_effective*ohm.sigma_i_zz)
 			/ denom;
 
+		if (TESTOHMS) printf("%d grad_Az %1.9E %1.9E \n", iMinor, grad_Az[threadIdx.x].x, grad_Az[threadIdx.x].y);
+
 		v0.vez /= denom;
 		effect_of_viz0_on_vez0 /= denom; // of course 
+
+		if (TESTOHMS) printf("%d v0.vez %1.12E after divide\n", iMinor, v0.vez);
 
 
 		if (bSwitchSave) {
@@ -13065,7 +13127,7 @@ __global__ void kernelPopulateBackwardOhmsLaw(
 		if (((TESTTRI))) printf("GPU %d: LapAz %1.14E\n", CHOSEN, LapAz);
 
 		v0.vxy +=
-			-(h_use / ((m_i + m_e)))*(m_n*M_i_over_in*(cross_section_times_thermal_in*n_use.n_n)
+			(h_use / ((m_i + m_e)))*(m_n*M_i_over_in*(cross_section_times_thermal_in*n_use.n_n)
 				+ m_n * M_e_over_en*(cross_section_times_thermal_en*n_use.n_n))*
 				(vn0.xypart());
 
@@ -15051,15 +15113,19 @@ __global__ void kernelGetLap_minor(
 
 
 
-			//		if (TEST) printf("VERTCHOSEN %d izTri[i] %d contrib %1.14E \n"
+			if (TESTLAP) printf("VERTCHOSEN %d izTri[i] %d ourAz %1.8E oppAz %1.8E contrib %1.14E \n"
 
-			//			"grad Az %1.14E %1.14E edgenormal %1.14E %1.14E \n",
+						"grad Az %1.14E %1.14E edgenormal %1.14E %1.14E \n",
 
-			//			VERTCHOSEN, izTri[i], integ_grad_Az.dot(edge_normal) / area_quadrilateral,
+						VERTCHOSEN, izTri[i], 
+						
+						ourAz, oppAz,
+												
+						integ_grad_Az.dot(edge_normal) / area_quadrilateral,
 
-			//			integ_grad_Az.x / area_quadrilateral, integ_grad_Az.y / area_quadrilateral,
+						integ_grad_Az.x / area_quadrilateral, integ_grad_Az.y / area_quadrilateral,
 
-			//			edge_normal.x, edge_normal.y);
+						edge_normal.x, edge_normal.y);
 
 
 

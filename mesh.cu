@@ -11,7 +11,7 @@ extern long steps_remaining;
 
 int GlobalWedgeSwitch; 
 smartlong GlobalAffectedTriIndexList;
-
+extern bool flaglist[NMINOR];
 
 	TriMesh::TriMesh()
 	{
@@ -1840,7 +1840,7 @@ bool TriMesh::DebugTestForOverlaps()
 }
 
 
-void TriMesh::Redelaunerize(bool exhaustion, bool bReplace)
+long TriMesh::Redelaunerize(bool exhaustion, bool bReplace)
 {
 	long iTri2;
 	Triangle * pTri2, * pTri;
@@ -1876,6 +1876,8 @@ void TriMesh::Redelaunerize(bool exhaustion, bool bReplace)
 	printf("start of redelaunerize");
 	DebugTestWrongNumberTrisPerEdge();
 	printf("got to here\n");
+
+	memset(flaglist, 0, sizeof(bool)*NMINOR);
 
 	long totalflips = 0;
 	// if exhaustion == true, carry on to exhaustion; otherwise do 1 pass.
@@ -1953,41 +1955,48 @@ void TriMesh::Redelaunerize(bool exhaustion, bool bReplace)
 								// EXCEPTIONAL CASE 3: created 2 CROSSING_INS tris: fine.
 
 								plasma_data temp;
+								memcpy(&data_vert, &(pData[pVertex1 - X + BEGINNING_OF_CENTRAL]), sizeof(plasma_data));
+								temp.Az = THIRD*(data_vert.Az + data_tri1.Az + data_tri2.Az);
+								temp.Azdot = THIRD*(data_vert.Azdot + data_tri1.Azdot + data_tri2.Azdot);
+								temp.B = THIRD*(data_vert.B + data_tri1.B + data_tri2.B);
 								if (pVertex1->flags != DOMAIN_VERTEX) {
 									temp.n = 0.5*(data_tri1.n + data_tri2.n);
 									temp.n_n = 0.5*(data_tri1.n_n + data_tri2.n_n);
 									temp.Tn = 0.5*(data_tri1.Tn + data_tri2.Tn);
 									temp.Ti = 0.5*( data_tri1.Ti + data_tri2.Ti);
 									temp.Te = 0.5*(data_tri1.Te + data_tri2.Te);
-									temp.Az = 0.5*(data_tri1.Az + data_tri2.Az);
-									temp.Azdot = 0.5*( data_tri1.Azdot + data_tri2.Azdot);
 									temp.v_n = 0.5*( data_tri1.v_n + data_tri2.v_n);
 									temp.vxy = 0.5*( data_tri1.vxy + data_tri2.vxy);
 									temp.vez = 0.5*( data_tri1.vez + data_tri2.vez);
 									temp.viz = 0.5*( data_tri1.viz + data_tri2.viz);
-									temp.B = 0.5*(data_tri1.B + data_tri2.B);
 								} else {
-									memcpy(&data_vert, &(pData[pVertex1 - X + BEGINNING_OF_CENTRAL]), sizeof(plasma_data));
 									temp.n = THIRD*(data_vert.n + data_tri1.n + data_tri2.n);
 									temp.n_n = THIRD*(data_vert.n_n + data_tri1.n_n + data_tri2.n_n);
 									temp.Tn = THIRD*(data_vert.Tn + data_tri1.Tn + data_tri2.Tn);
 									temp.Ti = THIRD*(data_vert.Ti + data_tri1.Ti + data_tri2.Ti);
 									temp.Te = THIRD*(data_vert.Te + data_tri1.Te + data_tri2.Te);
-									temp.Az = THIRD*(data_vert.Az + data_tri1.Az + data_tri2.Az);
-									temp.Azdot = THIRD*(data_vert.Azdot + data_tri1.Azdot + data_tri2.Azdot);
 									temp.v_n = THIRD*(data_vert.v_n + data_tri1.v_n + data_tri2.v_n);
 									temp.vxy = THIRD*(data_vert.vxy + data_tri1.vxy + data_tri2.vxy);
 									temp.vez = THIRD*(data_vert.vez + data_tri1.vez + data_tri2.vez);
 									temp.viz = THIRD*(data_vert.viz + data_tri1.viz + data_tri2.viz);
-									temp.B = THIRD*(data_vert.B + data_tri1.B + data_tri2.B);
 								}								
+								Vector2 pos0, pos1, pos2;
+								pTri2->MapLeftIfNecessary(pos0, pos1, pos2); // check if we think this'll work.
+								temp.pos = THIRD*(pos0 + pos1 + pos2);
+								//temp.pos = THIRD*(
+								//	pData[(pTri->cornerptr[0] - X) + BEGINNING_OF_CENTRAL].pos +
+								//	pData[(pTri->cornerptr[1] - X) + BEGINNING_OF_CENTRAL].pos +
+								//	pData[(pTri->cornerptr[2] - X) + BEGINNING_OF_CENTRAL].pos);
+								//
+								
+								// Note we did not rotate vxy or v_n_xy. -- fail
 
-								temp.pos = THIRD*(
-									pData[(pTri->cornerptr[0] - X) + BEGINNING_OF_CENTRAL].pos +
-									pData[(pTri->cornerptr[1] - X) + BEGINNING_OF_CENTRAL].pos +
-									pData[(pTri->cornerptr[2] - X) + BEGINNING_OF_CENTRAL].pos);
-										
 								memcpy(&(pData[pTri - T]), &temp, sizeof(plasma_data)); // so must populate every member
+
+								memcpy(&data_vert, &(pData[pVertex2 - X + BEGINNING_OF_CENTRAL]), sizeof(plasma_data));
+								temp.Az = THIRD*(data_vert.Az + data_tri1.Az + data_tri2.Az);
+								temp.Azdot = THIRD*(data_vert.Azdot + data_tri1.Azdot + data_tri2.Azdot);
+								temp.B = THIRD*(data_vert.B + data_tri1.B + data_tri2.B);
 
 								if (pVertex2->flags != DOMAIN_VERTEX) {
 									temp.n = 0.5*(data_tri1.n + data_tri2.n);
@@ -1995,39 +2004,72 @@ void TriMesh::Redelaunerize(bool exhaustion, bool bReplace)
 									temp.Tn = 0.5*(data_tri1.Tn + data_tri2.Tn);
 									temp.Ti = 0.5*(data_tri1.Ti + data_tri2.Ti);
 									temp.Te = 0.5*(data_tri1.Te + data_tri2.Te);
-									temp.Az = 0.5*(data_tri1.Az + data_tri2.Az);
-									temp.Azdot = 0.5*(data_tri1.Azdot + data_tri2.Azdot);
 									temp.v_n = 0.5*(data_tri1.v_n + data_tri2.v_n);
 									temp.vxy = 0.5*(data_tri1.vxy + data_tri2.vxy);
 									temp.vez = 0.5*(data_tri1.vez + data_tri2.vez);
 									temp.viz = 0.5*(data_tri1.viz + data_tri2.viz);
-									temp.B = 0.5*(data_tri1.B + data_tri2.B);
 								}
 								else {
-									memcpy(&data_vert, &(pData[pVertex2 - X + BEGINNING_OF_CENTRAL]), sizeof(plasma_data));
 									temp.n = THIRD*(data_vert.n + data_tri1.n + data_tri2.n);
 									temp.n_n = THIRD*(data_vert.n_n + data_tri1.n_n + data_tri2.n_n);
 									temp.Tn = THIRD*(data_vert.Tn + data_tri1.Tn + data_tri2.Tn);
 									temp.Ti = THIRD*(data_vert.Ti + data_tri1.Ti + data_tri2.Ti);
 									temp.Te = THIRD*(data_vert.Te + data_tri1.Te + data_tri2.Te);
-									temp.Az = THIRD*(data_vert.Az + data_tri1.Az + data_tri2.Az);
-									temp.Azdot = THIRD*(data_vert.Azdot + data_tri1.Azdot + data_tri2.Azdot);
 									temp.v_n = THIRD*(data_vert.v_n + data_tri1.v_n + data_tri2.v_n);
 									temp.vxy = THIRD*(data_vert.vxy + data_tri1.vxy + data_tri2.vxy);
 									temp.vez = THIRD*(data_vert.vez + data_tri1.vez + data_tri2.vez);
 									temp.viz = THIRD*(data_vert.viz + data_tri1.viz + data_tri2.viz);
-									temp.B = THIRD*(data_vert.B + data_tri1.B + data_tri2.B);
 								}
 
-								temp.pos = THIRD*(
-									pData[(pTri2->cornerptr[0] - X) + BEGINNING_OF_CENTRAL].pos +
-									pData[(pTri2->cornerptr[1] - X) + BEGINNING_OF_CENTRAL].pos +
-									pData[(pTri2->cornerptr[2] - X) + BEGINNING_OF_CENTRAL].pos);
+							//	temp.pos = THIRD*(
+							//		pData[(pTri2->cornerptr[0] - X) + BEGINNING_OF_CENTRAL].pos +
+									//			pData[(pTri2->cornerptr[1] - X) + BEGINNING_OF_CENTRAL].pos +
+									//			pData[(pTri2->cornerptr[2] - X) + BEGINNING_OF_CENTRAL].pos);
 
+											// We could need to bring positions to same periodic orientation as triangle.
+							
+								pTri2->MapLeftIfNecessary(pos0, pos1, pos2); // check if we think this'll work.
+								temp.pos = THIRD*(pos0 + pos1 + pos2);
+								// pos012 shuold also allow us to conclude corners of tri minor cell.
+								/*
+								// Constructing Lap Az:
+								f64 LapAz = 0.0;
+								if (pTri->neighbours[0] != pTri2) {
+									lap = 0;
+									neighpos = pData[pNeigh - T].pos;
+									// adjust for periodic:
+
+
+								} else {
+									neighpos = pData[pNeigh - T].pos;
+
+									coeff_12 = ;
+								}
+								LapAz /= area;
+								coeff_12 /= area;
+
+								// Now solve: Lap Az = -4pi/c Jz
+
+								f64 det = coeff_11*coeff_22 - coeff_12*coeff_21;
+								inv_11 = coeff_22 / det;
+								inv_12 = -coeff_12 / det;
+								inv_21 = -coeff_21 / det;
+								inv_22 = coeff_11 / det;
+
+								temp1.Az = inv_11*(-LapAz1 - FOURPIOVERC_*Jz1) + inv_12*(-LapAz2 - FOURPIOVERC_*Jz2);
+								temp2.Az = inv_21*(-LapAz1 - FOURPIOVERC_*Jz1) + inv_22*(-LapAz2 - FOURPIOVERC_*Jz2);
+								*/
 
 								memcpy(&(pData[pTri2 - T]), &temp, sizeof(plasma_data)); // so must populate every member
 
-								
+								printf("FLIP: %d %d %d %d :Az %1.8E %1.8E | %1.8E %1.8E \n"
+									"viz %1.8E %1.8E | %1.8E %1.8E \n", pVertex1 - X, pVertex2-X, pTri - T, pTri2 - T,
+									data_tri1.Az, data_tri2.Az, pData[pTri - T].Az, pData[pTri2 - T].Az,
+									data_tri1.viz, data_tri2.viz, pData[pTri - T].viz, pData[pTri2 - T].viz);
+								 
+								flaglist[pTri2 - T] = true;
+								flaglist[pTri - T] = true;
+
 								/*
 								
 								
@@ -2107,7 +2149,11 @@ void TriMesh::Redelaunerize(bool exhaustion, bool bReplace)
 
 	if (totalflips > 0) {
 		this->RefreshVertexNeighboursOfVerticesOrdered();
-	}
+	//	printf("press z"); // debug
+	//	while (getch() != 'z');
+	};
+
+	return totalflips;
 }
 
 void TriMesh::GiveAndTake(ShardData & shard_data, Vertex * pVDest,Vertex * pVSrc)

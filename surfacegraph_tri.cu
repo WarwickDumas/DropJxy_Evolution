@@ -14,6 +14,8 @@
 #include "mesh.cu"
 #include "meshutil.cu"
 
+#define VERBOSEGRAPHICS 0 // also in meshutil
+
 //extern FixedMesh Fixed;
 extern int GlobalWhichLabels;
 extern real GlobalRescaling;
@@ -30,7 +32,6 @@ extern bool boolGlobalHistory;
 extern bool bCullNone;
 
 long numVerticesKey;
-
 D3D Direct3D;
 
 void strip_0(char * buffer)
@@ -1041,7 +1042,7 @@ HRESULT surfacegraph::SetDataWithColour(const TriMesh & X,
 					this->boolDisplayInnerMesh);
 				X.ReturnL5Data(offset_data, &maximum, &minimum,
 					this->boolDisplayInnerMesh);
-				printf("SDWC colourflag %d code %d minimum %1.3E maximum %1.3E store_max %1.3E store_min %1.4E \n",
+				if (VERBOSEGRAPHICS) printf("SDWC colourflag %d code %d minimum %1.3E maximum %1.3E store_max %1.3E store_min %1.4E \n",
 					colourflag, code, minimum, maximum, store_max, store_min);
 
 			};
@@ -1154,7 +1155,7 @@ HRESULT surfacegraph::SetDataWithColour(const TriMesh & X,
 			};	
 			break;
 	};
-	printf("Lock vertex buffers :\n");
+	if (VERBOSEGRAPHICS) printf("Lock vertex buffers :\n");
 	for (N = 0; N < NUMBER_VERTEX_ARRAYS; N++)
 	{
 		
@@ -1167,7 +1168,7 @@ HRESULT surfacegraph::SetDataWithColour(const TriMesh & X,
 	};
 	if (this->boolDisplayMainMesh) // should be always on!
 	{
-		printf("Call SetVerticesAndIndices:\n");
+		if (VERBOSEGRAPHICS) printf("Call SetVerticesAndIndices:\n");
 		// At the moment this now just pours information into vertices[2], indices[2] :
 		X.SetVerticesAndIndices(vertices, indices,       // better to do in the other class...
 							numVertices, numTriangles, // pass it the integer counts so that it can test for overrun & redim
@@ -1180,9 +1181,8 @@ HRESULT surfacegraph::SetDataWithColour(const TriMesh & X,
 	
 	if ((this->boolDisplayKeyButton) && (bScrewPinch == 0))
 	{
-		printf("Call SetVerticesKeyButton: %d", numVerticesKey);
+		if (VERBOSEGRAPHICS) printf("Call SetVerticesKeyButton: %d", numVerticesKey);
 		X.SetVerticesKeyButton(vertices[0],indices[0],colourmax,colourflag);
-		printf(" done\n");
 		numVerticesUsed[0] = X.GetNumKeyVerticesGraphics(&(numTrianglesUsed[0]));
 	} else {
 		numVerticesUsed[0] = 0;
@@ -1204,13 +1204,11 @@ HRESULT surfacegraph::SetDataWithColour(const TriMesh & X,
 	
 	//for (N = 0; N < NUMBER_VERTEX_ARRAYS; N++)
 	//	numTrianglesUsed[N] = numIndicesUsed[N]/3;
-	printf("Invert normals:\n");
+	
 	for (N = 0; N < NUMBER_VERTEX_ARRAYS; N++)
 		for (i = 0; i < numVerticesUsed[N]; i++)
 			vertices[N][i].normal = -vertices[N][i].normal;
-
-	printf("Unlock vertex arrays:\n");
-
+	
 	for (N = 0; N < NUMBER_VERTEX_ARRAYS; N++)
 	{
 		if ( VertexBuffer[N] != NULL)
@@ -1220,7 +1218,7 @@ HRESULT surfacegraph::SetDataWithColour(const TriMesh & X,
 		};
 	};
 		
-	printf("end SDWC\n");
+	if (VERBOSEGRAPHICS) printf("end SDWC\n");
 
 	return S_OK;
 }
@@ -1476,7 +1474,7 @@ VOID surfacegraph::Render(const char * szTitle, bool RenderTriLabels,
 						  const TriMesh * pX, // = 0 by default
 						  char * szLinebelow) // = 0 by default
 {
-	printf("Render: szTitle %s \n", szTitle);
+	if (VERBOSEGRAPHICS) printf("Render: szTitle %s \n", szTitle);
 
 	long tri_len, izTri[128];
 
@@ -1743,7 +1741,7 @@ VOID surfacegraph::Render(const char * szTitle, bool RenderTriLabels,
 		DXChk(mFX->SetValue(mhEyePos, &Eye, sizeof(D3DXVECTOR3)));
 		DXChk(mFX->SetFloat(mhColourMax,colourmax));
 		
-		printf("Render: Setted colourmax == %f \n", colourmax);
+		if (VERBOSEGRAPHICS) printf("Render: Setted colourmax == %f \n", colourmax);
 
 		DXChk(mFX->SetBool(mhbTransparency, false));
 		Direct3D.pd3dDevice->SetRenderState(D3DRS_ALPHABLENDENABLE , false);	
@@ -2367,7 +2365,7 @@ VOID surfacegraph::Render(const char * szTitle, bool RenderTriLabels,
 		getch();
 	};
 
-	printf("Render done. %s \n", szTitle);
+	if (VERBOSEGRAPHICS) printf("Render done. %s \n", szTitle);
 }
 
 
