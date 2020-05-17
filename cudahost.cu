@@ -9,16 +9,18 @@
 
 #define PRECISE_VISCOSITY
 
-#define DEBUGTE               1
+#define DEBUGTE               0
 
 #include <stdlib.h>
 #include <stdio.h>
 #include "lapacke.h"
+#include "mesh.h"
        
 /* Auxiliary routines prototypes */
 extern void print_matrix(char* desc, lapack_int m, lapack_int n, double* a, lapack_int lda);
 extern void print_int_vector(char* desc, lapack_int n, lapack_int* a);
    
+extern TriMesh X4;
     
 #define BWD_SUBCYCLE_FREQ  1
 #define BWD_STEP_RATIO     1    // divide substeps by this for bwd
@@ -27,10 +29,11 @@ extern void print_int_vector(char* desc, lapack_int n, lapack_int* a);
             
 // This will be slow but see if it solves it.
                    
-#define CHOSEN  99692
+#define CHOSEN  90059
 #define CHOSEN1 1000110301
 #define CHOSEN2 1000110497 
-#define VERTCHOSEN 25964
+#define VERTCHOSEN 25627
+//16331
  
 #define ITERATIONS_BEFORE_SWITCH  18
 #define REQUIRED_IMPROVEMENT_RATE  0.98
@@ -54,11 +57,12 @@ extern void print_int_vector(char* desc, lapack_int n, lapack_int* a);
 #define p_sqrtDN_Ti p_NTi
 #define p_sqrtDN_Te p_NTe
  
-#define DEFAULTSUPPRESSVERBOSITY true
+#define DEFAULTSUPPRESSVERBOSITY false
   
 extern surfacegraph Graph[7];
 extern D3D Direct3D;
- 
+extern HWND hWnd;
+
 FILE * fp_trajectory;
 FILE * fp_dbg;
 bool GlobalSuppressSuccessVerbosity = DEFAULTSUPPRESSVERBOSITY;
@@ -116,6 +120,8 @@ __constant__ long numStartZCurrentTriangles, numEndZCurrentTriangles;
 // { Call(cudaStatus, "cudaStatus") } ?
 extern real FRILL_CENTROID_OUTER_RADIUS, FRILL_CENTROID_INNER_RADIUS;
 
+extern bool flaglist[NMINOR];
+
 cuSyst cuSyst1, cuSyst2, cuSyst3;
 extern cuSyst cuSyst_host;
 // Given our restructure, we are going to need to dimension
@@ -133,10 +139,10 @@ f64 * p_graphdata1_host, *p_graphdata2_host, *p_graphdata3_host, *p_graphdata4_h
 __device__ f64_vec3* p_MAR_ion_temp_central, *p_MAR_elec_temp_central;
 __device__ f64 * p_Tgraph[9];
 f64 * p_Tgraph_host[9];
-
 __device__ f64 * p_accelgraph[12];
 f64 * p_accelgraph_host[12];
 
+__device__ f64 * p_Residuals;
 __device__ long * p_longtemp;
 __device__ bool * p_bool;
 __device__ f64 * p_regressor_n, *p_regressor_i, *p_regressor_e, *p_Effect_self_n, *p_Effect_self_i, *p_Effect_self_e,
@@ -147,6 +153,11 @@ NTrates * p_NTrates_host;
 __device__ f64 * p_sqrtD_inv_n, *p_sqrtD_inv_i, *p_sqrtD_inv_e;
 __device__ f64 * p_regressors;
 f64 * p_sum_eps_deps_by_dbeta_x8_host;
+
+#define SQUASH_POINTS  16
+__device__ f64 * p_matrix_blocks;
+__device__ f64 * p_vector_blocks;
+
 
 #define p_slot1n p_Ap_n
 #define p_slot1i p_Ap_i
@@ -764,7 +775,7 @@ void SolveBackwardAzAdvanceJ3LS(f64 hsub,
 	long iMax = 0;
 	bool bContinue = true;
 
-	printf("iIteration = %d\n", iIteration);
+//	printf("iIteration = %d\n", iIteration);
 	// 1. Create regressor:
 	// Careful with major vs minor + BEGINNING_OF_CENTRAL:
 
@@ -806,10 +817,99 @@ void SolveBackwardAzAdvanceJ3LS(f64 hsub,
 //	FILE * fpdbg = fopen("J3LS_2.txt", "w");
 	L2eps = -1.0;
 
+	f64 matrix[SQUASH_POINTS][SQUASH_POINTS];
+	f64 vector[SQUASH_POINTS];
 	do
 	{		
 		// Now we want to create another regressor, let it be called p_regressor_n
 		// Let p_Jacobi_x act as AzNext
+
+		if (iIteration > 2500) {
+
+			// Alternative: smoosh 24 points
+
+			// find maximum
+			cudaMemset(p_indicator, 0, sizeof(long)*NMINOR);
+			int number_set = 0; // now we're going to have to number them as 1 through 24 .. be careful.
+			do {
+				kernelReturnMaximumInBlock << <numTilesMinor, threadsPerTileMinor >> > (
+					p_epsilon,
+					p_temp1 // max in block
+					p_longtemp,
+					p_indicator // long*NMINOR : if this point is already used, do not pick it up.
+					);
+				cudaMemcpy(p_temphost1, p_temp1, sizeof(f64)*numTilesMinor, cudaMemcpyDeviceToHost);
+				cudaMemcpy(p_longtemphost, p_longtemp, sizeof(long)*numTilesMinor, cudaMemcpyDeviceToHost);
+				f64 maximum = 0.0;
+				long iMax = 0;
+				for (iTile = 0; iTile < numTilesMinor; iTile++)
+				{
+					if (p_temphost1[iTile] > maximum) {
+						maximum = p_temphost1[iTile];
+						iMax = p_longtemphost[iTile];
+					};
+				};
+				long ii = number_set + 1;
+				cudaMemcpy(&(p_indicator[iMax]), &ii, sizeof(f64), cudaMemcpyHostToDevice);
+
+				number_set++;
+				// Just do this 24 times ... dumbest way possible but nvm.
+
+				
+				// Quicker way (develop later) :				
+				// Just recruit neighbours until we get to 24?
+				//if (iMax >= BEGINNING_OF_CENTRAL) {
+				//	cudaMemcpy(p_izTri_host, &(pX_use->p_izTri_vert[MAXNEIGH*iMax]), sizeof(long)*MAXNEIGH, cudaMemcpyDeviceToHost);
+				//		// Only pick up neighbours if they are not already used.
+				//		// Stop when we reach SMASH_POINTS
+				//	{
+				//		number_set++;
+				//	}
+				//} else {
+				//	{
+				// Only pick up neighbours if they are not already used.
+				//		// Stop when we reach SMASH_POINTS
+				//		number_set++;
+				//	}
+				//};
+			} while (number_set < SMASH_POINTS);
+
+			kernelAccumulateSmashMatrix << <numTriTiles, threadsPerTileMinor >> > (
+				pX_use->p_info,
+				p_epsilon,
+				p_AzNext, 
+				pAz_k,
+				p_Azdot0,  // needed?
+				p_gamma,   // needed?
+				pX_use->p_izTri_vert,
+				pX_use->p_izNeigh_TriMinor,
+				pX_use->p_szPBCtri_vert,
+				pX_use->p_szPBC_triminor,
+				p_matrix_blocks,
+				p_vector_blocks
+				);
+			Call(cudaThreadSynchronize(), "cudaTS CollectMatrix");
+
+			cudaMemcpy(p_matrix_blocks_host, p_matrix_blocks, 
+				sizeof(f64)*SQUASH_POINTS*SQUASH_POINTS*numTriTiles, cudaMemcpyDeviceToHost);
+			cudaMemcpy(p_vector_blocks_host, p_vector_blocks,
+				sizeof(f64)*SQUASH_POINTS*numTriTiles, cudaMemcpyDeviceToHost);
+			memset(matrix, 0, sizeof(f64)*SQUASH_POINTS*SQUASH_POINTS);
+			memset(vector, 0, sizeof(f64)*SQUASH_POINTS);
+			for (iTile = 0; iTile < numTriTiles; iTile++)
+			{
+				for (i = 0; i < SQUASH_POINTS; i++)
+				{
+					for (j = 0; i < SQUASH_POINTS; i++)
+						matrix[i][j] += p_matrix_blocks_host[i][j][iTile];
+					vector[i] += p_matrix_vector_host[i][iTile];
+				};
+			};
+
+			LUSolve(matrix, vector);
+
+
+		};
 
 		kernelGetLap_minor << <numTriTiles, threadsPerTileMinor >> > (
 			pX_use->p_info,
@@ -860,6 +960,11 @@ void SolveBackwardAzAdvanceJ3LS(f64 hsub,
 			p_gamma,
 			p_regressor_i);
 		Call(cudaThreadSynchronize(), "cudaTS Create further regressor");
+		
+		// Wipe out regressor_i with epsilon: J2RLS:
+		// Doesn't help.
+		// cudaMemcpy(p_regressor_i, p_epsilon, sizeof(f64)*NMINOR, cudaMemcpyDeviceToDevice);
+		
 		kernelResetFrillsAz << <numTilesMinor, threadsPerTileMinor >> > (
 			pX_use->p_info, pX_use->p_tri_neigh_index,
 			p_regressor_i);
@@ -986,7 +1091,7 @@ void SolveBackwardAzAdvanceJ3LS(f64 hsub,
 		//	fprintf(jibble, "%d Az %1.14E Jac_added %1.14E \n",i, p_temphost1[i], p_temphost2[i]);
 		//fclose(jibble);
 
-		printf("iIteration = %d\n", iIteration);
+		printf("iIteration = %d ", iIteration);
 		// 1. Create regressor:
 		// Careful with major vs minor + BEGINNING_OF_CENTRAL:
 
@@ -1016,6 +1121,7 @@ void SolveBackwardAzAdvanceJ3LS(f64 hsub,
 				p_bFailed
 				);
 		Call(cudaThreadSynchronize(), "cudaTS CreateEpsAndJacobi 1");
+
 		kernelResetFrillsAz << <numTilesMinor, threadsPerTileMinor >> > (
 			pX_use->p_info, pX_use->p_tri_neigh_index, p_Jacobi_x);
 		Call(cudaThreadSynchronize(), "cudaTS ResetFrills Jacobi");
@@ -1027,6 +1133,60 @@ void SolveBackwardAzAdvanceJ3LS(f64 hsub,
 		for (iTile = 0; iTile < numTilesMinor; iTile++) RSS += p_temphost3[iTile];
 		L2eps = sqrt(RSS / (f64)NMINOR);
 		printf("L2eps: %1.9E \n", L2eps);
+
+		if (iIteration > 2500) {
+			
+
+
+
+
+
+
+
+			// graphs:
+			cudaMemcpy(p_temphost1, p_epsilon, sizeof(f64)*NMINOR, cudaMemcpyDeviceToHost);
+			cudaMemcpy(p_temphost2, p_Azdot0, sizeof(f64)*NMINOR, cudaMemcpyDeviceToHost);
+			cudaMemcpy(p_temphost3, p_regressor_n, sizeof(f64)*NMINOR, cudaMemcpyDeviceToHost);
+			cudaMemcpy(p_temphost4, p_Az, sizeof(f64)*NMINOR, cudaMemcpyDeviceToHost);
+			cudaMemcpy(p_temphost5, p_regressor_i, sizeof(f64)*NMINOR, cudaMemcpyDeviceToHost);
+			cudaMemcpy(p_temphost6, p_Jacobi_x, sizeof(f64)*NMINOR, cudaMemcpyDeviceToHost);
+						
+			SetActiveWindow(hWnd);
+			RefreshGraphs(X1, AZSOLVERGRAPHS);
+			SetActiveWindow(hWnd);
+			Direct3D.pd3dDevice->Present(NULL, NULL, NULL, NULL);
+			printf("done graph");
+			getch();
+		};
+
+		if (iIteration == 4001) {
+			// let's print some stats
+
+			cudaMemcpy(p_temphost3, p_epsilon, sizeof(f64)*NMINOR, cudaMemcpyDeviceToHost);
+			// Find max, avg, SD
+			long iMinor, iMax = 0;
+			f64 max = 0.0;
+			f64 sum = 0.0, sumsq = 0.0;
+			for (iMinor = 0; iMinor < NMINOR; iMinor++)
+			{
+				if (fabs(p_temphost3[iMinor]) > max) {
+					max = fabs(p_temphost3[iMinor]);
+					iMax = iMinor;
+				};
+				sum += p_temphost3[iMinor];
+				sumsq += p_temphost3[iMinor] * p_temphost3[iMinor];
+			}
+			structural info;
+			f64 var = sumsq / (real)NMINOR - sum*sum / (real)(NMINOR*NMINOR);
+			cudaMemcpy(&info, &(pX_use->p_info[iMax]), sizeof(structural), cudaMemcpyDeviceToHost);
+			printf("Avg %1.9E Max %1.10E iMax %d flag %d pos %1.9E %1.9E SD %1.9E \n",
+				sum / (real)NMINOR, p_temphost3[iMax], iMax, info.flag, info.pos.x, info.pos.y, sqrt(var));
+
+			while (1) getch();
+		}
+	
+
+
 
 	//	fprintf(fpdbg, "L2eps %1.14E beta %1.14E %1.14E %1.14E \n", L2eps, beta[0], beta[1], beta[2]);
 
@@ -1062,7 +1222,7 @@ void SolveBackwardAzAdvanceJ3LS(f64 hsub,
 		for (iTile = 0; ((p_boolhost[iTile] == 0) && (iTile < numTilesMinor)); iTile++);
 		;
 		if (iTile < numTilesMinor) {
-			printf("failed test\n");
+//			printf("failed test\n");
 			bContinue = true;
 		};
 		iIteration++;
@@ -1234,18 +1394,18 @@ void RegressionSeedAz(f64 const hsub,
 	mat.zy = mat.yz;
 	mat.zz = sum_mat[5];
 	mat.Inverse(mat2);
-	printf(
-		" ( %1.6E %1.6E %1.6E ) ( beta0 )   ( %1.6E )\n"
-		" ( %1.6E %1.6E %1.6E ) ( beta1 ) = ( %1.6E )\n"
-		" ( %1.6E %1.6E %1.6E ) ( beta2 )   ( %1.6E )\n",
-		mat.xx, mat.xy, mat.xz, sumvec.x,
-		mat.yx, mat.yy, mat.yz, sumvec.y,
-		mat.zx, mat.zy, mat.zz, sumvec.z);
+	//printf(
+	//	" ( %1.6E %1.6E %1.6E ) ( beta0 )   ( %1.6E )\n"
+	//	" ( %1.6E %1.6E %1.6E ) ( beta1 ) = ( %1.6E )\n"
+	//	" ( %1.6E %1.6E %1.6E ) ( beta2 )   ( %1.6E )\n",
+	//	mat.xx, mat.xy, mat.xz, sumvec.x,
+	//	mat.yx, mat.yy, mat.yz, sumvec.y,
+	//	mat.zx, mat.zy, mat.zz, sumvec.z);
 	f64_vec3 product = mat2*sumvec;
 
 	beta[0] = -product.x; beta[1] = -product.y; beta[2] = -product.z;
 
-	printf("beta %1.8E %1.8E %1.8E ", beta[0], beta[1], beta[2]);
+	//printf("beta %1.8E %1.8E %1.8E ", beta[0], beta[1], beta[2]);
 
 	kernelAddRegressors << <numTilesMinor, threadsPerTileMinor >> >(
 		p_AzNext,
@@ -5851,6 +6011,8 @@ void PerformCUDA_Invoke_Populate(
 	CallMAC(cudaMalloc((void **)&p_vie_target, NMINOR * sizeof(v4)));
 	CallMAC(cudaMalloc((void **)&p_vie_start, NMINOR * sizeof(v4)));
 
+	CallMAC(cudaMalloc((void **)&p_Residuals, NMINOR * sizeof(f64)));
+
 	CallMAC(cudaMalloc((void **)&p_regressor_n, NMINOR * sizeof(f64)));
 	CallMAC(cudaMalloc((void **)&p_regressor_i, NMINOR * sizeof(f64)));
 	CallMAC(cudaMalloc((void **)&p_regressor_e, NMINOR * sizeof(f64))); // only need NUMVERTICES but we reused.
@@ -5861,6 +6023,9 @@ void PerformCUDA_Invoke_Populate(
 	CallMAC(cudaMalloc((void **)&p_temp3_1, NUMVERTICES * sizeof(f64_vec3)));
 	CallMAC(cudaMalloc((void **)&p_temp3_2, NUMVERTICES * sizeof(f64_vec3)));
 	CallMAC(cudaMalloc((void **)&p_temp3_3, NUMVERTICES * sizeof(f64_vec3)));
+	
+	CallMAC(cudaMalloc((void **)&p_matrix_blocks, SQUASH_POINTS*SQUASH_POINTS * numTilesMinor * sizeof(f64)));
+	CallMAC(cudaMalloc((void **)&p_vector_blocks, SQUASH_POINTS* numTilesMinor * sizeof(f64)));
 	
 	CallMAC(cudaMalloc((void **)&p_Tn, NUMVERTICES * sizeof(f64)));
 	CallMAC(cudaMalloc((void **)&p_Ti, NUMVERTICES * sizeof(f64)));
@@ -6237,6 +6402,21 @@ void PerformCUDA_RunStepsAndReturnSystem(cuSyst * pX_host)
 	
 	for (int iRepeat = 0; iRepeat < ADVECT_STEPS_PER_GPU_VISIT; iRepeat++) 
 	{	
+		printf("Advection step:\n"); 
+		bGlobalSaveTGraphs == true;
+		pX1->PerformCUDA_AdvectionCompressionInstantaneous(TIMESTEP*(real)ADVECT_FREQUENCY, pX2, pX_half);
+
+		// We need to smoosh the izTri etc data on to the pXhalf and new pX dest systems
+		// as it doesn't update any other way and this data will be valid until renewed
+		// in the dest system at the end of the step -- riiiiiiiight?
+
+		pXtemp = pX1;
+		pX1 = pX2;
+		pX2 = pXtemp;
+		 
+		pX_half->CopyStructuralDetailsFrom(*pX1);
+		pX2->CopyStructuralDetailsFrom(*pX1);		
+		
 		bGlobalSaveTGraphs = false;
 		for (iSubstep = 0; iSubstep < ADVECT_FREQUENCY; iSubstep++)
 		{
@@ -6248,10 +6428,6 @@ void PerformCUDA_RunStepsAndReturnSystem(cuSyst * pX_host)
 			pXtemp = pX1;
 			pX1 = pX2;
 			pX2 = pXtemp;
-
-			// We need to smoosh the izTri etc data on to the pXhalf and new pX dest systems
-			// as it doesn't update any other way and this data will be valid until renewed
-			// in the dest system at the end of the step -- riiiiiiiight?
 			
 			/*
 					cudaMemcpy(pX_half->p_izTri_vert, pX1->p_izTri_vert,
@@ -6290,16 +6466,7 @@ void PerformCUDA_RunStepsAndReturnSystem(cuSyst * pX_host)
 						NUMTRIANGLES * 6 * sizeof(char), cudaMemcpyDeviceToDevice);*/
 		};
 
-		// bGlobalSaveTGraphs == true when we reach this point
-		printf("Advection step:\n");
-		pX1->PerformCUDA_AdvectionCompressionInstantaneous(TIMESTEP*(real)ADVECT_FREQUENCY, pX2, pX_half);
-
-		pXtemp = pX1;
-		pX1 = pX2;
-		pX2 = pXtemp;
-
-		pX_half->CopyStructuralDetailsFrom(*pX1);
-		pX2->CopyStructuralDetailsFrom(*pX1);		
+		
 	}
 
 
@@ -6693,7 +6860,7 @@ void cuSyst::PerformCUDA_Advance(//const
 	//Call(cudaThreadSynchronize(), "cudaTS AdvectPositions_Vertex");
 	//
 	// Infer tri velocities based on actual moves of verts:
-	kernelAverageOverallVelocitiesTriangles << <numTriTiles, threadsPerTileMinor >> > (
+	kernelCentroidVelocitiesTriangles << <numTriTiles, threadsPerTileMinor >> > (
 		this->p_v_overall_minor + BEGINNING_OF_CENTRAL,
 		this->p_v_overall_minor,
 		this->p_info,
@@ -7758,7 +7925,7 @@ SetConsoleTextAttribute(hConsole, 15);
 		Timestep
 		);
 	Call(cudaThreadSynchronize(), "cudaTS calculate overall velocities 22");
-	// 
+	
 	//kernelAdvectPositionsVertex << <numTilesMajor, threadsPerTileMajor >> >(
 	//	Timestep,
 	//	this->p_info + BEGINNING_OF_CENTRAL,
@@ -7770,7 +7937,7 @@ SetConsoleTextAttribute(hConsole, 15);
 	//	);
 	//Call(cudaThreadSynchronize(), "cudaTS AdvectPositions_Vertex");
 	//  
-	kernelAverageOverallVelocitiesTriangles << <numTriTiles, threadsPerTileMinor >> >(
+	kernelCentroidVelocitiesTriangles << <numTriTiles, threadsPerTileMinor >> >(
 		pX_half->p_v_overall_minor + BEGINNING_OF_CENTRAL,
 		pX_half->p_v_overall_minor,
 		pX_half->p_info,
@@ -8446,7 +8613,7 @@ SetConsoleTextAttribute(hConsole, 15);
 #endif
 
 	// ============================================================
-
+	 
 	f64 starttime = evaltime;
 	printf("run %d ", runs);
 	cudaEventRecord(middle,0);
@@ -8455,7 +8622,7 @@ SetConsoleTextAttribute(hConsole, 15);
 	// BETTER:
 	// Just make this the determinant of how long the overall timestep is;
 	// Make supercycle: advection is not usually applied.
-
+	 
 	kernelGetLapCoeffs_and_min << <numTriTiles, threadsPerTileMinor >> >(
 		pX_target->p_info,
 		pX_target->p_izTri_vert,
@@ -8597,7 +8764,7 @@ SetConsoleTextAttribute(hConsole, 15);
 	Set_f64_constant(negative_Iz_per_triangle, neg_Iz_per_triangle);
 	// Electrons travel from cathode to anode so Jz is down in filament,
 	// up around anode.
-	printf("\nGPU: Iz0 = %1.14E SigmaIzz %1.14E EzStrength = %1.14E \n\n", Iz0, Sigma_Izz, EzStrength_);
+	printf("\nGPU: Iz0 = %1.14E SigmaIzz %1.14E EzStrength = %1.14E \n", Iz0, Sigma_Izz, EzStrength_);
 
 	kernelCreateLinearRelationshipBwd << <numTilesMinor, threadsPerTileMinor >> > (
 		hsub,
@@ -8627,11 +8794,11 @@ SetConsoleTextAttribute(hConsole, 15);
 		p_AzNext);
 	Call(cudaThreadSynchronize(), "cudaTS Create Seed Az");
 	 
-//	SolveBackwardAzAdvanceCG(hsub, p_Az, p_Azdot0, p_gamma, 
-//		p_AzNext, p_LapCoeffself, pX_target);
+	SolveBackwardAzAdvanceCG(hsub, p_Az, p_Azdot0, p_gamma, 
+		p_AzNext, p_LapCoeffself, pX_target);
 
-	SolveBackwardAzAdvanceJ3LS(hsub, p_Az, p_Azdot0, p_gamma,
-				p_AzNext, p_LapCoeffself, pX_target);
+//	SolveBackwardAzAdvanceJ3LS(hsub, p_Az, p_Azdot0, p_gamma,
+//				p_AzNext, p_LapCoeffself, pX_target);
 	/*
 	// JLS alternative:
 	f64 sum_eps_deps_by_dbeta, sum_depsbydbeta_sq, sum_eps_eps, depsbydbeta;
@@ -9866,7 +10033,7 @@ void cuSyst::PerformCUDA_AdvectionCompressionInstantaneous(//const
 		this->p_tri_corner_index,
 		this->p_tri_periodic_corner_flags,
 
-		false // calculate n and T on circumcenters instead of centroids
+		true // calculate n and T on circumcenters instead of centroids
 		); // call before CreateShardModel 
 	Call(cudaThreadSynchronize(), "cudaTS average nTx");
 	cudaMemcpy(this->p_n_minor + BEGINNING_OF_CENTRAL,
@@ -9930,7 +10097,7 @@ void cuSyst::PerformCUDA_AdvectionCompressionInstantaneous(//const
 	//Call(cudaThreadSynchronize(), "cudaTS AdvectPositions_Vertex");
 	//
 	// Infer tri velocities based on actual moves of verts:
-	kernelAverageOverallVelocitiesTriangles << <numTriTiles, threadsPerTileMinor >> > (
+	kernelCentroidVelocitiesTriangles << <numTriTiles, threadsPerTileMinor >> > (
 		this->p_v_overall_minor + BEGINNING_OF_CENTRAL,
 		this->p_v_overall_minor,
 		this->p_info,
@@ -9947,6 +10114,25 @@ void cuSyst::PerformCUDA_AdvectionCompressionInstantaneous(//const
 		this->p_v_overall_minor
 		);
 	Call(cudaThreadSynchronize(), "cudaTS AdvectPositions_CopyTris");
+
+	// Set AreaMinor:
+	kernelPullAzFromSyst << <numTilesMinor, threadsPerTileMinor >> > (
+		this->p_AAdot, // we are not going to use Lap Az for anything anyway.
+		p_Az
+		);
+	Call(cudaThreadSynchronize(), "cudaTS PullAz");
+	kernelGetLap_minor << <numTriTiles, threadsPerTileMinor >> > (
+		pX_half->p_info, // populated position... not neigh_len apparently
+		p_Az, // k
+		pX_half->p_izTri_vert,
+		pX_half->p_izNeigh_TriMinor,
+		pX_half->p_szPBCtri_vert,
+		pX_half->p_szPBC_triminor,
+		p_LapAz,
+		pX_half->p_AreaMinor // OUTPUT
+		);
+	Call(cudaThreadSynchronize(), "cudaTS GetLapMinor zz (get area minor)");
+
 	
 	kernelCalculateUpwindDensity_tris << <numTriTiles, threadsPerTileMinor >> >(
 		this->p_info,
@@ -10104,7 +10290,6 @@ void cuSyst::PerformCUDA_AdvectionCompressionInstantaneous(//const
 		Call(cudaThreadSynchronize(), "cudaTS InferMinorDensities ..");
 	};
 
-
 	SetConsoleTextAttribute(hConsole, 15);
 	
 	// &&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&
@@ -10132,8 +10317,8 @@ void cuSyst::PerformCUDA_AdvectionCompressionInstantaneous(//const
 		this->p_tri_corner_index,
 		this->p_tri_periodic_corner_flags,
 
-		false // 
-		); // call before CreateShardModel 
+		false // n,T on centroid
+		); // 
 	Call(cudaThreadSynchronize(), "cudaTS Average_nTx pos this");
 	
 	cudaMemset(NT_addition_tri_d, 0, sizeof(NTrates)*NUMVERTICES * 2);
@@ -10182,8 +10367,8 @@ void cuSyst::PerformCUDA_AdvectionCompressionInstantaneous(//const
 		pX_half->p_cc,
 		pX_half->p_tri_corner_index,
 		pX_half->p_tri_periodic_corner_flags,
-		false
-		); // call before CreateShardModel 
+		true // n,T on cc for shard model
+		); 
 	Call(cudaThreadSynchronize(), "cudaTS average nTx 2");
 	cudaMemcpy(pX_half->p_n_minor + BEGINNING_OF_CENTRAL,
 		pX_half->p_n_major, sizeof(nvals)*NUMVERTICES, cudaMemcpyDeviceToDevice);
@@ -10221,6 +10406,37 @@ void cuSyst::PerformCUDA_AdvectionCompressionInstantaneous(//const
 		p_one_over_n2);// (At the moment just repopulating tri minor n.)// based on pXhalf !!
 	Call(cudaThreadSynchronize(), "cudaTS InferMinorDensities pX_half");
 
+	// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	// %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+	// The trouble with this is that apparently the shard model uses circumcenters
+	// and then we turn out to be using n on minor centroids.
+
+	// Presumably the momflux works with Voronoi and circumcenters,
+	// which it may need to do.
+	// %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+	// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+/*
+	Need to recalculate n on centroids before using here.
+
+	Need to figure that v lives on centroids because 1 we have viscosity and 2 
+		Az lives on centroids to avoid trouble.
+
+    Document about what.
+*/
+		kernelAverage_n_T_x_to_tris << <numTriTiles, threadsPerTileMinor >> >(
+			pX_half->p_n_minor,
+			pX_half->p_n_major,
+			pX_half->p_T_minor,
+			pX_half->p_info,
+			pX_half->p_cc,
+			pX_half->p_tri_corner_index,
+			pX_half->p_tri_periodic_corner_flags,
+			false // n,T on cc for shard model
+			);
+	Call(cudaThreadSynchronize(), "cudaTS average nTx 2");
+
 
 	kernelAccelerate_v_from_advection << <numTilesMinor, threadsPerTileMinor >> >
 		(   
@@ -10241,7 +10457,7 @@ void cuSyst::PerformCUDA_AdvectionCompressionInstantaneous(//const
 			pX_half->p_vie,
 			pX_half->p_v_n
 			);
-	Call(cudaThreadSynchronize(), "cudaTS InferMinorDensities pX_half");
+	Call(cudaThreadSynchronize(), "cudaTS kernelAccelerate_v_from_advection pX_half");
 
 	// get grad Az, Azdot and anti-advect:
 
@@ -10263,7 +10479,7 @@ void cuSyst::PerformCUDA_AdvectionCompressionInstantaneous(//const
 		);
 	Call(cudaThreadSynchronize(), "cudaTS calculate overall velocities 22");
 	 
-	kernelAverageOverallVelocitiesTriangles << <numTriTiles, threadsPerTileMinor >> >(
+	kernelCentroidVelocitiesTriangles << <numTriTiles, threadsPerTileMinor >> >(
 		pX_half->p_v_overall_minor + BEGINNING_OF_CENTRAL,
 		pX_half->p_v_overall_minor,
 		pX_half->p_info,
@@ -10281,6 +10497,24 @@ void cuSyst::PerformCUDA_AdvectionCompressionInstantaneous(//const
 	Call(cudaThreadSynchronize(), "cudaTS AdvectPositions_CopyTris 22");
 
 	SetConsoleTextAttribute(hConsole, 15);
+
+	// Set AreaMinor:
+	kernelPullAzFromSyst << <numTilesMinor, threadsPerTileMinor >> > (
+		this->p_AAdot, // we are not going to use Lap Az for anything anyway.
+		p_Az
+		);
+	Call(cudaThreadSynchronize(), "cudaTS PullAz");
+	kernelGetLap_minor << <numTriTiles, threadsPerTileMinor >> > (
+		pX_target->p_info, // populated position... not neigh_len apparently
+		p_Az, // k
+		pX_target->p_izTri_vert,
+		pX_target->p_izNeigh_TriMinor,
+		pX_target->p_szPBCtri_vert,
+		pX_target->p_szPBC_triminor,
+		p_LapAz,
+		pX_target->p_AreaMinor // OUTPUT
+		);
+	Call(cudaThreadSynchronize(), "cudaTS GetLapMinor zz (get area minor)");
 
 	kernelCalculateUpwindDensity_tris << <numTriTiles, threadsPerTileMinor >> >(
 		pX_half->p_info,
@@ -10331,7 +10565,7 @@ void cuSyst::PerformCUDA_AdvectionCompressionInstantaneous(//const
 		cudaMemcpy(&tempf64, &(NT_addition_rates_d[VERTCHOSEN].NeTe), sizeof(f64), cudaMemcpyDeviceToHost);
 		printf("\nNeTe rate [%d] : %1.13E\n\n", VERTCHOSEN, tempf64);
 	};
-	 
+
 	CallMAC(cudaMemset(p_MAR_neut, 0, sizeof(f64_vec3)*NMINOR));
 	CallMAC(cudaMemset(p_MAR_ion, 0, sizeof(f64_vec3)*NMINOR));
 	CallMAC(cudaMemset(p_MAR_elec, 0, sizeof(f64_vec3)*NMINOR));
@@ -10438,7 +10672,7 @@ void cuSyst::PerformCUDA_AdvectionCompressionInstantaneous(//const
 		pX_half->p_tri_periodic_corner_flags,
 
 		false // calculate n and T on centroids
-		); // call before CreateShardModel 
+		);  
 	Call(cudaThreadSynchronize(), "cudaTS Average_nTx pos");
 
 	if (!DEFAULTSUPPRESSVERBOSITY)
@@ -10563,7 +10797,6 @@ void cuSyst::PerformCUDA_AdvectionCompressionInstantaneous(//const
 			p_accelgraph[10]
 		); 
 		Call(cudaThreadSynchronize(), "cudaTS Divide_diff_get_accel");
-
 	}
 	// get grad Az, Azdot and anti-advect:
 	 
@@ -10767,9 +11000,15 @@ void cuSyst::PerformCUDA_Advance_noadvect(//const
 	Call(cudaThreadSynchronize(), "cudaTS kernelCreate_pressure_gradT_and_gradA_CurlA_minor");
 	
 	SetConsoleTextAttribute(hConsole, 31);
+	kernelPullAzFromSyst << <numTilesMinor, threadsPerTileMinor >> > (
+		p_AAdot_start, // A_k
+		p_Az
+		);
+	Call(cudaThreadSynchronize(), "cudaTS PullAz");
+
 	kernelGetLap_minor << <numTriTiles, threadsPerTileMinor >> > (
 		this->p_info, // populated position... not neigh_len apparently
-		p_Az,
+		p_Az, // UNPOPULATED!!!
 		this->p_izTri_vert,
 		this->p_izNeigh_TriMinor,
 		this->p_szPBCtri_vert,
@@ -11926,6 +12165,8 @@ void cuSyst::PerformCUDA_Advance_noadvect(//const
 				HEATBASESYST->p_T_minor + BEGINNING_OF_CENTRAL);
 		Call(cudaThreadSynchronize(), "cudaTS subtractT3");
 
+		iHistory++; // we have now been through this point.
+
 		//debug:
 		cudaMemcpy(&tempf64, &((pX_target->p_T_minor + BEGINNING_OF_CENTRAL + VERTCHOSEN)->Te), sizeof(f64), cudaMemcpyDeviceToHost);
 		printf("solved Te[%d]: %1.9E\n", VERTCHOSEN, tempf64);
@@ -12497,6 +12738,7 @@ void cuSyst::PerformCUDA_Advance_noadvect(//const
 void GosubAccelerate(long iSubcycles, f64 hsub, cuSyst * pX_use, cuSyst * pX_intermediate)
 {
 	static int iHistory = 0;
+	GlobalSuppressSuccessVerbosity = true;
 
 	for (int iSubstep = 0; iSubstep < iSubcycles; iSubstep++)
 	{
@@ -12581,9 +12823,14 @@ void GosubAccelerate(long iSubcycles, f64 hsub, cuSyst * pX_use, cuSyst * pX_int
 		Set_f64_constant(negative_Iz_per_triangle, neg_Iz_per_triangle);
 		// Electrons travel from cathode to anode so Jz is down in filament,
 		// up around anode.
-		printf("\nGPU: Iz0 = %1.14E SigmaIzz %1.14E EzStrength = %1.14E \n\n", Iz0, Sigma_Izz, EzStrength_);
+		printf("Iz0 = %1.14E SigmaIzz %1.14E EzStrength = %1.14E \n", Iz0, Sigma_Izz, EzStrength_);
 
-		if (EzStrength_ > 1.0e5) {
+		if ((EzStrength_ > 1.0e5) || (EzStrength_ < -100.0)){
+			for (iBlock = 0; iBlock < numTilesMinor; iBlock++)
+			{
+				printf("Block %d : Iz0 = %1.10E        ~~      ", iBlock, p_Iz0_summands_host[iBlock]);
+				if (iBlock % 3 == 0) printf("\n");
+			}
 			printf("time to stop, press p");
 			while (getch() != 'p');
 			PerformCUDA_Revoke();
@@ -12637,11 +12884,16 @@ void GosubAccelerate(long iSubcycles, f64 hsub, cuSyst * pX_use, cuSyst * pX_int
 			Call(cudaThreadSynchronize(), "cudaTS createSeed");
 		}
 
-		//	SolveBackwardAzAdvanceCG(hsub, p_Az, p_Azdot0, p_gamma, 
-		//		p_AzNext, p_LapCoeffself, pX_target);
+		//SolveBackwardAzAdvanceCG(hsub, p_Az, p_Azdot0, p_gamma, 
+		//		p_AzNext, p_LapCoeffself, pX_intermediate);
+
+		// Rehabilitate it tmrw
+
 
 		SolveBackwardAzAdvanceJ3LS(hsub, p_Az, p_Azdot0, p_gamma,
 			p_AzNext, p_LapCoeffself, pX_intermediate); // pX_target);
+		
+		GlobalSuppressSuccessVerbosity = true;
 
 		SubtractVector << <numTilesMinor, threadsPerTileMinor >> >
 			(stored_Az_move, p_Az, p_AzNext);
@@ -12682,7 +12934,7 @@ void GosubAccelerate(long iSubcycles, f64 hsub, cuSyst * pX_use, cuSyst * pX_int
 
 			p_vie_start,
 			p_v_n_start,
-			p_AAdot_start,
+			p_AAdot_start, // not updated...
 
 			pX_intermediate->p_AreaMinor, // pop'd? interp?
 
@@ -12726,6 +12978,7 @@ void GosubAccelerate(long iSubcycles, f64 hsub, cuSyst * pX_use, cuSyst * pX_int
 		kernelCalculateVelocityAndAzdot_noadvect << <numTilesMinor, threadsPerTileMinor >> > (
 			hsub,
 			pX_use->p_info,
+//			pX_use->p_tri_corner_index,
 			p_vn0,
 			p_v0,
 			p_OhmsCoeffs,
@@ -12764,17 +13017,19 @@ void GosubAccelerate(long iSubcycles, f64 hsub, cuSyst * pX_use, cuSyst * pX_int
 		Call(cudaThreadSynchronize(), "cudaTS kernelKillNeutral_v_OutsideRadius ");
 
 		// I am curious why vn is silly at the back,, ... but for now just going to kill it off.
+		
 
 		if (!DEFAULTSUPPRESSVERBOSITY) {
 
 			cudaMemcpy(&tempf64, &(p_vie_target[VERTCHOSEN + BEGINNING_OF_CENTRAL].vez), sizeof(f64), cudaMemcpyDeviceToHost);
-			printf("\nvez p_vie_target [%d] : %1.13E\n\n", VERTCHOSEN + BEGINNING_OF_CENTRAL, tempf64);
+			printf("\nvez p_vie_target [%d] : %1.13E\n", VERTCHOSEN + BEGINNING_OF_CENTRAL, tempf64);
 		}
 		// Set up next go:
 		cudaMemcpy(p_AAdot_start, p_AAdot_target, sizeof(AAdot)*NMINOR, cudaMemcpyDeviceToDevice);
 		cudaMemcpy(p_vie_start, p_vie_target, sizeof(v4)*NMINOR, cudaMemcpyDeviceToDevice);
 		cudaMemcpy(p_v_n_start, p_v_n_target, sizeof(f64_vec3)*NMINOR, cudaMemcpyDeviceToDevice);
 	}; // substeps
+	GlobalSuppressSuccessVerbosity = DEFAULTSUPPRESSVERBOSITY;
 }
 
 
@@ -12993,8 +13248,211 @@ void PerformCUDA_Revoke()
 
 }
 
-// Problem: by default, __constant__ variables have file scope. Need special
-// compiler settings to do relocatable device code.
+void Setup_residual_array()
+{
+	cuSyst * pX = &cuSyst1; // lazy
+
+	// Find the pre-existing values of LapAz + 4piq/c n(viz-vez) 
+	kernelPullAzFromSyst << <numTilesMinor, threadsPerTileMinor >> > (
+		pX->p_AAdot,
+		p_Az
+		);
+	Call(cudaThreadSynchronize(), "cudaTS PullAz");
+
+	kernelGetLap_minor << <numTriTiles, threadsPerTileMinor >> > (
+		pX->p_info, // populated position... not neigh_len apparently
+		p_Az,
+		pX->p_izTri_vert,
+		pX->p_izNeigh_TriMinor,
+		pX->p_szPBCtri_vert,
+		pX->p_szPBC_triminor,
+		p_LapAz,
+		pX->p_AreaMinor // OUTPUT
+		);
+	Call(cudaThreadSynchronize(), "cudaTS GetLapMinor addaa2");
+
+	kernelPopulateResiduals << <numTilesMinor, threadsPerTileMinor >> > (
+		p_LapAz,
+		pX->p_n_minor, pX->p_vie, // is this the n for which the relationship holds for verts? *************
+		p_Residuals
+		);
+	Call(cudaThreadSynchronize(), "cudaTS PopulateResiduals");
+
+}
+
+void Go_visit_the_other_file()
+{
+
+	f64 LapAz, viz, vez, n, coeffself, Az;
+	int iRepeat;
+	//f64 epsilon[NMINOR], p_regressor[NMINOR];
+
+	memset(p_temphost2, 0, sizeof(f64)*NMINOR); // epsilon
+	memset(p_temphost1, 0, sizeof(f64)*NMINOR); // regressor
+//
+//	kernelSetZero << <numTriTiles, threadsPerTileMinor >> > (
+//		p_LapCoeffself
+//		);
+//	Call(cudaThreadSynchronize(), "cudaTS setzero");
+
+	kernelGetLapCoeffs_and_min << <numTriTiles, threadsPerTileMinor >> > (
+		cuSyst1.p_info,
+		cuSyst1.p_izTri_vert,
+		cuSyst1.p_izNeigh_TriMinor,
+		cuSyst1.p_szPBCtri_vert,
+		cuSyst1.p_szPBC_triminor,
+		p_LapCoeffself,
+		p_temp1, // collect min
+		p_longtemp
+		);
+	Call(cudaThreadSynchronize(), "cudaTS GetLapCoeffs x");
+	// Illegal memory access encountered?!
+	// But this stuff should be dimensioned.
+	// A bug in what it does, not my fault, by the looks.
+	long iIteration = 0;
+	bool bContinue;
+	
+	// 1. Calculate Lap Az and coeffself Lap Az; including at our few points.
+
+	kernelPullAzFromSyst << <numTilesMinor, threadsPerTileMinor >> > (
+		cuSyst1.p_AAdot,
+		p_Az
+		);
+	Call(cudaThreadSynchronize(), "cudaTS PullAz");
+
+	nvals nvals1, nvals2, nvals3;
+	v4 v1, v2, v3;
+	f64 resid, resid1, resid2, resid3;
+	f64 LapAz1, LapAz2, LapAz3;
+
+	// Now define p_temphost4 as the constant part of eps and p_temphost5 as "resid"
+
+	// 2. For each of our points bring Lap Az, Jz and coeffself to CPU
+	for (long i = 0; i < BEGINNING_OF_CENTRAL; i++)
+	{
+		if (flaglist[i]) {
+			cudaMemcpy(&viz, &(cuSyst1.p_vie[i].viz), sizeof(f64), cudaMemcpyDeviceToHost);
+			cudaMemcpy(&vez, &(cuSyst1.p_vie[i].vez), sizeof(f64), cudaMemcpyDeviceToHost);
+			cudaMemcpy(&n, &(cuSyst1.p_n_minor[i].n), sizeof(f64), cudaMemcpyDeviceToHost);
+
+			LONG3 cornerindex;
+			cudaMemcpy(&cornerindex, &(cuSyst1.p_tri_corner_index[i]), sizeof(LONG3), cudaMemcpyDeviceToHost);
+
+			cudaMemcpy(&resid1, &(p_Residuals[cornerindex.i1]), sizeof(f64), cudaMemcpyDeviceToHost);
+			cudaMemcpy(&resid2, &(p_Residuals[cornerindex.i2]), sizeof(f64), cudaMemcpyDeviceToHost);
+			cudaMemcpy(&resid3, &(p_Residuals[cornerindex.i3]), sizeof(f64), cudaMemcpyDeviceToHost);
+			// cudaMemcpy(&resid, &(p_Residuals[i]), sizeof(f64), cudaMemcpyDeviceToHost);
+
+			resid = 0.33333333*(resid1 + resid2 + resid3);
+			p_temphost5[i] = 0.01*fabs(resid); // thresh
+
+			// What is average of LapAz + 4piq/c n(viz-vez) ?
+			// eps = -LapAz - 4pi/cJ
+			// so aim for LapAz = - 4pi/cJ - eps
+
+			p_temphost4[i] = -FOUR_PI_Q_OVER_C_*n*(viz - vez) - resid;
+			
+		};
+	};
+	
+	f64 beta;
+	do {
+		bContinue = false;
+		
+		kernelGetLap_minor << <numTriTiles, threadsPerTileMinor >> > (
+			cuSyst1.p_info, // populated position... not neigh_len apparently
+			p_Az,
+			cuSyst1.p_izTri_vert,
+			cuSyst1.p_izNeigh_TriMinor,
+			cuSyst1.p_szPBCtri_vert,
+			cuSyst1.p_szPBC_triminor,
+			p_LapAz,
+			cuSyst1.p_AreaMinor // OUTPUT
+			);
+		Call(cudaThreadSynchronize(), "cudaTS GetLapMinor addaa2");
+		
+		// 2. For each of our points bring Lap Az, Jz and coeffself to CPU
+		for (long i = 0; i < BEGINNING_OF_CENTRAL; i++)
+		{
+			if (flaglist[i]) {
+				cudaMemcpy(&LapAz, &(p_LapAz[i]), sizeof(f64), cudaMemcpyDeviceToHost);
+				cudaMemcpy(&coeffself, &(p_LapCoeffself[i]), sizeof(f64), cudaMemcpyDeviceToHost);
+
+				// 3. For each of our points, adjust Az per Jacobi:
+				//printf("%d Az %1.11E LapAz %1.11E 4pi/c Jz %1.11E coeffself %1.9E resid %1.9E resid123 %1.9E %1.9E %1.9E ", i, Az, LapAz, FOUR_PI_Q_OVER_C_*n*(viz - vez),
+				//	coeffself, resid, resid1, resid2, resid3);
+
+				p_temphost2[i] = p_temphost4[i] - LapAz; // epsilon
+				if (fabs(p_temphost2[i]) > p_temphost5[i]) bContinue = true;
+				p_temphost1[i] = (p_temphost4[i] - LapAz) / coeffself; // Jacobi move
+			};
+		};
+
+		cudaMemcpy(p_temp1, p_temphost1, sizeof(f64), cudaMemcpyHostToDevice);
+		cudaMemset(p_temp2, 0, sizeof(f64)*NMINOR);
+		kernelGetLap_minor << <numTriTiles, threadsPerTileMinor >> > (
+				cuSyst1.p_info, // populated position... not neigh_len apparently
+				p_temp1,
+				cuSyst1.p_izTri_vert,
+				cuSyst1.p_izNeigh_TriMinor,
+				cuSyst1.p_szPBCtri_vert,
+				cuSyst1.p_szPBC_triminor,
+				p_temp2,
+				cuSyst1.p_AreaMinor // OUTPUT
+				);
+		Call(cudaThreadSynchronize(), "cudaTS GetLapMinor addaaa2");
+
+		cudaMemcpy(p_temphost3, p_temp2, sizeof(f64), cudaMemcpyDeviceToHost);
+
+		f64 sum_depsbydbeta_sq = 0.0;
+		f64 sum_eps_depsbydbeta = 0.0;
+		f64 sum_eps_eps = 0.0;
+		for (long i = 0; i < BEGINNING_OF_CENTRAL; i++)
+		{ 
+			if (flaglist[i]) {
+				f64 d_eps_by_d_beta = -p_temphost3[i];
+
+				sum_depsbydbeta_sq += d_eps_by_d_beta*d_eps_by_d_beta;
+				sum_eps_depsbydbeta += p_temphost2[i] * d_eps_by_d_beta;
+				sum_eps_eps += p_temphost2[i] * p_temphost2[i];
+			};
+		};
+
+		beta = -sum_eps_depsbydbeta / sum_depsbydbeta_sq;
+
+		for (long i = 0; i < BEGINNING_OF_CENTRAL; i++)
+		{
+			if (flaglist[i]) {
+				cudaMemcpy(&Az, &(p_Az[i]), sizeof(f64), cudaMemcpyDeviceToHost);
+
+				Az += beta*p_temphost1[i];
+
+				cudaMemcpy(&(p_Az[i]), &Az, sizeof(f64), cudaMemcpyHostToDevice);
+				// Note that we didn't keep track of which system's which, so we need to set it in all of them.				
+			};
+		};
+		iIteration++;
+		printf("iteration %d sum_eps_eps %1.10E beta %1.10E\n", iIteration, sum_eps_eps, beta);
+	} while (bContinue);
+
+	for (long i = 0; i < BEGINNING_OF_CENTRAL; i++)
+	{
+		if (flaglist[i]) {
+			cudaMemcpy(&Az, &(p_Az[i]), sizeof(f64), cudaMemcpyDeviceToHost);
+			cudaMemcpy(&(cuSyst1.p_AAdot[i].Az), &Az, sizeof(f64), cudaMemcpyHostToDevice);
+			cudaMemcpy(&(cuSyst2.p_AAdot[i].Az), &Az, sizeof(f64), cudaMemcpyHostToDevice);
+			cudaMemcpy(&(cuSyst3.p_AAdot[i].Az), &Az, sizeof(f64), cudaMemcpyHostToDevice);
+			// Note that we didn't keep track of which system's which, so we need to set it in all of them.
+		};
+	};
+	
+	printf("\n\nRecalc Ampere: underrelaxation Jacobi iterations: %d\n\n\n", iIteration);
+	
+	Beep(750, 150);
+
+	// Problem: by default, __constant__ variables have file scope. Need special
+	// compiler settings to do relocatable device code.
+}
 
 #include "kernel.cu"
 #include "little_kernels.cu"

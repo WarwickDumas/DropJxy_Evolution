@@ -2122,7 +2122,8 @@ long TriMesh::Redelaunerize(bool exhaustion, bool bReplace)
 					}; // whether an edge worth looking through, vs, going off the domain
 				}; // next neighbour
 			};
-			++pTri;
+		
+			
 		};
 
 		printf("Flips: %d \n", flips);

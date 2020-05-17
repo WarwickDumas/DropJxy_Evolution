@@ -16,7 +16,7 @@
 bool const bScrewPinch = false;
 
 #define FOLDER "C:/outputs/"
-#define INITIALAVI "start2.avi"		
+#define INITIALAVI "start3.avi"		
   
 #define FUNCTIONALFILE_START FOLDER "functionals"
 #define DATAFILENAME FOLDER "Data_"
@@ -27,7 +27,7 @@ bool const bScrewPinch = false;
 
 // steps per frame
 #define GRAPHICS_FREQUENCY				1 // 1e-11
-#define REDELAUN_FREQUENCY				25
+#define REDELAUN_FREQUENCY				2 // DEBUG!!
 
 #define STEPS_PER_LOOP               1    // soon change to 500
 // frames between file pinch-offs:
@@ -38,7 +38,8 @@ bool const bScrewPinch = false;
 // milliseconds between frames:
 #define AVIFRAMEPERIOD         20  // milliseconds; 20 ms => 50 fps.
 
-#define DATA_SAVE_FREQUENCY					 20
+#define DATA_SAVE_FREQUENCY					 14
+// For debug. For production change it to 25
 
 // Program Mechanics:
 // ==================

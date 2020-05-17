@@ -1186,7 +1186,7 @@ __global__ void kernelCalculateOverallVelocitiesVertices(
 	p_v_overall_major[iVertex] = v_overall;
 }
 
-__global__ void kernelAverageOverallVelocitiesTriangles(
+__global__ void kernelCentroidVelocitiesTriangles(
 	f64_vec2 * __restrict__ p_overall_v_major,
 	f64_vec2 * __restrict__ p_overall_v_minor,
 	structural * __restrict__ p_info,
@@ -1280,6 +1280,116 @@ __global__ void kernelAverageOverallVelocitiesTriangles(
 			vcorner2 = Anticlockwise_d*vcorner2;
 		}
 		
+		v = 0.3333333333333*(vcorner0 + vcorner1 + vcorner2);
+		
+		if (info.flag == CROSSING_INS) {
+			// should not need to do anything different.
+		};
+
+		// Empirical estimate of derivative. Saves me messing about with taking derivative of circumcenter position.
+
+
+	} else {
+		// leave it == 0		
+	};
+	p_overall_v_minor[index] = v;
+}
+
+
+__global__ void kernelCircumcenterVelocitiesTriangles(
+	f64_vec2 * __restrict__ p_overall_v_major,
+	f64_vec2 * __restrict__ p_overall_v_minor,
+	structural * __restrict__ p_info,
+	LONG3 * __restrict__ p_tri_corner_index,
+	CHAR4 * __restrict__ p_tri_periodic_corner_flags
+)
+{
+	__shared__ f64_vec2 shared_v[threadsPerTileMajor];
+	__shared__ f64_vec2 shared_pos[threadsPerTileMajor];
+
+
+	long const index = threadIdx.x + blockIdx.x * blockDim.x; // INDEX OF VERTEX
+	if (threadIdx.x < threadsPerTileMajor)
+	{
+		long getindex = blockIdx.x * threadsPerTileMajor + threadIdx.x;
+		shared_v[threadIdx.x] = p_overall_v_major[getindex];
+		shared_pos[threadIdx.x] = p_info[BEGINNING_OF_CENTRAL + getindex].pos;
+	};
+	long const StartMajor = blockIdx.x*threadsPerTileMajor;
+	long const EndMajor = StartMajor + threadsPerTileMajor;
+	LONG3 const tri_corner_index = p_tri_corner_index[index];
+	CHAR4 const tri_corner_per_flag = p_tri_periodic_corner_flags[index];
+	structural info = p_info[index];
+
+	__syncthreads();
+
+
+	// Thoughts:
+	// We want it to be the motion of the circumcenter .. but linear interpolation of v is probably good enough?
+	// That won't work - consider right-angled.
+	// Silver standard approach: empirical estimate of time-derivative of cc position.
+
+	f64_vec2 v(0.0, 0.0);
+
+	if ((info.flag == DOMAIN_TRIANGLE) || (info.flag == CROSSING_INS)) {
+
+		f64_vec2 poscorner0, poscorner1, poscorner2, vcorner0, vcorner1, vcorner2;
+
+		if ((tri_corner_index.i1 >= StartMajor) && (tri_corner_index.i1 < EndMajor))
+		{
+			poscorner0 = shared_pos[tri_corner_index.i1 - StartMajor];
+			vcorner0 = shared_v[tri_corner_index.i1 - StartMajor];
+		}
+		else {
+			poscorner0 = p_info[tri_corner_index.i1 + BEGINNING_OF_CENTRAL].pos;
+			vcorner0 = p_overall_v_major[tri_corner_index.i1];
+		};
+		if (tri_corner_per_flag.per0 == ROTATE_ME_CLOCKWISE) {
+			poscorner0 = Clockwise_d*poscorner0;
+			vcorner0 = Clockwise_d*vcorner0;
+		}
+		if (tri_corner_per_flag.per0 == ROTATE_ME_ANTICLOCKWISE) {
+			poscorner0 = Anticlockwise_d*poscorner0;
+			vcorner0 = Anticlockwise_d*vcorner0;
+		}
+
+		if ((tri_corner_index.i2 >= StartMajor) && (tri_corner_index.i2 < EndMajor))
+		{
+			poscorner1 = shared_pos[tri_corner_index.i2 - StartMajor];
+			vcorner1 = shared_v[tri_corner_index.i2 - StartMajor];
+		}
+		else {
+			poscorner1 = p_info[tri_corner_index.i2 + BEGINNING_OF_CENTRAL].pos;
+			vcorner1 = p_overall_v_major[tri_corner_index.i2];
+		};
+		if (tri_corner_per_flag.per1 == ROTATE_ME_CLOCKWISE) {
+			poscorner1 = Clockwise_d*poscorner1;
+			vcorner1 = Clockwise_d*vcorner1;
+		}
+		if (tri_corner_per_flag.per1 == ROTATE_ME_ANTICLOCKWISE) {
+			poscorner1 = Anticlockwise_d*poscorner1;
+			vcorner1 = Anticlockwise_d*vcorner1;
+		}
+
+		if ((tri_corner_index.i3 >= StartMajor) && (tri_corner_index.i3 < EndMajor))
+		{
+			poscorner2 = shared_pos[tri_corner_index.i3 - StartMajor];
+			vcorner2 = shared_v[tri_corner_index.i3 - StartMajor];
+		}
+		else {
+			poscorner2 = p_info[tri_corner_index.i3 + BEGINNING_OF_CENTRAL].pos;
+			vcorner2 = p_overall_v_major[tri_corner_index.i3];
+		};
+
+		if (tri_corner_per_flag.per2 == ROTATE_ME_CLOCKWISE) {
+			poscorner2 = Clockwise_d*poscorner2;
+			vcorner2 = Clockwise_d*vcorner2;
+		}
+		if (tri_corner_per_flag.per2 == ROTATE_ME_ANTICLOCKWISE) {
+			poscorner2 = Anticlockwise_d*poscorner2;
+			vcorner2 = Anticlockwise_d*vcorner2;
+		}
+
 		f64_vec2 pos;
 		f64_vec2 Bb = poscorner1 - poscorner0;
 		f64_vec2 C = poscorner2 - poscorner0;
@@ -1293,7 +1403,7 @@ __global__ void kernelAverageOverallVelocitiesTriangles(
 		f64 temp = sqrt(vcorner0.dot(vcorner0) + vcorner1.dot(vcorner1) + vcorner2.dot(vcorner2));
 		f64 h_deriv = 1.0e-9 / temp;
 
-		if (TEST_OVERALL_V) 
+		if (TEST_OVERALL_V)
 			printf("iMinor %d poscorner0 %1.12E %1.12E | %1.12E %1.12E | %1.11E %1.11E \n",
 				index, poscorner0.x, poscorner0.y,
 				poscorner1.x, poscorner1.y,
@@ -1303,7 +1413,7 @@ __global__ void kernelAverageOverallVelocitiesTriangles(
 		poscorner1 += h_deriv*vcorner1;
 		poscorner2 += h_deriv*vcorner2;
 
-		if (TEST_OVERALL_V) 
+		if (TEST_OVERALL_V)
 			printf("iMinor %d poscorner0 %1.12E %1.12E | %1.12E %1.12E | %1.11E %1.11E \n",
 				index, poscorner0.x, poscorner0.y,
 				poscorner1.x, poscorner1.y,
@@ -1324,7 +1434,7 @@ __global__ void kernelAverageOverallVelocitiesTriangles(
 					"v %1.8E %1.8E newpos %1.12E %1.12E pos %1.12E %1.12E\n",
 					index, info.flag, tri_corner_index.i1, tri_corner_index.i2, tri_corner_index.i3,
 					v.x, v.y, newpos.x, newpos.y, pos.x, pos.y);
-					
+
 
 			f64_vec2 pos2 = pos;
 			pos2.project_to_radius(pos, DEVICE_RADIUS_INSULATOR_OUTER);
@@ -1333,7 +1443,7 @@ __global__ void kernelAverageOverallVelocitiesTriangles(
 		};
 
 		v = (newpos - pos) / h_deriv;
-		
+
 
 		if (TEST_OVERALL_V)
 			printf("iMinor %d info.flag %d :  %d %d %d \n"
@@ -1344,8 +1454,8 @@ __global__ void kernelAverageOverallVelocitiesTriangles(
 				v.x, v.y, newpos.x, newpos.y, pos.x, pos.y,
 				vcorner0.x, vcorner0.y, vcorner1.x, vcorner1.y, vcorner2.x, vcorner2.y,
 				h_deriv);
-				
-		
+
+
 
 		// Empirical estimate of derivative. Saves me messing about with taking derivative of circumcenter position.
 
@@ -1358,15 +1468,14 @@ __global__ void kernelAverageOverallVelocitiesTriangles(
 		//		pos.x, pos.y, newpos.x - pos.x, newpos.y - pos.y, h_deriv,
 		//		vcorner0.x, vcorner0.y, vcorner1.x, vcorner1.y, vcorner2.x, vcorner2.y, v.x, v.y,
 		//		poscorner0.x, poscorner0.y, poscorner1.x, poscorner1.y, poscorner2.x, poscorner2.y);			
-	
 
-	} else {
+
+	}
+	else {
 		// leave it == 0		
 	};
 	p_overall_v_minor[index] = v;
 }
-
-
 
 __global__ void kernelAdvectPositionsVertex(
 	f64 h_use,
@@ -2159,6 +2268,62 @@ __global__ void kernelResetFrillsAz(
 		};
 	};	
 }
+
+
+__global__ void kernelReturnMaximumInBlock
+(
+	f64 * __restrict__ p_f,
+	f64 * __restrict__ p_outputmax,
+	long * __restrict__ p_outputiMax,
+	long * __restrict__ p_indic
+) {
+	__shared__ f64 shared_f[threadsPerTileMinor];
+	__shared__ long iMax[threadsPerTileMinor];
+
+	long const index = blockDim.x*blockIdx.x + threadIdx.x;
+	shared_f[threadIdx.x] = fabs(p_f[index]);
+	if (p_indic[index] != 0) shared_f[threadIdx.x] = 0.0;
+
+	__syncthreads();
+
+	int s = blockDim.x;
+	int k = s / 2;
+
+	while (s != 1) {
+		if (threadIdx.x < k)
+		{
+			if (shared_f[threadIdx.x] < shared_f[threadIdx.x + k])
+			{
+				shared_f[threadIdx.x] = shared_f[threadIdx.x + k];
+				iMax[threadIdx.x] = iMax[threadIdx.x + k];
+			}
+		};
+		__syncthreads();
+
+		// Modify for case blockdim not 2^n:
+		if ((s % 2 == 1) && (threadIdx.x == k - 1)) {
+
+			if (shared_f[threadIdx.x] < shared_f[threadIdx.x + s - 1])
+			{
+				shared_f[threadIdx.x] = shared_f[threadIdx.x + s - 1];
+				iMax[threadIdx.x] = iMax[threadIdx.x + s - 1];
+			}
+		};
+		// In case k == 81, add [39] += [80]
+		// Otherwise we only get to 39+40=79.
+		s = k;
+		k = s / 2;
+		__syncthreads();
+	};
+
+	if (threadIdx.x == 0)
+	{
+		p_outputmax[blockIdx.x] = shared_f[threadIdx.x];
+		p_outputiMax[blockIdx.x] = iMax[threadIdx.x];
+	};
+
+}
+
 
 
 __global__ void kernelReset_v_in_outer_frill_and_outermost

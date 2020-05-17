@@ -212,6 +212,7 @@ int const REAL = 2;
 #define GRAPH_CONDUCTIVITYOHMS  110
 #define GRAPH_NU_EFFECTIVE  111
 #define GRAPH_OPTI         112
+#define GRAPH_REGRESSOR     113
 #define GRAPH_DNDT      200
 #define GRAPH_DNDT_OVER_n  201
 #define GRAPH_LOG10N       202
@@ -224,6 +225,7 @@ int const REAL = 2;
 #define ACCELGRAPHS        209
 #define GRAPH_AXY2         210
 #define GRAPH_AXY3         211
+#define AZSOLVERGRAPHS     212
 
 // Number of vars used to produce heights:
 int const FLAG_FLAT_MESH = 0;

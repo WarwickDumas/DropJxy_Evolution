@@ -208,9 +208,17 @@ __global__ void kernelAdvectPositionsVertex(
 	long * __restrict__ p_izNeigh_vert,
 	char * __restrict__ p_szPBCneigh_vert);
 
-__global__ void kernelAverageOverallVelocitiesTriangles(
-	f64_vec2 * __restrict__ p_v_overall_minor_major,
-	f64_vec2 * __restrict__ p_v_overall_minor_minor,
+
+__global__ void kernelCentroidVelocitiesTriangles(
+	f64_vec2 * __restrict__ p_overall_v_major,
+	f64_vec2 * __restrict__ p_overall_v_minor,
+	structural * __restrict__ p_info,
+	LONG3 * __restrict__ p_tri_corner_index,
+	CHAR4 * __restrict__ p_tri_periodic_corner_flags
+);
+__global__ void kernelCircumcenterVelocitiesTriangles(
+	f64_vec2 * __restrict__ p_overall_v_major,
+	f64_vec2 * __restrict__ p_overall_v_minor,
 	structural * __restrict__ p_info,
 	LONG3 * __restrict__ p_tri_corner_index,
 	CHAR4 * __restrict__ p_tri_periodic_corner_flags
@@ -1214,6 +1222,10 @@ __global__ void kernelCalculateVelocityAndAzdot_debug(
 	f64_vec3 * __restrict__ p_vn_out,
 	bool * __restrict__ p_alertflag);
 
+__global__ void kernelSetZero(
+	f64 * __restrict__ data
+);
+
 __global__ void kernelCalculateVelocityAndAzdot_dbg2(
 	f64 h_use,
 	structural * p_info_minor,
@@ -1237,7 +1249,7 @@ __global__ void kernelCreateEpsilonAndJacobiDebug(
 	f64 * __restrict__ p_Az_array,
 	f64 * __restrict__ p_Azdot0,
 	f64 * __restrict__ p_gamma,
-	f64 * __restrict__ p_LapCoeffself,
+	f64 * __restrict__ p_LapCoeffSelf,
 	f64 * __restrict__ p_Lap_Aznext,
 	f64 * __restrict__ p_epsilon,
 	f64 * __restrict__ p_Jacobi_x,
@@ -1480,7 +1492,7 @@ __global__ void kernelCreate_further_regressor(
 	f64 h_use,
 	f64 * __restrict__ p_regressor,
 	f64 * __restrict__ p_Lap_regressor,
-	f64 * __restrict__ p_LapCoeffself,
+	f64 * __restrict__ p_LapCoeffSelf,
 	f64 * __restrict__ p_gamma,
 	f64 * __restrict__ p_regressor2);
 
@@ -1528,7 +1540,7 @@ __global__ void kernelCreateEpsilonAndJacobi(
 	f64 * __restrict__ p_Az_array,
 	f64 * __restrict__ p_Azdot0,
 	f64 * __restrict__ p_gamma,
-	f64 * __restrict__ p_LapCoeffself,
+	f64 * __restrict__ p_LapCoeffSelf,
 	f64 * __restrict__ p_Lap_Aznext,
 	f64 * __restrict__ p_epsilon,
 	f64 * __restrict__ p_Jacobi_x,
@@ -1555,6 +1567,28 @@ __global__ void kernelGetLap_verts(
 	f64 * __restrict__ p_LapAz);
 */
 
+__global__ void kernelCalculateVelocityAndAzdot_noadvect_SPIT(
+	f64 h_use,
+	structural * p_info_minor,
+	LONG3 * p_tricornerindex,
+	f64_vec3 * __restrict__ p_vn0,
+	v4 * __restrict__ p_v0,
+	OhmsCoeffs * __restrict__ p_OhmsCoeffs,
+	AAdot * __restrict__ p_AAzdot_src,
+	nvals * __restrict__ p_n_minor,
+	f64 * __restrict__ p_AreaMinor,
+	f64 * __restrict__ p_LapAz, // would it be better just to be loading the Azdot0 relation?
+
+	AAdot * __restrict__ p_AAzdot_out,
+	v4 * __restrict__ p_vie_out,
+	f64_vec3 * __restrict__ p_vn_out);
+
+__global__ void kernelPopulateResiduals(
+	f64 * __restrict__ pLapAz,
+	nvals * __restrict__ p_n_minor,
+	v4 * __restrict__ p_vie,
+	f64 * __restrict__ p_residual
+);
 
 __global__ void kernelGetLapCoeffs(
 	structural * __restrict__ p_info,
@@ -1565,6 +1599,16 @@ __global__ void kernelGetLapCoeffs(
 	f64 * __restrict__ p_LapCoeffSelf);
 
 __global__ void kernelGetLapCoeffs_and_min(
+	structural * __restrict__ p_info,
+	long * __restrict__ p_izTri,
+	long * __restrict__ p_izNeighMinor,
+	char * __restrict__ p_szPBCtri_vertex,
+	char * __restrict__ p_szPBCtriminor,
+	f64 * __restrict__ p_LapCoeffSelf,
+	f64 * __restrict__ p_min_array,
+	long * __restrict__ p_min_index);
+
+__global__ void kernelGetLapCoeffs_and_min_DEBUG(
 	structural * __restrict__ p_info,
 	long * __restrict__ p_izTri,
 	long * __restrict__ p_izNeighMinor,
