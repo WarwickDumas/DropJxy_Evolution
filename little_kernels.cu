@@ -2269,7 +2269,16 @@ __global__ void kernelResetFrillsAz(
 	};	
 }
 
+__global__ void kernelAddToAz(
+	long * p_indicator,
+	f64 * pAz
+) {
+	long const index = blockDim.x*blockIdx.x + threadIdx.x;
+	long ind = p_indicator[index];
+	if (ind > 0)
+		pAz[index] += beta_n_c[ind - 1];
 
+}
 __global__ void kernelReturnMaximumInBlock
 (
 	f64 * __restrict__ p_f,

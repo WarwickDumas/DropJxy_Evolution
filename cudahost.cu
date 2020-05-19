@@ -69,7 +69,6 @@ bool GlobalSuppressSuccessVerbosity = DEFAULTSUPPRESSVERBOSITY;
 bool bGlobalSaveTGraphs;
 
 long VERTS[3] = {15559, 15405, 15251};
-
 long iEquations[3];
 
 extern long NumInnerFrills, FirstOuterFrill;
@@ -100,7 +99,7 @@ __constant__ f64 UNIFORM_n_d;
 
 __constant__ f64 cross_s_vals_viscosity_ni_d[10], cross_s_vals_viscosity_nn_d[10],
                  cross_T_vals_d[10], cross_s_vals_MT_ni_d[10];
-__constant__ f64 beta_n_c[8], beta_i_c[8], beta_e_c[8];
+__constant__ f64 beta_n_c[32], beta_i_c[8], beta_e_c[8];
 
 
 __constant__ f64 recomb_coeffs[32][3][5];
@@ -154,10 +153,14 @@ __device__ f64 * p_sqrtD_inv_n, *p_sqrtD_inv_i, *p_sqrtD_inv_e;
 __device__ f64 * p_regressors;
 f64 * p_sum_eps_deps_by_dbeta_x8_host;
 
-#define SQUASH_POINTS  16
+__device__ long * p_indicator;
+__device__ f64 * p_Jacobian_list;
+
+#define SQUASH_POINTS  20
 __device__ f64 * p_matrix_blocks;
 __device__ f64 * p_vector_blocks;
 
+f64 * p_matrix_blocks_host, *p_vector_blocks_host;
 
 #define p_slot1n p_Ap_n
 #define p_slot1i p_Ap_i
@@ -771,7 +774,10 @@ void SolveBackwardAzAdvanceJ3LS(f64 hsub,
 	int iTile;
 	char buffer[256];
 	int iIteration = 0;
-	   
+
+	f64 matrix[SQUASH_POINTS*SQUASH_POINTS];
+	f64 vector[SQUASH_POINTS];
+
 	long iMax = 0;
 	bool bContinue = true;
 
@@ -817,14 +823,14 @@ void SolveBackwardAzAdvanceJ3LS(f64 hsub,
 //	FILE * fpdbg = fopen("J3LS_2.txt", "w");
 	L2eps = -1.0;
 
-	f64 matrix[SQUASH_POINTS][SQUASH_POINTS];
-	f64 vector[SQUASH_POINTS];
 	do
-	{		
+	{
 		// Now we want to create another regressor, let it be called p_regressor_n
 		// Let p_Jacobi_x act as AzNext
 
-		if (iIteration > 2500) {
+		if ((iIteration > 2500) && (iIteration % 3 == 0)) {
+			
+			printf("\nDoing the smash! iteration %d\n", iIteration);
 
 			// Alternative: smoosh 24 points
 
@@ -834,7 +840,7 @@ void SolveBackwardAzAdvanceJ3LS(f64 hsub,
 			do {
 				kernelReturnMaximumInBlock << <numTilesMinor, threadsPerTileMinor >> > (
 					p_epsilon,
-					p_temp1 // max in block
+					p_temp1, // max in block
 					p_longtemp,
 					p_indicator // long*NMINOR : if this point is already used, do not pick it up.
 					);
@@ -854,7 +860,6 @@ void SolveBackwardAzAdvanceJ3LS(f64 hsub,
 
 				number_set++;
 				// Just do this 24 times ... dumbest way possible but nvm.
-
 				
 				// Quicker way (develop later) :				
 				// Just recruit neighbours until we get to 24?
@@ -872,209 +877,247 @@ void SolveBackwardAzAdvanceJ3LS(f64 hsub,
 				//		number_set++;
 				//	}
 				//};
-			} while (number_set < SMASH_POINTS);
+			} while (number_set < SQUASH_POINTS);
 
-			kernelAccumulateSmashMatrix << <numTriTiles, threadsPerTileMinor >> > (
+			kernelComputeJacobianValues << <numTriTiles, threadsPerTileMinor >> > (
 				pX_use->p_info,
-				p_epsilon,
-				p_AzNext, 
-				pAz_k,
-				p_Azdot0,  // needed?
+				
+			//	p_AzNext,pAz_k,p_Azdot0,  // needed?
 				p_gamma,   // needed?
+				hsub,
+				p_indicator,
 				pX_use->p_izTri_vert,
 				pX_use->p_izNeigh_TriMinor,
 				pX_use->p_szPBCtri_vert,
 				pX_use->p_szPBC_triminor,
+				p_Jacobian_list // needs to be NMINOR * SQUASH_POINTS
+				);
+			Call(cudaThreadSynchronize(), "cudaTS CollectJacobian");
+			
+			AggregateSmashMatrix << <numTilesMinor * 2, threadsPerTileMajor >> > (
+				p_Jacobian_list,
+				p_epsilon,
 				p_matrix_blocks,
 				p_vector_blocks
 				);
 			Call(cudaThreadSynchronize(), "cudaTS CollectMatrix");
 
-			cudaMemcpy(p_matrix_blocks_host, p_matrix_blocks, 
-				sizeof(f64)*SQUASH_POINTS*SQUASH_POINTS*numTriTiles, cudaMemcpyDeviceToHost);
+			cudaMemcpy(p_matrix_blocks_host, p_matrix_blocks,
+				sizeof(f64)*SQUASH_POINTS*SQUASH_POINTS*numTilesMinor*2, cudaMemcpyDeviceToHost);
 			cudaMemcpy(p_vector_blocks_host, p_vector_blocks,
-				sizeof(f64)*SQUASH_POINTS*numTriTiles, cudaMemcpyDeviceToHost);
+				sizeof(f64)*SQUASH_POINTS*numTilesMinor * 2, cudaMemcpyDeviceToHost);
 			memset(matrix, 0, sizeof(f64)*SQUASH_POINTS*SQUASH_POINTS);
 			memset(vector, 0, sizeof(f64)*SQUASH_POINTS);
-			for (iTile = 0; iTile < numTriTiles; iTile++)
+			for (iTile = 0; iTile < numTilesMinor * 2; iTile++)
 			{
-				for (i = 0; i < SQUASH_POINTS; i++)
+				for (int i = 0; i < SQUASH_POINTS; i++)
 				{
-					for (j = 0; i < SQUASH_POINTS; i++)
-						matrix[i][j] += p_matrix_blocks_host[i][j][iTile];
-					vector[i] += p_matrix_vector_host[i][iTile];
+					for (int j = 0; i < SQUASH_POINTS; i++)
+						matrix[i*SQUASH_POINTS+j] += p_matrix_blocks_host[i*SQUASH_POINTS+j+iTile*SQUASH_POINTS*SQUASH_POINTS];
+					// Note that the matrix is symmetric so i, j order doesn't matter anyway.
+					vector[i] += p_vector_blocks_host[i+iTile*SQUASH_POINTS];
 				};
 			};
 
-			LUSolve(matrix, vector);
+			lapack_int ipiv[SQUASH_POINTS];
 
+			lapack_int Nrows = SQUASH_POINTS,
+				Ncols = SQUASH_POINTS,  // lda
+				Nrhscols = 1, // ldb
+				Nrhsrows = SQUASH_POINTS, info;
+			
+			printf("going to call dgesv:\b");
 
+			info = LAPACKE_dgesv(LAPACK_ROW_MAJOR,
+				Nrows, 1, matrix,
+				Ncols, ipiv, //sum_eps_deps_by_dbeta_vector
+				vector, Nrhscols);
+			// Check for the exact singularity :
+			if (info > 0) {
+				printf("The diagonal element of the triangular factor of A,\n");
+				printf("U(%i,%i) is zero, so that A is singular;\n", info, info);
+				printf("the solution could not be computed.\n");
+			} 	else {
+				printf("LAPACKE_dgesv ran successfully.\n");
+				memcpy(beta, vector, SQUASH_POINTS * sizeof(f64));
+
+				CallMAC(cudaMemcpyToSymbol(beta_n_c, beta, SQUASH_POINTS * sizeof(f64)));
+				// proper name for the result.
+				// But beta is the set of coefficients on a set of individual dummies
+				kernelAddToAz << <numTilesMinor, threadsPerTileMinor >> > (
+					p_indicator,
+					p_AzNext
+					);
+				Call(cudaThreadSynchronize(), "cudaTS AddToAz");
+				// Think we probably are missing a minus: did we include it in the RHS vector?
+			}
+
+		} else {
+
+			kernelGetLap_minor << <numTriTiles, threadsPerTileMinor >> > (
+				pX_use->p_info,
+				p_Jacobi_x,
+				pX_use->p_izTri_vert,
+				pX_use->p_izNeigh_TriMinor,
+				pX_use->p_szPBCtri_vert,
+				pX_use->p_szPBC_triminor,
+				p_LapJacobi,
+				//		p_temp1, p_temp2, p_temp3,
+				pX_use->p_AreaMinor
+				);
+			Call(cudaThreadSynchronize(), "cudaTS Get Lap Jacobi 1");
+
+			kernelCreate_further_regressor << <numTilesMinor, threadsPerTileMinor >> > (
+				pX_use->p_info,
+				hsub,
+				p_Jacobi_x,
+				p_LapJacobi,
+				p_LapCoeffself,
+				p_gamma,
+				p_regressor_n);
+			Call(cudaThreadSynchronize(), "cudaTS Create further regressor");
+			kernelResetFrillsAz << <numTilesMinor, threadsPerTileMinor >> > (
+				pX_use->p_info, pX_use->p_tri_neigh_index,
+				p_regressor_n);
+			Call(cudaThreadSynchronize(), "cudaTS ResetFrills further regressor");
+
+			kernelGetLap_minor << <numTriTiles, threadsPerTileMinor >> > (
+				pX_use->p_info,
+				p_regressor_n,
+				pX_use->p_izTri_vert,
+				pX_use->p_izNeigh_TriMinor,
+				pX_use->p_szPBCtri_vert,
+				pX_use->p_szPBC_triminor,
+				p_temp4, // Lap of regressor : result
+				//		p_temp1, p_temp2, p_temp3,
+				pX_use->p_AreaMinor
+				);
+			Call(cudaThreadSynchronize(), "cudaTS Get Lap Jacobi 2");
+
+			kernelCreate_further_regressor << <numTilesMinor, threadsPerTileMinor >> > (
+				pX_use->p_info,
+				hsub,
+				p_regressor_n,
+				p_temp4,
+				p_LapCoeffself,
+				p_gamma,
+				p_regressor_i);
+			Call(cudaThreadSynchronize(), "cudaTS Create further regressor");
+
+			// Wipe out regressor_i with epsilon: J2RLS:
+			// Doesn't help.
+			// cudaMemcpy(p_regressor_i, p_epsilon, sizeof(f64)*NMINOR, cudaMemcpyDeviceToDevice);
+
+			kernelResetFrillsAz << <numTilesMinor, threadsPerTileMinor >> > (
+				pX_use->p_info, pX_use->p_tri_neigh_index,
+				p_regressor_i);
+			Call(cudaThreadSynchronize(), "cudaTS ResetFrills further regressor");
+
+			kernelGetLap_minor << <numTriTiles, threadsPerTileMinor >> > (
+				pX_use->p_info,
+				p_regressor_i,
+				pX_use->p_izTri_vert,
+				pX_use->p_izNeigh_TriMinor,
+				pX_use->p_szPBCtri_vert,
+				pX_use->p_szPBC_triminor,
+				p_temp5,
+				pX_use->p_AreaMinor
+				);
+			Call(cudaThreadSynchronize(), "cudaTS Get Lap Jacobi 1");
+
+			// Okay ... now we need to do the routine that creates the matrix deps/dbeta_i deps/dbeta_j
+			// and the vector against epsilon
+
+			kernelAccumulateMatrix << <numTilesMinor, threadsPerTileMinor >> > (
+				pX_use->p_info,
+				hsub,
+				p_epsilon,
+				p_Jacobi_x,
+				p_regressor_n,
+				p_regressor_i,
+				p_LapJacobi,
+				p_temp4,
+				p_temp5,
+				p_gamma,
+
+				p_temp1, // sum of matrices, in lots of 6
+				p_eps_against_deps
+				);
+			Call(cudaThreadSynchronize(), "cudaTS kernelAccumulateMatrix");
+
+			// Now take 6 sums
+			f64 sum_mat[6];
+			f64_vec3 sumvec(0.0, 0.0, 0.0);
+			memset(sum_mat, 0, sizeof(f64) * 6);
+			cudaMemcpy(p_temphost1, p_temp1, sizeof(f64) * 6 * numTilesMinor, cudaMemcpyDeviceToHost);
+			cudaMemcpy(p_sum_vec_host, p_eps_against_deps, sizeof(f64_vec3)*numTilesMinor, cudaMemcpyDeviceToHost);
+			for (iTile = 0; iTile < numTilesMinor; iTile++)
+			{
+				sum_mat[0] += p_temphost1[iTile * 6 + 0];
+				sum_mat[1] += p_temphost1[iTile * 6 + 1];
+				sum_mat[2] += p_temphost1[iTile * 6 + 2];
+				sum_mat[3] += p_temphost1[iTile * 6 + 3];
+				sum_mat[4] += p_temphost1[iTile * 6 + 4];
+				sum_mat[5] += p_temphost1[iTile * 6 + 5];
+				sumvec += p_sum_vec_host[iTile];
+			};
+
+			// Now populate symmetric matrix
+			f64_tens3 mat, mat2;
+
+			mat.xx = sum_mat[0];
+			mat.xy = sum_mat[1];
+			mat.xz = sum_mat[2];
+			mat.yx = mat.xy;
+			mat.yy = sum_mat[3];
+			mat.yz = sum_mat[4];
+			mat.zx = mat.xz;
+			mat.zy = mat.yz;
+			mat.zz = sum_mat[5];
+			// debug:
+
+	//		mat.yx = 0.0; mat.yy = 1.0; mat.yz = 0.0;
+	//		mat.zx = 0.0; mat.zy = 0.0; mat.zz = 1.0;
+	//		sumvec.y = 0.0;
+	//		sumvec.z = 0.0;
+	//
+			mat.Inverse(mat2);
+			//printf(
+			//	" ( %1.6E %1.6E %1.6E ) ( beta0 )   ( %1.6E )\n"
+			//	" ( %1.6E %1.6E %1.6E ) ( beta1 ) = ( %1.6E )\n"
+			//	" ( %1.6E %1.6E %1.6E ) ( beta2 )   ( %1.6E )\n",
+			//	mat.xx, mat.xy, mat.xz, sumvec.x,
+			//	mat.yx, mat.yy, mat.yz, sumvec.y,
+			//	mat.zx, mat.zy, mat.zz, sumvec.z);
+			f64_vec3 product = mat2*sumvec;
+
+			beta[0] = -product.x; beta[1] = -product.y; beta[2] = -product.z;
+
+			printf("L2eps %1.9E beta %1.8E %1.8E %1.8E ", L2eps, beta[0], beta[1], beta[2]);
+
+			//	printf("Verify: \n");
+			//	f64 z1 = mat.xx*beta[0] + mat.xy*beta[1] + mat.xz*beta[2];
+			//	f64 z2 = mat.yx*beta[0] + mat.yy*beta[1] + mat.yz*beta[2];
+			//	f64 z3 = mat.zx*beta[0] + mat.zy*beta[1] + mat.zz*beta[2];
+			//	printf("z1 %1.14E sumvec.x %1.14E | z2 %1.14E sumvec.y %1.14E | z3 %1.14E sumvec.z %1.14E \n",
+			//		z1, sumvec.x, z2, sumvec.y, z3, sumvec.z);
+
+				// Since iterations can be MORE than under Jacobi, something went wrong.
+				// Try running with matrix s.t. beta1 = beta2 = 0. Do we get more improvement ever or a different coefficient than Jacobi?
+				// If we always do better than Jacobi we _could_ still end up with worse result due to different trajectory but this is unlikely 
+				// to be the explanation so we should track it down.
+
+			//	cudaMemcpy(p_temphost2, p_Jacobi_x, sizeof(f64)*NMINOR, cudaMemcpyDeviceToHost);
+
+			kernelAddRegressors << <numTilesMinor, threadsPerTileMinor >> > (
+				p_AzNext,
+				beta[0], beta[1], beta[2],
+				p_Jacobi_x,
+				p_regressor_n,
+				p_regressor_i
+				);
+			Call(cudaThreadSynchronize(), "cudaTS kernelAddRegressors");
 		};
-
-		kernelGetLap_minor << <numTriTiles, threadsPerTileMinor >> > (
-			pX_use->p_info,
-			p_Jacobi_x,
-			pX_use->p_izTri_vert,
-			pX_use->p_izNeigh_TriMinor,
-			pX_use->p_szPBCtri_vert,
-			pX_use->p_szPBC_triminor,
-			p_LapJacobi,
-			//		p_temp1, p_temp2, p_temp3,
-			pX_use->p_AreaMinor
-			);
-		Call(cudaThreadSynchronize(), "cudaTS Get Lap Jacobi 1");
-
-		kernelCreate_further_regressor << <numTilesMinor, threadsPerTileMinor >> >(
-			pX_use->p_info,
-			hsub,
-			p_Jacobi_x,
-			p_LapJacobi,
-			p_LapCoeffself,
-			p_gamma,
-			p_regressor_n);
-		Call(cudaThreadSynchronize(), "cudaTS Create further regressor");
-		kernelResetFrillsAz << <numTilesMinor, threadsPerTileMinor >> > (
-			pX_use->p_info, pX_use->p_tri_neigh_index,
-			p_regressor_n);
-		Call(cudaThreadSynchronize(), "cudaTS ResetFrills further regressor");
-
-		kernelGetLap_minor << <numTriTiles, threadsPerTileMinor >> > (
-			pX_use->p_info,
-			p_regressor_n,
-			pX_use->p_izTri_vert,
-			pX_use->p_izNeigh_TriMinor,
-			pX_use->p_szPBCtri_vert,
-			pX_use->p_szPBC_triminor,
-			p_temp4, // Lap of regressor : result
-			//		p_temp1, p_temp2, p_temp3,
-			pX_use->p_AreaMinor
-			);
-		Call(cudaThreadSynchronize(), "cudaTS Get Lap Jacobi 2");
-
-		kernelCreate_further_regressor << <numTilesMinor, threadsPerTileMinor >> >(
-			pX_use->p_info,
-			hsub,
-			p_regressor_n,
-			p_temp4,
-			p_LapCoeffself,
-			p_gamma,
-			p_regressor_i);
-		Call(cudaThreadSynchronize(), "cudaTS Create further regressor");
-		
-		// Wipe out regressor_i with epsilon: J2RLS:
-		// Doesn't help.
-		// cudaMemcpy(p_regressor_i, p_epsilon, sizeof(f64)*NMINOR, cudaMemcpyDeviceToDevice);
-		
-		kernelResetFrillsAz << <numTilesMinor, threadsPerTileMinor >> > (
-			pX_use->p_info, pX_use->p_tri_neigh_index,
-			p_regressor_i);
-		Call(cudaThreadSynchronize(), "cudaTS ResetFrills further regressor");
-
-		kernelGetLap_minor << <numTriTiles, threadsPerTileMinor >> > (
-			pX_use->p_info,
-			p_regressor_i,
-			pX_use->p_izTri_vert,
-			pX_use->p_izNeigh_TriMinor,
-			pX_use->p_szPBCtri_vert,
-			pX_use->p_szPBC_triminor,
-			p_temp5, 
-			pX_use->p_AreaMinor
-			);
-		Call(cudaThreadSynchronize(), "cudaTS Get Lap Jacobi 1");
-
-		// Okay ... now we need to do the routine that creates the matrix deps/dbeta_i deps/dbeta_j
-		// and the vector against epsilon
-
-		kernelAccumulateMatrix << <numTilesMinor, threadsPerTileMinor >> >(
-			pX_use->p_info,
-			hsub,
-			p_epsilon,
-			p_Jacobi_x,
-			p_regressor_n,
-			p_regressor_i,
-			p_LapJacobi,
-			p_temp4,
-			p_temp5,
-			p_gamma,
-
-			p_temp1, // sum of matrices, in lots of 6
-			p_eps_against_deps
-			);
-		Call(cudaThreadSynchronize(), "cudaTS kernelAccumulateMatrix");
-		
-		// Now take 6 sums
-		f64 sum_mat[6];
-		f64_vec3 sumvec(0.0,0.0,0.0);
-		memset(sum_mat, 0, sizeof(f64) * 6);
-		cudaMemcpy(p_temphost1, p_temp1, sizeof(f64) * 6 * numTilesMinor, cudaMemcpyDeviceToHost);
-		cudaMemcpy(p_sum_vec_host, p_eps_against_deps, sizeof(f64_vec3)*numTilesMinor, cudaMemcpyDeviceToHost);
-		for (iTile = 0; iTile < numTilesMinor; iTile++)
-		{
-			sum_mat[0] += p_temphost1[iTile * 6 + 0];
-			sum_mat[1] += p_temphost1[iTile * 6 + 1];
-			sum_mat[2] += p_temphost1[iTile * 6 + 2];
-			sum_mat[3] += p_temphost1[iTile * 6 + 3];
-			sum_mat[4] += p_temphost1[iTile * 6 + 4];
-			sum_mat[5] += p_temphost1[iTile * 6 + 5];
-			sumvec += p_sum_vec_host[iTile];
-		};
-		
-		// Now populate symmetric matrix
-		f64_tens3 mat, mat2;
-
-		mat.xx = sum_mat[0];
-		mat.xy = sum_mat[1];
-		mat.xz = sum_mat[2];
-		mat.yx = mat.xy;
-		mat.yy = sum_mat[3];
-		mat.yz = sum_mat[4];
-		mat.zx = mat.xz;
-		mat.zy = mat.yz;
-		mat.zz = sum_mat[5];
-		// debug:
-
-//		mat.yx = 0.0; mat.yy = 1.0; mat.yz = 0.0;
-//		mat.zx = 0.0; mat.zy = 0.0; mat.zz = 1.0;
-//		sumvec.y = 0.0;
-//		sumvec.z = 0.0;
-//
-		mat.Inverse(mat2);
-		//printf(
-		//	" ( %1.6E %1.6E %1.6E ) ( beta0 )   ( %1.6E )\n"
-		//	" ( %1.6E %1.6E %1.6E ) ( beta1 ) = ( %1.6E )\n"
-		//	" ( %1.6E %1.6E %1.6E ) ( beta2 )   ( %1.6E )\n",
-		//	mat.xx, mat.xy, mat.xz, sumvec.x,
-		//	mat.yx, mat.yy, mat.yz, sumvec.y,
-		//	mat.zx, mat.zy, mat.zz, sumvec.z);
-		f64_vec3 product = mat2*sumvec;
-
-		beta[0] = -product.x; beta[1] = -product.y; beta[2] = -product.z;
-
-		printf("L2eps %1.9E beta %1.8E %1.8E %1.8E ", L2eps, beta[0], beta[1], beta[2]);
-
-	//	printf("Verify: \n");
-	//	f64 z1 = mat.xx*beta[0] + mat.xy*beta[1] + mat.xz*beta[2];
-	//	f64 z2 = mat.yx*beta[0] + mat.yy*beta[1] + mat.yz*beta[2];
-	//	f64 z3 = mat.zx*beta[0] + mat.zy*beta[1] + mat.zz*beta[2];
-	//	printf("z1 %1.14E sumvec.x %1.14E | z2 %1.14E sumvec.y %1.14E | z3 %1.14E sumvec.z %1.14E \n",
-	//		z1, sumvec.x, z2, sumvec.y, z3, sumvec.z);
-
-		// Since iterations can be MORE than under Jacobi, something went wrong.
-		// Try running with matrix s.t. beta1 = beta2 = 0. Do we get more improvement ever or a different coefficient than Jacobi?
-		// If we always do better than Jacobi we _could_ still end up with worse result due to different trajectory but this is unlikely 
-		// to be the explanation so we should track it down.
-		 
-	//	cudaMemcpy(p_temphost2, p_Jacobi_x, sizeof(f64)*NMINOR, cudaMemcpyDeviceToHost);
-
-		kernelAddRegressors << <numTilesMinor, threadsPerTileMinor >> >(
-			p_AzNext,
-			beta[0], beta[1], beta[2],
-			p_Jacobi_x,
-			p_regressor_n,
-			p_regressor_i
-		);
-		Call(cudaThreadSynchronize(), "cudaTS kernelAddRegressors");
-
 		// should have no effect since we applied it to regressor(s).
 
 		// Yet it does have an effect. Is this because initial AzNext wasn't frilled? Or because regressors are not?
@@ -1136,13 +1179,6 @@ void SolveBackwardAzAdvanceJ3LS(f64 hsub,
 
 		if (iIteration > 2500) {
 			
-
-
-
-
-
-
-
 			// graphs:
 			cudaMemcpy(p_temphost1, p_epsilon, sizeof(f64)*NMINOR, cudaMemcpyDeviceToHost);
 			cudaMemcpy(p_temphost2, p_Azdot0, sizeof(f64)*NMINOR, cudaMemcpyDeviceToHost);
@@ -6002,7 +6038,9 @@ void PerformCUDA_Invoke_Populate(
 	// and aggregation arrays...
 	// ____________________________________________________
 
-
+	
+	CallMAC(cudaMalloc((void **)&p_Jacobian_list, NMINOR * SQUASH_POINTS * sizeof(f64)));
+	CallMAC(cudaMalloc((void **)&p_indicator, NMINOR * sizeof(long)));
 
 	CallMAC(cudaMalloc((void **)&p_AAdot_target, NMINOR * sizeof(AAdot)));
 	CallMAC(cudaMalloc((void **)&p_AAdot_start, NMINOR * sizeof(AAdot)));
@@ -6024,8 +6062,8 @@ void PerformCUDA_Invoke_Populate(
 	CallMAC(cudaMalloc((void **)&p_temp3_2, NUMVERTICES * sizeof(f64_vec3)));
 	CallMAC(cudaMalloc((void **)&p_temp3_3, NUMVERTICES * sizeof(f64_vec3)));
 	
-	CallMAC(cudaMalloc((void **)&p_matrix_blocks, SQUASH_POINTS*SQUASH_POINTS * numTilesMinor * sizeof(f64)));
-	CallMAC(cudaMalloc((void **)&p_vector_blocks, SQUASH_POINTS* numTilesMinor * sizeof(f64)));
+	CallMAC(cudaMalloc((void **)&p_matrix_blocks, SQUASH_POINTS*SQUASH_POINTS * numTilesMinor*2 * sizeof(f64)));
+	CallMAC(cudaMalloc((void **)&p_vector_blocks, SQUASH_POINTS* numTilesMinor *2* sizeof(f64)));
 	
 	CallMAC(cudaMalloc((void **)&p_Tn, NUMVERTICES * sizeof(f64)));
 	CallMAC(cudaMalloc((void **)&p_Ti, NUMVERTICES * sizeof(f64)));
@@ -6211,6 +6249,9 @@ void PerformCUDA_Invoke_Populate(
 	CallMAC(cudaMalloc((void **)&p_sum_eps_deps_by_dbeta_R_x4, numTilesMinor * sizeof(f64_vec4)));
 	CallMAC(cudaMalloc((void **)&p_sum_depsbydbeta_8x8, numTilesMinor * sizeof(f64) *  REGRESSORS*REGRESSORS));
 	
+	p_matrix_blocks_host = (f64 *)malloc(SQUASH_POINTS*SQUASH_POINTS * numTilesMinor * 2 * sizeof(f64));
+	p_vector_blocks_host = (f64 *)malloc(SQUASH_POINTS* numTilesMinor * 2 * sizeof(f64));
+
 	p_sum_eps_deps_by_dbeta_J_x4_host = (f64_vec4 *) malloc(numTilesMinor * sizeof(f64_vec4));
 	p_sum_eps_deps_by_dbeta_R_x4_host = (f64_vec4 *)malloc(numTilesMinor * sizeof(f64_vec4));
 	p_sum_depsbydbeta_8x8_host = (f64 *)malloc(numTilesMinor * REGRESSORS*REGRESSORS * sizeof(f64));

@@ -199,6 +199,14 @@ __global__ void kernelCalculateOverallVelocitiesVertices(
 	f64 const h_full_adv
 );
 
+__global__ void kernelReturnMaximumInBlock
+(
+	f64 * __restrict__ p_f,
+	f64 * __restrict__ p_outputmax,
+	long * __restrict__ p_outputiMax,
+	long * __restrict__ p_indic
+);
+
 __global__ void kernelAdvectPositionsVertex(
 	f64 h_use,
 	structural * __restrict__ p_info_src_major,
@@ -208,6 +216,11 @@ __global__ void kernelAdvectPositionsVertex(
 	long * __restrict__ p_izNeigh_vert,
 	char * __restrict__ p_szPBCneigh_vert);
 
+
+__global__ void kernelAddToAz(
+	long * p_indicator,
+	f64 * pAz
+);
 
 __global__ void kernelCentroidVelocitiesTriangles(
 	f64_vec2 * __restrict__ p_overall_v_major,
@@ -223,6 +236,29 @@ __global__ void kernelCircumcenterVelocitiesTriangles(
 	LONG3 * __restrict__ p_tri_corner_index,
 	CHAR4 * __restrict__ p_tri_periodic_corner_flags
 );
+
+__global__ void AggregateSmashMatrix(
+	f64 * __restrict__ p_Jacobianesque_list,
+	f64 * __restrict__ p_eps,
+	f64 * __restrict__ p_smash_matrix_block,
+	f64 * __restrict__ p_smash_vector_block
+);
+
+__global__ void kernelComputeJacobianValues(
+
+	structural * __restrict__ p_info,
+	//	f64 * __restrict__ p_Aznext,
+	//	f64 * __restrict__ p_Azk,
+	//	f64 * __restrict__ pAzdot0,
+	f64 * __restrict__ pgamma,
+	f64 const h_use,
+	long * __restrict__ p_indic,
+	long * __restrict__ p_izTri,
+	long * __restrict__ p_izNeighMinor,
+	char * __restrict__ p_szPBCtri_vertex,
+	char * __restrict__ p_szPBCtriminor,
+	f64 * __restrict__ p_Jacobianesque_list);
+
 
 __global__ void kernelCalculateROCepsWRTregressorT_volleys(
 	f64 const h_use,
