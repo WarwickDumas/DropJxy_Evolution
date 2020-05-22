@@ -24,7 +24,7 @@
 #define TESTHEATFULL (0)
 #define TESTHEAT1 (0)
 #define TESTTRI2 (0)
-#define TESTTRI3 (0)
+#define TESTTRI3 (0) // iMinor == CHOSEN)
 #define TESTHEAT2 (0)
 #define TESTIONISE (0)
 #define TESTOHMS (0)
@@ -14406,6 +14406,7 @@ __global__ void kernelCreateEpsilonAndJacobi(
 			- h_use * p_gamma[iMinor] * p_Lap_Aznext[iMinor]
 			- h_use * p_Azdot0[iMinor];
 
+
 		p_Jacobi_x[iMinor] = -eps / (1.0 - h_use * p_gamma[iMinor] * p_LapCoeffSelf[iMinor]);
 #else
 		f64 Aznext = p_Az_array_next[iMinor];
@@ -14414,7 +14415,13 @@ __global__ void kernelCreateEpsilonAndJacobi(
 
 		p_Jacobi_x[iMinor] = -eps / (1.0 - h_use * gamma * p_LapCoeffSelf[iMinor]);
 		
-		
+//		if (iMinor == 32641) printf("32641: eps %1.9E Az %1.12E Azk %1.12E h %1.10E gamma %1.10E LapAz %1.12E "
+//			"h Azdot0 %1.10E\n",
+//			eps, p_Az_array_next[iMinor], p_Az_array[iMinor],
+//			h_use,gamma,
+//			p_Lap_Aznext[iMinor],
+//			h_use*p_Azdot0[iMinor]);
+
 #endif
 //		if (iMinor == 25526) printf("\n\n########\nJacobi_x 25526 GPU: %1.14E eps %1.14E gamma %1.14E LapCoeffself %1.14E\n",
 //			p_Jacobi_x[iMinor], eps, p_gamma[iMinor], p_LapCoeffSelf[iMinor]);
@@ -15047,41 +15054,22 @@ __global__ void kernelGetLap_minor(
 
 
 	long const iMinor = blockDim.x*blockIdx.x + threadIdx.x;
-
 	long const iVertex = threadsPerTileMajor*blockIdx.x + threadIdx.x; // only meaningful threadIdx.x < threadsPerTileMajor
-
-
-
+	
 	long const StartMinor = threadsPerTileMinor*blockIdx.x;
-
 	long const StartMajor = threadsPerTileMajor*blockIdx.x;
-
 	long const EndMinor = StartMinor + threadsPerTileMinor;
-
 	long const EndMajor = StartMajor + threadsPerTileMajor;
 
 
-
-	//	sum1[threadIdx.x] = 0.0;
-
-	//	sum2[threadIdx.x] = 0.0;
-
-	//	sum3[threadIdx.x] = 0.0; // save for verts
-
-
-
 	shared_pos[threadIdx.x] = p_info[iMinor].pos;
-
 	shared_Az[threadIdx.x] = p_Az[iMinor];
-
 	structural info;
 
 	if (threadIdx.x < threadsPerTileMajor) {
 
 		info = p_info[iVertex + BEGINNING_OF_CENTRAL];
-
 		shared_pos_verts[threadIdx.x] = info.pos;
-
 		shared_Az_verts[threadIdx.x] = p_Az[iVertex + BEGINNING_OF_CENTRAL];
 
 	};
@@ -15787,7 +15775,7 @@ __global__ void kernelGetLap_minor(
 
 				if (TESTTRI3) {
 
-					printf("iMinor %d izNeighMinor[i] %d ourAz %1.9E theirs %1.9E contrib %1.9E \n",
+					printf("iMinor %d izNeighMinor[i] %d ourAz %1.9E theirs %1.9E contrib %1.12E \n",
 
 						iMinor, izNeighMinor[i], ourAz, oppAz,
 
@@ -15999,11 +15987,12 @@ __global__ void kernelComputeJacobianValues(
 {
 
 	__shared__ f64_vec2 shared_pos[threadsPerTileMinor];
-	__shared__ f64_vec2 shared_pos_verts[threadsPerTileMajor];  
+	__shared__ f64_vec2 shared_pos_verts[threadsPerTileMajor];  // 16K for these - plentiful
 //	__shared__ f64 shared_Az[threadsPerTileMinor];
 //	__shared__ f64 shared_Az_verts[threadsPerTileMajor];    // 4.5 things
 
-	__shared__ f64 d_eps_by_dbeta_j[SQUASH_POINTS*threadsPerTileMinor];  // 24-3 = max 21 things / thread
+	f64 d_eps_by_dbeta_j[SQUASH_POINTS];  // 24 max
+
 	// __shared__ f64 d_eps_by_dbeta_j_verts[SQUASH_POINTS*threadsPerTileMajor];
 
 	// need to acquire sums of products of these so need 1 for every tri and vertex
@@ -16021,30 +16010,22 @@ __global__ void kernelComputeJacobianValues(
 	long const EndMajor = StartMajor + threadsPerTileMajor;
 
 	shared_pos[threadIdx.x] = p_info[iMinor].pos;
-//	shared_Az[threadIdx.x] = p_Az[iMinor];
 	structural info;
 
 	if (threadIdx.x < threadsPerTileMajor) {
 		info = p_info[iVertex + BEGINNING_OF_CENTRAL];
 		shared_pos_verts[threadIdx.x] = info.pos;
-	//	shared_Az_verts[threadIdx.x] = p_Az[iVertex + BEGINNING_OF_CENTRAL];
 	};
 	
 	__syncthreads();
 	
-//	f64 ourAz, oppAz, prevAz, nextAz;
 	f64_vec2 opppos, prevpos, nextpos;
 	int iWhich, j;
 
-	// Better if we use same share to do both tris and verts
-	// Idea: let's make it called for # minor threads, each loads 1 shared value,
-	// and only half the threads run first for the vertex part. That is a pretty good idea.
-
 	if (threadIdx.x < threadsPerTileMajor) {
 
-		memset(&(d_eps_by_dbeta_j[SQUASH_POINTS*threadIdx.x]), 0, sizeof(f64)*SQUASH_POINTS);
+		memset(d_eps_by_dbeta_j, 0, sizeof(f64)*SQUASH_POINTS);
 
-	//	f64 Our_integral_Lap_Az = 0.0;
 		f64 AreaMinor = 0.0;
 		long izTri[MAXNEIGH];
 		char szPBC[MAXNEIGH];
@@ -16060,13 +16041,10 @@ __global__ void kernelComputeJacobianValues(
 
 		if ((izTri[iprev] >= StartMinor) && (izTri[iprev] < EndMinor))
 		{
-	//		prevAz = shared_Az[izTri[iprev] - StartMinor];
 			prevpos = shared_pos[izTri[iprev] - StartMinor];
 		} else {
-	//		prevAz = p_Az[izTri[iprev]];
 			prevpos = p_info[izTri[iprev]].pos;
 		}
-
 		if (szPBC[iprev] == ROTATE_ME_CLOCKWISE) prevpos = Clockwise_d*prevpos;
 		if (szPBC[iprev] == ROTATE_ME_ANTICLOCKWISE) prevpos = Anticlockwise_d*prevpos;
 
@@ -16158,7 +16136,7 @@ __global__ void kernelComputeJacobianValues(
 			iWhich = p_indic[izTri[inext]];
 			if (iWhich > 0) {
 				d_eps_by_dbeta_j[iWhich-1] += 0.5*((info.pos.y-opppos.y)*edge_normal.x
-					- (opppos.x-info.pos.x)*edge_normal.y) / area_quadrilateral;
+					+ (opppos.x-info.pos.x)*edge_normal.y) / area_quadrilateral;
 				// Just add unnomralized here
 			}
 			iWhich = p_indic[iVertex + BEGINNING_OF_CENTRAL];
@@ -16218,12 +16196,14 @@ __global__ void kernelComputeJacobianValues(
 		
 		f64 gamma = pgamma[iVertex + BEGINNING_OF_CENTRAL];
 		for (iWhich = 0; iWhich < SQUASH_POINTS; iWhich++)
-			d_eps_by_dbeta_j[iWhich] *= h_use*gamma/AreaMinor; 
+			d_eps_by_dbeta_j[iWhich] *= -h_use*gamma/AreaMinor;
 		
 		// d eps_i / d x_j =  [i==j]*1 - h gamma d[Lap here]/dx_j
-		if (p_indic[iVertex + BEGINNING_OF_CENTRAL]) d_eps_by_dbeta_j[SQUASH_POINTS*threadIdx.x + p_indic[iVertex + BEGINNING_OF_CENTRAL] - 1] += 1.0;
+		if (p_indic[iVertex + BEGINNING_OF_CENTRAL] > 0) d_eps_by_dbeta_j[p_indic[iVertex + BEGINNING_OF_CENTRAL] - 1] += 1.0;
 		// p_indic[iVertex + BEGINNING_OF_CENTRAL]-1 is the number of its volley. Stupid system.
 
+	//	if (p_indic[iVertex + BEGINNING_OF_CENTRAL] == 2) printf("indic 2 found at %d; deps = %1.9E\n", iVertex + BEGINNING_OF_CENTRAL,
+	//		d_eps_by_dbeta_j[p_indic[iVertex + BEGINNING_OF_CENTRAL] - 1]);
 		
 	//	p_LapAz[iVertex + BEGINNING_OF_CENTRAL] = Our_integral_Lap_Az / AreaMinor;
 	//	p_AreaMinor[iVertex + BEGINNING_OF_CENTRAL] = AreaMinor; // reset just because otherwise we're inconsistent about area/position in a subcycle
@@ -16233,35 +16213,37 @@ __global__ void kernelComputeJacobianValues(
 		memcpy(&(p_Jacobianesque_list[(iVertex + BEGINNING_OF_CENTRAL)*SQUASH_POINTS]),
 			d_eps_by_dbeta_j, sizeof(f64)*SQUASH_POINTS); // d eps_i / dbeta_j
 
-	}; // was thread in the first half of the block
+	//	if (iVertex + BEGINNING_OF_CENTRAL == MyMaxIndex) {
+	//		for (j = 0; j < SQUASH_POINTS; j++)
+	//			printf("%d : coeff %d : %1.9E \n", iVertex + BEGINNING_OF_CENTRAL, j,
+	//				d_eps_by_dbeta_j[j]);
+	//	}
 
+	}; // was thread in the first half of the block
 	
-	memset(&(d_eps_by_dbeta_j[SQUASH_POINTS*threadIdx.x]), 0, sizeof(f64)*SQUASH_POINTS);
+	
+	memset(d_eps_by_dbeta_j, 0, sizeof(f64)*SQUASH_POINTS);
 
 	info = p_info[iMinor];
 	long izNeighMinor[6];
 	char szPBC[6];
 	memcpy(izNeighMinor, p_izNeighMinor + iMinor * 6, sizeof(long) * 6);
 	memcpy(szPBC, p_szPBCtriminor + iMinor * 6, sizeof(char) * 6);
-	if ((info.flag == OUTER_FRILL) || (info.flag == INNER_FRILL)) {
+	if ((info.flag == OUTER_FRILL) || (info.flag == INNER_FRILL)) return;
 
 	//	p_LapAz[iMinor] = 0.0;
-	} else {
-
+	// } else {
 		f64 AreaMinor = 0.0;
 		short inext, i = 0, iprev = 5;
 		if ((izNeighMinor[iprev] >= StartMinor) && (izNeighMinor[iprev] < EndMinor))
 		{
-	//		prevAz = shared_Az[izNeighMinor[iprev] - StartMinor];
 			prevpos = shared_pos[izNeighMinor[iprev] - StartMinor];
 		} else {
 			if ((izNeighMinor[iprev] >= StartMajor + BEGINNING_OF_CENTRAL) &&
 				(izNeighMinor[iprev] < EndMajor + BEGINNING_OF_CENTRAL))
 			{
-		//		prevAz = shared_Az_verts[izNeighMinor[iprev] - BEGINNING_OF_CENTRAL - StartMajor];
 				prevpos = shared_pos_verts[izNeighMinor[iprev] - BEGINNING_OF_CENTRAL - StartMajor];
 			} else {
-			//	prevAz = p_Az[izNeighMinor[iprev]];
 				prevpos = p_info[izNeighMinor[iprev]].pos;
 			};
 		};
@@ -16271,16 +16253,13 @@ __global__ void kernelComputeJacobianValues(
 		i = 0;
 		if ((izNeighMinor[i] >= StartMinor) && (izNeighMinor[i] < EndMinor))
 		{
-	//		oppAz = shared_Az[izNeighMinor[i] - StartMinor];
 			opppos = shared_pos[izNeighMinor[i] - StartMinor];
 		} else {
 			if ((izNeighMinor[i] >= StartMajor + BEGINNING_OF_CENTRAL) &&
 				(izNeighMinor[i] < EndMajor + BEGINNING_OF_CENTRAL))
 			{
-	//			oppAz = shared_Az_verts[izNeighMinor[i] - BEGINNING_OF_CENTRAL - StartMajor];
 				opppos = shared_pos_verts[izNeighMinor[i] - BEGINNING_OF_CENTRAL - StartMajor];
 			} else {
-	//			oppAz = p_Az[izNeighMinor[i]];
 				opppos = p_info[izNeighMinor[i]].pos;
 			};
 		};
@@ -16290,6 +16269,7 @@ __global__ void kernelComputeJacobianValues(
 #pragma unroll 
 		for (i = 0; i < 6; i++)
 		{
+			
 			inext = i + 1; if (inext > 5) inext = 0;
 			iprev = i - 1; if (iprev < 0) iprev = 5;
 
@@ -16340,7 +16320,7 @@ __global__ void kernelComputeJacobianValues(
 				(opppos.dot(opppos) > 1.0001*1.0001*FRILL_CENTROID_INNER_RADIUS_d*FRILL_CENTROID_INNER_RADIUS_d))
 			{
 			//	Our_integral_Lap_Az += integ_grad_Az.dot(edge_normal) / area_quadrilateral;
-				
+		
 				iWhich = p_indic[izNeighMinor[iprev]];
 				if (iWhich > 0) {
 					d_eps_by_dbeta_j[iWhich - 1] += 0.5*((opppos.y - info.pos.y)*edge_normal.x
@@ -16351,11 +16331,17 @@ __global__ void kernelComputeJacobianValues(
 					d_eps_by_dbeta_j[iWhich - 1] += 0.5*((nextpos.y - prevpos.y)*edge_normal.x
 						- (nextpos.x - prevpos.x)*edge_normal.y) / area_quadrilateral;
 				}
+				
+			//	if (izNeighMinor[inext] >= NMINOR) {
+			//		printf("%d  izNeighMinor[inext] %d \n", iMinor, izNeighMinor[inext]);
+			//	} else {
 				iWhich = p_indic[izNeighMinor[inext]];
 				if (iWhich > 0) {
 					d_eps_by_dbeta_j[iWhich - 1] += 0.5*((info.pos.y - opppos.y)*edge_normal.x
-						- (opppos.x - info.pos.x)*edge_normal.y) / area_quadrilateral;
-				}
+								+ (opppos.x - info.pos.x)*edge_normal.y) / area_quadrilateral;
+					};
+					
+			//	};
 				iWhich = p_indic[iMinor];
 				if (iWhich > 0) {
 					d_eps_by_dbeta_j[iWhich - 1] += 0.5*((prevpos.y - nextpos.y)*edge_normal.x
@@ -16366,20 +16352,36 @@ __global__ void kernelComputeJacobianValues(
 				(nextpos.x + info.pos.x + opppos.x))*edge_normal.x;			
 			prevpos = opppos;
 			opppos = nextpos;
+			
 		};
 
 		f64 gamma = pgamma[iMinor];
 		for (iWhich = 0; iWhich < SQUASH_POINTS; iWhich++)
-			d_eps_by_dbeta_j[iWhich] *= h_use*gamma / AreaMinor;
+			d_eps_by_dbeta_j[iWhich] *= -h_use*gamma / AreaMinor;
 
 		// d eps_i / d x_j =  [i==j]*1 - h gamma d[Lap here]/dx_j
-		if (p_indic[iMinor]) d_eps_by_dbeta_j[SQUASH_POINTS*threadIdx.x + p_indic[iMinor] - 1] += 1.0;
+		//if (p_indic[iMinor] > SQUASH_POINTS) {
+		//	printf("ERROR %d p_indic[iMinor] %d \n", iMinor, p_indic[iMinor]);
+		//	// $$$$$$$$$$$
+		//	//    DEBUG
+		//	// $$$$$$$$$$$
+		//} else {
+			if (p_indic[iMinor] > 0) d_eps_by_dbeta_j[p_indic[iMinor] - 1] += 1.0;
+		//}
 		// p_indic[iMinor]-1 is the number of its volley. Stupid system.
 		// For simplicity let's say we save off into global memory.
 
-		memcpy(&(p_Jacobianesque_list[iMinor*SQUASH_POINTS]),
-			d_eps_by_dbeta_j, sizeof(f64)*SQUASH_POINTS); // d eps_i / dbeta_j
-	};
+	//	if (p_indic[iMinor]>0) printf("indic %d found at %d; deps = %1.9E\n", p_indic[iMinor], iMinor,
+	//		d_eps_by_dbeta_j[p_indic[iMinor] - 1]);
+//
+		memcpy(&(p_Jacobianesque_list[iMinor*SQUASH_POINTS]),d_eps_by_dbeta_j, 
+			sizeof(f64)*SQUASH_POINTS); // d eps_i / dbeta_j
+
+	//	if (iMinor == MyMaxIndex) {
+	//		for (j = 0; j < SQUASH_POINTS; j++)
+	//			printf("%d : coeff %d : %1.9E \n", iMinor, j, d_eps_by_dbeta_j[j]);
+	//	};
+	//};
 	
 }
 

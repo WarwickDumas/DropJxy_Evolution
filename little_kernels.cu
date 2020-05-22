@@ -1089,16 +1089,30 @@ __global__ void kernelCalculateOverallVelocitiesVertices(
 
 			Area_tri = 0.5*fabs(pos0.x*info.pos.y + info.pos.x*pos1.y + pos1.x*pos0.y
 				              - info.pos.x*pos0.y - pos1.x*info.pos.y - pos0.x*pos1.y);
-			
-			wt0 = (shards_n.n[i] + shards_n_n.n[i]) / 12.0
-				+ (shards_n.n[inext] + shards_n_n.n[inext]) / 24.0
-				+ (shards_n.n_cent + shards_n_n.n_cent) / 24.0;
-			wt1 = (shards_n.n[i] + shards_n_n.n[i]) / 24.0
-				+ (shards_n.n[inext] + shards_n_n.n[inext]) / 12.0
-				+ (shards_n.n_cent + shards_n_n.n_cent) / 24.0;
-			wtcent = (shards_n.n[i] + shards_n_n.n[i]) / 24.0
-				+ (shards_n.n[inext] + shards_n_n.n[inext]) / 24.0
-				+ (shards_n.n_cent + shards_n_n.n_cent) / 12.0;
+
+#define MIN_n_DENSITY_FOR_MESH 2.5e16
+
+			// 5e16 means 20 times fewer vertices through space than in the
+			// initial mesh. 1e16 means 100 times fewer, spacing 10 times larger.
+			// 2.5e16 is 40 times fewer, sqrt(40) ~ 6.5 times spacing.
+
+			f64 ntot_i = shards_n.n[i] + shards_n_n.n[i];
+			f64 ntot_next = shards_n.n[inext] + shards_n_n.n[inext];
+			f64 ntot_cent = shards_n.n_cent + shards_n_n.n_cent;
+			if (ntot_i < MIN_n_DENSITY_FOR_MESH) ntot_i = MIN_n_DENSITY_FOR_MESH;
+			if (ntot_next < MIN_n_DENSITY_FOR_MESH) ntot_next = MIN_n_DENSITY_FOR_MESH;
+			if (ntot_cent < MIN_n_DENSITY_FOR_MESH) ntot_cent = MIN_n_DENSITY_FOR_MESH;
+
+
+			wt0 = ntot_i / 12.0
+				+ ntot_next / 24.0
+				+ ntot_cent / 24.0;
+			wt1 = ntot_i / 24.0
+				+ ntot_next / 12.0
+				+ ntot_cent / 24.0;
+			wtcent = ntot_i / 24.0
+				+ ntot_next / 24.0
+				+ ntot_cent / 12.0;
 
 			numer.x += 2.0*Area_tri*(pos0.x*wt0 + pos1.x*wt1 + info.pos.x*wtcent);
 			numer.y += 2.0*Area_tri*(pos0.y*wt0 + pos1.y*wt1 + info.pos.y*wtcent);
@@ -2291,6 +2305,7 @@ __global__ void kernelReturnMaximumInBlock
 
 	long const index = blockDim.x*blockIdx.x + threadIdx.x;
 	shared_f[threadIdx.x] = fabs(p_f[index]);
+	iMax[threadIdx.x] = index;
 	if (p_indic[index] != 0) shared_f[threadIdx.x] = 0.0;
 
 	__syncthreads();
@@ -2859,7 +2874,55 @@ __global__ void kernelAccumulateSumOfSquares1(
 		p_SS[blockIdx.x] = sumdata1[0];
 	}
 }
+__global__ void MultiplyVector(
+	f64 * __restrict__ multiply1,
+	f64 * __restrict__ multiply2,
+	f64 * __restrict__ output
+) {
+	long const index = blockDim.x*blockIdx.x + threadIdx.x;
+	output[index] = multiply1[index] * multiply2[index];
+}
 
+__global__ void kernelAccumulateSumOfQuarts(
+	f64 * __restrict__ p_eps,
+	f64 * __restrict__ p_SS)
+{
+	long const index = blockDim.x*blockIdx.x + threadIdx.x;
+
+	__shared__ f64 sumdata1[threadsPerTileMajorClever];
+
+	f64 epsilon_n = p_eps[index];
+
+	sumdata1[threadIdx.x] = epsilon_n*epsilon_n*epsilon_n*epsilon_n;
+
+	__syncthreads();
+
+	int s = blockDim.x;
+	int k = s / 2;
+
+	while (s != 1) {
+		if (threadIdx.x < k)
+		{
+			sumdata1[threadIdx.x] += sumdata1[threadIdx.x + k];
+		};
+		__syncthreads();
+
+		// Modify for case blockdim not 2^n:
+		if ((s % 2 == 1) && (threadIdx.x == k - 1)) {
+			sumdata1[threadIdx.x] += sumdata1[threadIdx.x + s - 1];
+		};
+		// In case k == 81, add [39] += [80]
+		// Otherwise we only get to 39+40=79.
+		s = k;
+		k = s / 2;
+		__syncthreads();
+	};
+
+	if (threadIdx.x == 0)
+	{
+		p_SS[blockIdx.x] = sumdata1[0];
+	}
+}
 __global__ void kernelAccumulateDotProducts(
 	f64 * __restrict__ p_x1, f64 * __restrict__ p_y1,
 	f64 * __restrict__ p_x2, f64 * __restrict__ p_y2,

@@ -221,6 +221,15 @@ __global__ void kernelAddToAz(
 	long * p_indicator,
 	f64 * pAz
 );
+__global__ void MultiplyVector(
+	f64 * __restrict__ multiply1,
+	f64 * __restrict__ multiply2,
+	f64 * __restrict__ output
+);
+
+__global__ void kernelAccumulateSumOfQuarts(
+	f64 * __restrict__ p_eps,
+	f64 * __restrict__ p_SS);
 
 __global__ void kernelCentroidVelocitiesTriangles(
 	f64_vec2 * __restrict__ p_overall_v_major,

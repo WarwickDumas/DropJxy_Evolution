@@ -21,7 +21,7 @@ extern void print_matrix(char* desc, lapack_int m, lapack_int n, double* a, lapa
 extern void print_int_vector(char* desc, lapack_int n, lapack_int* a);
    
 extern TriMesh X4;
-    
+     
 #define BWD_SUBCYCLE_FREQ  1
 #define BWD_STEP_RATIO     1    // divide substeps by this for bwd
 #define NUM_BWD_ITERATIONS 4
@@ -29,7 +29,7 @@ extern TriMesh X4;
             
 // This will be slow but see if it solves it.
                    
-#define CHOSEN  90059
+#define CHOSEN  32641
 #define CHOSEN1 1000110301
 #define CHOSEN2 1000110497 
 #define VERTCHOSEN 25627
@@ -108,7 +108,7 @@ __constant__ f64 ionize_coeffs[32][5][5];
 f64 ionize_coeffs_host[32][5][5];  
 __constant__ f64 ionize_temps[32][10];
 f64 ionize_temps_host[32][10];
-
+__constant__ long MyMaxIndex;
 __device__ __constant__ f64 billericay;
 __constant__ f64 Ez_strength;
 f64 EzStrength_;
@@ -768,7 +768,7 @@ void SolveBackwardAzAdvanceJ3LS(f64 hsub,
 	cuSyst * pX_use)
 {  
 	f64 L2eps;
-	f64 beta[3];
+	f64 beta[SQUASH_POINTS];
 	Tensor3 mat;
 	f64 RSS;
 	int iTile;
@@ -820,15 +820,18 @@ void SolveBackwardAzAdvanceJ3LS(f64 hsub,
 		pX_use->p_info, pX_use->p_tri_neigh_index, p_Jacobi_x);
 	Call(cudaThreadSynchronize(), "cudaTS ResetFrills Jacobi");
 	
+	f64 L4L2ratio = 0.0;
+
 //	FILE * fpdbg = fopen("J3LS_2.txt", "w");
 	L2eps = -1.0;
-
+	bool bSpitOutErrorAfter = false;
+	long iMax0;
 	do
 	{
 		// Now we want to create another regressor, let it be called p_regressor_n
 		// Let p_Jacobi_x act as AzNext
 
-		if ((iIteration > 2500) && (iIteration % 3 == 0)) {
+		if ((iIteration > 4) && (L4L2ratio > 11.0) && (iIteration % 2 == 0)) {
 			
 			printf("\nDoing the smash! iteration %d\n", iIteration);
 
@@ -856,7 +859,23 @@ void SolveBackwardAzAdvanceJ3LS(f64 hsub,
 					};
 				};
 				long ii = number_set + 1;
-				cudaMemcpy(&(p_indicator[iMax]), &ii, sizeof(f64), cudaMemcpyHostToDevice);
+				cudaMemcpy(&(p_indicator[iMax]), &ii, sizeof(long), cudaMemcpyHostToDevice);
+
+				//if (number_set == 0)
+				//{
+				//	long * longaddress;
+				//	Call(cudaGetSymbolAddress((void **)(&longaddress), MyMaxIndex),
+				//		"cudaGetSymbolAddress((void **)(&longaddress), MyMaxIndex)");
+				//	Call(cudaMemcpy(longaddress, &iMax, sizeof(long), cudaMemcpyHostToDevice),
+				//		"cudaMemcpy(longaddress, &iMax, sizeof(long), cudaMemcpyHostToDevice)");
+				//	f64 tempf64;
+				//	cudaMemcpy(&tempf64, &(p_epsilon[iMax]), sizeof(f64), cudaMemcpyDeviceToHost);
+				//	printf("\nError at iMax %1.14E\n\n", tempf64);
+				//	bSpitOutErrorAfter = true;
+				//	iMax0 = iMax;
+				//};
+
+				//printf("%d: %d  || ", ii, iMax);
 
 				number_set++;
 				// Just do this 24 times ... dumbest way possible but nvm.
@@ -878,6 +897,7 @@ void SolveBackwardAzAdvanceJ3LS(f64 hsub,
 				//	}
 				//};
 			} while (number_set < SQUASH_POINTS);
+			//printf("\n");
 
 			kernelComputeJacobianValues << <numTriTiles, threadsPerTileMinor >> > (
 				pX_use->p_info,
@@ -893,7 +913,7 @@ void SolveBackwardAzAdvanceJ3LS(f64 hsub,
 				p_Jacobian_list // needs to be NMINOR * SQUASH_POINTS
 				);
 			Call(cudaThreadSynchronize(), "cudaTS CollectJacobian");
-			
+
 			AggregateSmashMatrix << <numTilesMinor * 2, threadsPerTileMajor >> > (
 				p_Jacobian_list,
 				p_epsilon,
@@ -910,14 +930,23 @@ void SolveBackwardAzAdvanceJ3LS(f64 hsub,
 			memset(vector, 0, sizeof(f64)*SQUASH_POINTS);
 			for (iTile = 0; iTile < numTilesMinor * 2; iTile++)
 			{
+			//	for (int j = 0; j < SQUASH_POINTS; j++)
+			//		if (p_matrix_blocks_host[j * SQUASH_POINTS + j + iTile*SQUASH_POINTS*SQUASH_POINTS] != 0.0) 
+			//			printf("iTile %d contrib to (%d, %d) %1.9E | \n", iTile,j,j, p_matrix_blocks_host[j*SQUASH_POINTS + j + iTile*SQUASH_POINTS*SQUASH_POINTS]);
+				 
 				for (int i = 0; i < SQUASH_POINTS; i++)
 				{
-					for (int j = 0; i < SQUASH_POINTS; i++)
+					for (int j = 0; j < SQUASH_POINTS; j++)
 						matrix[i*SQUASH_POINTS+j] += p_matrix_blocks_host[i*SQUASH_POINTS+j+iTile*SQUASH_POINTS*SQUASH_POINTS];
+					
 					// Note that the matrix is symmetric so i, j order doesn't matter anyway.
-					vector[i] += p_vector_blocks_host[i+iTile*SQUASH_POINTS];
+					vector[i] -= p_vector_blocks_host[i+iTile*SQUASH_POINTS];
+
+					// INSERTED THE MINUS HERE.
+
 				};
-			};
+			}; 
+		//	printf("\n");
 
 			lapack_int ipiv[SQUASH_POINTS];
 
@@ -926,7 +955,16 @@ void SolveBackwardAzAdvanceJ3LS(f64 hsub,
 				Nrhscols = 1, // ldb
 				Nrhsrows = SQUASH_POINTS, info;
 			
-			printf("going to call dgesv:\b");
+		//	printf("going to call dgesv:\n");
+
+			//for (int i = 0; i < SQUASH_POINTS; i++)
+			//{
+			//	for (int j = 0; j < SQUASH_POINTS; j++)
+			//	{
+			//		printf("%1.2E ", matrix[i*SQUASH_POINTS + j]);
+			//	};
+			//	printf("\n");
+			//};
 
 			info = LAPACKE_dgesv(LAPACK_ROW_MAJOR,
 				Nrows, 1, matrix,
@@ -936,11 +974,17 @@ void SolveBackwardAzAdvanceJ3LS(f64 hsub,
 			if (info > 0) {
 				printf("The diagonal element of the triangular factor of A,\n");
 				printf("U(%i,%i) is zero, so that A is singular;\n", info, info);
-				printf("the solution could not be computed.\n");
+				printf("the solution could not be computed.\n\a");
+				getch();
 			} 	else {
-				printf("LAPACKE_dgesv ran successfully.\n");
+			//	printf("LAPACKE_dgesv ran successfully.\n");
 				memcpy(beta, vector, SQUASH_POINTS * sizeof(f64));
 
+			//	printf("===================\n");
+			//	for (int j = 0; j < SQUASH_POINTS; j++)
+			//		printf("%d : change %1.12E \n", j, beta[j]);
+			//	printf("===================\n");
+				
 				CallMAC(cudaMemcpyToSymbol(beta_n_c, beta, SQUASH_POINTS * sizeof(f64)));
 				// proper name for the result.
 				// But beta is the set of coefficients on a set of individual dummies
@@ -993,16 +1037,21 @@ void SolveBackwardAzAdvanceJ3LS(f64 hsub,
 				pX_use->p_AreaMinor
 				);
 			Call(cudaThreadSynchronize(), "cudaTS Get Lap Jacobi 2");
+//
+//			kernelCreate_further_regressor << <numTilesMinor, threadsPerTileMinor >> > (
+//				pX_use->p_info,
+//				hsub,
+//				p_regressor_n,
+//				p_temp4,
+//				p_LapCoeffself,
+//				p_gamma,
+//				p_regressor_i);
+//			Call(cudaThreadSynchronize(), "cudaTS Create further regressor");
+//
 
-			kernelCreate_further_regressor << <numTilesMinor, threadsPerTileMinor >> > (
-				pX_use->p_info,
-				hsub,
-				p_regressor_n,
-				p_temp4,
-				p_LapCoeffself,
-				p_gamma,
-				p_regressor_i);
-			Call(cudaThreadSynchronize(), "cudaTS Create further regressor");
+			MultiplyVector << <numTilesMinor, threadsPerTileMinor >> >
+				(p_Jacobi_x, p_epsilon, p_regressor_i);
+			Call(cudaThreadSynchronize(), "cudaTS Multiply Jacobi*epsilon");
 
 			// Wipe out regressor_i with epsilon: J2RLS:
 			// Doesn't help.
@@ -1093,7 +1142,7 @@ void SolveBackwardAzAdvanceJ3LS(f64 hsub,
 
 			beta[0] = -product.x; beta[1] = -product.y; beta[2] = -product.z;
 
-			printf("L2eps %1.9E beta %1.8E %1.8E %1.8E ", L2eps, beta[0], beta[1], beta[2]);
+			printf("L2eps %1.9E beta %1.8E %1.8E %1.8E \n", L2eps, beta[0], beta[1], beta[2]);
 
 			//	printf("Verify: \n");
 			//	f64 z1 = mat.xx*beta[0] + mat.xy*beta[1] + mat.xz*beta[2];
@@ -1137,7 +1186,7 @@ void SolveBackwardAzAdvanceJ3LS(f64 hsub,
 		printf("iIteration = %d ", iIteration);
 		// 1. Create regressor:
 		// Careful with major vs minor + BEGINNING_OF_CENTRAL:
-
+		 
 		kernelGetLap_minor << <numTriTiles, threadsPerTileMinor >> > (
 			pX_use->p_info,
 			p_AzNext,
@@ -1175,9 +1224,25 @@ void SolveBackwardAzAdvanceJ3LS(f64 hsub,
 		RSS = 0.0; 
 		for (iTile = 0; iTile < numTilesMinor; iTile++) RSS += p_temphost3[iTile];
 		L2eps = sqrt(RSS / (f64)NMINOR);
-		printf("L2eps: %1.9E \n", L2eps);
+		printf("L2eps: %1.9E .. ", L2eps);
 
-		if (iIteration > 2500) {
+		kernelAccumulateSumOfQuarts << <numTilesMinor, threadsPerTileMinor >> >
+			(p_epsilon, p_temp1);
+		cudaMemcpy(p_temphost3, p_temp1, sizeof(f64)*numTilesMinor, cudaMemcpyDeviceToHost);
+		f64 RSQ = 0.0;
+		for (iTile = 0; iTile < numTilesMinor; iTile++) RSQ += p_temphost3[iTile];
+		f64 L4eps = sqrt(sqrt(RSQ / (f64)NMINOR));
+		printf("L4eps: %1.9E  ratio L4/L2 %1.9E \n", L4eps, L4eps / L2eps);
+		L4L2ratio = L4eps / L2eps;
+
+		//if (bSpitOutErrorAfter)
+	//	{
+//			f64 tempf64;
+		//	cudaMemcpy(&tempf64, &(p_epsilon[iMax0]), sizeof(f64), cudaMemcpyDeviceToHost);
+	//		printf("\nError at iMax0 %1.14E\n\n", tempf64);
+//		}
+
+		if (iIteration == 4001){ //(iIteration > 600) {
 			
 			// graphs:
 			cudaMemcpy(p_temphost1, p_epsilon, sizeof(f64)*NMINOR, cudaMemcpyDeviceToHost);
@@ -1191,8 +1256,7 @@ void SolveBackwardAzAdvanceJ3LS(f64 hsub,
 			RefreshGraphs(X1, AZSOLVERGRAPHS);
 			SetActiveWindow(hWnd);
 			Direct3D.pd3dDevice->Present(NULL, NULL, NULL, NULL);
-			printf("done graph");
-			getch();
+			printf("done graph\n");
 		};
 
 		if (iIteration == 4001) {
@@ -6326,7 +6390,7 @@ void PerformCUDA_Invoke_Populate(
 
 	// 2. cudaMemcpy system state from host: this happens always
 	// __________________________________________________________
-
+	 
 	// Note that we do always need an intermediate system on the host because
 	// cudaMemcpy is our MO.
 	pX_host->SendToDevice(cuSyst1);
@@ -6336,11 +6400,11 @@ void PerformCUDA_Invoke_Populate(
 	// Why not make a separate object containing the things that stay the same between typical runs?
 	// ie, what is a neighbour of what.
 	// info contains both pos and flag so that's not constant under advection; only neigh lists are.
-
+	 
 	printf("Done main cudaMemcpy to video memory.\n");
-	 
+	  
 	// Set up kernel L1/shared:
-	 
+	  
 	cudaDeviceSetCacheConfig(cudaFuncCachePreferShared); // default!
 	 
 	cudaFuncSetCacheConfig(kernelCreateShardModelOfDensities_And_SetMajorArea,
@@ -6352,6 +6416,8 @@ void PerformCUDA_Invoke_Populate(
 	cudaFuncSetCacheConfig(kernelPopulateBackwardOhmsLaw,
 		cudaFuncCachePreferL1); 
 	cudaFuncSetCacheConfig(kernelCalculate_ita_visc, 
+		cudaFuncCachePreferL1);
+	cudaFuncSetCacheConfig(kernelComputeJacobianValues,
 		cudaFuncCachePreferL1);
 
 	pX1 = &cuSyst1;
