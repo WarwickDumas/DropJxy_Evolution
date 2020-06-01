@@ -4,52 +4,52 @@
 // Corrected ionisation rate.
         
 
-#pragma once   
+#pragma once    
     
 
 #define PRECISE_VISCOSITY
-
+ 
 #define DEBUGTE               0
-
+ 
 #include <stdlib.h>
 #include <stdio.h>
-#include "lapacke.h"
+#include <math.h>
+#include <time.h>
+#include <windows.h>
+
 #include "mesh.h"
-       
+#include "lapacke.h"
+#include "FFxtubes.h"
+#include "cuda_struct.h"
+#include "flags.h"
+#include "kernel.h"
+#include "matrix_real.h"
+
 /* Auxiliary routines prototypes */
 extern void print_matrix(char* desc, lapack_int m, lapack_int n, double* a, lapack_int lda);
 extern void print_int_vector(char* desc, lapack_int n, lapack_int* a);
    
 extern TriMesh X4;
-     
+      
 #define BWD_SUBCYCLE_FREQ  1
 #define BWD_STEP_RATIO     1    // divide substeps by this for bwd
 #define NUM_BWD_ITERATIONS 4
 #define FWD_STEP_FACTOR    2    // multiply substeps by this for fwd
             
 // This will be slow but see if it solves it.
-                   
+                    
 #define CHOSEN  32641
-#define CHOSEN1 1000110301
-#define CHOSEN2 1000110497 
-#define VERTCHOSEN 25627
-//16331
- 
+#define CHOSEN1 98283
+#define CHOSEN2 98262
+#define VERTCHOSEN 24555
+#define VERTCHOSEN2 24534
+
+  
 #define ITERATIONS_BEFORE_SWITCH  18
 #define REQUIRED_IMPROVEMENT_RATE  0.98
 #define REQUIRED_IMPROVEMENT_RATE_J  0.985
 
-#include <math.h>
-#include <time.h>
-#include <stdio.h> 
-     
-#include "FFxtubes.h"
-#include "cuda_struct.h"
-#include "flags.h"
-#include "kernel.h"
-#include "mesh.h"
-#include "matrix_real.h"
-
+ 
 // This is the file for CUDA host code.
 #include "simulation.cu"
  
@@ -57,7 +57,7 @@ extern TriMesh X4;
 #define p_sqrtDN_Ti p_NTi
 #define p_sqrtDN_Te p_NTe
  
-#define DEFAULTSUPPRESSVERBOSITY false
+#define DEFAULTSUPPRESSVERBOSITY true
   
 extern surfacegraph Graph[7];
 extern D3D Direct3D;
@@ -70,7 +70,7 @@ bool bGlobalSaveTGraphs;
 
 long VERTS[3] = {15559, 15405, 15251};
 long iEquations[3];
-
+  
 extern long NumInnerFrills, FirstOuterFrill;
 __constant__ long NumInnerFrills_d, FirstOuterFrill_d;
 __constant__ long nBlocks, Nverts, uDataLen_d; // Nverts == numVertices 
@@ -156,7 +156,7 @@ f64 * p_sum_eps_deps_by_dbeta_x8_host;
 __device__ long * p_indicator;
 __device__ f64 * p_Jacobian_list;
 
-#define SQUASH_POINTS  20
+#define SQUASH_POINTS  24
 __device__ f64 * p_matrix_blocks;
 __device__ f64 * p_vector_blocks;
 
@@ -775,6 +775,7 @@ void SolveBackwardAzAdvanceJ3LS(f64 hsub,
 	char buffer[256];
 	int iIteration = 0;
 
+	HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
 	f64 matrix[SQUASH_POINTS*SQUASH_POINTS];
 	f64 vector[SQUASH_POINTS];
 
@@ -790,8 +791,8 @@ void SolveBackwardAzAdvanceJ3LS(f64 hsub,
 	kernelResetFrillsAz << <numTilesMinor, threadsPerTileMinor >> > (
 		pX_use->p_info, pX_use->p_tri_neigh_index,
 		p_AzNext);
-	Call(cudaThreadSynchronize(), "cudaTS ResetFrills further regressor");
-
+	Call(cudaThreadSynchronize(), "cudaTS ResetFrills Az");
+	  
 	kernelGetLap_minor << <numTriTiles, threadsPerTileMinor >> > (
 		pX_use->p_info,
 		p_AzNext,
@@ -831,7 +832,9 @@ void SolveBackwardAzAdvanceJ3LS(f64 hsub,
 		// Now we want to create another regressor, let it be called p_regressor_n
 		// Let p_Jacobi_x act as AzNext
 
-		if ((iIteration > 4) && (L4L2ratio > 11.0) && (iIteration % 2 == 0)) {
+		if (((iIteration > 4) && (L4L2ratio > 10.0) && (iIteration % 2 == 0))
+			|| ((iIteration > 1600) && (iIteration % 4 == 0))) // if things are messed up, try it anyway
+		{
 			
 			printf("\nDoing the smash! iteration %d\n", iIteration);
 
@@ -914,6 +917,17 @@ void SolveBackwardAzAdvanceJ3LS(f64 hsub,
 				);
 			Call(cudaThreadSynchronize(), "cudaTS CollectJacobian");
 
+			// *****************************************************************************************
+
+			// Thing is:
+			// The thing is of course, if you are at the back, then you just pissed it up because
+			// you did not anticipate the change in frill values when you change an individual next
+			// to the frill.
+
+			// *****************************************************************************************
+			// !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+
 			AggregateSmashMatrix << <numTilesMinor * 2, threadsPerTileMajor >> > (
 				p_Jacobian_list,
 				p_epsilon,
@@ -994,6 +1008,12 @@ void SolveBackwardAzAdvanceJ3LS(f64 hsub,
 					);
 				Call(cudaThreadSynchronize(), "cudaTS AddToAz");
 				// Think we probably are missing a minus: did we include it in the RHS vector?
+
+				kernelResetFrillsAz << <numTilesMinor, threadsPerTileMinor >> > (
+					pX_use->p_info, pX_use->p_tri_neigh_index,
+					p_AzNext);
+				Call(cudaThreadSynchronize(), "cudaTS ResetFrills Az");
+
 			}
 
 		} else {
@@ -1183,6 +1203,10 @@ void SolveBackwardAzAdvanceJ3LS(f64 hsub,
 		//	fprintf(jibble, "%d Az %1.14E Jac_added %1.14E \n",i, p_temphost1[i], p_temphost2[i]);
 		//fclose(jibble);
 
+
+	//	missing a ResetFrills. Though it follows linearly?
+
+
 		printf("iIteration = %d ", iIteration);
 		// 1. Create regressor:
 		// Careful with major vs minor + BEGINNING_OF_CENTRAL:
@@ -1213,6 +1237,26 @@ void SolveBackwardAzAdvanceJ3LS(f64 hsub,
 				p_bFailed
 				);
 		Call(cudaThreadSynchronize(), "cudaTS CreateEpsAndJacobi 1");
+		 
+
+		//// Now printf what's going on at the back:
+		//SetConsoleTextAttribute(hConsole, 10);
+		// 
+		//f64 eps1, eps2, A1, A2, LapA1, LapA2, Azdot01, Azdot02;
+		//cudaMemcpy(&eps1, &(p_epsilon[VERTCHOSEN + BEGINNING_OF_CENTRAL]), sizeof(f64), cudaMemcpyDeviceToHost);
+		//cudaMemcpy(&eps2, &(p_epsilon[VERTCHOSEN2 + BEGINNING_OF_CENTRAL]), sizeof(f64), cudaMemcpyDeviceToHost);
+		//cudaMemcpy(&A1, &(p_AzNext[VERTCHOSEN + BEGINNING_OF_CENTRAL]), sizeof(f64), cudaMemcpyDeviceToHost);
+		//cudaMemcpy(&A2, &(p_AzNext[VERTCHOSEN2 + BEGINNING_OF_CENTRAL]), sizeof(f64), cudaMemcpyDeviceToHost);
+		//cudaMemcpy(&LapA1, &(p_LapAzNext[VERTCHOSEN + BEGINNING_OF_CENTRAL]), sizeof(f64), cudaMemcpyDeviceToHost);
+		//cudaMemcpy(&LapA2, &(p_LapAzNext[VERTCHOSEN2 + BEGINNING_OF_CENTRAL]), sizeof(f64), cudaMemcpyDeviceToHost);
+		//cudaMemcpy(&Azdot01, &(p_Azdot0[VERTCHOSEN + BEGINNING_OF_CENTRAL]), sizeof(f64), cudaMemcpyDeviceToHost);
+		//cudaMemcpy(&Azdot02, &(p_Azdot0[VERTCHOSEN2 + BEGINNING_OF_CENTRAL]), sizeof(f64), cudaMemcpyDeviceToHost);
+		//printf("%d: eps %1.9E Az %1.9E Lap %1.9E Azdot0 %1.9E\n",
+		//	VERTCHOSEN, eps1, A1, LapA1, Azdot01);
+		//printf("%d: eps %1.9E Az %1.9E Lap %1.9E Azdot0 %1.9E\n",
+		//	VERTCHOSEN2, eps2, A2, LapA2, Azdot02); 
+		//SetConsoleTextAttribute(hConsole, 15);
+
 
 		kernelResetFrillsAz << <numTilesMinor, threadsPerTileMinor >> > (
 			pX_use->p_info, pX_use->p_tri_neigh_index, p_Jacobi_x);
@@ -1331,7 +1375,6 @@ void SolveBackwardAzAdvanceJ3LS(f64 hsub,
 //	fclose(fpdbg);
 
 	GlobalSuppressSuccessVerbosity = DEFAULTSUPPRESSVERBOSITY;
-
 }
 
 
@@ -5850,8 +5893,12 @@ int Compare_f64_vec3(f64_vec3 * p1, f64_vec3 * p2, long N)
  
 real GetIzPrescribed(real const t)
 {
+	static real const C_over_38e6PI = (PEAKCURRENT_STATCOULOMB*0.5 / (38.0e6*PEAKTIME))*cos(PIOVERPEAKTIME*0.5 / 19.0e6);
+	
 	real Iz = -PEAKCURRENT_STATCOULOMB * sin((t + ZCURRENTBASETIME) * 0.5* PIOVERPEAKTIME); // half pi / peaktime
-
+	real factor11 = 1.1 - 0.1 *exp(-t*38.0e6); // exp(2) = 13.6% at the end of the first cycle.	
+	Iz -= C_over_38e6PI*factor11*sin(PI + 38.0e6*PI*t);
+	
 	//printf("\nGetIzPrescribed : t + ZCURRENTBASETIME = %1.5E : %1.12E\n", t + ZCURRENTBASETIME, Iz);
 	return Iz;
 }
@@ -6592,6 +6639,11 @@ void PerformCUDA_RunStepsAndReturnSystem(cuSyst * pX_host)
 	cudaMemcpy(pX1->p_B, pX_half->p_B, sizeof(f64_vec3)*NMINOR, cudaMemcpyDeviceToDevice);
 	// For graphing :
 	cudaMemcpy(temp_array_host, p_LapAz, sizeof(f64)*NMINOR, cudaMemcpyDeviceToHost);
+
+	printf("Graphing data passed: %d : Lap %1.9E ; %d : Lap %1.9E \n",
+		VERTCHOSEN, temp_array_host[VERTCHOSEN + BEGINNING_OF_CENTRAL], VERTCHOSEN2, temp_array_host[VERTCHOSEN2 + BEGINNING_OF_CENTRAL]);
+	
+
 	cudaMemcpy(p_OhmsCoeffs_host, p_OhmsCoeffs, sizeof(OhmsCoeffs)*NMINOR, cudaMemcpyDeviceToHost);
 	
 	pX1->SendToHost(*pX_host);
@@ -6746,11 +6798,12 @@ void DebugNaN(cuSyst * p_cuSyst)
 			printf("Ti = %1.6E %d | ", cuSyst_host.p_T_minor[iMinor].Ti, iMinor);
 			bSwitch = 1;
 		}
-	};
+	}; 
 	if (bSwitch) {
 		printf("end, press p\n");  
 		while (getch() != 'p');
 		PerformCUDA_Revoke();
+		SendMessage(hWnd, WM_DESTROY, 0, 0);
 		exit(3);
 	}
 	else {
@@ -10266,7 +10319,7 @@ void cuSyst::PerformCUDA_AdvectionCompressionInstantaneous(//const
 		
 		cudaMemcpy(&tempf64, &(this->p_vie[VERTCHOSEN + BEGINNING_OF_CENTRAL].vez), sizeof(f64), cudaMemcpyDeviceToHost);
 		printf("\nvez [%d] : %1.13E\n\n", VERTCHOSEN, tempf64);
-
+		 
 		cudaMemcpy(&tempf64, &(NT_addition_rates_d[VERTCHOSEN].NiTi), sizeof(f64), cudaMemcpyDeviceToHost);
 		printf("\nNiTi rate [%d] : %1.13E\n\n", VERTCHOSEN, tempf64);
 		cudaMemcpy(&tempf64, &(NT_addition_rates_d[VERTCHOSEN].NeTe), sizeof(f64), cudaMemcpyDeviceToHost);
@@ -10277,7 +10330,7 @@ void cuSyst::PerformCUDA_AdvectionCompressionInstantaneous(//const
 		this->p_info,
 		this->p_izTri_vert,
 		this->p_szPBCtri_vert,
-
+ 
 		this->p_n_major,
 		this->p_T_minor + BEGINNING_OF_CENTRAL,
 
@@ -10559,7 +10612,7 @@ void cuSyst::PerformCUDA_AdvectionCompressionInstantaneous(//const
 			p_MAR_elec,
 			pX_half->p_AreaMinor, 
 			// WAS THIS POP'D BY A CALL SUCH AS GetLapMinor?
-
+			 
 			// outputs:
 			pX_half->p_vie,
 			pX_half->p_v_n
@@ -11156,7 +11209,7 @@ void cuSyst::PerformCUDA_Advance_noadvect(//const
 
 		cudaMemcpy(&tempf64, &(this->p_vie[VERTCHOSEN + BEGINNING_OF_CENTRAL].vez), sizeof(f64), cudaMemcpyDeviceToHost);
 		printf("\nvez [%d] : %1.13E\n\n", VERTCHOSEN, tempf64);
-		if (tempf64 <= 0.0) getch();
+		//if (tempf64 <= 0.0) getch();
 
 		cudaMemcpy(&tempf64, &(NT_addition_rates_d[VERTCHOSEN].NnTn), sizeof(f64), cudaMemcpyDeviceToHost);
 		printf("NnTn rate [%d] : %1.13E\n", VERTCHOSEN, tempf64);
@@ -12932,7 +12985,7 @@ void GosubAccelerate(long iSubcycles, f64 hsub, cuSyst * pX_use, cuSyst * pX_int
 		// up around anode.
 		printf("Iz0 = %1.14E SigmaIzz %1.14E EzStrength = %1.14E \n", Iz0, Sigma_Izz, EzStrength_);
 
-		if ((EzStrength_ > 1.0e5) || (EzStrength_ < -100.0)){
+		if ((EzStrength_ > 1.0e5) || (EzStrength_ < -1.0e4)){
 			for (iBlock = 0; iBlock < numTilesMinor; iBlock++)
 			{
 				printf("Block %d : Iz0 = %1.10E        ~~      ", iBlock, p_Iz0_summands_host[iBlock]);
@@ -12941,6 +12994,7 @@ void GosubAccelerate(long iSubcycles, f64 hsub, cuSyst * pX_use, cuSyst * pX_int
 			printf("time to stop, press p");
 			while (getch() != 'p');
 			PerformCUDA_Revoke();
+			SendMessage(hWnd, WM_DESTROY, 0, 0);
 			exit(2323);
 		}
 
@@ -13117,11 +13171,11 @@ void GosubAccelerate(long iSubcycles, f64 hsub, cuSyst * pX_use, cuSyst * pX_int
 			p_ROCAzduetoAdvection, false);
 		Call(cudaThreadSynchronize(), "cudaTS kernelAdvanceAzBwdEuler ");
 
-		kernelKillNeutral_v_OutsideRadius << <numTilesMinor, threadsPerTileMinor >> > (
-			pX_use->p_info,
-			p_v_n_target
-			);
-		Call(cudaThreadSynchronize(), "cudaTS kernelKillNeutral_v_OutsideRadius ");
+		//kernelKillNeutral_v_OutsideRadius << <numTilesMinor, threadsPerTileMinor >> > (
+		//	pX_use->p_info,
+		//	p_v_n_target
+		//	);
+		//Call(cudaThreadSynchronize(), "cudaTS kernelKillNeutral_v_OutsideRadius ");
 
 		// I am curious why vn is silly at the back,, ... but for now just going to kill it off.
 		
@@ -13384,6 +13438,34 @@ void Setup_residual_array()
 		p_Residuals
 		);
 	Call(cudaThreadSynchronize(), "cudaTS PopulateResiduals");
+
+}
+
+void Zap_the_back()
+{
+	kernelResetNeutralDensityOutsideRadius << <numTilesMinor, threadsPerTileMinor >> >
+		(
+			cuSyst1.p_info,
+			cuSyst1.p_n_major,
+			cuSyst1.p_n_minor
+			);
+	Call(cudaThreadSynchronize(), "cudaTS kernelResetDensityOutsideRadius");
+
+	kernelResetNeutralDensityOutsideRadius << <numTilesMinor, threadsPerTileMinor >> >
+		(
+			cuSyst2.p_info,
+			cuSyst2.p_n_major,
+			cuSyst2.p_n_minor
+			);
+	Call(cudaThreadSynchronize(), "cudaTS kernelResetDensityOutsideRadius");
+
+	kernelResetNeutralDensityOutsideRadius << <numTilesMinor, threadsPerTileMinor >> >
+		(
+			cuSyst3.p_info,
+			cuSyst3.p_n_major,
+			cuSyst3.p_n_minor
+			);
+	Call(cudaThreadSynchronize(), "cudaTS kernelResetDensityOutsideRadius");
 
 }
 

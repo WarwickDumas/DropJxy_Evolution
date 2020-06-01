@@ -19,6 +19,7 @@
 #define ID_FILE_EXIT                    40006
 #define ID_INITIALISE_IONISATIONSTEPS   40007
 #define ID_INITIALISE_RUNPOTENTIALSSOLVER 40008
+#define ID_INITIALISE_ZAPTHEBACK        40031
 #define ID_RUN_SIMULATIONSTEPS          40009
 #define ID_HELP_ABOUT                   40010
 #define ID_RUN_STOP                     40020

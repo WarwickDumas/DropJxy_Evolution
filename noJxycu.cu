@@ -2,7 +2,7 @@
 #define f64 double
 
 #define HISTORY										4
- 
+  
 #include <stdlib.h>
 #include <stdio.h>
 #include "lapacke.h"
@@ -34,16 +34,17 @@ extern void Setup_residual_array();
 #include "surfacegraph_tri.h"
 #include "avi_utils.cpp"     // for making .avi
 #include "kernel.h"
-
+ 
 //=======================================================
 // Declarations of functions:
-
+ 
 void RefreshGraphs(TriMesh & X, const int iGraphsFlag);
 LRESULT CALLBACK	WndProc(HWND, UINT, WPARAM, LPARAM);
 INT_PTR CALLBACK	About(HWND, UINT, WPARAM, LPARAM);
 INT_PTR CALLBACK	SetupBox(HWND, UINT, WPARAM, LPARAM);
 extern f64 GetEzShape__(f64 r);
 cudaError_t addWithCuda(int *c, const int *a, const int *b, unsigned int size);
+extern void Zap_the_back();
 
 extern f64 * temp_array_host;
 extern OhmsCoeffs * p_OhmsCoeffs_host;
@@ -884,7 +885,7 @@ void RefreshGraphs(TriMesh & X, // only not const because of such as Reset_verte
 				if (iGraph == 5) colour = 0xff000000; // total
 				if (iGraph == 6) colour = 0xff906545; // compressive: brown
 
-
+				 
 				linedata[0].x = -MAXX;
 				linedata[0].z = 3.44*xzscale;
 				linedata[0].y = MAXY + 4.0f - 0.9f*(float)iGraph;
@@ -1811,7 +1812,7 @@ case OHMSLAW:
 			X.pData[iVertex + BEGINNING_OF_CENTRAL].temp.y =
 				-X.pData[iVertex + BEGINNING_OF_CENTRAL].Azdot*overc
 				+ GetEzShape__(X.pData[iVertex + BEGINNING_OF_CENTRAL].pos.modulus())*EzStrength_;
-		}
+		} 
 		Graph[2].DrawSurface("Ez",
 			DATA_HEIGHT, (real *)(&(X.pData[0].temp.y)),
 			AZSEGUE_COLOUR, (real *)(&(X.pData[0].temp.x)), // use Jz's colour
@@ -1839,16 +1840,30 @@ case OHMSLAW:
 			AZSEGUE_COLOUR, (real *)(&(X.pData[0].temp.x)), // colour is for Jz?
 			false, GRAPH_VEZ, &X);
 
+
+		pVertex = X.X;
 		pdata = X.pData + BEGINNING_OF_CENTRAL;
 		for (iVertex = 0; iVertex < NUMVERTICES; iVertex++)
 		{
-			pdata->temp.x = temp_array_host[iVertex + BEGINNING_OF_CENTRAL];
+			pdata->temp.x = -p_temphost3[iVertex + BEGINNING_OF_CENTRAL]/c_;
+			++pVertex;
 			++pdata;
-		};
-		Graph[4].DrawSurface("Lap Az",
+		}
+		Graph[4].DrawSurface("-Azdot/c",
 			DATA_HEIGHT, (real *)(&(X.pData[0].temp.x)),
 			AZSEGUE_COLOUR, (real *)(&(X.pData[0].temp.x)),
-			true, GRAPH_LAPAZ, &X);
+			true,
+			GRAPH_AZDOT, &X);
+	//	pdata = X.pData + BEGINNING_OF_CENTRAL;
+	//	for (iVertex = 0; iVertex < NUMVERTICES; iVertex++)
+	//	{
+	//		pdata->temp.x = temp_array_host[iVertex + BEGINNING_OF_CENTRAL];
+	//		++pdata;
+	//	};
+	//	Graph[4].DrawSurface("Lap Az",
+	//		DATA_HEIGHT, (real *)(&(X.pData[0].temp.x)),
+	//		AZSEGUE_COLOUR, (real *)(&(X.pData[0].temp.x)),
+	//		true, GRAPH_LAPAZ, &X);
 		break;
 
 	case VIZVEZJZAZDOT:
@@ -3197,6 +3212,17 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
 			break;
 
+		case ID_INITIALISE_ZAPTHEBACK:
+
+			Zap_the_back();
+			printf("done");
+
+			RefreshGraphs(*pX, GlobalSpeciesToGraph); // sends data to graphs AND renders them
+			Direct3D.pd3dDevice->Present(NULL, NULL, NULL, NULL);
+
+
+			break;
+
 		case ID_RUN_STOP:
 
 			steps_remaining = 0;
@@ -3519,21 +3545,21 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			printf("GlobalEye %f %f %f  GlobalLookat %f %f %f\n",
 				GlobalEye.x, GlobalEye.y, GlobalEye.z, GlobalLookat.x, GlobalLookat.y, GlobalLookat.z);
 			break;
-	//	case 'G':
-	//		GlobalLookat.x += 0.4f;
-	//		printf("GlobalEye %f %f %f  GlobalLookat %f %f %f\n",
-	//			GlobalEye.x, GlobalEye.y, GlobalEye.z, GlobalLookat.x, GlobalLookat.y, GlobalLookat.z);
-	//		break;
-	//	case 'T':
-	//		GlobalLookat.y += 0.4f;
-	//		printf("GlobalLookat %f %f %f\n",
-	//			GlobalLookat.x, GlobalLookat.y, GlobalLookat.z);
-	//		break;
-	//	case 'B':
-	//		GlobalLookat.y -= 0.4f;
-	//		printf("GlobalLookat %f %f %f\n",
-	//			GlobalLookat.x, GlobalLookat.y, GlobalLookat.z);
-	//		break;
+		case 'G':
+			GlobalLookat.x += 0.4f;
+			printf("GlobalEye %f %f %f  GlobalLookat %f %f %f\n",
+				GlobalEye.x, GlobalEye.y, GlobalEye.z, GlobalLookat.x, GlobalLookat.y, GlobalLookat.z);
+			break;
+		case 'T':
+			GlobalLookat.y += 0.4f;
+			printf("GlobalLookat %f %f %f\n",
+				GlobalLookat.x, GlobalLookat.y, GlobalLookat.z);
+			break;
+		case 'B':
+			GlobalLookat.y -= 0.4f;
+			printf("GlobalLookat %f %f %f\n",
+				GlobalLookat.x, GlobalLookat.y, GlobalLookat.z);
+			break;
 		case '+':
 			GlobalCutaway = !GlobalCutaway;
 			break;
@@ -3622,9 +3648,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 		case '0':
 			steps_remaining = 0;
 			break;
-
-
-
+			
 		case 'Q':
 			newEye.z += 5.0f;
 			printf("newEye.z %1.9E\n", newEye.z);
@@ -3633,8 +3657,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			newEye.z -= 5.0f;
 			printf("newEye.z %1.9E\n", newEye.z);
 			break;
-
-		case 'T':
+		case 'X':
 			newEye.y += 5.0f;			
 			printf("newEye.y %1.9E\n", newEye.y);
 			break;
@@ -3642,11 +3665,12 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			newEye.y -= 5.0f;
 			printf("newEye.y %1.9E\n", newEye.y);
 			break;
-		case 'B':
+		case 'O':
 			newLookat.z -= 3.0f;
 			printf("newLookat.z %1.9E\n", newLookat.z);
 			break;
-		case 'G':
+		case ';':
+		case ':':
 			newLookat.z += 3.0f;
 			printf("newLookat.z %1.9E\n", newLookat.z);
 			break;

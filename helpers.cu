@@ -2,17 +2,16 @@
 // Device routines that can be #included by the kernels file.
 #include "cuda_struct.h"
 #include "kernel.h"
-
+ 
 
 #ifdef __CUDACC__
 __device__ __forceinline__ f64 GetEzShape(f64 r) {
 	return 1.0; 
-	// FOR NOW
-	//return 1.0 - 1.0 / (1.0 + exp(-16.0*(r - 4.2))); // At 4.0cm it is 96% as strong as at tooth. At 4.4 it is 4%.
+	// return 1.0 - 1.0 / (1.0 + exp(-16.0*(r - 4.2))); // At 4.0cm it is 96% as strong as at tooth. At 4.4 it is 4%.
 }
 #else
 f64 inline GetEzShape_(f64 r) {
-	return 1.0 - 1.0 / (1.0 + exp(-16.0*(r - 4.2))); // At 4.0cm it is 96% as strong as at tooth. At 4.4 it is 4%.
+	return 1.0 - 1.0 / (1.0 + exp(-16.0*(r - 4.2))); // At 4.0cm it is 96% as strong as at tooth. 4.2 50%. At 4.4 it is 4%.
 }
 #endif
 

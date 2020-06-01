@@ -217,6 +217,12 @@ __global__ void kernelAdvectPositionsVertex(
 	char * __restrict__ p_szPBCneigh_vert);
 
 
+__global__ void kernelResetNeutralDensityOutsideRadius(
+	structural * __restrict__ p_info,
+	nvals * __restrict__ p_n_major,
+	nvals * __restrict__ p_n_minor
+);
+
 __global__ void kernelAddToAz(
 	long * p_indicator,
 	f64 * pAz

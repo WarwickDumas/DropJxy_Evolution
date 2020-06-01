@@ -993,7 +993,7 @@ __global__ void kernelAccumulateSummands6(
 
 	};
 }
-__global__ void kernelCalculateOverallVelocitiesVertices(
+__global__ void kernelCalculateOverallVelocitiesVertices_1(
 	structural * __restrict__ p_info_minor,
 	v4 * __restrict__ p_vie_major,
 	f64_vec3 * __restrict__ p_v_n_major,
@@ -1099,6 +1099,10 @@ __global__ void kernelCalculateOverallVelocitiesVertices(
 			f64 ntot_i = shards_n.n[i] + shards_n_n.n[i];
 			f64 ntot_next = shards_n.n[inext] + shards_n_n.n[inext];
 			f64 ntot_cent = shards_n.n_cent + shards_n_n.n_cent;
+			
+			if (TEST3) printf("ntot_i,next,cent %1.8E %1.8E %1.8E pos.y %1.8E %1.8E %1.8E\n",
+				ntot_i, ntot_next, ntot_cent, pos0.y, pos1.y, info.pos.y);
+
 			if (ntot_i < MIN_n_DENSITY_FOR_MESH) ntot_i = MIN_n_DENSITY_FOR_MESH;
 			if (ntot_next < MIN_n_DENSITY_FOR_MESH) ntot_next = MIN_n_DENSITY_FOR_MESH;
 			if (ntot_cent < MIN_n_DENSITY_FOR_MESH) ntot_cent = MIN_n_DENSITY_FOR_MESH;
@@ -1117,8 +1121,7 @@ __global__ void kernelCalculateOverallVelocitiesVertices(
 			numer.x += 2.0*Area_tri*(pos0.x*wt0 + pos1.x*wt1 + info.pos.x*wtcent);
 			numer.y += 2.0*Area_tri*(pos0.y*wt0 + pos1.y*wt1 + info.pos.y*wtcent);
 
-			mass += THIRD*Area_tri*(shards_n.n[i] + shards_n_n.n[i] +
-				shards_n.n[inext] + shards_n_n.n[inext] + shards_n.n_cent + shards_n_n.n_cent);
+			mass += THIRD*Area_tri*(ntot_i + ntot_next + ntot_cent);
 			Areatot += Area_tri; 
 
 		//	if (iVertex == VERTCHOSEN)
@@ -1135,8 +1138,7 @@ __global__ void kernelCalculateOverallVelocitiesVertices(
 
 		// Divide one by the other to give the barycenter:
 		barycenter = numer / mass;
-
-				
+						
 		// Having great difficulty seeing why we get the result that we do.
 		// How close are different points?
 
@@ -1145,21 +1147,21 @@ __global__ void kernelCalculateOverallVelocitiesVertices(
 		// Alternatively, we could directly look at which triangle centroid propels us away because the triangle is too small ...
 
 		// Also: splint at absolute distance of 4 micron, for now.
-
-		
+				
 		// 2. Drift towards it is proportional to normalized distance squared.
 		// square root of vertcell area, to normalize dist from barycenter:
 
 		f64_vec2 to_bary = barycenter - info.pos;
 		
-		f64 factor = min( 4.0 * to_bary.dot(to_bary) / Areatot, 1.0);
+		f64 factor = max( 3.0 * to_bary.dot(to_bary) / Areatot, 0.8);
 		// r = sqrt(Area)/pi and we take (delta/r)^2
 		// uplift by 4/PI
-
+		// Think this should have been max: at MOST go to where barycenter is. In fact at most go 0.8, let velocity drag you a bit from it.
+		
 		//f64 distance = to_bary.modulus();
 		//f64_vec2 unit_to_bary = to_bary / distance;
 		
-		if (TEST3) {
+		if ((TEST3) || (v_overall.dot(v_overall) > 1.0e19))  {
 			printf("iVertex %d pos %1.9E %1.9E barycenter %1.9E %1.9E v_overall %1.9E %1.9E \n"
 				"factor %1.9E sqrt(Areatot) %1.9E |to_bary| %1.9E \n",
 				iVertex, info.pos.x, info.pos.y, barycenter.x, barycenter.y, v_overall.x, v_overall.y,
@@ -1180,7 +1182,26 @@ __global__ void kernelCalculateOverallVelocitiesVertices(
 
 		// So then we do want to cancel some of hv as an extra term in case v = ~1e8 and the cell is only 2 micron wide?
 		// Hmm
-		v_overall += to_bary * factor * max(-v_adv.dot(to_bary)/to_bary.dot(to_bary),0.0);
+		v_overall -= to_bary * factor * max(v_adv.dot(to_bary)/to_bary.dot(to_bary),0.0);
+		// ie if we were moving in the direction of the barycenter anyway, we can knock that off.
+		// Now let's look at /h in that.
+		// let v_addition = to_bary*factor/h ; we knock off 
+		// the component of v_addition that aligned with v_adv?
+		// should be v_adv.dot(v_additional)/ v_adv.
+
+		// Would do better to predict barycenter trajectory.
+
+		// Want to knock OFF of additional, v_adv projected on to additional
+
+		// Trouble is we need to ensure that when density is low we cling to barycenter even when there is a wind
+		// blowing, we keep restoring.
+
+
+		// Let's try a very simple way:
+		// We want everything to live at its own barycenter.
+		// Ignore the v.
+		// Just move to the barycenter. 
+		// Maximum speed 2e7. We probably won't see excess of that anywhere that density is considerable.
 
 		// There is almost certainly a more elegant way that puts them together.
 		// If v faces to_bary then we do nothing.
@@ -1194,6 +1215,168 @@ __global__ void kernelCalculateOverallVelocitiesVertices(
 				);
 		
 		// To watch out for: overshooting because hv takes us towards barycenter
+		
+		// Hope this stuff works well because the equal masses takes a bit of doing.		
+	};
+	p_v_overall_major[iVertex] = v_overall;
+}
+
+
+__global__ void kernelCalculateOverallVelocitiesVertices(
+	structural * __restrict__ p_info_minor,
+	v4 * __restrict__ p_vie_major,
+	f64_vec3 * __restrict__ p_v_n_major,
+	nvals * __restrict__ p_n_major,
+	f64_vec2 * __restrict__ p_v_overall_major,
+
+	ShardModel * __restrict__ p_shards_n,
+	ShardModel * __restrict__ p_shards_n_n,
+	long * __restrict__ p_izTri,
+	char * __restrict__ p_szPBCtri_verts,
+	f64 const h_full_adv
+)
+{
+	__shared__ f64_vec2 shared_pos[threadsPerTileMinor];
+
+	long const iVertex = threadIdx.x + blockIdx.x * blockDim.x; // INDEX OF VERTEX
+	structural const info = p_info_minor[iVertex + BEGINNING_OF_CENTRAL];
+	f64_vec2 v_overall(0.0, 0.0);
+
+	long const StartMinor = threadsPerTileMinor*blockIdx.x;
+	{
+		structural infotemp[2];
+		memcpy(infotemp, p_info_minor + threadIdx.x * 2 + threadsPerTileMinor*blockIdx.x, sizeof(structural) * 2);
+		shared_pos[threadIdx.x * 2] = infotemp[0].pos;
+		shared_pos[threadIdx.x * 2 + 1] = infotemp[1].pos;
+	}
+	long const EndMinor = threadsPerTileMinor*blockIdx.x + 2 * blockDim.x;
+
+	__syncthreads();
+
+	if (info.flag == DOMAIN_VERTEX)
+	{
+		// No velocity load.
+	//	v4 const vie = p_vie_major[iVertex];
+	//	f64_vec3 const v_n = p_v_n_major[iVertex];
+
+		nvals const n = p_n_major[iVertex];
+		short tri_len = info.neigh_len;
+		long izTri[MAXNEIGH];
+		char szPBC[MAXNEIGH];
+		memcpy(izTri, p_izTri + iVertex * MAXNEIGH, sizeof(long) * MAXNEIGH);
+		memcpy(szPBC, p_szPBCtri_verts + iVertex*MAXNEIGH, sizeof(char)*MAXNEIGH);
+
+		//v_overall = (vie.vxy*(m_e + m_i)*n.n +
+		//	v_n.xypart()*m_n*n.n_n) /
+		//	((m_e + m_i)*n.n + m_n*n.n_n);
+		//f64_vec2 v_adv = v_overall;
+		//if (TEST3) printf("%d vie.vxy %1.9E %1.9E v_n %1.9E %1.9E n %1.9E nn %1.9E\n"
+		//	"v_overall %1.9E %1.9E\n",
+		//	iVertex, vie.vxy.x, vie.vxy.y, v_n.x, v_n.y, n.n, n.n_n, v_overall.x, v_overall.y);
+
+		// Now add in drift towards barycenter
+
+		// 1. Work out where barycenter is, from n_shards
+		// (we have to load for both n and n_n, and need to be careful about combining to find overall barycenter)
+		f64_vec2 barycenter;
+		ShardModel shards_n, shards_n_n;
+		memcpy(&shards_n, p_shards_n + iVertex, sizeof(ShardModel));
+		memcpy(&shards_n_n, p_shards_n_n + iVertex, sizeof(ShardModel));
+
+		// Sum in triangles the integral of n against (x,y):
+		// Sum in triangles the integral of n:
+		f64_vec2 numer(0.0, 0.0);
+		f64 mass = 0.0, Areatot = 0.0;
+		short inext, i;
+		f64_vec2 pos0, pos1;
+		f64 Area_tri;
+		f64 wt0, wt1, wtcent;
+		for (i = 0; i < tri_len; i++)
+		{
+			inext = i + 1; if (inext == tri_len) inext = 0;
+			// Collect positions:
+			if ((izTri[i] >= StartMinor) && (izTri[i] < EndMinor))
+			{
+				pos0 = shared_pos[izTri[i] - StartMinor];
+			}
+			else {
+				pos0 = p_info_minor[izTri[i]].pos;
+			}
+			if (szPBC[i] == ROTATE_ME_CLOCKWISE) pos0 = Clockwise_d*pos0;
+			if (szPBC[i] == ROTATE_ME_ANTICLOCKWISE) pos0 = Anticlockwise_d*pos0;
+			if ((izTri[inext] >= StartMinor) && (izTri[inext] < EndMinor))
+			{
+				pos1 = shared_pos[izTri[inext] - StartMinor];
+			}
+			else {
+				pos1 = p_info_minor[izTri[inext]].pos;
+			}
+			if (szPBC[inext] == ROTATE_ME_CLOCKWISE) pos1 = Clockwise_d*pos1;
+			if (szPBC[inext] == ROTATE_ME_ANTICLOCKWISE) pos1 = Anticlockwise_d*pos1;
+
+			// Get Area_tri:
+			Area_tri = 0.5*fabs(pos0.x*info.pos.y + info.pos.x*pos1.y + pos1.x*pos0.y
+				- info.pos.x*pos0.y - pos1.x*info.pos.y - pos0.x*pos1.y);
+
+#define MIN_n_DENSITY_FOR_MESH 2.5e16
+
+			// 5e16 means 20 times fewer vertices through space than in the
+			// initial mesh. 1e16 means 100 times fewer, spacing 10 times larger.
+			// 2.5e16 is 40 times fewer, sqrt(40) ~ 6.5 times spacing.
+
+			f64 ntot_i = shards_n.n[i] + shards_n_n.n[i];
+			f64 ntot_next = shards_n.n[inext] + shards_n_n.n[inext];
+			f64 ntot_cent = shards_n.n_cent + shards_n_n.n_cent;
+
+			if (TEST3) printf("ntot_i,next,cent %1.8E %1.8E %1.8E pos.y %1.8E %1.8E %1.8E\n",
+				ntot_i, ntot_next, ntot_cent, pos0.y, pos1.y, info.pos.y);
+
+			if (ntot_i < MIN_n_DENSITY_FOR_MESH) ntot_i = MIN_n_DENSITY_FOR_MESH;
+			if (ntot_next < MIN_n_DENSITY_FOR_MESH) ntot_next = MIN_n_DENSITY_FOR_MESH;
+			if (ntot_cent < MIN_n_DENSITY_FOR_MESH) ntot_cent = MIN_n_DENSITY_FOR_MESH;
+			
+			wt0 = ntot_i / 12.0
+				+ ntot_next / 24.0
+				+ ntot_cent / 24.0;
+			wt1 = ntot_i / 24.0
+				+ ntot_next / 12.0
+				+ ntot_cent / 24.0;
+			wtcent = ntot_i / 24.0
+				+ ntot_next / 24.0
+				+ ntot_cent / 12.0;
+
+			numer.x += 2.0*Area_tri*(pos0.x*wt0 + pos1.x*wt1 + info.pos.x*wtcent);
+			numer.y += 2.0*Area_tri*(pos0.y*wt0 + pos1.y*wt1 + info.pos.y*wtcent);
+
+			mass += THIRD*Area_tri*(ntot_i + ntot_next + ntot_cent);
+			Areatot += Area_tri;
+		}
+
+		// Divide one by the other to give the barycenter:
+		barycenter = numer / mass;
+
+		f64_vec2 to_bary = barycenter - info.pos;
+
+		f64 factor = max(4.0 * to_bary.dot(to_bary) / Areatot, 0.8);
+		// We may move slowly if we are not far away.
+		
+		v_overall = to_bary * factor / h_full_adv;
+		// Now reduce if we are over 2e7
+		f64 ratio = sqrt(1 + v_overall.dot(v_overall) / 4.0e14);
+		v_overall /= ratio;
+
+		if ((TEST3) || (v_overall.dot(v_overall) > 1.0e19)) {
+			printf("iVertex %d pos %1.9E %1.9E barycenter %1.9E %1.9E v_overall %1.9E %1.9E \n"
+				"factor %1.9E sqrt(Areatot) %1.9E |to_bary| %1.9E \n",
+				iVertex, info.pos.x, info.pos.y, barycenter.x, barycenter.y, v_overall.x, v_overall.y,
+				factor, sqrt(Areatot), to_bary.modulus());
+		};
+
+		// Let's try a very simple way:
+		// We want everything to live at its own barycenter.
+		// Ignore the v.
+		// Just move to the barycenter. 
+		// Maximum speed 2e7. We probably won't see excess of that anywhere that density is considerable.
 		
 		// Hope this stuff works well because the equal masses takes a bit of doing.		
 	};
@@ -1296,6 +1479,14 @@ __global__ void kernelCentroidVelocitiesTriangles(
 		
 		v = 0.3333333333333*(vcorner0 + vcorner1 + vcorner2);
 		
+		if (v.dot(v) > 1.0e19) {
+			printf("iTri %d v %1.8E %1.8E : %d %d %d vcorner %1.8E %1.8E , %1.8E %1.8E , %1.8E %1.8E \n"
+				, index,
+				index, v.x, v.y, 
+				tri_corner_index.i1, tri_corner_index.i2, tri_corner_index.i3,
+				vcorner0.x, vcorner0.y, vcorner1.x, vcorner1.y, vcorner2.x, vcorner2.y);
+		}
+
 		if (info.flag == CROSSING_INS) {
 			// should not need to do anything different.
 		};
@@ -1847,7 +2038,7 @@ __global__ void kernelPrepareIonizationGraphs(
 	long const iVertex = threadIdx.x + blockIdx.x*blockDim.x;
 	structural info = p_info_major[iVertex];
 
-	if (info.flag == DOMAIN_VERTEX) {
+	if ((info.flag == DOMAIN_VERTEX) || (info.flag == OUTERMOST)) {
 
 		NTrates NT_rates = ratesNT[iVertex];
 		nvals n_nn = p_n_major[iVertex];
@@ -2276,9 +2467,34 @@ __global__ void kernelResetFrillsAz(
 		{
 			p_Az[index] = p_Az[izNeigh.i1]; 
 		} else {			
+			
+			
 			f64 r = p_info[izNeigh.i1].pos.modulus();
-			p_Az[index] = (r/ FRILL_CENTROID_OUTER_RADIUS_d)*p_Az[izNeigh.i1]; // should be something like 0.99*p_Az[izNeigh.i1]
+
+//#define RADIAL_DECLINE
+
+#ifdef RADIAL_DECLINE
+		 	p_Az[index] = (r/ FRILL_CENTROID_OUTER_RADIUS_d)*p_Az[izNeigh.i1]; // should be something like 0.99*p_Az[izNeigh.i1]
 			// Better if we store a constant called Outer_Frill_Factor to save a load and a division.
+
+#else
+			// Alternative to try: put A = C ln r ...
+
+			// The result is that it swung up and down vez with oscillations about every 0.7ns for a full cycle
+			// We would rather not see this bucking phenomenon.
+
+			f64 lnr = log(r);
+			f64 ln_ours = log(FRILL_CENTROID_OUTER_RADIUS_d);
+
+			// ln_ours is a GREATER value.
+			// ln r is increasing in r --- what gives?
+			// want A'' = - r A' .
+			// Let's just try it.
+			p_Az[index] = (ln_ours / lnr)*p_Az[izNeigh.i1]; // GREATER
+
+
+#endif
+
 		};
 	};	
 }
@@ -2368,9 +2584,28 @@ __global__ void kernelReset_v_in_outer_frill_and_outermost
 		p_v_n[index] = p_v_n[izNeigh.i1];
 		p_T_minor[index] = p_T_minor[izNeigh.i1];
 		// memcpy may be more efficient than operator =.
+
+		// This is fine to have here since outer_frill v should never be used for anything really.
+
 	}
 	if ((info.flag == OUTERMOST))
 	{
+		// all we want to say at outermost is that vxy == 0.
+
+		v4 vie = p_vie[index];
+		f64_vec3 v_n = p_v_n[index];
+		vie.vxy.x = 0.0;
+		vie.vxy.y = 0.0;
+		v_n.x = 0.0;
+		v_n.y = 0.0;
+		p_vie[index] = vie;
+		p_v_n[index] = v_n;
+
+		// No reason to do anything else special about here.
+		// Make it like a wall.
+
+		/*
+
 		long izNeigh[MAXNEIGH_d];
 		long iVertex = index - BEGINNING_OF_CENTRAL;
 		memcpy(izNeigh, p_izNeigh_vert + MAXNEIGH_d*iVertex, sizeof(long)*MAXNEIGH_d);
@@ -2412,6 +2647,7 @@ __global__ void kernelReset_v_in_outer_frill_and_outermost
 		p_vie[index] = result;
 		p_v_n[index] = v_n;
 		p_T_minor[index] = T;
+		*/
 	}
 }
 
@@ -3367,6 +3603,24 @@ __global__ void Augment_dNv_minor(
 			p_MAR_elec[iMinor] += add_e;
 		};		
 	};
+}
+
+#define RESET_NEUTRAL_N_OUTSIDE  4.6
+
+__global__ void kernelResetNeutralDensityOutsideRadius(
+		structural * __restrict__ p_info,
+		nvals * __restrict__ p_n_major,
+		nvals * __restrict__ p_n_minor
+	) {
+	long iMinor = blockDim.x*blockIdx.x + threadIdx.x;
+	structural info = p_info[iMinor];
+	if (iMinor > BEGINNING_OF_CENTRAL) {
+		if (info.pos.dot(info.pos) > RESET_NEUTRAL_N_OUTSIDE*RESET_NEUTRAL_N_OUTSIDE)
+			p_n_major[iMinor - BEGINNING_OF_CENTRAL].n_n = 1.0e18;
+	}
+	if (info.pos.dot(info.pos) > RESET_NEUTRAL_N_OUTSIDE*RESET_NEUTRAL_N_OUTSIDE)
+		p_n_minor[iMinor].n_n = 1.0e18;
+
 }
 
 __global__ void DivideNeTeDifference_by_N(

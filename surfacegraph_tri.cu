@@ -1632,7 +1632,7 @@ VOID surfacegraph::Render(const char * szTitle, bool RenderTriLabels,
 						
 			// Now do 3.6, 3.75, 3.9, 4.05, 4.2
 			r = 3.45;
-			for (i = 0; i < 10; i++) {
+			for (i = 0; i < 11; i++) {
 				theta = -HALFANGLE*1.1;
 				for (int asdf = 0; asdf < 10000; asdf++)
 				{
@@ -1651,6 +1651,8 @@ VOID surfacegraph::Render(const char * szTitle, bool RenderTriLabels,
 				sprintf(buffer,"%1.2f",r);
 				RenderLabel(buffer, linedata[3500].x,zeroplane,linedata[3500].z,true);
 				r += 0.09;
+
+				if (i >= 7) r += 0.09; // last 3
 			};
 
 			// Vertical lines:
@@ -2191,7 +2193,7 @@ VOID surfacegraph::Render(const char * szTitle, bool RenderTriLabels,
 
 					int asdf = 0;			
 					real r = 3.439999999;
-					for (i = 0; i < 10; i++) {
+					for (i = 0; i < 11; i++) {
 
 						while ((asdf < 8000) && (radiusArray8000[asdf] < r)) asdf++;	
 						if (asdf == 8000) {
@@ -2216,6 +2218,7 @@ VOID surfacegraph::Render(const char * szTitle, bool RenderTriLabels,
 						RenderLabel(buffer, CUTAWAYANGLE*pPNT->pos.z,zeroplane,pPNT->pos.z);
 						if (i == 0) r = 3.45;
 						r += 0.09;
+						if (i >= 7) r += 0.09; // last 3
 					}; 
 					// line underneath:
 					linedata[0].x = sin(CUTAWAYANGLE)*DEVICE_RADIUS_INSULATOR_OUTER*xzscale;

@@ -16,7 +16,7 @@
 bool const bScrewPinch = false;
 
 #define FOLDER "C:/outputs/"
-#define INITIALAVI "start3.avi"		
+#define INITIALAVI "start.avi"		
   
 #define FUNCTIONALFILE_START FOLDER "functionals"
 #define DATAFILENAME FOLDER "Data_"
@@ -252,9 +252,9 @@ real const FULLANGLE = 2.0*PI/16.0;
 real const TIMESTEP = 1.0e-12;// 7.8125e-14; 
 real const SUBSTEP = 1.0e-13; // 7.8125e-14;
 int const SUBCYCLES = 10; 
-int const GPU_STEPS = 20; // 2e-11
-int const ADVECT_FREQUENCY = 5; // 5e-12; 1e-11 = 1e-4/1e7 // 64
-int const ADVECT_STEPS_PER_GPU_VISIT = 4;
+int const GPU_STEPS = 1; // 2e-11
+int const ADVECT_FREQUENCY = 1; // 5e-12; 1e-11 = 1e-4/1e7 // 64
+int const ADVECT_STEPS_PER_GPU_VISIT = 1;
 
 
 //long const NUM_VERTICES_PER_CM_SQ = 10000; // 60000; //12000; // use 262144 = 2^18. 2^9 = 512

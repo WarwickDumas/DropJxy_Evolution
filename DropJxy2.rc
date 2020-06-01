@@ -52,6 +52,7 @@ BEGIN
     BEGIN
         MENUITEM "Ionisation steps",            ID_INITIALISE_IONISATIONSTEPS
         MENUITEM "Run Jz Az Ez solver",         ID_INITIALISE_RUNPOTENTIALSSOLVER
+        MENUITEM "Zap the back",                ID_INITIALISE_ZAPTHEBACK
     END
     POPUP "Run"
     BEGIN
