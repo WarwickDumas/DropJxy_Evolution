@@ -1,11 +1,15 @@
 #define real double
 #define f64 double
-
+ 
 #define HISTORY										4
-  
+   
 #include <stdlib.h>
 #include <stdio.h>
 #include "lapacke.h"
+  
+
+// we must find out what causes graphics crash during SPECIES_ION
+
 
 /* Auxiliary routines prototypes */
 extern void print_matrix(char* desc, lapack_int m, lapack_int n, double* a, lapack_int lda);
@@ -34,10 +38,10 @@ extern void Setup_residual_array();
 #include "surfacegraph_tri.h"
 #include "avi_utils.cpp"     // for making .avi
 #include "kernel.h"
- 
+  
 //=======================================================
 // Declarations of functions:
- 
+   
 void RefreshGraphs(TriMesh & X, const int iGraphsFlag);
 LRESULT CALLBACK	WndProc(HWND, UINT, WPARAM, LPARAM);
 INT_PTR CALLBACK	About(HWND, UINT, WPARAM, LPARAM);
@@ -60,7 +64,7 @@ extern cuSyst cuSyst1, cuSyst2, cuSyst3;
 extern D3D Direct3D;
 extern f64 * p_temphost1, *p_temphost2,
 *p_temphost3, *p_temphost4, *p_temphost5, *p_temphost6;
-
+ 
 extern __device__ f64 * p_LapCoeffself;
 extern __device__ f64 * p_temp1;
 extern __device__ long * p_longtemp;
@@ -113,7 +117,7 @@ TCHAR szTitle[1024];					// The title bar text
 TCHAR szWindowClass[1024];			// the main window class name
 
 char Functionalfilename[1024];
-int GlobalGraphSetting[7];
+int GlobalGraphSetting[7]; 
 surfacegraph Graph[7]; // why was it 5? // 5th one can be whole thing.
 
 float Historic_max[512][HISTORY]; // if max is falling, use historic maximum for graph.
@@ -2490,12 +2494,11 @@ int main()
 		" neut.vr neut.vth neut.vz  ion.vr ion.vth ion.vz elec.vr elec.vth elec.vz neut.heat ion.heat elec.heat neut.T ion.T elec.T "
 		" neut.mnvv/3 ion.mnvv/3 elec.mnvv/3 elec.force(vxB)r within3.6 elec.Bth EE BB Heatings and dT changes - see code \n");
 	fclose(fp);
-	
+	 
 	X1.Initialise(1); // Set evaltime first
 	X2.Initialise(2);
 	X3.Initialise(3);
-	printf("Got to here 1\n");
-	    
+	printf("Got to here 1\n");	    
 	{
 		X4.Initialise(4);
 		printf("Got to here 2\n");
@@ -2503,10 +2506,9 @@ int main()
 		X4.CreateTilingAndResequence2(&X2);
 		X4.CreateTilingAndResequence2(&X3);
 		printf("Got to here 3\n");
-
 		// 
 		// Dropping it for now so we can pursue solving equations first.
-		// 
+		//  
 	}
 	X1.Recalculate_TriCentroids_VertexCellAreas_And_Centroids();
 	X1.EnsureAnticlockwiseTriangleCornerSequences_SetupTriMinorNeighboursLists();
@@ -2815,7 +2817,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 	Vertex * pVertex;
 	
 	long izTri[128];
-
+	 
 	static bool bInvoked_cuSyst = false;
 	static long GSCCPU = 0;
 	int iAntiskips;
@@ -3186,7 +3188,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			if (GetOpenFileName(&ofn) == TRUE)
 			{
 				pX->Load(ofn.lpstrFile);
-				printf("\ndoin nothing...");
+				printf("\ndoing nothing...");
 			};
 		break;
 
@@ -3195,7 +3197,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			GlobalSwitchBox = 0;
 			DialogBox(hInst, MAKEINTRESOURCE(IDD_DIALOG1), hWnd, SetupBox);
 			// that will not return with steps_remaining unset.
-
+			 
 			if (steps_remaining > 0)
 				SetTimer(hWnd, 1, 1, NULL); // 1 millisecond delay
 
@@ -3254,13 +3256,13 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 //					pX->T[340].cornerptr[1]->pos.x, pX->T[340].cornerptr[1]->pos.y,
 //					pX->T[340].cornerptr[2]->pos.x, pX->T[340].cornerptr[2]->pos.y);
 //				printf("tri 340 periodic %d \n", pX->T[340].periodic);
-//				getch();
-
+//				getch(); 
+				 
 				cuSyst_host.InvokeHost();
 				cuSyst_host.PopulateFromTriMesh(pX);
 				cuSyst_host2.InvokeHost();
 				cuSyst_host2.PopulateFromTriMesh(pX);
-
+				 
 				//		cuSyst_host.Output("n0.txt");
 
 				PerformCUDA_Invoke_Populate(
@@ -3396,6 +3398,11 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			long iFlips = pX->Redelaunerize(true, true);
 			// Send back to GPU:
 			pX->EnsureAnticlockwiseTriangleCornerSequences_SetupTriMinorNeighboursLists();
+
+		//	Appears in lots of places so hard to believe data is not updated.
+		//	There is no wrapping on GPU?... or is there?
+		//	Need to debug inside routine and find out what it is doing for these two triangles.
+
 
 			//	pX->Average_n_T_to_tris_and_calc_centroids_and_minorpos(); // Obviates some of our flip calcs to replace tri n,T 
 			// not sure if needed .. just for calc centroid .. they do soon get wiped out anyway.

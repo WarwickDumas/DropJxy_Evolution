@@ -12,11 +12,11 @@
 #include "constant.h"
 #include "resource.h"
 #include <math.h>
-
+  
 bool const bScrewPinch = false;
 
 #define FOLDER "C:/outputs/"
-#define INITIALAVI "start.avi"		
+#define INITIALAVI "start4.avi"		
   
 #define FUNCTIONALFILE_START FOLDER "functionals"
 #define DATAFILENAME FOLDER "Data_"
@@ -36,9 +36,9 @@ bool const bScrewPinch = false;
 // 1 frame = 0.01 so 100 frames == 1 ns
 
 // milliseconds between frames:
-#define AVIFRAMEPERIOD         20  // milliseconds; 20 ms => 50 fps.
+#define AVIFRAMEPERIOD         15  // milliseconds; 20 ms => 50 fps.
 
-#define DATA_SAVE_FREQUENCY					 14
+#define DATA_SAVE_FREQUENCY					 20
 // For debug. For production change it to 25
 
 // Program Mechanics:
@@ -51,9 +51,9 @@ bool const bScrewPinch = false;
 // Let's keep it real. nvT is best for our fetches and therefore is best.
 #define SWITCH_TO_CENTRE_OF_INTERSECTION_WITH_INSULATOR_FOR_TRI_CENTROID_CPU 0
 
-long const numTriTiles = 288; // note that there are also centrals
-long const numTilesMajor = 288;
-long const numTilesMinor = 432; // 432 = 288+144
+long const numTriTiles = 384; // note that there are also centrals
+long const numTilesMajor = 384;
+long const numTilesMinor = 576; // 576 = 384 + 192
 								// 456*256 = 304*256 + 304*128
 
 								// numTriTiles == numTilesMajor because the two sets are bijective.
@@ -63,7 +63,7 @@ long const threadsPerTileMinor = 256; // PopOhmsLaw ASSUMES THIS IS A POWER OF 2
 long const threadsPerTileMajor = 128; // see about it - usually we take info from minor.
 
 long const threadsPerTileMajorClever = 256;
-long const numTilesMajorClever = 144;
+long const numTilesMajorClever = 192;
 
 long const SIZE_OF_MAJOR_PER_TRI_TILE = 128;
 long const SIZE_OF_TRI_TILE_FOR_MAJOR = 256;
@@ -87,13 +87,17 @@ double const RELTHRESH_AZ =  1.0e-9;
 //===============================
 
  // radii in cm from anode centre : 
-#define DOMAIN_OUTER_RADIUS   4.64
+#define DOMAIN_OUTER_RADIUS  5.0   // Assume cold neutrals looking out from this point.
+#define FLATAZBC
+// Think it's time we made radial values going out to 10cm.
+#define CHAMBER_OUTER_RADIUS  10.0
+
 
 #define KILL_NEUTRAL_V_OUTSIDE_TEMP  4.6 // No idea why problem occurring - just killing it for now
 
 // reality: cathode rod is 0.47625 cm radius, at 5cm device radius
-real const CATHODE_ROD_R = 5.0;
-real const CATHODE_ROD_RADIUS = 0.47625;
+#define CATHODE_ROD_R_POSITION   5.0
+#define CATHODE_ROD_RADIUS       0.47625
 // Let's say some vertcells will be within it and we acknowledge that asap.
 
 real const DEVICE_RADIUS_INITIAL_FILAMENT_CENTRE = 3.61;   
@@ -220,6 +224,10 @@ real const UNIFORM_n = 1.0e8;  // ionisation fraction at room temp would be tiny
 real const FILAMENT_OWN_PEAK_T = 4.8e-12;
 real const UNIFORM_T = 4.0e-14; // 300K
 
+#define INITIAL_BACKGROUND_ION_DENSITY 1.0e8
+#define INITIAL_TOTAL_DENSITY 1.0e18
+
+
 #define BZ_CONSTANT     2.7  
 							   // Constant Bz before any plasma Bz:
 					   // 0.3 G from Earth and 2.4 G from coil
@@ -252,9 +260,9 @@ real const FULLANGLE = 2.0*PI/16.0;
 real const TIMESTEP = 1.0e-12;// 7.8125e-14; 
 real const SUBSTEP = 1.0e-13; // 7.8125e-14;
 int const SUBCYCLES = 10; 
-int const GPU_STEPS = 1; // 2e-11
-int const ADVECT_FREQUENCY = 1; // 5e-12; 1e-11 = 1e-4/1e7 // 64
-int const ADVECT_STEPS_PER_GPU_VISIT = 1;
+int const GPU_STEPS = 20; // 2e-11
+int const ADVECT_FREQUENCY = 5; // 5e-12; 1e-11 = 1e-4/1e7 // 64
+int const ADVECT_STEPS_PER_GPU_VISIT = 4;
 
 
 //long const NUM_VERTICES_PER_CM_SQ = 10000; // 60000; //12000; // use 262144 = 2^18. 2^9 = 512
@@ -295,7 +303,6 @@ real const maximum_spacing = 0.025;  // cm: do not make cell widths larger than 
 
 // Graphics related
 // ================
-
 
 float const NEAR_CLIPPING_PLANE = 0.1f;
 float const FAR_CLIPPING_PLANE = 200.0f;

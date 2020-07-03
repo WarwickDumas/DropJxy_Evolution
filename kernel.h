@@ -8,6 +8,12 @@
 //	nvals * __restrict__ p_n_major,
 //	f64_vec2 * __restrict__ p_v_overall_major);
 
+__global__ void kernelSetPressureFlag(
+	structural * __restrict__ p_info_minor,
+	long * __restrict__ p_izTri,
+	bool * __restrict__ bz_pressureflag
+);
+
 __global__ void kernelAccumulateDiffusiveHeatRate_new_Longitudinalonly_1species(
 	structural * __restrict__ p_info_minor,
 	long * __restrict__ pIndexNeigh,
@@ -413,11 +419,50 @@ __global__ void kernelAddtoT(
 	f64 * __restrict__ p_epsilon_i,
 	f64 * __restrict__ p_epsilon_e);
 
+__global__ void kernelSetx(f64_vec3 * __restrict__ p_v1,
+	f64_vec3 * __restrict__ p_src);
+
+__global__ void kernelSety(f64_vec3 * __restrict__ p_v1,
+	f64_vec3 * __restrict__ p_src);
+
+__global__ void kernelSetz(f64_vec3 * __restrict__ p_v1,
+	f64_vec3 * __restrict__ p_src);
+
+
+__global__ void kernelMultiply_Get_Jacobi_NeutralVisc(
+	structural * __restrict__ p_info,
+	f64_vec3 * __restrict__ p_eps3,
+	f64_tens3 * __restrict__ p_Matrix_n,
+	f64_vec3 * __restrict__ p_Jacobi);
+
 __global__ void kernelAdd_to_v(
 	v4 * __restrict__ p_vie,
 	f64 const beta_i, f64 const beta_e,
 	f64_vec3 * __restrict__ p_vJacobi_ion,
 	f64_vec3 * __restrict__ p_vJacobi_elec
+);
+
+__global__ void kernelAddLC_vec3
+(f64_vec3 * __restrict__ p_vec,
+	f64_vec3 coeff,
+	f64_vec3 * __restrict__ p_addition);
+
+__global__ void kernelCalc_Matrices_for_Jacobi_NeutralViscosity(
+	f64 const hsub,
+	structural * __restrict__ p_info_minor,
+
+	long * __restrict__ p_izTri,
+	char * __restrict__ p_szPBC,
+	long * __restrict__ p_izNeighMinor,
+	char * __restrict__ p_szPBCtriminor,
+
+	f64 * __restrict__ p_ita_minor,   // nT / nu ready to look up
+	f64 * __restrict__ p_nu_minor,   // nT / nu ready to look up
+
+	nvals * __restrict__ p_n_minor,
+	f64 * __restrict__ p_AreaMinor,
+
+	f64_tens3 * __restrict__ p_matrix_n
 );
 
 __global__ void kernelAccumulateSummands2(
@@ -430,13 +475,44 @@ __global__ void kernelAccumulateSummands2(
 	f64 * __restrict__ p_sum_d_d,
 	f64 * __restrict__ p_sum_eps_eps);
 
+__global__ void kernelCreateEpsilon_NeutralVisc(
+	f64 const hsub,
+	structural * __restrict__ p_info_minor,
+	f64_vec3 * __restrict__ p_v_n,
+	f64_vec3 * __restrict__ p_v_n_k,
+	f64_vec3 * __restrict__ pMAR_neut,
+	nvals * __restrict__ p_n_minor,
+	f64 * __restrict__ p_AreaMinor,
+
+	f64_vec3 * __restrict__ p_eps3,
+	bool * __restrict__ p_bFailedTest
+);
+
+__global__ void kernelAccumulateSummandsNeutVisc(
+	structural * __restrict__ p_info_minor,
+	f64_vec3 * __restrict__ p_eps3,
+	f64_vec3 * __restrict__ p_d_eps_by_d_beta_x_,
+	f64_vec3 * __restrict__ p_d_eps_by_d_beta_y_,
+	f64_vec3 * __restrict__ p_d_eps_by_d_beta_z_,
+	// outputs:
+	f64_vec3 * __restrict__ p_sum_eps_deps_,
+	Symmetric3 * __restrict__ p_sum_product_matrix_,
+	f64 * __restrict__ p_sum_eps_sq
+);
+
 __global__ void kernelAccumulateSummands3(
 	structural * __restrict__ p_info_minor,
 	f64_vec2 * __restrict__ p_eps_xy,
 	f64 * __restrict__ p_eps_iz,
 	f64 * __restrict__ p_eps_ez,
-	f64_vec3 * __restrict__ p_d_eps_by_d_beta_i_,
-	f64_vec3 * __restrict__ p_d_eps_by_d_beta_e_,
+	f64_vec2 * __restrict__ p_d_epsxy_by_d_beta_i_,
+	f64 * __restrict__ p_d_eps_iz_by_d_beta_i_,
+	f64 * __restrict__ p_d_eps_ez_by_d_beta_i_,
+
+	f64_vec2 * __restrict__ p_d_epsxy_by_d_beta_e_,
+	f64 * __restrict__ p_d_eps_iz_by_d_beta_e_,
+	f64 * __restrict__ p_d_eps_ez_by_d_beta_e_,
+
 	f64 * __restrict__ p_sum_eps_deps_by_dbeta_i_,
 	f64 * __restrict__ p_sum_eps_deps_by_dbeta_e_,
 	f64 * __restrict__ p_sum_depsbydbeta_i_times_i_,
@@ -519,7 +595,76 @@ __global__ void kernelCreateEpsilonAndJacobi_Heat
 	bool bUseMask
 );
 
+__global__ void kernelCreateWhoAmI_verts(
+	structural * __restrict__ p_info_major,
+	long * __restrict__ p_izNeigh_vert,
+	short * __restrict__ p_sz_who_am_I // array of MAXNEIGH shorts for each vertex.
+);
+
+__global__ void kernelAddStoredNTFlux(
+	structural * __restrict__ p_info_major,
+	NTrates * __restrict__ p_additional_array,
+	NTrates * __restrict__ p_values_to_augment
+);
+
 __device__ void Augment_Jacobean(
+	f64_tens3 * pJ,
+	real Factor, //h_over (N m_i)
+	f64_vec2 edge_normal,
+	f64 ita_par, f64 nu, f64_vec3 omega,
+	f64 grad_vjdx_coeff_on_vj_self,
+	f64 grad_vjdy_coeff_on_vj_self
+);
+__global__ void kernelAccumulateAdvectiveMassHeatRateNew(
+	f64 const h_use,
+	structural * __restrict__ p_info_minor,
+	long * __restrict__ p_izTri,
+	char * __restrict__ p_szPBCtri_verts,
+
+	long * __restrict__ p_izNeigh_vert,
+
+	short * __restrict__ p_who_am_I_to_my_neighbours,
+
+	nvals * __restrict__ p_n_src_major,
+	T3 * __restrict__ p_T_src_major,   // use T vertex itself to infer what T to use.
+
+	v4 * __restrict__ p_vie_minor,
+	// f64_vec3 * __restrict__ p_v_n_minor,
+	f64_vec2 * __restrict__ p_v_overall_minor,
+	//T3 * __restrict__ p_T_minor, // may or may not overlap source: don't we only use from tris? so not overlap
+
+	// ShardModel * __restrict__ p_n_shard_n_major,
+	ShardModel * __restrict__ p_n_shard_major,
+
+	NTrates * __restrict__ p_NTadditionrates,
+	f64 * __restrict__ p_div_v,
+	//	f64 * __restrict__ p_div_v_n, // write ion & electron routine only first; re-do as neutral.
+	f64 * __restrict__ p_Integrated_div_v_overall,
+
+	NTrates * __restrict__ p_store_flux
+);
+
+__global__ void kernelAccumulateNeutralAdvectiveMassHeatRateNew(
+	f64 const h_use,
+	structural * __restrict__ p_info_minor,
+	long * __restrict__ p_izTri,
+	char * __restrict__ p_szPBCtri_verts,
+	long * __restrict__ p_izNeigh_vert,
+	short * __restrict__ p_who_am_I_to_my_neighbours,
+
+	nvals * __restrict__ p_n_src_major,
+	T3 * __restrict__ p_T_src_major,   // use T vertex itself to infer what T to use.
+
+	f64_vec3 * __restrict__ p_v_n_minor,
+	f64_vec2 * __restrict__ p_v_overall_minor,
+	ShardModel * __restrict__ p_n_shard_major,
+
+	NTrates * __restrict__ p_NTadditionrates,
+	f64 * __restrict__ p_div_v_n,
+	NTrates * __restrict__ p_store_flux
+);
+
+__device__ void Augment_JacobeanNeutral(
 	f64_tens3 * pJ,
 	real Factor, //h_over (N m_i)
 	f64_vec2 edge_normal,
@@ -983,7 +1128,79 @@ __global__ void kernelAdvanceDensityAndTemperature(
 	nvals * __restrict__ p_n_major_dest,
 	T3 * __restrict__ p_T_major_dest
 );
+__global__ void kernelGetLap_minor__sum_detectcontribs(
 
+	structural * __restrict__ p_info,
+	f64 * __restrict__ p_Az,
+	long * __restrict__ p_izTri,
+	long * __restrict__ p_izNeighMinor,
+	char * __restrict__ p_szPBCtri_vertex,
+	char * __restrict__ p_szPBCtriminor,
+	f64 * __restrict__ p_LapAz,
+	f64 * __restrict__ p_AreaMinor,
+	f64 * __restrict__ p_integralLapAz,
+	f64 * __restrict__ p_integralVT,
+	f64 * __restrict__ p_integralTV,
+	f64 * __restrict__ p_integralTT,
+	f64 * __restrict__ p_contriblist
+);
+__global__ void kernelGetLap_minor__sum_placecontribs(
+
+	structural * __restrict__ p_info,
+	f64 * __restrict__ p_Az,
+	long * __restrict__ p_izTri,
+	long * __restrict__ p_izNeighMinor,
+	char * __restrict__ p_szPBCtri_vertex,
+	char * __restrict__ p_szPBCtriminor,
+	f64 * __restrict__ p_LapAz,
+	f64 * __restrict__ p_AreaMinor,
+	f64 * __restrict__ p_integralLapAz,
+	f64 * __restrict__ p_integralVT,
+	f64 * __restrict__ p_integralTV,
+	f64 * __restrict__ p_integralTT,
+	f64 * __restrict__ p_contriblist
+);
+
+__global__ void kernelSet(
+	v4 * __restrict__ p_v4,
+	f64_vec3 * __restrict__ p_src,
+	int flag
+);
+
+__global__ void kernelGetLap_minor__sum(
+
+	structural * __restrict__ p_info,
+	f64 * __restrict__ p_Az,
+	long * __restrict__ p_izTri,
+	long * __restrict__ p_izNeighMinor,
+	char * __restrict__ p_szPBCtri_vertex,
+	char * __restrict__ p_szPBCtriminor,
+	f64 * __restrict__ p_LapAz,
+	f64 * __restrict__ p_AreaMinor,
+	f64 * __restrict__ p_integralLapAz,
+	f64 * __restrict__ p_integralVT,
+	f64 * __restrict__ p_integralTV,
+	f64 * __restrict__ p_integralTT
+);
+
+__global__ void kernelCalculateVelocityAndAzdot_noadvect__debugintegrate(
+	f64 h_use,
+	structural * p_info_minor,
+	f64_vec3 * __restrict__ p_vn0,
+	v4 * __restrict__ p_v0,
+	OhmsCoeffs * __restrict__ p_OhmsCoeffs,
+	AAdot * __restrict__ p_AAzdot_src,
+	nvals * __restrict__ p_n_minor,
+	f64 * __restrict__ p_AreaMinor,
+	f64 * __restrict__ p_LapAz, // would it be better just to be loading the Azdot0 relation?
+	AAdot * __restrict__ p_AAzdot_out,
+	v4 * __restrict__ p_vie_out,
+	f64_vec3 * __restrict__ p_vn_out,
+
+	f64 * __restrict__ p_integ_Jz1,
+	f64 * __restrict__ p_integ_Jz2,
+	f64 * __restrict__ p_integ_LapAz
+);
 
 __global__ void kernelCalculateUpwindDensity_tris(
 	structural * __restrict__ p_info_minor,
@@ -2092,6 +2309,8 @@ __global__ void kernelNeutral_pressure(
 	ShardModel * __restrict__ p_n_shards,
 	nvals * __restrict__ p_n_minor, // Just to handle insulator
 
+	bool * __restrict__ bz_pressureflag,
+
 	f64_vec3 * __restrict__ p_MAR_neut
 );
 __global__ void kernelCreateLinearRelationshipBwd_noadvect(
@@ -2177,6 +2396,8 @@ __global__ void kernelCreate_pressure_gradT_and_gradA_CurlA_minor_noadvect(
 	f64_vec3 * __restrict__ p_MAR_elec,
 	ShardModel * __restrict__ p_n_shards,
 	nvals * __restrict__ p_n_minor, // Just so we can handle insulator
+
+	bool * __restrict__ bz_pressureflag,
 
 	f64_vec2 * __restrict__ p_GradTe,
 	f64_vec2 * __restrict__ p_GradAz,

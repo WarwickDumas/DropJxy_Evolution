@@ -15,6 +15,49 @@
 
 #define FOUR_PI 12.5663706143592
 
+
+__device__ void Augment_JacobeanNeutral(
+	f64_tens3 * pJ,
+	real Factor, //h_over (N m_i)
+	f64_vec2 edge_normal,
+	f64 ita_par, f64 nu, f64_vec3 omega,
+	f64 grad_vjdx_coeff_on_vj_self,
+	f64 grad_vjdy_coeff_on_vj_self
+) {
+	
+		//Pi_zx = -ita_par*(gradviz.x);
+		//Pi_zy = -ita_par*(gradviz.y);		
+		//	visc_contrib.x = -over_m_i*(Pi_xx*edge_normal.x + Pi_xy*edge_normal.y);
+		// The z direction doesn't feature vx --- that is because dvx/dz == 0
+
+		pJ->xx += Factor*
+			((
+				// Pi_zx
+				-ita_par*grad_vjdx_coeff_on_vj_self
+				)*edge_normal.x + (
+					// Pi_zy
+					-ita_par*grad_vjdy_coeff_on_vj_self
+					)*edge_normal.y);
+		
+		pJ->yy += Factor*
+			((
+				// Pi_zx
+				-ita_par*grad_vjdx_coeff_on_vj_self
+				)*edge_normal.x + (
+					// Pi_zy
+					-ita_par*grad_vjdy_coeff_on_vj_self
+					)*edge_normal.y);
+
+		pJ->zz += Factor*
+			((
+				// Pi_zx
+				-ita_par*grad_vjdx_coeff_on_vj_self
+				)*edge_normal.x + (
+					// Pi_zy
+					-ita_par*grad_vjdy_coeff_on_vj_self
+					)*edge_normal.y);	
+}
+
 __device__ void Augment_Jacobean(
 	f64_tens3 * pJ, 
 	real Factor, //h_over (N m_i)
@@ -389,8 +432,14 @@ __global__ void kernelAccumulateSummands3(
 	f64_vec2 * __restrict__ p_eps_xy,
 	f64 * __restrict__ p_eps_iz,
 	f64 * __restrict__ p_eps_ez,
-	f64_vec3 * __restrict__ p_d_eps_by_d_beta_i_,
-	f64_vec3 * __restrict__ p_d_eps_by_d_beta_e_,
+	f64_vec2 * __restrict__ p_d_epsxy_by_d_beta_i_,
+	f64 * __restrict__ p_d_eps_iz_by_d_beta_i_,
+	f64 * __restrict__ p_d_eps_ez_by_d_beta_i_,
+
+	f64_vec2 * __restrict__ p_d_epsxy_by_d_beta_e_,
+	f64 * __restrict__ p_d_eps_iz_by_d_beta_e_,
+	f64 * __restrict__ p_d_eps_ez_by_d_beta_e_,
+
 	f64 * __restrict__ p_sum_eps_deps_by_dbeta_i_,
 	f64 * __restrict__ p_sum_eps_deps_by_dbeta_e_,
 	f64 * __restrict__ p_sum_depsbydbeta_i_times_i_,
@@ -421,21 +470,32 @@ __global__ void kernelAccumulateSummands3(
 		f64_vec2 eps_xy = p_eps_xy[iMinor];
 		f64 eps_iz = p_eps_iz[iMinor];
 		f64 eps_ez = p_eps_ez[iMinor];
-		f64_vec3 depsbydbeta_i = p_d_eps_by_d_beta_i_[iMinor];
-		f64_vec3 depsbydbeta_e = p_d_eps_by_d_beta_e_[iMinor];
+		
+		f64_vec2 depsxybydbeta_i = p_d_epsxy_by_d_beta_i_[iMinor];
+		f64_vec2 depsxybydbeta_e = p_d_epsxy_by_d_beta_e_[iMinor];
+		f64 deps_iz_bydbeta_i = p_d_eps_iz_by_d_beta_i_[iMinor];
+		f64 deps_ez_bydbeta_i = p_d_eps_ez_by_d_beta_i_[iMinor];
+		f64 deps_iz_bydbeta_e = p_d_eps_iz_by_d_beta_e_[iMinor];
+		f64 deps_ez_bydbeta_e = p_d_eps_ez_by_d_beta_e_[iMinor];
+		
+		sumdata_eps_i[threadIdx.x] = depsxybydbeta_i.x * eps_xy.x
+			+ depsxybydbeta_i.y*eps_xy.y + deps_iz_bydbeta_i*eps_iz + deps_ez_bydbeta_i*eps_ez;
 
-		sumdata_eps_i[threadIdx.x] = depsbydbeta_i.x * eps_xy.x
-			+ depsbydbeta_i.y*eps_xy.y + depsbydbeta_i.z*eps_iz;
+		sumdata_eps_e[threadIdx.x] = depsxybydbeta_e.x * eps_xy.x
+			+ depsxybydbeta_e.y*eps_xy.y + deps_iz_bydbeta_e*eps_iz + deps_ez_bydbeta_e*eps_ez;
 
-		sumdata_eps_e[threadIdx.x] = depsbydbeta_e.x * eps_xy.x
-			+ depsbydbeta_e.y*eps_xy.y + depsbydbeta_e.z*eps_ez;
+		sumdata_ii[threadIdx.x] = depsxybydbeta_i.dot(depsxybydbeta_i) + deps_iz_bydbeta_i*deps_iz_bydbeta_i
+								+ deps_ez_bydbeta_i*deps_ez_bydbeta_i;
 
-		sumdata_ii[threadIdx.x] = depsbydbeta_i.dot(depsbydbeta_i);
-		sumdata_ee[threadIdx.x] = depsbydbeta_e.dot(depsbydbeta_e);
-		sumdata_ei[threadIdx.x] = depsbydbeta_e.x*depsbydbeta_i.x
-								+ depsbydbeta_e.y*depsbydbeta_i.y; // NO z COMPONENT.
+		sumdata_ee[threadIdx.x] = depsxybydbeta_e.dot(depsxybydbeta_e) + deps_iz_bydbeta_e*deps_iz_bydbeta_e
+								+ deps_ez_bydbeta_e*deps_ez_bydbeta_e;
+
+		sumdata_ei[threadIdx.x] = depsxybydbeta_e.x*depsxybydbeta_i.x
+								+ depsxybydbeta_e.y*depsxybydbeta_i.y
+								+ deps_iz_bydbeta_i*deps_iz_bydbeta_e
+								+ deps_ez_bydbeta_i*deps_ez_bydbeta_e; // NO z COMPONENT.
+
 		sumdata_ss[threadIdx.x] = eps_xy.dot(eps_xy) + eps_iz*eps_iz + eps_ez*eps_ez;
-
 	}
 	
 	__syncthreads();
@@ -482,9 +542,162 @@ __global__ void kernelAccumulateSummands3(
 	};
 }
 
+__global__ void kernelAccumulateSummandsNeutVisc(
+		structural * __restrict__ p_info_minor,
+		f64_vec3 * __restrict__ p_eps3,
+		f64_vec3 * __restrict__ p_d_eps_by_d_beta_x_,
+		f64_vec3 * __restrict__ p_d_eps_by_d_beta_y_,
+		f64_vec3 * __restrict__ p_d_eps_by_d_beta_z_,
+		// outputs:
+		f64_vec3 * __restrict__ p_sum_eps_deps_,
+		Symmetric3 * __restrict__ p_sum_product_matrix_,
+		f64 * __restrict__ p_sum_eps_sq
+	)
+	{
+		__shared__ f64 sumdata_eps_depsx[threadsPerTileMinor];
+		__shared__ f64 sumdata_eps_depsy[threadsPerTileMinor];
+		__shared__ f64 sumdata_eps_depsz[threadsPerTileMinor];
+		__shared__ Symmetric3 sum_product[threadsPerTileMinor];
+		__shared__ f64 sumdata_ss[threadsPerTileMinor];
+
+		long const iMinor = threadIdx.x + blockIdx.x * blockDim.x;
+
+		sumdata_eps_depsx[threadIdx.x] = 0.0;
+		sumdata_eps_depsy[threadIdx.x] = 0.0;
+		sumdata_eps_depsz[threadIdx.x] = 0.0;
+		memset(&(sum_product[threadIdx.x]), 0, sizeof(Symmetric3));
+		sumdata_ss[threadIdx.x] = 0.0;
+
+		structural info = p_info_minor[iMinor];
+		if ((info.flag == DOMAIN_VERTEX) || (info.flag == DOMAIN_TRIANGLE) || (info.flag == CROSSING_INS))
+		{
+			f64_vec3 eps = p_eps3[iMinor];
+			f64_vec3 depsbydbeta_x = p_d_eps_by_d_beta_x_[iMinor];
+			f64_vec3 depsbydbeta_y = p_d_eps_by_d_beta_y_[iMinor];
+			f64_vec3 depsbydbeta_z = p_d_eps_by_d_beta_z_[iMinor];
 
 
+			// sum over all values, of deps_i/dbetax deps_i/dbetay
 
+			sumdata_eps_depsx[threadIdx.x] = depsbydbeta_x.x * eps.x + depsbydbeta_x.y*eps.y + depsbydbeta_x.z*eps.z;
+			sumdata_eps_depsy[threadIdx.x] = depsbydbeta_y.x * eps.x + depsbydbeta_y.y*eps.y + depsbydbeta_y.z*eps.z;
+			sumdata_eps_depsz[threadIdx.x] = depsbydbeta_z.x * eps.x + depsbydbeta_z.y*eps.y + depsbydbeta_z.z*eps.z;
+
+			sum_product[threadIdx.x].xx = depsbydbeta_x.x *depsbydbeta_x.x
+				+ depsbydbeta_x.y *depsbydbeta_x.y
+				+ depsbydbeta_x.z *depsbydbeta_x.z;
+			sum_product[threadIdx.x].xy = depsbydbeta_x.x *depsbydbeta_y.x
+				+ depsbydbeta_x.y *depsbydbeta_y.y
+				+ depsbydbeta_x.z *depsbydbeta_y.z;
+			sum_product[threadIdx.x].xz = depsbydbeta_x.x *depsbydbeta_z.x
+				+ depsbydbeta_x.y *depsbydbeta_z.y
+				+ depsbydbeta_x.z *depsbydbeta_z.z;
+			sum_product[threadIdx.x].yy = depsbydbeta_y.x *depsbydbeta_y.x
+				+ depsbydbeta_y.y *depsbydbeta_y.y
+				+ depsbydbeta_y.z *depsbydbeta_y.z;
+			sum_product[threadIdx.x].yz = depsbydbeta_y.x *depsbydbeta_z.x
+				+ depsbydbeta_y.y *depsbydbeta_z.y
+				+ depsbydbeta_y.z *depsbydbeta_z.z;
+			sum_product[threadIdx.x].zz = depsbydbeta_z.x *depsbydbeta_z.x
+				+ depsbydbeta_z.y *depsbydbeta_z.y
+				+ depsbydbeta_z.z *depsbydbeta_z.z;
+
+			sumdata_ss[threadIdx.x] = eps.dot(eps);
+		}
+
+		__syncthreads();
+
+		int s = blockDim.x;
+		int k = s / 2;
+
+		while (s != 1) {
+			if (threadIdx.x < k)
+			{
+				sumdata_eps_depsx[threadIdx.x] += sumdata_eps_depsx[threadIdx.x + k];
+				sumdata_eps_depsy[threadIdx.x] += sumdata_eps_depsy[threadIdx.x + k];
+				sumdata_eps_depsz[threadIdx.x] += sumdata_eps_depsz[threadIdx.x + k];
+
+				sum_product[threadIdx.x].xx += sum_product[threadIdx.x + k].xx;
+				sum_product[threadIdx.x].xy += sum_product[threadIdx.x + k].xy;
+				sum_product[threadIdx.x].xz += sum_product[threadIdx.x + k].xz;
+				sum_product[threadIdx.x].yz += sum_product[threadIdx.x + k].yz;
+				sum_product[threadIdx.x].yy += sum_product[threadIdx.x + k].yy;
+				sum_product[threadIdx.x].zz += sum_product[threadIdx.x + k].zz;
+
+				sumdata_ss[threadIdx.x] += sumdata_ss[threadIdx.x + k];
+			};
+			__syncthreads();
+
+			// Modify for case blockdim not 2^n:
+			if ((s % 2 == 1) && (threadIdx.x == k - 1)) {
+				sumdata_eps_depsx[threadIdx.x] += sumdata_eps_depsx[threadIdx.x + s - 1];
+				sumdata_eps_depsy[threadIdx.x] += sumdata_eps_depsy[threadIdx.x + s - 1];
+				sumdata_eps_depsz[threadIdx.x] += sumdata_eps_depsz[threadIdx.x + s - 1];
+				sum_product[threadIdx.x].xx += sum_product[threadIdx.x + s - 1].xx;
+				sum_product[threadIdx.x].xy += sum_product[threadIdx.x + s - 1].xy;
+				sum_product[threadIdx.x].xz += sum_product[threadIdx.x + s - 1].xz;
+				sum_product[threadIdx.x].yz += sum_product[threadIdx.x + s - 1].yz;
+				sum_product[threadIdx.x].yy += sum_product[threadIdx.x + s - 1].yy;
+				sum_product[threadIdx.x].zz += sum_product[threadIdx.x + s - 1].zz;
+			};
+			// In case k == 81, add [39] += [80]
+			// Otherwise we only get to 39+40=79.
+			s = k;
+			k = s / 2;
+			__syncthreads();
+		};
+
+		if (threadIdx.x == 0)
+		{
+			f64_vec3 sum_eps_deps;
+			sum_eps_deps.x = sumdata_eps_depsx[0];
+			sum_eps_deps.y = sumdata_eps_depsy[0];
+			sum_eps_deps.z = sumdata_eps_depsz[0];
+
+			p_sum_eps_deps_[blockIdx.x] = sum_eps_deps;
+			memcpy(&(p_sum_product_matrix_[blockIdx.x]), &(sum_product[0]), sizeof(Symmetric3));
+			p_sum_eps_sq[blockIdx.x] = sumdata_ss[0]; 			
+		};
+	}
+
+__global__ void kernelSetx(f64_vec3 * __restrict__ p_v1,
+		f64_vec3 * __restrict__ p_src)
+{
+	long const index = threadIdx.x + blockIdx.x * blockDim.x;
+	f64_vec3 src = p_src[index];
+	f64_vec3 v(src.x, 0.0, 0.0);
+	p_v1[index] = v;
+}
+
+__global__ void kernelSety(f64_vec3 * __restrict__ p_v1,
+	f64_vec3 * __restrict__ p_src)
+{
+	long const index = threadIdx.x + blockIdx.x * blockDim.x;
+	f64_vec3 src = p_src[index];
+	f64_vec3 v(0.0, src.y, 0.0);
+	p_v1[index] = v;
+}
+__global__ void kernelSetz(f64_vec3 * __restrict__ p_v1,
+	f64_vec3 * __restrict__ p_src)
+{
+	long const index = threadIdx.x + blockIdx.x * blockDim.x;
+	f64_vec3 src = p_src[index];
+	f64_vec3 v(0.0, 0.0, src.z);
+	p_v1[index] = v;
+}
+__global__ void kernelAddLC_vec3
+	(f64_vec3 * __restrict__ p_vec,
+		f64_vec3 coeff,
+		f64_vec3 * __restrict__ p_addition)
+{
+	long const index = threadIdx.x + blockIdx.x * blockDim.x;
+	f64_vec3 v = p_vec[index];
+	f64_vec3 add = p_addition[index];
+	v.x += coeff.x*add.x;
+	v.y += coeff.y*add.y;
+	v.z += coeff.z*add.z;
+	p_vec[index] = v;
+}
 __global__ void kernelAccumulateSummands4(
 
 	// We don't need to test for domain, we need to make sure the summands are zero otherwise.
@@ -1291,6 +1504,7 @@ __global__ void kernelCalculateOverallVelocitiesVertices(
 		f64_vec2 pos0, pos1;
 		f64 Area_tri;
 		f64 wt0, wt1, wtcent;
+		bool bZeroOut = false;
 		for (i = 0; i < tri_len; i++)
 		{
 			inext = i + 1; if (inext == tri_len) inext = 0;
@@ -1307,12 +1521,15 @@ __global__ void kernelCalculateOverallVelocitiesVertices(
 			if ((izTri[inext] >= StartMinor) && (izTri[inext] < EndMinor))
 			{
 				pos1 = shared_pos[izTri[inext] - StartMinor];
-			}
-			else {
+			} else {
 				pos1 = p_info_minor[izTri[inext]].pos;
 			}
 			if (szPBC[inext] == ROTATE_ME_CLOCKWISE) pos1 = Clockwise_d*pos1;
 			if (szPBC[inext] == ROTATE_ME_ANTICLOCKWISE) pos1 = Anticlockwise_d*pos1;
+
+			if (pos0.x*pos0.x + (pos0.y - CATHODE_ROD_R_POSITION)*(pos0.y - CATHODE_ROD_R_POSITION) <
+				CATHODE_ROD_RADIUS*CATHODE_ROD_RADIUS)
+				bZeroOut = true;
 
 			// Get Area_tri:
 			Area_tri = 0.5*fabs(pos0.x*info.pos.y + info.pos.x*pos1.y + pos1.x*pos0.y
@@ -1360,18 +1577,23 @@ __global__ void kernelCalculateOverallVelocitiesVertices(
 		f64 factor = max(4.0 * to_bary.dot(to_bary) / Areatot, 0.8);
 		// We may move slowly if we are not far away.
 		
-		v_overall = to_bary * factor / h_full_adv;
-		// Now reduce if we are over 2e7
-		f64 ratio = sqrt(1 + v_overall.dot(v_overall) / 4.0e14);
-		v_overall /= ratio;
+		// For now, just zero out vertex motion near the cathode rod:
+		if (bZeroOut) {
+			v_overall.x = 0.0; v_overall.y = 0.0;
+		} else {
 
-		if ((TEST3) || (v_overall.dot(v_overall) > 1.0e19)) {
-			printf("iVertex %d pos %1.9E %1.9E barycenter %1.9E %1.9E v_overall %1.9E %1.9E \n"
-				"factor %1.9E sqrt(Areatot) %1.9E |to_bary| %1.9E \n",
-				iVertex, info.pos.x, info.pos.y, barycenter.x, barycenter.y, v_overall.x, v_overall.y,
-				factor, sqrt(Areatot), to_bary.modulus());
+			v_overall = to_bary * factor / h_full_adv;
+			// Now reduce if we are over 2e7
+			f64 ratio = sqrt(1 + v_overall.dot(v_overall) / 4.0e14);
+			v_overall /= ratio;
+			if ((TEST3) || (v_overall.dot(v_overall) > 1.0e19)) {
+				printf("iVertex %d pos %1.9E %1.9E barycenter %1.9E %1.9E v_overall %1.9E %1.9E \n"
+					"factor %1.9E sqrt(Areatot) %1.9E |to_bary| %1.9E \n",
+					iVertex, info.pos.x, info.pos.y, barycenter.x, barycenter.y, v_overall.x, v_overall.y,
+					factor, sqrt(Areatot), to_bary.modulus());
+			};
 		};
-
+		
 		// Let's try a very simple way:
 		// We want everything to live at its own barycenter.
 		// Ignore the v.
@@ -1984,6 +2206,27 @@ __global__ void kernelCalculate_kappa_nu(
 	}
 }
 
+__global__ void kernelSetPressureFlag(
+	structural * __restrict__ p_info_minor,
+	long * __restrict__ p_izTri,
+	bool * __restrict__ bz_pressureflag
+) {
+	long const iVertex = threadIdx.x + blockIdx.x * blockDim.x;
+	long izTri[MAXNEIGH];
+
+	structural info = p_info_minor[iVertex + BEGINNING_OF_CENTRAL];
+	memcpy(izTri, p_izTri + MAXNEIGH*iVertex, sizeof(long)*MAXNEIGH);
+
+	bool bPressure = false;
+	if (info.flag == DOMAIN_VERTEX) bPressure = true;	
+#pragma unroll MAXNEIGH
+	for (int i = 0; i < info.neigh_len; i++)
+	{
+		if (p_info_minor[izTri[i]].flag == CROSSING_CATH) bPressure = false;
+	}
+	bz_pressureflag[iVertex] = bPressure;
+}
+
 __global__ void kernelPrepareNuGraphs(
 	structural * __restrict__ p_info_minor,
 	nvals * __restrict__ p_n_minor,
@@ -2000,7 +2243,8 @@ __global__ void kernelPrepareNuGraphs(
 	species3 nu;
 
 	structural info = p_info_minor[iMinor];
-	if ((info.flag == DOMAIN_TRIANGLE) || (info.flag == CROSSING_INS))
+	if ((info.flag == DOMAIN_TRIANGLE) || (info.flag == CROSSING_INS)
+		|| (info.flag == CROSSING_CATH))
 	{
 		our_n = p_n_minor[iMinor];
 		T = p_T_minor[iMinor];
@@ -2467,22 +2711,21 @@ __global__ void kernelResetFrillsAz(
 		{
 			p_Az[index] = p_Az[izNeigh.i1]; 
 		} else {			
-			
-			
-			f64 r = p_info[izNeigh.i1].pos.modulus();
-
+				
 //#define RADIAL_DECLINE
-
 #ifdef RADIAL_DECLINE
+			f64 r = p_info[izNeigh.i1].pos.modulus();
 		 	p_Az[index] = (r/ FRILL_CENTROID_OUTER_RADIUS_d)*p_Az[izNeigh.i1]; // should be something like 0.99*p_Az[izNeigh.i1]
 			// Better if we store a constant called Outer_Frill_Factor to save a load and a division.
 
-#else
+#endif
+#ifdef LOG_INCLINE
 			// Alternative to try: put A = C ln r ...
 
 			// The result is that it swung up and down vez with oscillations about every 0.7ns for a full cycle
 			// We would rather not see this bucking phenomenon.
 
+			f64 r = p_info[izNeigh.i1].pos.modulus();
 			f64 lnr = log(r);
 			f64 ln_ours = log(FRILL_CENTROID_OUTER_RADIUS_d);
 
@@ -2491,12 +2734,14 @@ __global__ void kernelResetFrillsAz(
 			// want A'' = - r A' .
 			// Let's just try it.
 			p_Az[index] = (ln_ours / lnr)*p_Az[izNeigh.i1]; // GREATER
-
-
+			
+#endif
+#ifdef FLATAZBC
+			p_Az[index] = p_Az[izNeigh.i1];
 #endif
 
 		};
-	};	
+	};
 }
 
 __global__ void kernelAddToAz(
@@ -3723,7 +3968,79 @@ __global__ void DivideMARDifference_get_accel_y(
 			((m_i + m_e)*N);
 	};
 }
+__global__ void kernelCreateWhoAmI_verts(
+	structural * __restrict__ p_info_major,
+	long * __restrict__ p_izNeigh_vert,
+	short * __restrict__ p_sz_who_am_I // array of MAXNEIGH shorts for each vertex.
+) {
+	__shared__ long izNeigh[threadsPerTileMajor][MAXNEIGH]; // 12*long = 6 double < 8 double
+	
+	short result[MAXNEIGH];
+	long izNeigh_neigh[MAXNEIGH];
 
+	long const iVertex = blockIdx.x*blockDim.x + threadIdx.x;
+	
+	memcpy(izNeigh[threadIdx.x], p_izNeigh_vert + MAXNEIGH*iVertex, sizeof(long)*MAXNEIGH);
+
+	__syncthreads();
+
+	long const StartMajor = blockIdx.x*blockDim.x;
+	long const EndMajor = StartMajor + blockDim.x;
+	structural info = p_info_major[iVertex];
+	if ((info.flag == INNERMOST) || (info.flag == OUTERMOST)) return;
+
+	// BEWARE THEN that info.neigh_len is not apparently accurate.
+
+	memset(result, 0, sizeof(short)*MAXNEIGH);
+	//int neigh_len = info.tri_len;
+	//if ((info.flag == INNERMOST) || (info.flag == OUTERMOST)) neigh_len--;
+	for (int i = 0; i < info.neigh_len; i++)
+	{
+		long iNeigh = izNeigh[threadIdx.x][i];
+		long *p;
+		if ((iNeigh >= StartMajor) && (iNeigh < EndMajor))
+		{
+			p = izNeigh[iNeigh - StartMajor];			
+		} else {
+			memcpy(izNeigh_neigh, p_izNeigh_vert + MAXNEIGH*iNeigh,	sizeof(long)*MAXNEIGH);
+			p = izNeigh_neigh;
+		};
+		short j = 0;
+		while ((*p != iVertex) && (j < MAXNEIGH+1)) {
+			++p;
+			++j;
+			if (j >= MAXNEIGH) printf(" j = %d iVertex %d iNeigh %d\n", j, iVertex, iNeigh);
+		};
+		result[i] = j;
+	};
+
+	memcpy(p_sz_who_am_I + MAXNEIGH*iVertex, result, sizeof(short)*MAXNEIGH);
+
+}
+
+__global__ void kernelAddStoredNTFlux(
+	structural * __restrict__ p_info_major,
+	NTrates * __restrict__ p_additional_array,
+	NTrates * __restrict__ p_values_to_augment
+) {
+	long const iVertex = blockIdx.x*blockDim.x + threadIdx.x;
+	structural info = p_info_major[iVertex];
+	if (info.flag != DOMAIN_VERTEX) return;
+
+	NTrates additional; // 12*5 doubles = 60 = too many!!
+	NTrates total;
+	memcpy(&total, p_values_to_augment + iVertex, sizeof(NTrates));
+	for (int i = 0; i < MAXNEIGH; i++) {
+		memcpy(&additional, &(p_additional_array[MAXNEIGH*iVertex + i]),
+			sizeof(NTrates));
+		total.N += additional.N;
+		total.Nn += additional.Nn;
+		total.NiTi += additional.NiTi;
+		total.NnTn += additional.NnTn;
+		total.NeTe += additional.NeTe;
+	};
+	memcpy(p_values_to_augment + iVertex, &total, sizeof(NTrates));
+}
 
 __global__ void MeasureAccelxy_and_JxB_and_soak(
 	v4 * __restrict__ p_vie_final,
@@ -3749,10 +4066,6 @@ __global__ void MeasureAccelxy_and_JxB_and_soak(
 	f64_vec2 accel;
 	p_accel_x[iVertex] = (vie_f.vxy.x - vie_i.vxy.x) / h_use;
 	p_accel_y[iVertex] = (vie_f.vxy.y - vie_i.vxy.y) / h_use;
-
-	if (TESTACCEL) printf("%d MeasureAccel y %1.9E initvy %1.9E finvy %1.9E\n\n",
-		iVertex, p_accel_y[iVertex],
-		vie_i.vxy.y, vie_f.vxy.y);
 
 	f64_vec2 Grad_Az = pGradAz[iVertex];
 	p_vxB_x[iVertex] = (q / (c*(m_i + m_e)))*Grad_Az.x*(vie_f.viz-vie_f.vez);
@@ -3788,9 +4101,9 @@ __global__ void MeasureAccelxy_and_JxB_and_soak(
 		p_soak_y[iVertex] = (1.0 / (m_i + m_e))*
 			(m_n*M_i_over_in*cross_section_times_thermal_in*n_use.n_n
 				+ m_n * M_e_over_en*cross_section_times_thermal_en*n_use.n_n)*(v_nk.y - vie_f.vxy.y);
-
-		if (TESTACCEL) printf("p_soak_y rate %1.10E v_n.y %1.10E v.y %1.10E v_n diff: %1.10E\n", p_soak_y[iVertex],
-			v_nk.y, vie_f.vxy.y, v_nkplus1.y - v_nk.y);
+//
+//		if (TESTACCEL) printf("p_soak_y rate %1.10E v_n.y %1.10E v.y %1.10E v_n diff: %1.10E\n", p_soak_y[iVertex],
+//			v_n*/k.y, vie_f.vxy.y, v_nkplus1.y - v_nk.y);
 
 		// Do we get no component of Upsilon that gives us a contribution from another dimension?
 		// Not sure on that -- don't think we can push both species same way due to a difference in vz.
@@ -3928,6 +4241,25 @@ __global__ void kernelTransmitHeatToVerts(
 #define FACTOR_PERP (1.2/0.96)
 #define DEBUGNANS
 
+
+__global__ void kernelSet(
+	v4 * __restrict__ p_v4,
+	f64_vec3 * __restrict__ p_src,
+	int flag
+) {
+	long const index = blockDim.x*blockIdx.x + threadIdx.x;
+	v4 v;
+	f64_vec3 src = p_src[index];
+	v.vxy.x = src.x;
+	v.vxy.y = src.y;
+	v.viz = 0.0;
+	v.vez = 0.0;
+	if (flag == SPECIES_ION) v.viz = src.z;
+	if (flag == SPECIES_ELEC) v.vez = src.z;
+	p_v4[index] = v;
+}
+
+
 __global__ void kernelMultiply_Get_Jacobi_Visc(
 	structural * __restrict__ p_info,
 	f64_vec2 * __restrict__ p_eps_xy,
@@ -3963,8 +4295,34 @@ __global__ void kernelMultiply_Get_Jacobi_Visc(
 		memset(&(p_Jacobi_ion[iMinor]), 0, sizeof(f64_vec3));
 		memset(&(p_Jacobi_elec[iMinor]), 0, sizeof(f64_vec3));
 	}
-
 }
+
+
+__global__ void kernelMultiply_Get_Jacobi_NeutralVisc(
+	structural * __restrict__ p_info,
+	f64_vec3 * __restrict__ p_eps3,
+	f64_tens3 * __restrict__ p_Matrix_n,
+	f64_vec3 * __restrict__ p_Jacobi ) 
+{
+	long const iMinor = blockDim.x*blockIdx.x + threadIdx.x;
+	structural info = p_info[iMinor];
+	if ((info.flag == DOMAIN_VERTEX) || (info.flag == DOMAIN_TRIANGLE) || (info.flag == CROSSING_INS))
+	{
+		f64_tens3 Matrix;
+		memcpy(&Matrix, p_Matrix_n + iMinor, sizeof(f64_tens3));
+		f64_vec3 Jacobi;
+		f64_vec3 epsilon;
+		memcpy(&epsilon, &(p_eps3[iMinor]), sizeof(f64_vec3));
+		Jacobi = Matrix*epsilon;
+		p_Jacobi[iMinor] = Jacobi;
+
+	} else {
+		// Jacobi = 0
+		memset(&(p_Jacobi[iMinor]), 0, sizeof(f64_vec3));		
+	}
+}
+
+
 
 __global__ void kernelCreateSeedPartOne(
 	f64 const h_use,
@@ -4187,6 +4545,10 @@ __global__ void kernelReassessTriNeighbourPeriodicFlags_and_populate_PBCIndexnei
 
 	//char flag0 = p_was_vertex_rotated[cornerindex.i1];
 	
+	//if (iTri == 92250) {
+	//	printf("92250 flag012 %d %d %d --\n", flag0, flag1, flag2);
+	//}
+
 	if ((flag0 == 0) && (flag1 == 0) && (flag2 == 0))
 	{
 		// typical case: do nothing
@@ -4195,11 +4557,13 @@ __global__ void kernelReassessTriNeighbourPeriodicFlags_and_populate_PBCIndexnei
 		// A neighbour tri had a vertex that wrapped.
 
 		structural info = p_info_minor[iTri];
-
 		LONG3 tri_neigh_index = p_tri_neigh_index[iTri];
-
 		memset(&tri_periodic_neigh_flags, 0, sizeof(CHAR4));
 		tri_periodic_neigh_flags.flag = info.flag;
+
+		//if (iTri == 92250) {
+		//	printf("92250 info.flag %d pos.x %1.8E \n", info.flag, info.pos.x);
+		//}
 
 		if (info.pos.x > 0.0) {
 
@@ -4214,13 +4578,19 @@ __global__ void kernelReassessTriNeighbourPeriodicFlags_and_populate_PBCIndexnei
 			test = p_tri_periodic_corner_flags[tri_neigh_index.i3];
 			if ((test.per0 != 0) || (test.per1 != 0) || (test.per2 != 0))
 				tri_periodic_neigh_flags.per2 = ROTATE_ME_CLOCKWISE;
+
 		}
 		else {
 			// if we are NOT periodic but on left, neighs are not rotated rel to us.
 			// If we ARE periodic but neigh is not and neigh cent > 0.0 then it is rotated.
 
 			CHAR4 ours = p_tri_periodic_corner_flags[iTri];
-			if ((ours.per0 != 0) && (ours.per1 != 0) && (ours.per2 != 0)) // ours IS periodic
+
+			//if (iTri == 92250) {
+			//	printf("ours %d %d %d %d\n", ours.per0, ours.per1, ours.per2, ours.flag);
+			//}
+
+			if ((ours.per0 != 0) || (ours.per1 != 0) || (ours.per2 != 0)) // ours IS periodic
 			{
 
 				structural info0 = p_info_minor[tri_neigh_index.i1];
@@ -4233,7 +4603,16 @@ __global__ void kernelReassessTriNeighbourPeriodicFlags_and_populate_PBCIndexnei
 
 				//	if ((pTri->neighbours[1]->periodic == 0) && (pTri->neighbours[1]->cent.x > 0.0))
 					//	tri_periodic_neigh_flags.per1 = ROTATE_ME_ANTICLOCKWISE;			
+			
+
+				if (iTri == 92250) {
+					printf("tri_periodic_neigh_flags %d %d %d %1.8E %1.8E %1.8E\n",
+						tri_periodic_neigh_flags.per0, tri_periodic_neigh_flags.per1,
+						tri_periodic_neigh_flags.per2,
+						info0.pos.x, info1.pos.x, info2.pos.x);
+				}
 			};
+
 		};
 
 		p_tri_periodic_neigh_flags[iTri] = tri_periodic_neigh_flags;

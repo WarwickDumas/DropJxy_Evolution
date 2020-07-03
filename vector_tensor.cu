@@ -617,8 +617,8 @@ Vector3 QUALS Make3(const Vector2 & v, const real scalar)
 struct Symmetric3
 {
 	real xx,yy,zz,xy,xz,yz;
-	Symmetric3() ;
-	Symmetric3(real x_x, real x_y, real y_y, real x_z, real y_z, real z_z) ;
+	QUALIFIERS Symmetric3() {};
+	QUALIFIERS Symmetric3(real x_x, real x_y, real y_y, real x_z, real y_z, real z_z) ;
 	
 	Vector3 QUALIFIERS operator* (const Vector3 &v) const;
 };

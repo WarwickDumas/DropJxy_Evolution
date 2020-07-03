@@ -14,7 +14,7 @@
 #include "mesh.cu"
 #include "meshutil.cu"
 
-#define VERBOSEGRAPHICS 0 // also in meshutil
+#define VERBOSEGRAPHICS 1 // also in meshutil
 
 //extern FixedMesh Fixed;
 extern int GlobalWhichLabels;
@@ -1632,7 +1632,7 @@ VOID surfacegraph::Render(const char * szTitle, bool RenderTriLabels,
 						
 			// Now do 3.6, 3.75, 3.9, 4.05, 4.2
 			r = 3.45;
-			for (i = 0; i < 11; i++) {
+			for (i = 0; i < 12; i++) {
 				theta = -HALFANGLE*1.1;
 				for (int asdf = 0; asdf < 10000; asdf++)
 				{
@@ -1649,10 +1649,10 @@ VOID surfacegraph::Render(const char * szTitle, bool RenderTriLabels,
 				Direct3D.pd3dDevice->DrawPrimitiveUP(D3DPT_LINESTRIP,9999,linedata,sizeof(vertex1));
 
 				sprintf(buffer,"%1.2f",r);
-				RenderLabel(buffer, linedata[3500].x,zeroplane,linedata[3500].z,true);
+				RenderLabel(buffer, linedata[4100].x,zeroplane,linedata[4100].z,true);
 				r += 0.09;
 
-				if (i >= 7) r += 0.09; // last 3
+				if (i >= 7) r += 0.11; // last 3
 			};
 
 			// Vertical lines:
@@ -2149,7 +2149,7 @@ VOID surfacegraph::Render(const char * szTitle, bool RenderTriLabels,
 									pPNT = &(vertices_buffer[VertexIndexArray8000[asdf]]); // -diff
 									
 									newpos.z = pPNT->pos.z;
-									newpos.x = pPNT->pos.z*(float)(CUTAWAYANGLE);
+									newpos.x = (float)(((double)pPNT->pos.z)*(CUTAWAYANGLE));
 									
 									pPNT0 = &(vertices_buffer[(pTri->cornerptr[0]-pX->X)]);  // -diff
 									pPNT1 = &(vertices_buffer[(pTri->cornerptr[1]-pX->X)]);
@@ -2162,13 +2162,30 @@ VOID surfacegraph::Render(const char * szTitle, bool RenderTriLabels,
 									dist2 = sqrt((pPNT2->pos.x-newpos.x)*(pPNT2->pos.x-newpos.x)
 												+ (pPNT2->pos.z-newpos.z)*(pPNT2->pos.z-newpos.z));
 									
-									wt0 = 1.0f/dist0;
-									wt1 = 1.0f/dist1;
-									wt2 = 1.0f/dist2;
-									wttotal = wt0+wt1+wt2;
-									wt0 /= wttotal;
-									wt1 /= wttotal;
-									wt2 /= wttotal;
+									if (dist0 == 0.0) {
+										wt0 = 1.0; wt1 = 0.0; wt2 = 0.0;
+									}
+									else {
+										if (dist1 == 0.0) {
+											wt0 = 0.0; wt1 = 1.0; wt2 = 0.0;
+										}
+										else {
+											if (dist2 == 0.0) {
+												wt0 = 0.0; wt1 = 0.0; wt2 = 1.0;
+											}
+											else {
+
+												wt0 = 1.0f / dist0;
+												wt1 = 1.0f / dist1;
+												wt2 = 1.0f / dist2;
+												wttotal = wt0 + wt1 + wt2;
+												wt0 /= wttotal;
+												wt1 /= wttotal;
+												wt2 /= wttotal;
+											}
+										}
+									}
+
 									newpos.y = wt0*pPNT0->pos.y + wt1*pPNT1->pos.y + wt2*pPNT2->pos.y;
 									pPNT->pos = newpos;	
 								};
@@ -2193,7 +2210,7 @@ VOID surfacegraph::Render(const char * szTitle, bool RenderTriLabels,
 
 					int asdf = 0;			
 					real r = 3.439999999;
-					for (i = 0; i < 11; i++) {
+					for (i = 0; i < 12; i++) {
 
 						while ((asdf < 8000) && (radiusArray8000[asdf] < r)) asdf++;	
 						if (asdf == 8000) {
@@ -2218,7 +2235,7 @@ VOID surfacegraph::Render(const char * szTitle, bool RenderTriLabels,
 						RenderLabel(buffer, CUTAWAYANGLE*pPNT->pos.z,zeroplane,pPNT->pos.z);
 						if (i == 0) r = 3.45;
 						r += 0.09;
-						if (i >= 7) r += 0.09; // last 3
+						if (i >= 7) r += 0.11; // last 4
 					}; 
 					// line underneath:
 					linedata[0].x = sin(CUTAWAYANGLE)*DEVICE_RADIUS_INSULATOR_OUTER*xzscale;

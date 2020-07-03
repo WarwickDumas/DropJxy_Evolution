@@ -2,7 +2,7 @@
 #define MESHUTILCPP
 
 #define DEFINEexp  exp
-#define VERBOSEGRAPHICS 0
+#define VERBOSEGRAPHICS 1
 // also in surfacegraph_tri
 
 #include "headers.h"
@@ -845,6 +845,8 @@ int TriMesh::Initialise(int token)
 	Outermost_r_achieved = r - r_use3; // should now be DOMAIN_OUTER_RADIUS. 	
 	OutermostFrillCentroidRadius = r - r_use3 * 0.5;
 	// Used for Lap A calculating from A_frill but not for major area calc.
+	printf("OutermostFrillCentroidRadius %1.10E \n", OutermostFrillCentroidRadius);
+	getch();
 
 	// old:
 	// This is giving disagreement of areas: major areas think they
@@ -1003,18 +1005,21 @@ int TriMesh::Initialise(int token)
 
 			if (iRow == 0) {
 				vert->flags = CONCAVE_EDGE_VERTEX; // == INNERMOST
-			}
-			else {
+			} else {
 				if (iRow == numRows - 1)
 				{
 					vert->flags = CONVEX_EDGE_VERTEX; // == OUTERMOST
-				}
-				else {
+				} else {
 					if (iRow <= numRow1 + numRow2) {
 						vert->flags = INNER_VERTEX;
-					}
-					else {
-						vert->flags = DOMAIN_VERTEX;
+					} else {
+						if ((vert->pos.x - 0.0)*(vert->pos.x - 0.0) +
+							(vert->pos.y - CATHODE_ROD_R_POSITION)*(vert->pos.y - CATHODE_ROD_R_POSITION) <
+							CATHODE_ROD_RADIUS*CATHODE_ROD_RADIUS) {
+							vert->flags = INNER_VERTEX; // same code as in insulator --- ok or not?
+						} else {
+							vert->flags = DOMAIN_VERTEX;
+						};
 					};
 				};
 			};
@@ -1063,7 +1068,14 @@ int TriMesh::Initialise(int token)
 						vert->flags = INNER_VERTEX;
 					}
 					else {
-						vert->flags = DOMAIN_VERTEX;
+
+						if ((vert->pos.x - 0.0)*(vert->pos.x - 0.0) +
+							(vert->pos.y - CATHODE_ROD_R_POSITION)*(vert->pos.y - CATHODE_ROD_R_POSITION) <
+							CATHODE_ROD_RADIUS*CATHODE_ROD_RADIUS) {
+							vert->flags = INNER_VERTEX; // same code as in insulator --- ok or not?
+						} else {
+							vert->flags = DOMAIN_VERTEX;
+						};
 					};
 				};
 			};
@@ -1081,6 +1093,9 @@ int TriMesh::Initialise(int token)
 			theta += theta_spacing;
 		};
 	};
+
+
+
 
 	if (iVertex != numVertices) {
 		printf("summat wrong. iVertex %d numVertices %d \n", iVertex, numVertices);
@@ -1271,10 +1286,54 @@ int TriMesh::Initialise(int token)
 					pTri->u8domain_flag = CROSSING_INS;
 				}
 				else {
-					pTri->u8domain_flag = DOMAIN_TRIANGLE;
+
+					if (
+						((pTri->cornerptr[0]->flags == INNER_VERTEX) || (pTri->cornerptr[0]->flags == OUTERMOST)) &&
+						((pTri->cornerptr[1]->flags == INNER_VERTEX) || (pTri->cornerptr[1]->flags == OUTERMOST)) &&
+						((pTri->cornerptr[2]->flags == INNER_VERTEX) || (pTri->cornerptr[2]->flags == OUTERMOST))
+						)
+					{
+						pTri->u8domain_flag = OUT_OF_DOMAIN;
+					} else {
+						if (
+							((pTri->cornerptr[0]->flags == DOMAIN_VERTEX) || (pTri->cornerptr[0]->flags == OUTERMOST)) &&
+							((pTri->cornerptr[1]->flags == DOMAIN_VERTEX) || (pTri->cornerptr[1]->flags == OUTERMOST)) &&
+							((pTri->cornerptr[2]->flags == DOMAIN_VERTEX) || (pTri->cornerptr[2]->flags == OUTERMOST))
+							)
+						{
+							pTri->u8domain_flag = DOMAIN_TRIANGLE;
+						} else {
+							if (pTri->cornerptr[2]->pos.y < 3.5) {
+								pTri->u8domain_flag = CROSSING_INS;
+							} else {
+								pTri->u8domain_flag = CROSSING_CATH;
+
+								if (iTri == 97764) {
+									printf("97764 vertices %d %d %d flags %d %d %d \n"
+										"pos %1.9E %1.9E , %1.9E %1.9E, %1.9E %1.9E\n",
+										pTri->cornerptr[0] - X, pTri->cornerptr[1] - X, pTri->cornerptr[2] - X,
+										pTri->cornerptr[0]->flags, pTri->cornerptr[1]->flags, pTri->cornerptr[2]->flags,
+										pTri->cornerptr[0]->pos.x, pTri->cornerptr[0]->pos.y,
+										pTri->cornerptr[1]->pos.x, pTri->cornerptr[1]->pos.y,
+										pTri->cornerptr[2]->pos.x, pTri->cornerptr[2]->pos.y);
+								//	getch();
+								};
+							};
+						}
+					};
 				};
 			};
 
+			if (iTri == 97764) {
+				printf("97764 vertices %d %d %d flags %d %d %d ours %d\n"
+					"pos %1.9E %1.9E , %1.9E %1.9E, %1.9E %1.9E\n",
+					pTri->cornerptr[0] - X, pTri->cornerptr[1] - X, pTri->cornerptr[2] - X,
+					pTri->cornerptr[0]->flags, pTri->cornerptr[1]->flags, pTri->cornerptr[2]->flags,pTri->u8domain_flag,
+					pTri->cornerptr[0]->pos.x, pTri->cornerptr[0]->pos.y,
+					pTri->cornerptr[1]->pos.x, pTri->cornerptr[1]->pos.y,
+					pTri->cornerptr[2]->pos.x, pTri->cornerptr[2]->pos.y);
+			//	getch();
+			};
 			++pTri;
 			++iTri;
 		}; // end while
@@ -1288,7 +1347,6 @@ int TriMesh::Initialise(int token)
 	NumInnerFrills = numRow[0];
 	FirstOuterFrill = iTri;
 	
-
 	for (int iExtra = 0; iExtra < numRow[numRows - 1]; iExtra++)
 	{
 		SetTriangleVertex(0, pTri, X + iVertex);
@@ -1302,8 +1360,7 @@ int TriMesh::Initialise(int token)
 		++pTri;
 		++iTri;
 	}
-
-
+	
 	numTriangles = iTri;
 
 	printf("Triangles used %d, Triangles allocated %d \n", numTriangles, numTrianglesAllocated);
@@ -1792,8 +1849,7 @@ int TriMesh::InitialiseOriginal(int token)
 		top_circled = 0;
 		bot_circled = 0;
 		while ((bot_circled == 0) || (top_circled == 0))
-		{
-			
+		{			
 			if (iTri >= numTrianglesAllocated)
 			{	printf("Ran out of triangles!\n""iVertex = %d, iTri = %d, iRow = %d. NumRows = %d\n"					
 				"numTrianglesAllocated = %d""\nAny key\n", 
@@ -4453,11 +4509,8 @@ void TriMesh::SetVerticesAndIndicesAux(int iLevel,
 		// are we set to CULL_NONE? yes...
 	};	
 
-
-
 	if ( (NTris > 0) && (0) ){
 	
-		
 		// move some end vertices to near start vertices
 		pPNT =vertices+numAuxVertices[iLevel]-100;
 		pVertex = AuxX[iLevel];
@@ -4517,9 +4570,7 @@ real TriMesh::SolveConsistentTemperature(real n, real n_n)
 	// will not go mad.
 
 	real sqrtTeV, TeVsq, TeV45, F, Left, Right, FLeft, FRight;
-
-	//printf("n %1.10E n_n %1.10E \n",n,n_n);
-
+	
 	sqrtTeV = sqrt(TeV);
 	TeVsq = TeV*TeV;
 	TeV45 = TeVsq*TeVsq*sqrtTeV;
@@ -4553,7 +4604,6 @@ real TriMesh::SolveConsistentTemperature(real n, real n_n)
 			F = n_n*(1.0e-5*sqrtTeV/(6.0*E0+TeV))*exp(-E0/TeV) 
 					-	2.7e-13*n/sqrtTeV - 8.75e-27*n*n/(TeV45);
 			
-		//	printf("Tleft %1.10E F %1.10E \n",TeV,F);
 			if (TeV > 12.0) {
 				// summat strange
 				TeV = TeV;
@@ -4590,8 +4640,7 @@ real TriMesh::SolveConsistentTemperature(real n, real n_n)
 			Right = TeV;
 			FRight = F;
 		};
-
-
+		
 		dFbydT = expfrac*temp*n_n*( 0.5/TeV - 1.0/(6.0*E0+TeV) + E0/(TeV*TeV) )
 						+ 0.5*2.7e-13*n/(TeV*sqrtTeV) + 4.5*8.75e-27*n/(TeV45*TeV);
 		
@@ -4697,9 +4746,7 @@ void TriMesh::InitialPopulate(void)
 	{
 	//	pVert->ion.T = pVert->ion.n*T_INITIAL_CENTRE/n_INITIAL_CENTRE
 	//			       + UNIFORM_T_EXTRA;
-		if (iVertex == 88358 - BEGINNING_OF_CENTRAL) {
-			iVertex = iVertex;
-		}
+		
 		n_ion = InitialIonDensity(pVert->pos.x,pVert->pos.y);
 		n_neut = InitialNeutralDensity(pVert->pos.x,pVert->pos.y);
 		T_ion = InitialTemperature(pVert->pos.x, pVert->pos.y);
@@ -4746,10 +4793,15 @@ void TriMesh::InitialPopulate(void)
 	for (long iTri = 0; iTri < numTriangles; iTri++)
 	{
 		pTri->area = pTri->GetArea();
-
+		
 		n_ion = InitialIonDensity(pTri->cent.x, pTri->cent.y);
 		n_neut = InitialNeutralDensity(pTri->cent.x, pTri->cent.y);
 		T_ion = InitialTemperature(pTri->cent.x, pTri->cent.y);
+
+//		if (iTri == 40917) {
+//			printf("40917 n_ion %1.10E \n", n_ion);
+//			getch();
+//		}
 
 		memset(&ourdata, 0, sizeof(plasma_data)); // v= 0
 		ourdata.n_n = n_neut;
@@ -9823,6 +9875,8 @@ void TriMesh::CreateTilingAndResequence2(TriMesh * pDestMesh) {
 		pTriDest->cornerptr[1] = pDestMesh->X + pTri->cornerptr[1]->iIndicator;
 		pTriDest->cornerptr[2] = pDestMesh->X + pTri->cornerptr[2]->iIndicator;
 		
+	//	if (pTri->indicator == 32719) printf("32719 mapped from %d\n", iTri);
+
 		++pTri;
 	}
 	

@@ -368,6 +368,9 @@ void cuSyst::SendToHost(cuSyst & Xhost)
 }
 void cuSyst::SendToDevice(cuSyst & Xdevice)
 {
+	//printf("Value sending to device [92250 * 6 + 1]: %d", p_szPBC_triminor[92250 * 6 + 1]);
+	//getch();
+
 	// We are going to need a host-allocated cuSyst in order to
 	// do the populating basically.
 	if (
@@ -535,6 +538,10 @@ void cuSyst::PopulateFromTriMesh(TriMesh * pX)
 	// Variables on host are called TriMinorNeighLists and TriMinorPBCLists
 	memcpy(p_izNeigh_TriMinor, pX->TriMinorNeighLists, Ntris * 6 * sizeof(long)); // pointless that we duplicate it but nvm
 	memcpy(p_szPBC_triminor, pX->TriMinorPBCLists, Ntris * 6 * sizeof(char));
+
+	//printf("Value sent for [92250][1] = %d",
+	//	pX->TriMinorPBCLists[92250][1]);
+	//getch();
 
 	// AsSUMES THIS cuSyst has been allocated on the host.
 	if ((Nverts != pX->numVertices) ||

@@ -11,7 +11,7 @@
 extern HWND hWnd;
 
 f64 sigma_tiles[1024];
-
+ 
 const int TriFiles[12] = { 29414, 29413, 29412, 29108, 29109, 29110,
 						29442, 29441, 29440, 29136, 29137, 29138 };
 
@@ -29,9 +29,9 @@ f64 Lap_Aznext[NMINOR];
 real GlobalIzElasticity;
 
 f64 inline GetEzShape__(f64 r) {
-	return 1.0;
-	// return 1.0 - 1.0 / (1.0 + exp(-16.0*(r - 4.2))); // At 4.0cm it is 96% as strong as at tooth. At 4.4 it is 4%.
+	return 1.0 - 1.0 / (1.0 + exp(-24.0*(r - 4.32))); // At 4.0cm it is 96% as strong as at tooth. At 4.4 it is 4%.
 }  
+
 //class nvT_data {
 //public:
 //	f64_vec3 v_e, v_i, v_n; // these live on minors
@@ -430,6 +430,14 @@ void TriMesh::EnsureAnticlockwiseTriangleCornerSequences_SetupTriMinorNeighbours
 				PBC[5] = ROTATE_ME_ANTICLOCKWISE;
 		};
 		
+	//	if (iTri == 92250) {
+	//		printf("neigh %d %d %d PBC1 %d PBC3 %d PBC5 %d periodic %d pos.x %1.9E : %1.9E %1.9E %1.9E\n",
+	//			pTri->neighbours[2] - T, pTri->neighbours[0] - T, pTri->neighbours[1] - T,
+	//			PBC[1], PBC[3], PBC[5], pTri->periodic, pTri->cent.x, pTri->neighbours[2]->cent.x,
+	//			pTri->neighbours[0]->cent.x, pTri->neighbours[1]->cent.x);
+	//		getch();
+	//	};
+
 		memcpy(TriMinorNeighLists[iTri],izNeigh, sizeof(long) * 6);
 		memcpy(TriMinorPBCLists[iTri], PBC, sizeof(char) * 6);
 
