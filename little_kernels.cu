@@ -1206,7 +1206,8 @@ __global__ void kernelAccumulateSummands6(
 
 	};
 }
-__global__ void kernelCalculateOverallVelocitiesVertices_1(
+
+/*__global__ void kernelCalculateOverallVelocitiesVertices_1(
 	structural * __restrict__ p_info_minor,
 	v4 * __restrict__ p_vie_major,
 	f64_vec3 * __restrict__ p_v_n_major,
@@ -1432,7 +1433,7 @@ __global__ void kernelCalculateOverallVelocitiesVertices_1(
 		// Hope this stuff works well because the equal masses takes a bit of doing.		
 	};
 	p_v_overall_major[iVertex] = v_overall;
-}
+}*/
 
 
 __global__ void kernelCalculateOverallVelocitiesVertices(
@@ -1466,13 +1467,13 @@ __global__ void kernelCalculateOverallVelocitiesVertices(
 
 	__syncthreads();
 
-	if (info.flag == DOMAIN_VERTEX)
+	if ((info.flag == DOMAIN_VERTEX) && (info.pos.dot(info.pos) < MESHMOVE_MAX_RADIUS*MESHMOVE_MAX_RADIUS))
 	{
 		// No velocity load.
 	//	v4 const vie = p_vie_major[iVertex];
 	//	f64_vec3 const v_n = p_v_n_major[iVertex];
 
-		nvals const n = p_n_major[iVertex];
+	//	nvals const n = p_n_major[iVertex]; // not used
 		short tri_len = info.neigh_len;
 		long izTri[MAXNEIGH];
 		char szPBC[MAXNEIGH];
@@ -1512,10 +1513,9 @@ __global__ void kernelCalculateOverallVelocitiesVertices(
 			if ((izTri[i] >= StartMinor) && (izTri[i] < EndMinor))
 			{
 				pos0 = shared_pos[izTri[i] - StartMinor];
-			}
-			else {
+			} else {
 				pos0 = p_info_minor[izTri[i]].pos;
-			}
+			};
 			if (szPBC[i] == ROTATE_ME_CLOCKWISE) pos0 = Clockwise_d*pos0;
 			if (szPBC[i] == ROTATE_ME_ANTICLOCKWISE) pos0 = Anticlockwise_d*pos0;
 			if ((izTri[inext] >= StartMinor) && (izTri[inext] < EndMinor))
@@ -1601,7 +1601,8 @@ __global__ void kernelCalculateOverallVelocitiesVertices(
 		// Maximum speed 2e7. We probably won't see excess of that anywhere that density is considerable.
 		
 		// Hope this stuff works well because the equal masses takes a bit of doing.		
-	};
+	}
+
 	p_v_overall_major[iVertex] = v_overall;
 }
 
@@ -1710,11 +1711,25 @@ __global__ void kernelCentroidVelocitiesTriangles(
 		}
 
 		if (info.flag == CROSSING_INS) {
-			// should not need to do anything different.
+			// This is the one place we should recognize, the 'centroid' is never going to move off the insulator.
+			// This v_overall is used in mass & heat advection so should properly have vr set to 0 to show it is 0.
+			// When we set AreaMajor we still project down to insulator -- -right ?!
+
+			// The truth is that the triangle centre can have motion as it's not on the insulator.
+
+			// Think through how this is used in momflux and in heat advection.
+
+			//f64_vec2 rhat = info.pos / info.pos.modulus();
+			f64_vec2 wouldbe_centroid = THIRD*(poscorner0 + poscorner1 + poscorner2);
+			if (wouldbe_centroid.dot(wouldbe_centroid) < DEVICE_RADIUS_INSULATOR_OUTER*DEVICE_RADIUS_INSULATOR_OUTER)
+				v -= (v.dot(info.pos) /
+					(info.pos.x*info.pos.x + info.pos.y*info.pos.y))*info.pos;
+			
+			// Important to know that only those below are projected up to it.
+
+			// What about in the case that all were projected because we are doing major cells? WATCH OUT.
+
 		};
-
-		// Empirical estimate of derivative. Saves me messing about with taking derivative of circumcenter position.
-
 
 	} else {
 		// leave it == 0		
@@ -2046,7 +2061,7 @@ __global__ void kernelAdvectPositionsTris(
 	f64_vec2 overall_v = p_v_overall_minor[index];
 	f64_vec2 oldpos = info.pos;
 	info.pos += h_use*overall_v;
-	if (0) //index == VERTCHOSEN + BEGINNING_OF_CENTRAL)
+	if (index == VERTCHOSEN + BEGINNING_OF_CENTRAL)
 		printf("iVertex %d oldpos %1.10E %1.10E info.pos %1.10E %1.10E overall_v %1.10E %1.10E h_use %1.10E\n",
 			VERTCHOSEN, oldpos.x, oldpos.y, info.pos.x, info.pos.y, overall_v.x, overall_v.y, h_use);
 	
@@ -2736,9 +2751,12 @@ __global__ void kernelResetFrillsAz(
 			p_Az[index] = (ln_ours / lnr)*p_Az[izNeigh.i1]; // GREATER
 			
 #endif
-#ifdef FLATAZBC
-			p_Az[index] = p_Az[izNeigh.i1];
-#endif
+			if (DIRICHLET == false)
+			{
+				p_Az[index] = p_Az[izNeigh.i1];
+			} else {
+				p_Az[index] = 0.0;
+			}
 
 		};
 	};
@@ -3987,15 +4005,25 @@ __global__ void kernelCreateWhoAmI_verts(
 	long const StartMajor = blockIdx.x*blockDim.x;
 	long const EndMajor = StartMajor + blockDim.x;
 	structural info = p_info_major[iVertex];
-	if ((info.flag == INNERMOST) || (info.flag == OUTERMOST)) return;
+	//if ((info.flag == INNERMOST) || (info.flag == OUTERMOST)) return;
+
+	// Oh ---- so what do outermost lists contain?
+	// They do not know who they are to their neighbours.
+	// Don't know why I even put in that skip -- totally unnecessary. Even innermosts can know who they are to their neighbours.
 
 	// BEWARE THEN that info.neigh_len is not apparently accurate.
+
+	if (iVertex == 40949) printf("40949 info.neigh_len %d izNeigh[%d-1] %d\n", info.neigh_len,
+		info.neigh_len-1, izNeigh[threadIdx.x][info.neigh_len-1]);
+
+	if ((info.flag == INNERMOST) || (info.flag == OUTERMOST)) info.neigh_len--;
 
 	memset(result, 0, sizeof(short)*MAXNEIGH);
 	//int neigh_len = info.tri_len;
 	//if ((info.flag == INNERMOST) || (info.flag == OUTERMOST)) neigh_len--;
 	for (int i = 0; i < info.neigh_len; i++)
 	{
+		
 		long iNeigh = izNeigh[threadIdx.x][i];
 		long *p;
 		if ((iNeigh >= StartMajor) && (iNeigh < EndMajor))
@@ -4033,6 +4061,8 @@ __global__ void kernelAddStoredNTFlux(
 	for (int i = 0; i < MAXNEIGH; i++) {
 		memcpy(&additional, &(p_additional_array[MAXNEIGH*iVertex + i]),
 			sizeof(NTrates));
+		if (iVertex == VERTCHOSEN) printf("%d i= %d : existing %1.10E add %1.10E neut: %1.9E %1.9E\n",
+			iVertex, i, total.N, additional.N, total.Nn, additional.Nn);
 		total.N += additional.N;
 		total.Nn += additional.Nn;
 		total.NiTi += additional.NiTi;
@@ -4241,6 +4271,21 @@ __global__ void kernelTransmitHeatToVerts(
 #define FACTOR_PERP (1.2/0.96)
 #define DEBUGNANS
 
+__global__ void Subtract_V4(
+	v4 * __restrict__ p_result,
+	v4 * __restrict__ p_a,
+	v4 * __restrict__ p_b
+) {
+	long const index = blockDim.x*blockIdx.x + threadIdx.x;
+	v4 result;
+	v4 a, b;
+	a = p_a[index]; 
+	b = p_b[index];
+	result.vxy = b.vxy - a.vxy;
+	result.viz = b.viz - a.viz;
+	result.vez = b.vez - a.vez;
+	p_result[index] = result;
+}
 
 __global__ void kernelSet(
 	v4 * __restrict__ p_v4,

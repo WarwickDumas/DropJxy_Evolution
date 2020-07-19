@@ -6,10 +6,8 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include "lapacke.h"
-  
-
+ 
 // we must find out what causes graphics crash during SPECIES_ION
-
 
 /* Auxiliary routines prototypes */
 extern void print_matrix(char* desc, lapack_int m, lapack_int n, double* a, lapack_int lda);
@@ -17,7 +15,7 @@ extern void print_int_vector(char* desc, lapack_int n, lapack_int* a);
 
 extern void Go_visit_the_other_file();
 extern void Setup_residual_array();
-
+      
 #include "headers.h"
 #include "cuda_runtime.h"
 #include "device_launch_parameters.h"
@@ -38,7 +36,7 @@ extern void Setup_residual_array();
 #include "surfacegraph_tri.h"
 #include "avi_utils.cpp"     // for making .avi
 #include "kernel.h"
-  
+     
 //=======================================================
 // Declarations of functions:
    

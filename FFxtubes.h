@@ -15,6 +15,9 @@
   
 bool const bScrewPinch = false;
 
+#define DIRICHLET false
+#define FLATAZBC
+
 #define FOLDER "C:/outputs/"
 #define INITIALAVI "start4.avi"		
   
@@ -51,9 +54,9 @@ bool const bScrewPinch = false;
 // Let's keep it real. nvT is best for our fetches and therefore is best.
 #define SWITCH_TO_CENTRE_OF_INTERSECTION_WITH_INSULATOR_FOR_TRI_CENTROID_CPU 0
 
-long const numTriTiles = 384; // note that there are also centrals
-long const numTilesMajor = 384;
-long const numTilesMinor = 576; // 576 = 384 + 192
+long const numTriTiles = 336; // note that there are also centrals
+long const numTilesMajor = 336;
+long const numTilesMinor = 504; // 576 = 384 + 192
 								// 456*256 = 304*256 + 304*128
 
 								// numTriTiles == numTilesMajor because the two sets are bijective.
@@ -63,12 +66,12 @@ long const threadsPerTileMinor = 256; // PopOhmsLaw ASSUMES THIS IS A POWER OF 2
 long const threadsPerTileMajor = 128; // see about it - usually we take info from minor.
 
 long const threadsPerTileMajorClever = 256;
-long const numTilesMajorClever = 192;
+long const numTilesMajorClever = 168;
 
 long const SIZE_OF_MAJOR_PER_TRI_TILE = 128;
 long const SIZE_OF_TRI_TILE_FOR_MAJOR = 256;
 long const BEGINNING_OF_CENTRAL = threadsPerTileMinor*numTriTiles;
-
+ 
 long const NUMVERTICES = numTilesMajor*threadsPerTileMajor;//36864; //36000; // particularly applies for polar?
 											 // = 288*128
 long const NMINOR = threadsPerTileMinor * numTilesMinor;
@@ -81,19 +84,24 @@ long const NUMTRIANGLES = NMINOR - NUMVERTICES;
 double const RELTHRESH_AZ =  1.0e-9; 
 
 // Note that getting it wrong should mean that subsequently we will correct for the error.
-
+ 
 
 // Model parameters:
 //===============================
 
  // radii in cm from anode centre : 
-#define DOMAIN_OUTER_RADIUS  5.0   // Assume cold neutrals looking out from this point.
-#define FLATAZBC
+#define DOMAIN_OUTER_RADIUS  10.0   // Assume cold neutrals looking out from this point.
+#define START_SPREADING_OUT_RADIUS 4.3
+#define NUMVERTICES_WITHIN 36864  // Used for initialization - focus on the area of interest
+// === 288*128, vs 336*128 for whole lot.
+#define VISCOSITY_MAX_RADIUS  4.5
+#define MESHMOVE_MAX_RADIUS   6.0
+
 // Think it's time we made radial values going out to 10cm.
 #define CHAMBER_OUTER_RADIUS  10.0
 
 
-#define KILL_NEUTRAL_V_OUTSIDE_TEMP  4.6 // No idea why problem occurring - just killing it for now
+#define KILL_NEUTRAL_V_OUTSIDE_TEMP  8.0 // No idea why problem occurring - just killing it for now
 
 // reality: cathode rod is 0.47625 cm radius, at 5cm device radius
 #define CATHODE_ROD_R_POSITION   5.0
