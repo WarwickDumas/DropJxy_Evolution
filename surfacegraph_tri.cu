@@ -1650,21 +1650,29 @@ VOID surfacegraph::Render(const char * szTitle, bool RenderTriLabels,
 
 				sprintf(buffer,"%1.2f",r);
 				RenderLabel(buffer, linedata[4100].x,zeroplane,linedata[4100].z,true);
+				if (i == 0) r = 3.45;
 				r += 0.09;
-
-				if (i >= 7) r += 0.11; // last 3
+				if (i >= 7) r += 0.11; // last 4
+				if (i >= 9) r = 5.52;
+				if (i >= 10) r = 6.5;
+				if (i > 10) r += 1.0*(double)(i - 10);
 			};
 
 			// Vertical lines:
 			for (int iSide = 0; iSide <= 1; iSide++)
-			for (int iWhich = 0; iWhich <= 1; iWhich++)
+			for (int iWhich = 0; iWhich <= 2; iWhich++)
 			{
 				if (iWhich == 0) {
 					x = (float)(-sin(HALFANGLE)*DEVICE_RADIUS_INSULATOR_OUTER)*xzscale;
 					z = (float)(cos(HALFANGLE)*DEVICE_RADIUS_INSULATOR_OUTER)*xzscale;
 				} else {
-					x = (float)(-sin(HALFANGLE)*DOMAIN_OUTER_RADIUS)*xzscale;
-					z = (float)(cos(HALFANGLE)*DOMAIN_OUTER_RADIUS)*xzscale;
+					if (iWhich == 1) {
+						x = (float)(-sin(HALFANGLE)*DOMAIN_OUTER_RADIUS)*xzscale;
+						z = (float)(cos(HALFANGLE)*DOMAIN_OUTER_RADIUS)*xzscale;
+					} else {
+						x = (float)(-sin(HALFANGLE)*0.5*DOMAIN_OUTER_RADIUS)*xzscale;
+						z = (float)(cos(HALFANGLE)*0.5*DOMAIN_OUTER_RADIUS)*xzscale;
+					}
 				};
 				
 				if (iSide == 1) x = -x;
@@ -1863,15 +1871,20 @@ VOID surfacegraph::Render(const char * szTitle, bool RenderTriLabels,
 		if (this->boolDisplayScales) {
 
 			for (int iSide = 0; iSide <= 1; iSide++)
-			for (int iWhich = 0; iWhich <= 1; iWhich++)
+			for (int iWhich = 0; iWhich <= 2; iWhich++)
 			{
 				if (bScrewPinch == false) {
 					if (iWhich == 0) {
 						x = (float)(-sin(HALFANGLE)*DEVICE_RADIUS_INSULATOR_OUTER)*xzscale;
 						z = (float)(cos(HALFANGLE)*DEVICE_RADIUS_INSULATOR_OUTER)*xzscale;
 					} else {
-						x = (float)(-sin(HALFANGLE)*DOMAIN_OUTER_RADIUS)*xzscale;
-						z = (float)(cos(HALFANGLE)*DOMAIN_OUTER_RADIUS)*xzscale;
+						if (iWhich == 1) {
+							x = (float)(-sin(HALFANGLE)*DOMAIN_OUTER_RADIUS)*xzscale;
+							z = (float)(cos(HALFANGLE)*DOMAIN_OUTER_RADIUS)*xzscale;
+						} else {
+							x = (float)(-sin(HALFANGLE)*0.5*DOMAIN_OUTER_RADIUS)*xzscale;
+							z = (float)(cos(HALFANGLE)*0.5*DOMAIN_OUTER_RADIUS)*xzscale;
+						}
 					};
 				} else {
 					// only really want to appear in 2 places ??
@@ -2117,14 +2130,24 @@ VOID surfacegraph::Render(const char * szTitle, bool RenderTriLabels,
 									}									
 								};
 									
-								if ((iWhich == -1) || ((this->boolDisplayInnerMesh == false) && (
-									(pX->T + izTri[iWhich])->u8domain_flag != DOMAIN_TRIANGLE))) {
+								if ((iWhich == -1) || (
+									(this->boolDisplayInnerMesh == false) 
+									 && ((pX->T + izTri[iWhich])->u8domain_flag != DOMAIN_TRIANGLE)
+									 && ((pX->T + izTri[iWhich])->u8domain_flag != CROSSING_CATH))
+									) {
 									// give up, do nothing
 									// but how to set position?
 									// use own point:
 
 									pPNT = &(vertices_buffer[VertexIndexArray8000[asdf]]); // - diff
 									pPNT->pos = vertices_buffer[(pVertex - pX->X)].pos;	// - diff
+
+									// In cathode rod, so we want to project to cutaway:
+									pPNT->pos.x = (float)(((double)pPNT->pos.z)*(CUTAWAYANGLE));
+									
+									if (rr > 3.44*3.44) pPNT->pos.y = zeroplane;
+
+									// Does this ever happen except in rod?
 
 								} else {
 									pTri = pX->T + izTri[iWhich];
@@ -2185,8 +2208,14 @@ VOID surfacegraph::Render(const char * szTitle, bool RenderTriLabels,
 											}
 										}
 									}
-
-									newpos.y = wt0*pPNT0->pos.y + wt1*pPNT1->pos.y + wt2*pPNT2->pos.y;
+									if ((rr > (CATHODE_ROD_R_POSITION-CATHODE_ROD_RADIUS)*(CATHODE_ROD_R_POSITION-CATHODE_ROD_RADIUS))
+										&& (rr < (CATHODE_ROD_R_POSITION + CATHODE_ROD_RADIUS)*(CATHODE_ROD_R_POSITION + CATHODE_ROD_RADIUS))
+										)
+									{
+										newpos.y = zeroplane;
+									} else {
+										newpos.y = wt0*pPNT0->pos.y + wt1*pPNT1->pos.y + wt2*pPNT2->pos.y;
+									};
 									pPNT->pos = newpos;	
 								};
 							// We could even try a cheat: do that before we do the surface graph. Does it stretch across?
@@ -2198,7 +2227,7 @@ VOID surfacegraph::Render(const char * szTitle, bool RenderTriLabels,
 					{
 						pPNT = &(vertices_buffer[VertexIndexArray8000[asdf]]);
 						linedata[asdf].x = pPNT->pos.x;
-						linedata[asdf].y = pPNT->pos.y; // will this help make it show up?
+						linedata[asdf].y = pPNT->pos.y; 
 						linedata[asdf].z = pPNT->pos.z;
 						linedata[asdf].colour = 0;
 					};
@@ -2206,11 +2235,9 @@ VOID surfacegraph::Render(const char * szTitle, bool RenderTriLabels,
 					Direct3D.pd3dDevice->SetFVF(point_fvf);
 					Direct3D.pd3dDevice->DrawPrimitiveUP(D3DPT_LINESTRIP,numVertsCutawayUse-1,linedata,sizeof(vertex1));
 
-					// chop from here:
-
 					int asdf = 0;			
 					real r = 3.439999999;
-					for (i = 0; i < 12; i++) {
+					for (i = 0; i < 14; i++) {
 
 						while ((asdf < 8000) && (radiusArray8000[asdf] < r)) asdf++;	
 						if (asdf == 8000) {
@@ -2232,10 +2259,17 @@ VOID surfacegraph::Render(const char * szTitle, bool RenderTriLabels,
 						tempval = (pPNT->pos.y - zeroplane)/yscale;
 						sprintf(buffer,"%1.2E",tempval);
 						strip_0(buffer);
-						RenderLabel(buffer, CUTAWAYANGLE*pPNT->pos.z,zeroplane,pPNT->pos.z);
+						if (tempval < 0.0) {
+							RenderLabel(buffer, CUTAWAYANGLE*pPNT->pos.z, zeroplane, pPNT->pos.z, false, true);
+						} else {
+							RenderLabel(buffer, CUTAWAYANGLE*pPNT->pos.z, zeroplane, pPNT->pos.z);
+						};
 						if (i == 0) r = 3.45;
 						r += 0.09;
 						if (i >= 7) r += 0.11; // last 4
+						if (i >= 9) r = 5.52;
+						if (i >= 10) r = 6.5;
+						if (i > 10) r += 1.0*(double)(i - 10);
 					}; 
 					// line underneath:
 					linedata[0].x = sin(CUTAWAYANGLE)*DEVICE_RADIUS_INSULATOR_OUTER*xzscale;
@@ -2437,7 +2471,7 @@ void inline surfacegraph::RenderText (const char * text, int lines_down)
 }
 
 void inline surfacegraph::RenderLabel (char * text, float x, float y, float z, 
-									   bool extrainfo)
+									   bool extrainfo, bool botleft)
 	{
 		RECT rect;
 		D3DXVECTOR3 transformed;
@@ -2461,27 +2495,36 @@ void inline surfacegraph::RenderLabel (char * text, float x, float y, float z,
 
 	//	printf("done D3DXVec3Xform \n");
 		DWORD format = DT_TOP|DT_RIGHT;
+
+		rect.top = (int)screencoord.y;
+		rect.right = (int)screencoord.x;
+
+		rect.bottom = rect.top + 30;
+		rect.left = rect.right - 200;
+
+		if (botleft) {
+			format = DT_BOTTOM | DT_LEFT;
+
+			rect.bottom = (int)screencoord.y;
+			rect.left = (int)screencoord.x;
+
+			rect.top = rect.bottom - 30;
+			rect.right = rect.left + 200;
+		};
+
 		D3DCOLOR textcolor = 0xff000000;
 		if (extrainfo) {
 			format = DT_CENTER | DT_VCENTER; // also changing rect, below.
 			textcolor = 0xff700022;
-		}
+		
 		// see http://msdn.microsoft.com/en-us/library/windows/desktop/bb206341(v=vs.85).aspx
 		
-		rect.top = (int)screencoord.y;
-		rect.right = (int)screencoord.x;
-		
-		rect.bottom=rect.top+30;
-		rect.left=rect.right-200;
-
-		if (extrainfo) {
 			rect.bottom -= 15;
 			rect.top -= 15;
 			rect.left += 100;
 			rect.right += 100;
 		};
-
-
+		
 		Direct3D.g_pFont->DrawText(NULL,text,strlen(text),&rect,format,textcolor);
 		
 		rect.top += 1;
@@ -2519,100 +2562,264 @@ void inline surfacegraph::RenderLabel (char * text, float x, float y, float z,
 		rect.left += 4;
 		rect.right += 4;
 		Direct3D.g_pFont->DrawText(NULL,text,strlen(text),&rect,format,0xffffffff);
-		rect.left -= 2;
-		rect.right -=2;
+
+		rect.top += 1;
+		rect.bottom += 1;
+		Direct3D.g_pFont->DrawText(NULL, text, strlen(text), &rect, format, 0xffffffff);
+		rect.left -= 4;
+		rect.right -= 4;
+		Direct3D.g_pFont->DrawText(NULL, text, strlen(text), &rect, format, 0xffffffff);
+
+		rect.top -= 1;
+		rect.bottom -= 1;
+
+		rect.left += 2;
+		rect.right += 2;
 
 		Direct3D.g_pFont->DrawText(NULL,text,strlen(text),&rect,format,textcolor);
 		
 	}
+	
 
-void inline surfacegraph::RenderLabel2 (char * text, float x, float y, float z, int whichline, unsigned int color)
-	{
-		RECT rect;
-		D3DXVECTOR3 position(x,y,z);
-		D3DXVECTOR3 transformed;
+void inline surfacegraph::RenderLabel2 (char * text, float x, float y, float z, int whichline, unsigned int color, bool bLong)
+{
+	RECT rect;
+	D3DXVECTOR3 position(x,y,z);
+	D3DXVECTOR3 transformed;
 
-		// see http://msdn.microsoft.com/en-us/library/windows/desktop/bb206341(v=vs.85).aspx
+	// see http://msdn.microsoft.com/en-us/library/windows/desktop/bb206341(v=vs.85).aspx
 
-		D3DXMATRIXA16 screenmat(((float)vp.Width)*0.5f,0.0f,0.0f,0.0f,
-			                    0.0f,  -((float)vp.Height)*0.5f,0.0f,0.0f,
-								0.0f,0.0f,((float)vp.MaxZ)-((float)vp.MinZ),0.0f,
-							    ((float)vp.X)+((float)vp.Width)*0.5f,((float)vp.Y)+((float)vp.Height)*0.5f,((float)vp.MinZ),1.0f);
+	D3DXMATRIXA16 screenmat(((float)vp.Width)*0.5f,0.0f,0.0f,0.0f,
+			                0.0f,  -((float)vp.Height)*0.5f,0.0f,0.0f,
+							0.0f,0.0f,((float)vp.MaxZ)-((float)vp.MinZ),0.0f,
+							((float)vp.X)+((float)vp.Width)*0.5f,((float)vp.Y)+((float)vp.Height)*0.5f,((float)vp.MinZ),1.0f);
 
-		D3DXVECTOR3 screencoord;
+	D3DXVECTOR3 screencoord;
 
-		if (position.x == 0.0f) position.x = 1.0e-7f;
-		if (position.y == 0.0f) position.y = 1.0e-7f;
-		if (position.z == 0.0f) position.z = 1.0e-7f;
+	if (position.x == 0.0f) position.x = 1.0e-7f;
+	if (position.y == 0.0f) position.y = 1.0e-7f;
+	if (position.z == 0.0f) position.z = 1.0e-7f;
+
+//	printf("Dbg position %1.9E %1.9E %1.9E matView 112233 %1.9E %1.9E %1.9E matProj %1.9E %1.9E %1.9E \n", position.x, position.y, position.z,
+//		matView._11, matView._22, matView._33, matProj._11, matProj._22, matProj._33);
+
+	D3DXVec3TransformCoord(&transformed, &position,&(matView*matProj));
+
+	// it looks like FP trap is found above not here. smth bad about transformed here
+	// or, smth bad about the input to the line above.
+
+	// DEBUG:
+//	printf("Dbg transformed %1.10E %1.10E %1.10E \n", transformed.x, transformed.y, transformed.z);
+//	printf("Screenmat diag %1.10E %1.10E %1.10E \n", screenmat._11, screenmat._22, screenmat._33);
+
+	D3DXVec3TransformCoord(&screencoord, &transformed, &screenmat);
+
+	if (bLong == false) {
+
+		rect.top = (int)screencoord.y - 15;
+		rect.right = (int)screencoord.x + 100;
+
+		if ((screencoord.x > vp.X) && (screencoord.x < vp.X + vp.Width)) {
+
+			if (whichline == 0) {
+				rect.top -= 8;
+			}
+			else {
+				rect.top += 7;
+			}
+
+			rect.bottom = rect.top + 30;
+			rect.left = rect.right - 200;
+
+			Direct3D.g_pFontsmall->DrawText(NULL, text, strlen(text), &rect, DT_CENTER | DT_VCENTER, color);
+
+			rect.top += 1;
+			rect.bottom += 1;
+			rect.left += 1;
+			rect.right += 1;
+
+			Direct3D.g_pFontsmall->DrawText(NULL, text, strlen(text), &rect, DT_CENTER | DT_VCENTER, 0xffffffff);
+
+			rect.top -= 2;
+			rect.bottom -= 2;
+			Direct3D.g_pFontsmall->DrawText(NULL, text, strlen(text), &rect, DT_CENTER | DT_VCENTER, 0xffffffff);
+
+			rect.left -= 2;
+			rect.right -= 2;
+
+			Direct3D.g_pFontsmall->DrawText(NULL, text, strlen(text), &rect, DT_CENTER | DT_VCENTER, 0xffffffff);
+
+			rect.top += 2;
+			rect.bottom += 2;
+			Direct3D.g_pFontsmall->DrawText(NULL, text, strlen(text), &rect, DT_CENTER | DT_VCENTER, 0xffffffff);
+
+			rect.top -= 3;
+			rect.bottom -= 3;
+			rect.left -= 1;
+			rect.right -= 1;
+			Direct3D.g_pFontsmall->DrawText(NULL, text, strlen(text), &rect, DT_CENTER | DT_VCENTER, 0xffffff55);
+			rect.left += 4;
+			rect.right += 4;
+			Direct3D.g_pFontsmall->DrawText(NULL, text, strlen(text), &rect, DT_CENTER | DT_VCENTER, 0xffffff55);
+
+			rect.top += 2;
+			rect.bottom += 2;
+			rect.left -= 2;
+			rect.right -= 2;
+			Direct3D.g_pFontsmall->DrawText(NULL, text, strlen(text), &rect, DT_CENTER | DT_VCENTER, 0xff000000);
+			// try rendering black twice and hope it ends up on top.
+		}
+	}
+	else {
+
+		rect.top = (int)screencoord.y - 15;
+		rect.left = (int)screencoord.x;
+
+		if ((screencoord.x > vp.X) && (screencoord.x < vp.X + vp.Width)) {
+
+			if (whichline == 0) {
+				rect.top -= 8;
+			}
+			else {
+				rect.top += 7;
+			}
+
+			rect.bottom = rect.top + 30;
+			rect.right = rect.left + 500;
+
+			Direct3D.g_pFontsmall->DrawText(NULL, text, strlen(text), &rect, DT_LEFT | DT_VCENTER, color);
+
+			rect.top += 1;
+			rect.bottom += 1;
+			rect.left += 1;
+			rect.right += 1;
+
+			Direct3D.g_pFontsmall->DrawText(NULL, text, strlen(text), &rect, DT_LEFT | DT_VCENTER, 0xffffffff);
+
+			rect.top -= 2;
+			rect.bottom -= 2;
+			Direct3D.g_pFontsmall->DrawText(NULL, text, strlen(text), &rect, DT_LEFT | DT_VCENTER, 0xffffffff);
+
+			rect.left -= 2;
+			rect.right -= 2;
+
+			Direct3D.g_pFontsmall->DrawText(NULL, text, strlen(text), &rect, DT_LEFT | DT_VCENTER, 0xffffffff);
+
+			rect.top += 2;
+			rect.bottom += 2;
+			Direct3D.g_pFontsmall->DrawText(NULL, text, strlen(text), &rect, DT_LEFT | DT_VCENTER, 0xffffffff);
+
+			rect.top -= 3;
+			rect.bottom -= 3;
+			rect.left -= 1;
+			rect.right -= 1;
+			Direct3D.g_pFontsmall->DrawText(NULL, text, strlen(text), &rect, DT_LEFT | DT_VCENTER, 0xffffff55);
+			rect.left += 4;
+			rect.right += 4;
+			Direct3D.g_pFontsmall->DrawText(NULL, text, strlen(text), &rect, DT_LEFT | DT_VCENTER, 0xffffff55);
+
+			rect.top += 2;
+			rect.bottom += 2;
+			rect.left -= 2;
+			rect.right -= 2;
+			Direct3D.g_pFontsmall->DrawText(NULL, text, strlen(text), &rect, DT_LEFT | DT_VCENTER, color);
+			// try rendering black twice and hope it ends up on top.
+
+		}
+	}
+}
+
+void inline surfacegraph::RenderLabel3(char * text, float x, float y, float z, int whichline, unsigned int color)
+{
+	// version for long text on 1D legend.
+
+	RECT rect;
+	D3DXVECTOR3 position(x, y, z);
+	D3DXVECTOR3 transformed;
+
+	// see http://msdn.microsoft.com/en-us/library/windows/desktop/bb206341(v=vs.85).aspx
+
+	D3DXMATRIXA16 screenmat(((float)vp.Width)*0.5f, 0.0f, 0.0f, 0.0f,
+		0.0f, -((float)vp.Height)*0.5f, 0.0f, 0.0f,
+		0.0f, 0.0f, ((float)vp.MaxZ) - ((float)vp.MinZ), 0.0f,
+		((float)vp.X) + ((float)vp.Width)*0.5f, ((float)vp.Y) + ((float)vp.Height)*0.5f, ((float)vp.MinZ), 1.0f);
+
+	D3DXVECTOR3 screencoord;
+
+	if (position.x == 0.0f) position.x = 1.0e-7f;
+	if (position.y == 0.0f) position.y = 1.0e-7f;
+	if (position.z == 0.0f) position.z = 1.0e-7f;
 
 	//	printf("Dbg position %1.9E %1.9E %1.9E matView 112233 %1.9E %1.9E %1.9E matProj %1.9E %1.9E %1.9E \n", position.x, position.y, position.z,
 	//		matView._11, matView._22, matView._33, matProj._11, matProj._22, matProj._33);
 
-		D3DXVec3TransformCoord(&transformed, &position,&(matView*matProj));
+	D3DXVec3TransformCoord(&transformed, &position, &(matView*matProj));
 
-		// it looks like FP trap is found above not here. smth bad about transformed here
-		// or, smth bad about the input to the line above.
+	// it looks like FP trap is found above not here. smth bad about transformed here
+	// or, smth bad about the input to the line above.
 
-		// DEBUG:
+	// DEBUG:
 	//	printf("Dbg transformed %1.10E %1.10E %1.10E \n", transformed.x, transformed.y, transformed.z);
 	//	printf("Screenmat diag %1.10E %1.10E %1.10E \n", screenmat._11, screenmat._22, screenmat._33);
 
-		D3DXVec3TransformCoord(&screencoord, &transformed, &screenmat);
+	D3DXVec3TransformCoord(&screencoord, &transformed, &screenmat);
 
-		rect.top = (int)screencoord.y-15;
-		rect.right = (int)screencoord.x+100;
-		
-		if ((screencoord.x > vp.X ) && (screencoord.x < vp.X+vp.Width)) {
+	rect.top = (int)screencoord.y - 15;
+	rect.left = (int)screencoord.x ;
+
+	if ((screencoord.x > vp.X) && (screencoord.x < vp.X + vp.Width)) {
 
 		if (whichline == 0) {
 			rect.top -= 8;
-		} else {
+		}
+		else {
 			rect.top += 7;
 		}
 
-		rect.bottom=rect.top+30;
-		rect.left=rect.right-200;
+		rect.bottom = rect.top + 30;
+		rect.right = rect.left + 500;
 
-		Direct3D.g_pFontsmall->DrawText(NULL,text,strlen(text),&rect,DT_CENTER|DT_VCENTER,color);
-		
+		Direct3D.g_pFontsmall->DrawText(NULL, text, strlen(text), &rect, DT_CENTER | DT_VCENTER, color);
+
 		rect.top += 1;
 		rect.bottom += 1;
 		rect.left += 1;
 		rect.right += 1;
 
-		Direct3D.g_pFontsmall->DrawText(NULL,text,strlen(text),&rect,DT_CENTER|DT_VCENTER,0xffffffff);
+		Direct3D.g_pFontsmall->DrawText(NULL, text, strlen(text), &rect, DT_LEFT | DT_VCENTER, 0xffffffff);
 
 		rect.top -= 2;
 		rect.bottom -= 2;
-		Direct3D.g_pFontsmall->DrawText(NULL,text,strlen(text),&rect,DT_CENTER|DT_VCENTER,0xffffffff);
+		Direct3D.g_pFontsmall->DrawText(NULL, text, strlen(text), &rect, DT_LEFT | DT_VCENTER, 0xffffffff);
 
 		rect.left -= 2;
 		rect.right -= 2;
-		
-		Direct3D.g_pFontsmall->DrawText(NULL,text,strlen(text),&rect,DT_CENTER|DT_VCENTER,0xffffffff);
+
+		Direct3D.g_pFontsmall->DrawText(NULL, text, strlen(text), &rect, DT_LEFT | DT_VCENTER, 0xffffffff);
 
 		rect.top += 2;
 		rect.bottom += 2;
-		Direct3D.g_pFontsmall->DrawText(NULL,text,strlen(text),&rect,DT_CENTER|DT_VCENTER,0xffffffff);
+		Direct3D.g_pFontsmall->DrawText(NULL, text, strlen(text), &rect, DT_LEFT | DT_VCENTER, 0xffffffff);
 
 		rect.top -= 3;
 		rect.bottom -= 3;
 		rect.left -= 1;
 		rect.right -= 1;
-		Direct3D.g_pFontsmall->DrawText(NULL,text,strlen(text),&rect,DT_CENTER|DT_VCENTER,0xffffff55);
+		Direct3D.g_pFontsmall->DrawText(NULL, text, strlen(text), &rect, DT_LEFT | DT_VCENTER, 0xffffff55);
 		rect.left += 4;
 		rect.right += 4;
-		Direct3D.g_pFontsmall->DrawText(NULL,text,strlen(text),&rect,DT_CENTER|DT_VCENTER,0xffffff55);
-		
+		Direct3D.g_pFontsmall->DrawText(NULL, text, strlen(text), &rect, DT_LEFT | DT_VCENTER, 0xffffff55);
+
 		rect.top += 2;
 		rect.bottom += 2;
 		rect.left -= 2;
 		rect.right -= 2;
-		Direct3D.g_pFontsmall->DrawText(NULL,text,strlen(text),&rect,DT_CENTER|DT_VCENTER,0xff000000);
+		Direct3D.g_pFontsmall->DrawText(NULL, text, strlen(text), &rect, DT_LEFT | DT_VCENTER, 0xff000000);
 		// try rendering black twice and hope it ends up on top.
 
-		}
 	}
+}
+
 surfacegraph::~surfacegraph()
 {
 	for(int N = 0; N < NUMBER_VERTEX_ARRAYS; N++)

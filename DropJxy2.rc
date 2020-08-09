@@ -70,6 +70,7 @@ BEGIN
         MENUITEM "Ionization",                  ID_DISPLAY_IONIZEGRAPHS
         MENUITEM "DTgraph",                     ID_DISPLAY_DTGRAPH
         MENUITEM "Accelgraph",                  ID_RUN_SIMULATIONSTEPS_CPU
+        MENUITEM "TensorOhms",                  ID_DISPLAY_TENSOROHMS
     END
     POPUP "Help"
     BEGIN

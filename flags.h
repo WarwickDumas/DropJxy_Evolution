@@ -32,6 +32,10 @@ int const REVERSE_JZ_TRI = 6;
 int const INNER_FRILL = 7;
 int const OUTER_FRILL = 8;
 
+int const CROSSING_CATH = 9;
+
+
+
 // Note that we should find we basically never hit the insulator
 // As that would entail compressing the material too much
 // between the insulator and the vertex.
@@ -226,6 +230,7 @@ int const REAL = 2;
 #define GRAPH_AXY2         210
 #define GRAPH_AXY3         211
 #define AZSOLVERGRAPHS     212
+#define OHMS2              213
 
 // Number of vars used to produce heights:
 int const FLAG_FLAT_MESH = 0;

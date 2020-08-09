@@ -44,8 +44,8 @@ extern TriMesh X1, X2;
 //#include "simulation.cpp"  // defines simulation methods
 
 extern long steps_remaining, GlobalStepsCounter, steps_remaining_CPU;
-extern int GlobalGraphSetting[7];
-extern surfacegraph Graph[7];
+extern int GlobalGraphSetting[8];
+extern surfacegraph Graph[8];
 //extern D3DXVECTOR3 GlobalPlanEye2;
 extern float xzscale; // for graphs -- how to handle?
 extern bool boolDisplayInnerMesh;

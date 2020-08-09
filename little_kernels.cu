@@ -660,6 +660,163 @@ __global__ void kernelAccumulateSummandsNeutVisc(
 		};
 	}
 
+__global__ void kernelAccumulateSummandsNeutVisc2(
+		f64 * __restrict__ p_eps,  // 
+		f64 * __restrict__ p_d_eps_by_d_beta,
+		// outputs:
+		f64 * __restrict__ p_sum_eps_deps_,  // 8 values for this block
+		f64 * __restrict__ p_sum_product_matrix_
+	)
+	{
+		__shared__ f64 sumdata_eps_deps[threadsPerTileMinor/4][REGRESSORS];
+		__shared__ f64 sum_product[threadsPerTileMinor/4][REGRESSORS][REGRESSORS];
+		// Call with threadsPerTileMinor/4
+
+		// !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+		long const iMinor = threadIdx.x + blockIdx.x * threadsPerTileMinor;
+		// !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+		f64 depsbydbeta[REGRESSORS], eps;
+		int i, j;
+		memset(&(sumdata_eps_deps[threadIdx.x]), 0, sizeof(f64)*REGRESSORS);
+		memset(&(sum_product[threadIdx.x]), 0, sizeof(f64)*REGRESSORS*REGRESSORS);
+
+		
+		eps = p_eps[iMinor];
+#pragma unroll
+		for (i = 0; i < REGRESSORS; i++)
+		{
+			depsbydbeta[i] = p_d_eps_by_d_beta[iMinor + i*NMINOR];
+		};
+#pragma unroll
+		for (i = 0; i < REGRESSORS; i++)
+		{
+			sumdata_eps_deps[threadIdx.x][i] = depsbydbeta[i] * eps;
+			for (j = 0; j < REGRESSORS; j++)
+				sum_product[threadIdx.x][i][j] = depsbydbeta[i] * depsbydbeta[j];
+		};				
+		
+
+		eps = p_eps[iMinor + threadsPerTileMinor/4];
+#pragma unroll
+		for (i = 0; i < REGRESSORS; i++)
+		{
+			depsbydbeta[i] = p_d_eps_by_d_beta[iMinor + threadsPerTileMinor / 4 + i*NMINOR];
+		};
+#pragma unroll
+		for (i = 0; i < REGRESSORS; i++)
+		{
+			sumdata_eps_deps[threadIdx.x][i] += depsbydbeta[i] * eps;
+			for (j = 0; j < REGRESSORS; j++)
+				sum_product[threadIdx.x][i][j] += depsbydbeta[i] * depsbydbeta[j];
+		};
+
+		eps = p_eps[iMinor + threadsPerTileMinor / 2];
+#pragma unroll
+		for (i = 0; i < REGRESSORS; i++)
+		{
+			depsbydbeta[i] = p_d_eps_by_d_beta[iMinor + threadsPerTileMinor / 2 + i*NMINOR];
+		};
+#pragma unroll
+		for (i = 0; i < REGRESSORS; i++)
+		{
+			sumdata_eps_deps[threadIdx.x][i] += depsbydbeta[i] * eps;
+			for (j = 0; j < REGRESSORS; j++)
+				sum_product[threadIdx.x][i][j] += depsbydbeta[i] * depsbydbeta[j];
+		};
+
+		eps = p_eps[iMinor + 3*threadsPerTileMinor / 4];
+#pragma unroll
+		for (i = 0; i < REGRESSORS; i++)
+		{
+			depsbydbeta[i] = p_d_eps_by_d_beta[iMinor + 3*threadsPerTileMinor / 4 + i*NMINOR];
+		};
+#pragma unroll
+		for (i = 0; i < REGRESSORS; i++)
+		{
+			sumdata_eps_deps[threadIdx.x][i] += depsbydbeta[i] * eps;
+			for (j = 0; j < REGRESSORS; j++)
+				sum_product[threadIdx.x][i][j] += depsbydbeta[i] * depsbydbeta[j];
+		};
+
+
+
+		__syncthreads();
+
+		int s = blockDim.x;
+		int k = s / 2;
+
+		while (s != 1) {
+			if (threadIdx.x < k)
+			{
+				for (i = 0; i < REGRESSORS; i++)
+				{
+					sumdata_eps_deps[threadIdx.x][i] += sumdata_eps_deps[threadIdx.x + k][i];
+					for (j = 0; j < REGRESSORS; j++)
+						sum_product[threadIdx.x][i][j] += sum_product[threadIdx.x + k][i][j];
+				};				
+			};
+			__syncthreads();
+
+			// Modify for case blockdim not 2^n:
+			if ((s % 2 == 1) && (threadIdx.x == k - 1)) {
+				for (i = 0; i < REGRESSORS; i++)
+				{
+					sumdata_eps_deps[threadIdx.x][i] += sumdata_eps_deps[threadIdx.x + s - 1][i];
+					for (j = 0; j < REGRESSORS; j++)
+						sum_product[threadIdx.x][i][j] += sum_product[threadIdx.x + s - 1][i][j];
+				};				
+			};
+			// In case k == 81, add [39] += [80]
+			// Otherwise we only get to 39+40=79.
+			s = k;
+			k = s / 2;
+			__syncthreads();
+		};
+
+		if (threadIdx.x == 0)
+		{
+			memcpy(&(p_sum_eps_deps_[blockIdx.x*REGRESSORS]), sumdata_eps_deps[0], sizeof(f64)*REGRESSORS);
+			memcpy(&(p_sum_product_matrix_[blockIdx.x*REGRESSORS*REGRESSORS]), &(sum_product[0][0][0]), sizeof(f64)*REGRESSORS*REGRESSORS);
+		};
+	}
+
+
+__global__ void AddLCtoVector3component(
+	f64_vec3 * __restrict__ p_operand,
+	f64_vec3 * __restrict__ p_regr,
+	int iDim,
+	f64_vec3 * __restrict__ p_storemove)
+{
+	long const index = threadIdx.x + blockIdx.x * blockDim.x;
+	f64_vec3 operand = p_operand[index];
+	f64_vec3 old = operand;
+	f64 move;
+	int i, j;
+	switch (iDim)
+	{
+	case 0:
+		for (i = 0; i < REGRESSORS; i++)
+			operand.x += beta_n_c[i] * p_regr[index+i*NMINOR].x;
+		move = operand.x - old.x;
+		p_storemove[index].x = move;
+		break;
+	case 1:
+		for (i = 0; i < REGRESSORS; i++)
+			operand.y += beta_n_c[i] * p_regr[index + i*NMINOR].y;
+		move = operand.y - old.y;
+		p_storemove[index].y = move;
+		break;
+	case 2:
+		for (i = 0; i < REGRESSORS; i++)
+			operand.z += beta_n_c[i] * p_regr[index + i*NMINOR].z;
+		move = operand.z - old.z;
+		p_storemove[index].z = move;
+		break;
+	}
+	p_operand[index] = operand;
+}
+
 __global__ void kernelSetx(f64_vec3 * __restrict__ p_v1,
 		f64_vec3 * __restrict__ p_src)
 {
@@ -1737,6 +1894,16 @@ __global__ void kernelCentroidVelocitiesTriangles(
 	p_overall_v_minor[index] = v;
 }
 
+__global__ void Reversesubtract_vec3(
+	f64_vec3 * __restrict__ p_reverse,
+	f64_vec3 * __restrict__ p_augmented)
+{
+	long const index = threadIdx.x + blockIdx.x*blockDim.x;
+	f64_vec3 rev = p_reverse[index];
+	f64_vec3 aug = p_augmented[index];
+	rev = aug - rev;
+	p_reverse[index] = rev;
+}
 
 __global__ void kernelCircumcenterVelocitiesTriangles(
 	f64_vec2 * __restrict__ p_overall_v_major,
@@ -3373,6 +3540,91 @@ __global__ void kernelAccumulateSumOfSquares1(
 		p_SS[blockIdx.x] = sumdata1[0];
 	}
 }
+
+__global__ void ScaleVector3(
+	f64_vec3 * __restrict__ p_eps,
+	f64 const factorx, f64 const factory, f64 const factorz)
+{
+	long const index = blockDim.x*blockIdx.x + threadIdx.x;
+	f64_vec3 vec3 = p_eps[index];
+	vec3.x *= factorx;
+	vec3.y *= factory;
+	vec3.z *= factorz;
+	p_eps[index] = vec3;
+}
+	
+__global__ void kernelAccumulateSumOfSquares3(
+	f64_vec3 * __restrict__ p_eps,
+	f64_vec3 * __restrict__ p_SS)
+{
+	long const index = blockDim.x*blockIdx.x + threadIdx.x;
+
+	__shared__ f64_vec3 sumdata1[threadsPerTileMajorClever];
+
+	f64_vec3 epsilon_n = p_eps[index];
+
+	sumdata1[threadIdx.x].x = epsilon_n.x*epsilon_n.x;
+	sumdata1[threadIdx.x].y = epsilon_n.y*epsilon_n.y;
+	sumdata1[threadIdx.x].z = epsilon_n.z*epsilon_n.z;
+
+	__syncthreads();
+
+	int s = blockDim.x;
+	int k = s / 2;
+
+	while (s != 1) {
+		if (threadIdx.x < k)
+		{
+			sumdata1[threadIdx.x] += sumdata1[threadIdx.x + k];
+		};
+		__syncthreads();
+
+		// Modify for case blockdim not 2^n:
+		if ((s % 2 == 1) && (threadIdx.x == k - 1)) {
+			sumdata1[threadIdx.x] += sumdata1[threadIdx.x + s - 1];
+		};
+		// In case k == 81, add [39] += [80]
+		// Otherwise we only get to 39+40=79.
+		s = k;
+		k = s / 2;
+		__syncthreads();
+	};
+
+	if (threadIdx.x == 0)
+	{
+		p_SS[blockIdx.x] = sumdata1[0];
+	}
+}
+
+__global__ void AssembleVector3(f64_vec3 * __restrict__ p_output,
+	f64 * __restrict__ p_x, f64 * __restrict__ p_y, f64 * __restrict__ p_z)
+{
+	long const index = blockDim.x*blockIdx.x + threadIdx.x;
+	f64_vec3 vec3;
+	vec3.x = p_x[index];
+	vec3.y = p_y[index];
+	vec3.z = p_z[index];
+	p_output[index] = vec3;
+}
+__global__ void SubtractVector3stuff(f64_vec3 * __restrict__ p_output,
+	f64 * __restrict__ p_x, f64 * __restrict__ p_y, f64 * __restrict__ p_z,
+	f64_vec3 * __restrict__ p_to_subtract)
+{
+	long const index = blockDim.x*blockIdx.x + threadIdx.x;
+	f64_vec3 vec3;
+	vec3.x = p_x[index];
+	vec3.y = p_y[index];
+	vec3.z = p_z[index];
+	vec3 -= p_to_subtract[index];
+	p_output[index] = vec3;
+}
+__global__ void SubtractVector3(f64_vec3 * __restrict__ p_output,
+	f64_vec3 * __restrict__ p_a, f64_vec3 * __restrict__ p_b)
+{
+	long const index = blockDim.x*blockIdx.x + threadIdx.x;
+	p_output[index] = p_a[index] - p_b[index];
+}
+
 __global__ void MultiplyVector(
 	f64 * __restrict__ multiply1,
 	f64 * __restrict__ multiply2,
@@ -3380,6 +3632,15 @@ __global__ void MultiplyVector(
 ) {
 	long const index = blockDim.x*blockIdx.x + threadIdx.x;
 	output[index] = multiply1[index] * multiply2[index];
+}
+
+__global__ void ScaleVector(
+	f64 * __restrict__ output,
+	f64 const coeff,
+	f64 * __restrict__ multiply
+) {
+	long const index = blockDim.x*blockIdx.x + threadIdx.x;
+	output[index] = multiply[index] * coeff;
 }
 
 __global__ void kernelAccumulateSumOfQuarts(

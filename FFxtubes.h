@@ -15,11 +15,11 @@
   
 bool const bScrewPinch = false;
 
-#define DIRICHLET false
-#define FLATAZBC
-
+#define DIRICHLET true
+//#define FLATAZBC
+ 
 #define FOLDER "C:/outputs/"
-#define INITIALAVI "start4.avi"		
+#define INITIALAVI "more.avi"		
   
 #define FUNCTIONALFILE_START FOLDER "functionals"
 #define DATAFILENAME FOLDER "Data_"
@@ -29,8 +29,8 @@ bool const bScrewPinch = false;
 #define DELAY_MILLISECS      100 // pause
 
 // steps per frame
-#define GRAPHICS_FREQUENCY				1 // 1e-11
-#define REDELAUN_FREQUENCY				2 // DEBUG!!
+#define GRAPHICS_FREQUENCY				1 // 2e-11
+#define REDELAUN_FREQUENCY				10 
 
 #define STEPS_PER_LOOP               1    // soon change to 500
 // frames between file pinch-offs:
@@ -41,7 +41,7 @@ bool const bScrewPinch = false;
 // milliseconds between frames:
 #define AVIFRAMEPERIOD         15  // milliseconds; 20 ms => 50 fps.
 
-#define DATA_SAVE_FREQUENCY					 20
+#define DATA_SAVE_FREQUENCY					 7
 // For debug. For production change it to 25
 
 // Program Mechanics:
@@ -100,6 +100,7 @@ double const RELTHRESH_AZ =  1.0e-9;
 // Think it's time we made radial values going out to 10cm.
 #define CHAMBER_OUTER_RADIUS  10.0
 
+#define GRAPH1D_MAXR  4.6
 
 #define KILL_NEUTRAL_V_OUTSIDE_TEMP  8.0 // No idea why problem occurring - just killing it for now
 
@@ -269,8 +270,8 @@ real const TIMESTEP = 1.0e-12;// 7.8125e-14;
 real const SUBSTEP = 1.0e-13; // 7.8125e-14;
 int const SUBCYCLES = 10; 
 int const GPU_STEPS = 20; // 2e-11
-int const ADVECT_FREQUENCY = 5; // 5e-12; 1e-11 = 1e-4/1e7 // 64
-int const ADVECT_STEPS_PER_GPU_VISIT = 4;
+int const ADVECT_FREQUENCY = 10; // 5e-12; 1e-11 = 1e-4/1e7 // 64
+int const ADVECT_STEPS_PER_GPU_VISIT = 2;
 
 
 //long const NUM_VERTICES_PER_CM_SQ = 10000; // 60000; //12000; // use 262144 = 2^18. 2^9 = 512

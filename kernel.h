@@ -465,6 +465,17 @@ __global__ void kernelCalc_Matrices_for_Jacobi_NeutralViscosity(
 	f64_tens3 * __restrict__ p_matrix_n
 );
 
+__global__ void SubtractVector3(f64_vec3 * __restrict__ p_output,
+	f64_vec3 * __restrict__ p_a, f64_vec3 * __restrict__ p_b);
+
+__global__ void kernelAccumulateSumOfSquares3(
+	f64_vec3 * __restrict__ p_eps,
+	f64_vec3 * __restrict__ p_SS);
+
+__global__ void ScaleVector3(
+	f64_vec3 * __restrict__ p_eps,
+	f64 const factorx, f64 const factory, f64 const factorz);
+
 __global__ void kernelAccumulateSummands2(
 	structural * __restrict__ p_info,
 
@@ -474,7 +485,6 @@ __global__ void kernelAccumulateSummands2(
 	f64 * __restrict__ p_sum_eps_d,
 	f64 * __restrict__ p_sum_d_d,
 	f64 * __restrict__ p_sum_eps_eps);
-
 __global__ void kernelCreateEpsilon_NeutralVisc(
 	f64 const hsub,
 	structural * __restrict__ p_info_minor,
@@ -484,7 +494,9 @@ __global__ void kernelCreateEpsilon_NeutralVisc(
 	nvals * __restrict__ p_n_minor,
 	f64 * __restrict__ p_AreaMinor,
 
-	f64_vec3 * __restrict__ p_eps3,
+	f64 * __restrict__ p_eps_x,
+	f64 * __restrict__ p_eps_y,
+	f64 * __restrict__ p_eps_z,
 	bool * __restrict__ p_bFailedTest
 );
 
@@ -498,6 +510,14 @@ __global__ void kernelAccumulateSummandsNeutVisc(
 	f64_vec3 * __restrict__ p_sum_eps_deps_,
 	Symmetric3 * __restrict__ p_sum_product_matrix_,
 	f64 * __restrict__ p_sum_eps_sq
+);
+
+__global__ void kernelAccumulateSummandsNeutVisc2(
+	f64 * __restrict__ p_eps,  // 
+	f64 * __restrict__ p_d_eps_by_d_beta,
+	// outputs:
+	f64 * __restrict__ p_sum_eps_deps_,  // 8 values for this block
+	f64 * __restrict__ p_sum_product_matrix_
 );
 
 __global__ void kernelAccumulateSummands3(
@@ -1917,6 +1937,18 @@ __global__ void kernelCreateEpsilon_Az_CG(
 	bool * __restrict__ p_bFail,
 	bool const bSaveFail);
 
+__global__ void kernelGet_AreaMinorFluid(
+
+	structural * __restrict__ p_info_minor,
+	long * __restrict__ p_izTri,
+	char * __restrict__ p_szPBC,
+	long * __restrict__ p_izNeighMinor,
+	char * __restrict__ p_szPBCtriminor,
+
+	bool * __restrict__ bz_pressureflag,
+
+	f64 * __restrict__ p_AreaMinor
+);
 
 __global__ void kernelGetLap_minor(
 	structural * __restrict__ p_info,
@@ -1927,12 +1959,13 @@ __global__ void kernelGetLap_minor(
 	char * __restrict__ p_szPBCtri_vertex,
 	char * __restrict__ p_szPBCtriminor,
 
-	f64 * __restrict__ p_LapAz,
+	f64 * __restrict__ p_LapAz
 
 //	f64 * __restrict__ p_Integratedconts_fromtri,
 //	f64 * __restrict__ p_Integratedconts_fromvert,
 //	f64 * __restrict__ p_Integratedconts_vert,
-	f64 * __restrict__ p_AreaMinor);
+	//f64 * __restrict__ p_AreaMinor
+	);
 // debug why it is that we get sum of Lap nonzero when we integrate against AreaMinor, yet sum here to small
 
 
@@ -2003,7 +2036,9 @@ __global__ void kernelCreate_momflux_minor(
 	f64_vec3 * __restrict__ p_MAR_neut,
 	f64_vec3 * __restrict__ p_MAR_ion,
 	f64_vec3 * __restrict__ p_MAR_elec,
-	ShardModel * __restrict__ p_n_shards
+	ShardModel * __restrict__ p_n_shards,
+	nvals * __restrict__ p_n_minor,
+	NTrates * __restrict__ NT_addition_tri
 );
 
 __global__ void kernelCreateLinearRelationship(
@@ -2187,19 +2222,35 @@ __global__ void kernelAccelerate_v_from_advection
 	f64 const h_use,
 	structural * __restrict__ p_info_minor,
 	nvals * __restrict__ p_n_k,    // multiply by old mass ..
+	f64 * __restrict__ p_AreaMinor_k,
 	nvals * __restrict__ p_n_plus, // divide by new mass ..
+	f64 * __restrict__ p_AreaMinor_plus,
+
 	v4 * __restrict__ p_vie_k,
 	f64_vec3 * __restrict__ p_v_n_k,
 
 	f64_vec3 * __restrict__ p_MAR_neut, // these contain the mom flux due to advection.
 	f64_vec3 * __restrict__ p_MAR_ion,
 	f64_vec3 * __restrict__ p_MAR_elec,
-	f64 * __restrict__ p_AreaMinor,
-
+	
 	// outputs:
 	v4 * __restrict__ p_vie_dest,
 	f64_vec3 * __restrict__ p_v_n_dest);
 
+
+__global__ void kernelSplitIntoSeedRegressors
+(
+	v4 * __restrict__ p_move,
+	f64_vec3 * __restrict__ p_regr_i,
+	f64_vec3 * __restrict__ p_regr_e,
+	f64_vec2 * __restrict__ p_epsxy
+);
+
+__global__ void Subtract_V4(
+	v4 * __restrict__ p_result,
+	v4 * __restrict__ p_a,
+	v4 * __restrict__ p_b
+);
 
 __global__ void kernelAdvanceDensityAndTemperature_nosoak_etc(
 	f64 h_use,
@@ -2237,7 +2288,9 @@ __global__ void kernelNeutral_momflux(
 	nvals * __restrict__ p_n_minor, // Just to handle insulator
 
 	f64_vec2 * __restrict__ p_v_overall_minor,
-	f64_vec3 * __restrict__ p_MAR_neut
+	f64_vec3 * __restrict__ p_MAR_neut,
+
+	NTrates * __restrict__ NT_addition_tri
 );
 
 
@@ -2377,6 +2430,73 @@ __global__ void kernelCalculateVelocityAndAzdot_noadvect(
 	v4 * __restrict__ p_vie_out,
 	f64_vec3 * __restrict__ p_vn_out);
 
+__global__ void Reversesubtract_vec3(
+	f64_vec3 * __restrict__ p_reverse,
+	f64_vec3 * __restrict__ p_augmented);
+
+__global__ void ScaleVector(
+	f64 * __restrict__ output,
+	f64 const coeff,
+	f64 * __restrict__ multiply
+);
+
+__global__ void AssembleVector3(f64_vec3 * __restrict__ p_output,
+	f64 * __restrict__ p_x, f64 * __restrict__ p_y, f64 * __restrict__ p_z);
+
+
+__global__ void AddLCtoVector3component(
+	f64_vec3 * __restrict__ p_operand,
+	f64_vec3 * __restrict__ p_regr,
+	int iDim,
+	f64_vec3 * __restrict__ p_storemove);
+
+__global__ void SubtractVector3stuff(f64_vec3 * __restrict__ p_output,
+	f64 * __restrict__ p_x, f64 * __restrict__ p_y, f64 * __restrict__ p_z,
+	f64_vec3 * __restrict__ p_to_subtract);
+
+__global__ void kernelCollectOhmsGraphs(
+	structural * __restrict__ p_info_major,
+	f64_vec3 * __restrict__ p_MAR_ion_pressure_major,
+	f64_vec3 * __restrict__ p_MAR_ion_visc_major,
+	f64_vec3 * __restrict__ p_MAR_elec_pressure_major,  // need to distinguish viscous from pressure part.
+	f64_vec3 * __restrict__ p_MAR_elec_visc_major,
+	f64_vec3 * __restrict__ p_MAR_elec_ionization_major,
+	f64_vec3 * __restrict__ p_B_major,
+
+	v4 * __restrict__ p_vie_k, // ALL MAJOR
+	v4 * __restrict__ p_vie_kplus,
+
+	f64_vec2 * __restrict__ p_GradTe_major,
+	nvals * __restrict__ p_n_major_use,
+	T3 * __restrict__ p_T_major_use,
+
+	AAdot * __restrict__ p_AAdot_kplus,
+	f64 * __restrict__ p_AreaMinor, // EXCEPT THIS ONE
+
+	f64 * __restrict__ p_Ohmsgraph_0, // elastic effective frictional coefficient zz
+	f64 * __restrict__ p_Ohmsgraph_1, // ionization effective frictional coefficient zz
+	f64 * __restrict__ p_Ohmsgraph_2, // 2 is combined y pressure accel rate
+	f64 * __restrict__ p_Ohmsgraph_3,// 3 is q/(M+m) Ez -- do we have
+	f64 * __restrict__ p_Ohmsgraph_4, // 4 is thermal force accel
+
+	f64 * __restrict__ p_Ohmsgraph_5, // T_zy
+	f64 * __restrict__ p_Ohmsgraph_6, // T_zz
+
+	f64 * __restrict__ p_Ohmsgraph_7, // T acting on pressure
+	f64 * __restrict__ p_Ohmsgraph_8, // T acting on electromotive
+	f64 * __restrict__ p_Ohmsgraph_9, // T acting on thermal force
+	f64 * __restrict__ p_Ohmsgraph_10, // prediction vez-viz
+
+	f64 * __restrict__ p_Ohmsgraph_11, // difference of prediction from vez_k
+	f64 * __restrict__ p_Ohmsgraph_12, // progress towards eqm: need vez_k+1
+	f64 * __restrict__ p_Ohmsgraph_13, // viscous acceleration of electrons and ions (z)
+	f64 * __restrict__ p_Ohmsgraph_14, // Prediction of Jz
+	f64 * __restrict__ p_Ohmsgraph_15, // sigma zy
+	f64 * __restrict__ p_Ohmsgraph_16, // sigma zz
+	f64 * __restrict__ p_Ohmsgraph_17, // sigma zz times electromotive 
+	f64 * __restrict__ p_Ohmsgraph_18 // Difference of prediction from Jz predicted.
+);
+
 __global__ void kernelCreate_pressure_gradT_and_gradA_CurlA_minor_noadvect(
 
 	structural * __restrict__ p_info_minor,
@@ -2402,7 +2522,6 @@ __global__ void kernelCreate_pressure_gradT_and_gradA_CurlA_minor_noadvect(
 	f64_vec2 * __restrict__ p_GradTe,
 	f64_vec2 * __restrict__ p_GradAz,
 
-	f64_vec3 * __restrict__ p_B,
-	f64 * __restrict__ p_AreaMinor
+	f64_vec3 * __restrict__ p_B
 );
 

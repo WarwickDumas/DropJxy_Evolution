@@ -172,9 +172,10 @@ public:
 
 	// helper function:
 	
-	void inline RenderLabel (char * text, float x, float y, float z, bool extrainfo = false);
-	void inline RenderLabel2 (char * text, float x, float y, float z, int whichline, unsigned int color = 0xff000000);
+	void inline RenderLabel (char * text, float x, float y, float z, bool extrainfo = false, bool botleft = false);
+	void inline RenderLabel2 (char * text, float x, float y, float z, int whichline, unsigned int color = 0xff000000, bool bLong = false);
 	void inline RenderText (const char * text,int lines_down);
+	void inline RenderLabel3(char * text, float x, float y, float z, int whichline, unsigned int color = 0xff000000);
 
 	~surfacegraph();
 };
