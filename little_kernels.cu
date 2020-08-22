@@ -782,6 +782,36 @@ __global__ void kernelAccumulateSummandsNeutVisc2(
 	}
 
 
+__global__ void AddLCtoVector4component(
+	v4 * __restrict__ p_operand,
+	v4 * __restrict__ p_regr,
+	v4 * __restrict__ p_storemove)
+{
+	long const index = blockDim.x*blockIdx.x + threadIdx.x;
+
+	v4 operand = p_operand[index];
+	v4 old = operand;
+	v4 move;
+	int i, j;
+	for (i = 0; i < REGRESSORS; i++)
+	{
+		operand.vxy += beta_n_c[i] * p_regr[index + i*NMINOR].vxy;
+		operand.viz += beta_n_c[i] * p_regr[index + i*NMINOR].viz;
+		operand.vez += beta_n_c[i] * p_regr[index + i*NMINOR].vez;
+	//	if (index == CHOSEN)
+	//		printf("operand.vez %d beta %1.8E regr %1.8E \n",
+	//			operand.vez, beta_n_c[i], p_regr[index + i*NMINOR].vez);
+
+	};
+	move.vxy = operand.vxy - old.vxy;
+	move.viz = operand.viz - old.viz;
+	move.vez = operand.vez - old.vez;
+	p_storemove[index] = move;
+	p_operand[index] = operand;
+}
+
+
+
 __global__ void AddLCtoVector3component(
 	f64_vec3 * __restrict__ p_operand,
 	f64_vec3 * __restrict__ p_regr,
@@ -3100,15 +3130,11 @@ __global__ void kernelResetFrillsAz_II(
 __global__ void kernelCreateAzbymultiplying(
 	f64 * __restrict__ p_Az,
 	f64 * __restrict__ p_scaledAz,
-	f64 const h_use,
-	f64 * __restrict__ p_gamma
+	f64 * __restrict__ p_factor
 )
 {
-	long const iMinor = blockDim.x*blockIdx.x + threadIdx.x;
-	f64 gamma = p_gamma[iMinor];
-
-	p_Az[iMinor] = p_scaledAz[iMinor] * sqrt(h_use*p_gamma[iMinor]);
-
+	long const iMinor = blockDim.x*blockIdx.x + threadIdx.x;	
+	p_Az[iMinor] = p_scaledAz[iMinor] * p_factor[iMinor];
 }
 
 __global__ void kernelAccumulateMatrix(
@@ -3541,6 +3567,103 @@ __global__ void kernelAccumulateSumOfSquares1(
 	}
 }
 
+
+__global__ void kernelAccumulateSumOfSquares2vec(
+	f64_vec2 * __restrict__ p_eps,
+	f64 * __restrict__ p_SS)
+{
+	long const index = blockDim.x*blockIdx.x + threadIdx.x;
+
+	__shared__ f64 sumdata1[threadsPerTileMajorClever];
+
+	f64_vec2 epsilon_n = p_eps[index];
+
+	sumdata1[threadIdx.x] = epsilon_n.dot(epsilon_n);
+
+	__syncthreads();
+
+	int s = blockDim.x;
+	int k = s / 2;
+
+	while (s != 1) {
+		if (threadIdx.x < k)
+		{
+			sumdata1[threadIdx.x] += sumdata1[threadIdx.x + k];
+		};
+		__syncthreads();
+
+		// Modify for case blockdim not 2^n:
+		if ((s % 2 == 1) && (threadIdx.x == k - 1)) {
+			sumdata1[threadIdx.x] += sumdata1[threadIdx.x + s - 1];
+		};
+		// In case k == 81, add [39] += [80]
+		// Otherwise we only get to 39+40=79.
+		s = k;
+		k = s / 2;
+		__syncthreads();
+	};
+
+	if (threadIdx.x == 0)
+	{
+		p_SS[blockIdx.x] = sumdata1[0];
+	}
+}
+
+__global__ void kernelAccumulateSumOfSquares_4(
+	v4 * __restrict__ p_eps,
+	f64 * __restrict__ p_SS)
+{
+	long const index = blockDim.x*blockIdx.x + threadIdx.x;
+
+	__shared__ f64 sumdata1[threadsPerTileMajorClever];
+
+	v4 eps = p_eps[index];
+
+	sumdata1[threadIdx.x] =
+		eps.vxy.dot(eps.vxy) + eps.viz*eps.viz + eps.vez*eps.vez;
+
+	__syncthreads();
+
+	int s = blockDim.x;
+	int k = s / 2;
+
+	while (s != 1) {
+		if (threadIdx.x < k)
+		{
+			sumdata1[threadIdx.x] += sumdata1[threadIdx.x + k];
+		};
+		__syncthreads();
+
+		// Modify for case blockdim not 2^n:
+		if ((s % 2 == 1) && (threadIdx.x == k - 1)) {
+			sumdata1[threadIdx.x] += sumdata1[threadIdx.x + s - 1];
+		};
+		// In case k == 81, add [39] += [80]
+		// Otherwise we only get to 39+40=79.
+		s = k;
+		k = s / 2;
+		__syncthreads();
+	};
+
+	if (threadIdx.x == 0)
+	{
+		p_SS[blockIdx.x] = sumdata1[0];
+	}
+}
+
+
+__global__ void ScaleVector4(
+	v4 * __restrict__ p_eps,
+	f64 const factor)
+{
+	long const index = blockDim.x*blockIdx.x + threadIdx.x;
+	v4 vec4 = p_eps[index];
+	vec4.vxy *= factor;
+	vec4.viz *= factor;
+	vec4.vez *= factor;
+	p_eps[index] = vec4;
+}
+
 __global__ void ScaleVector3(
 	f64_vec3 * __restrict__ p_eps,
 	f64 const factorx, f64 const factory, f64 const factorz)
@@ -3596,6 +3719,19 @@ __global__ void kernelAccumulateSumOfSquares3(
 	}
 }
 
+__global__ void AssembleVector4(v4 * __restrict__ p_output,
+	f64_vec2 * __restrict__ p_xy, f64 * __restrict__ p_iz, f64 * __restrict__ p_ez)
+{
+	long const index = blockDim.x*blockIdx.x + threadIdx.x;
+	v4 vec4;
+	vec4.vxy = p_xy[index];
+	vec4.viz = p_iz[index];
+	vec4.vez = p_ez[index];
+	p_output[index] = vec4;
+}
+
+
+
 __global__ void AssembleVector3(f64_vec3 * __restrict__ p_output,
 	f64 * __restrict__ p_x, f64 * __restrict__ p_y, f64 * __restrict__ p_z)
 {
@@ -3606,6 +3742,21 @@ __global__ void AssembleVector3(f64_vec3 * __restrict__ p_output,
 	vec3.z = p_z[index];
 	p_output[index] = vec3;
 }
+
+__global__ void SubtractVector4(v4 * __restrict__ p_output,
+	v4 * __restrict__ p_a, v4 * __restrict__ p_b)
+{
+	long const index = blockDim.x*blockIdx.x + threadIdx.x;
+	v4 result;
+	v4 a = p_a[index];
+	v4 b = p_b[index];
+	result.vxy = a.vxy - b.vxy;
+	result.viz = a.viz - b.viz;
+	result.vez = a.vez - b.vez;
+	p_output[index] = result;
+}
+
+
 __global__ void SubtractVector3stuff(f64_vec3 * __restrict__ p_output,
 	f64 * __restrict__ p_x, f64 * __restrict__ p_y, f64 * __restrict__ p_z,
 	f64_vec3 * __restrict__ p_to_subtract)
@@ -3618,6 +3769,27 @@ __global__ void SubtractVector3stuff(f64_vec3 * __restrict__ p_output,
 	vec3 -= p_to_subtract[index];
 	p_output[index] = vec3;
 }
+__global__ void SubtractVector4stuff(v4 * __restrict__ p_output,
+	f64_vec2 * __restrict__ p_xy, 
+	f64 * __restrict__ p_iz, 
+	f64 * __restrict__ p_ez,
+	v4 * __restrict__ p_to_subtract)
+{
+	long const index = blockDim.x*blockIdx.x + threadIdx.x;
+	v4 vec4;
+	vec4.vxy = p_xy[index];
+	vec4.viz = p_iz[index];
+	vec4.vez = p_ez[index];
+	v4 st = p_to_subtract[index];
+	vec4.vxy -= st.vxy;
+	vec4.viz -= st.viz;
+	vec4.vez -= st.vez;
+
+	p_output[index] = vec4;
+}
+
+
+
 __global__ void SubtractVector3(f64_vec3 * __restrict__ p_output,
 	f64_vec3 * __restrict__ p_a, f64_vec3 * __restrict__ p_b)
 {
@@ -3950,18 +4122,34 @@ __global__ void kernelAccumulateSummands2(
 __global__ void kernelDividebyroothgamma
 (
 	f64 * __restrict__ result,
+	f64 * __restrict__ p__sqrtfactor,
 	f64 * __restrict__ Az,
 	f64 const hsub,
-	f64 * __restrict__ p_gamma
+	f64 * __restrict__ p_gamma,
+	f64 * __restrict__ p_Area
 )
 {
 	long const index = threadIdx.x + blockIdx.x*blockDim.x;
 	f64 gamma = p_gamma[index];
-	if (gamma == 0.0) {
+	f64 area = p_Area[index];
+	if (area == 0.0) {
 		result[index] = 0.0;
+		p__sqrtfactor[index] = 0.0;
 	} else {
-		result[index] = Az[index] / gamma;
-	}
+		f64 sqrtfactor = sqrt(hsub*gamma / area);
+		p__sqrtfactor[index] = sqrtfactor;
+
+		
+		if (sqrtfactor != sqrtfactor) printf("%d sqrtfactor %1.8E hsub %1.8E gamma %1.8E area %1.8E \n",
+			index, sqrtfactor, hsub, gamma, area);
+
+
+		if (sqrtfactor == 0.0) {
+			result[index] = 0.0;
+		} else {
+			result[index] = Az[index] / sqrtfactor;
+		};
+	};
 }
 
 

@@ -75,6 +75,16 @@
 
 //const int Chosens[7] = { 25454, 86529, 25453, 86381, 25455, 86530, 25750 };
 
+__device__ __forceinline__ void CalculateCircumcenter(f64_vec2 * p_cc, f64_vec2 poscorner0, f64_vec2 poscorner1, f64_vec2 poscorner2)
+{
+	f64_vec2 Bb = poscorner1 - poscorner0;
+	f64_vec2 C = poscorner2 - poscorner0;
+	f64 D = 2.0*(Bb.x*C.y - Bb.y*C.x);
+	f64 modB = Bb.x*Bb.x + Bb.y*Bb.y;
+	f64 modC = C.x*C.x + C.y*C.y;
+	p_cc->x = (C.y*modB - Bb.y*modC) / D + poscorner0.x;
+	p_cc->y = (Bb.x*modC - C.x*modB) / D + poscorner0.y;
+}
 
 __device__ __forceinline__ bool TestDomainPos(f64_vec2 pos)
 {
@@ -624,16 +634,60 @@ __global__ void kernelCreateEpsilon_Visc(
 		epsilon.viz = vie.viz - vie_k.viz - hsub*(MAR_ion.z / N);
 		epsilon.vez = vie.vez - vie_k.vez - hsub*(MAR_elec.z / N);
 
-		if ((p_bFailedTest != 0) && 
-			((epsilon.vxy.dot(epsilon.vxy) > REL_THRESHOLD_VISC*REL_THRESHOLD_VISC*(vie.vxy.dot(vie.vxy) + 1.0e4))				
-				||				
-				(epsilon.viz*epsilon.viz > REL_THRESHOLD_VISC*REL_THRESHOLD_VISC*(vie.viz*vie.viz + 1.0e4))
-				||
-				(epsilon.vez*epsilon.vez > REL_THRESHOLD_VISC*REL_THRESHOLD_VISC*(vie.vez*vie.vez + 1.0e8))
-				))
-		{
-			p_bFailedTest[blockIdx.x] = true;
-		}
+
+
+		if (p_bFailedTest != 0) {
+			// Stability criterion:
+			// We need to know whether it's still heading the same way, in EACH dimension.
+			// For general viscosity we just ask if the dot product of next forward move, with our move, is positive.
+
+			// The onward move is hA v_n . 
+			bool bFail = false;
+			// if ((v_n.x > v_n_k.x) && (MAR_neut.x < 0.0)) bFail = true; // heading wrong way
+			if (
+				  (vie.vxy.x - vie_k.vxy.x)*(m_ion*MAR_ion.x + m_e*MAR_elec.x)
+				+ (vie.vxy.y - vie_k.vxy.y)*(m_ion*MAR_ion.y + m_e*MAR_elec.y)				
+					< 0.0) bFail = true;
+			
+			if ((vie.viz - vie_k.viz)*MAR_ion.z < 0.0) bFail = true;
+			if ((vie.vez - vie_k.vez)*MAR_elec.z < 0.0) bFail = true;
+
+
+
+			// What means that this is sensibly close to the trajectory?
+			// Say we look back and it comes from a v_k that is 1% out
+			// ** h should govern how big of an error we can make**
+
+			// Allow a 1% error away from accurate backward move.
+			// Allow a small independent drift.
+#define ALLOWABLE_v_DRIFT_RATE 1.0e9
+			// after 1.0e-7 it's gained spuriously 1e2 cm/s. But not really because it's still a zero-sum when we do flows.
+
+			f64_vec3 mix = (m_ion*MAR_ion + m_e*MAR_elec) / (m_ion + m_e);
+			
+			if (epsilon.vxy.dot(epsilon.vxy) > (0.0001*(hsub*hsub / (N*N))*(mix.dotxy(mix))
+				+ ALLOWABLE_v_DRIFT_RATE*hsub*ALLOWABLE_v_DRIFT_RATE*hsub)) bFail = true;
+
+			// We allow a 1% deviation from trajectory over time.
+
+			// Previous threshold: 1e-14*(v^2 + 1e4) . absolute part 1e-10 vs
+			// 1e(18-24).
+			// REL_THRESHOLD_VISC*REL_THRESHOLD_VISC*(v_n.dot(v_n) + 1.0e4))))
+			
+			if (bFail) p_bFailedTest[blockIdx.x] = true;
+		};
+
+
+	//	if ((p_bFailedTest != 0) && 
+	//		((epsilon.vxy.dot(epsilon.vxy) > REL_THRESHOLD_VISC*REL_THRESHOLD_VISC*(vie.vxy.dot(vie.vxy) + 1.0e4))				
+	//			||				
+	//			(epsilon.viz*epsilon.viz > REL_THRESHOLD_VISC*REL_THRESHOLD_VISC*(vie.viz*vie.viz + 1.0e4))
+	//			||
+	//			(epsilon.vez*epsilon.vez > REL_THRESHOLD_VISC*REL_THRESHOLD_VISC*(vie.vez*vie.vez + 1.0e8))
+	//			))
+	//	{
+	//		p_bFailedTest[blockIdx.x] = true;
+	//	}
 		
 	} else {
 		// epsilon = 0
@@ -15372,7 +15426,6 @@ __global__ void kernelCreateEpsilonAndJacobi(
 		// WE COULD CHOOSE to leave it so that Az advances with Azdot_k+1 : we don't know a reason why not.
 
 		eps = p_Az_array_next[iMinor] - p_Az_array[iMinor] 
-			//- 0.5*h_use* p_AAdot_k[iMinor].Azdot
 			- h_use * p_gamma[iMinor] * p_Lap_Aznext[iMinor]
 			- h_use * p_Azdot0[iMinor];
 
@@ -15410,8 +15463,8 @@ __global__ void kernelCreateEpsilonAndJacobi(
 		// This does not seem to be triggering.
 	};
 	p_epsilon[iMinor] = eps;
-
 }
+
 
 __global__ void kernelCreateExplicitStepAz(
 	f64 const hsub,
@@ -15434,6 +15487,7 @@ __global__ void kernelCreateEpsilon_Az_CG(
 	f64 * __restrict__ p_gamma,
 	f64 * __restrict__ p_Lap_Az,
 	f64 * __restrict__ p_epsilon,
+	f64 * __restrict__ p__sqrtfactor,
 	bool * __restrict__ p_bFail,
 	bool const bSaveFail)
 {
@@ -15446,27 +15500,31 @@ __global__ void kernelCreateEpsilon_Az_CG(
 	}
 	else {
 		// WE COULD CHOOSE to leave it so that Az advances with Azdot_k+1 : we don't know a reason why not.
-		f64 gamma = p_gamma[iMinor];
+		f64 sqrtfactor = p__sqrtfactor[iMinor];
+		f64 one_over_sqrt;
+		if (sqrtfactor != 0.0) {
+			one_over_sqrt = 1.0 / sqrtfactor;
+		} else {
+			one_over_sqrt = 1.0;
+		}
 
-		f64 sqrthgamma = sqrt(h_use*gamma);
-		f64 one_over_sqrt = 1.0 / sqrthgamma;
 		f64 Aznext = p_Az_plus[iMinor];
-		eps = one_over_sqrt*(Aznext - p_Az_k[iMinor])
-			- sqrthgamma * p_Lap_Az[iMinor]
-			- one_over_sqrt * h_use * p_Azdot0[iMinor];
-
-		// eps^2 h gamma = original eps squared.
+		eps = one_over_sqrt*(Aznext - p_Az_k[iMinor] - h_use * p_Azdot0[iMinor])
+			- sqrtfactor * p_Lap_Az[iMinor]; // notice this is the integrated Lap											// 
+			
+		// eps^2 sqrtfactor sqrtfactor = original eps squared.
 		if (bSaveFail)
-			if (eps*eps*h_use*gamma > 1.0e-10*1.0e-10*(Aznext*Aznext + 1.0*1.0))
+			if (eps*eps*sqrtfactor*sqrtfactor > 1.0e-10*1.0e-10*(Aznext*Aznext + 1.0*1.0))
 				p_bFail[blockIdx.x] = true;
 		// An optimization is probably to store values in shared then amalgamate, send data to global on 1 thread. ?
 
-		if (eps != eps) printf("iMinor %d eps %1.9E gamma %1.9E sqrthg %1.9E over %1.9E info.flag %d LapAz %1.9E Azdot0 %1.9E\n",
-			iMinor, eps, gamma, sqrthgamma, one_over_sqrt, info.flag, p_Lap_Az[iMinor], p_Azdot0[iMinor]);
+		if (eps != eps) printf("iMinor %d eps %1.9E Aznext %1.9E gamma %1.9E sqrtfactor %1.9E over %1.9E info.flag %d LapAz %1.9E Azdot0 %1.9E\n",
+			iMinor, eps, Aznext, p_gamma[iMinor], sqrtfactor, one_over_sqrt, info.flag, p_Lap_Az[iMinor], p_Azdot0[iMinor]);
+
 	};
 	p_epsilon[iMinor] = eps;
-
 }
+
 
 __global__ void kernelSetZero(
 	f64 * __restrict__ data
@@ -16037,6 +16095,450 @@ __global__ void kernelGetLap_minor(
 		p_LapAz[iMinor] = Our_integral_Lap_Az / AreaMinor;
 	//	p_AreaMinor[iMinor] = AreaMinor; // reset for each substep	
 
+	};
+}
+
+__global__ void kernelGetLap_minor_SYMMETRIC(
+	 
+	structural * __restrict__ p_info,
+	f64 * __restrict__ p_Az,
+	long * __restrict__ p_izTri,
+	long * __restrict__ p_izNeighMinor,
+	char * __restrict__ p_szPBCtri_vertex,
+	char * __restrict__ p_szPBCtriminor,
+	f64 * __restrict__ p_LapAz,
+	f64 * __restrict__ p_AreaMinor // need to save off to multiply back for symmetry
+)
+{
+	// Symmetric version with circumcenters to define corners of minor cells
+	// so as to use conjugate gradient for Az.
+
+	__shared__ f64_vec2 shared_pos[threadsPerTileMinor];
+	__shared__ f64_vec2 shared_pos_verts[threadsPerTileMajor];
+	__shared__ f64 shared_Az[threadsPerTileMinor];
+	__shared__ f64 shared_Az_verts[threadsPerTileMajor];
+
+	long const iMinor = blockDim.x*blockIdx.x + threadIdx.x;
+	long const iVertex = threadsPerTileMajor*blockIdx.x + threadIdx.x; // only meaningful threadIdx.x < threadsPerTileMajor
+	long const StartMinor = threadsPerTileMinor*blockIdx.x;
+	long const StartMajor = threadsPerTileMajor*blockIdx.x;
+	long const EndMinor = StartMinor + threadsPerTileMinor;
+	long const EndMajor = StartMajor + threadsPerTileMajor;
+
+	shared_pos[threadIdx.x] = p_info[iMinor].pos;
+	shared_Az[threadIdx.x] = p_Az[iMinor];
+	structural info;
+	if (threadIdx.x < threadsPerTileMajor) {
+		info = p_info[iVertex + BEGINNING_OF_CENTRAL];
+		shared_pos_verts[threadIdx.x] = info.pos;
+		shared_Az_verts[threadIdx.x] = p_Az[iVertex + BEGINNING_OF_CENTRAL];
+	};
+
+	__syncthreads();
+
+	f64 ourAz, oppAz, prevAz, nextAz;
+	f64_vec2 opppos, prevpos, nextpos, integ_grad_Az;
+	f64_vec2 endpt0, endpt1;
+
+	// Better if we use same share to do both tris and verts
+	// Idea: let's make it called for # minor threads, each loads 1 shared value,
+	// and only half the threads run first for the vertex part. That is a pretty good idea.
+	
+	if (threadIdx.x < threadsPerTileMajor) {
+		f64 Our_integral_Lap_Az = 0.0;
+		f64 AreaMinor = 0.0;
+		long izTri[MAXNEIGH];
+		char szPBC[MAXNEIGH];
+		short tri_len = info.neigh_len;
+		
+		memcpy(izTri, p_izTri + MAXNEIGH*iVertex, sizeof(long)*MAXNEIGH);
+		memcpy(szPBC, p_szPBCtri_vertex + MAXNEIGH*iVertex, sizeof(char)*MAXNEIGH);
+
+		// Is this best way? better than going looking for periodic data on each tri.
+
+		ourAz = shared_Az_verts[threadIdx.x];
+		short iprev = tri_len - 1;
+		if ((izTri[iprev] >= StartMinor) && (izTri[iprev] < EndMinor))
+		{
+//			prevAz = shared_Az[izTri[iprev] - StartMinor];
+			prevpos = shared_pos[izTri[iprev] - StartMinor];
+		}
+		else {
+//			prevAz = p_Az[izTri[iprev]];
+			prevpos = p_info[izTri[iprev]].pos;
+		}
+		if (szPBC[iprev] == ROTATE_ME_CLOCKWISE) prevpos = Clockwise_d*prevpos;
+		if (szPBC[iprev] == ROTATE_ME_ANTICLOCKWISE) prevpos = Anticlockwise_d*prevpos;
+
+		short i = 0;
+		if ((izTri[i] >= StartMinor) && (izTri[i] < EndMinor))
+		{
+			oppAz = shared_Az[izTri[i] - StartMinor];
+			opppos = shared_pos[izTri[i] - StartMinor];
+		}
+		else {
+			oppAz = p_Az[izTri[i]];
+			opppos = p_info[izTri[i]].pos;
+		}
+		if (szPBC[i] == ROTATE_ME_CLOCKWISE) opppos = Clockwise_d*opppos;
+		if (szPBC[i] == ROTATE_ME_ANTICLOCKWISE) opppos = Anticlockwise_d*opppos;
+
+		// endpt0 = THIRD * (info.pos + opppos + prevpos);
+
+		CalculateCircumcenter(&endpt0, info.pos, opppos, prevpos);
+
+		f64_vec2 store_first_point = endpt0;
+		short inext, iend = tri_len;
+		f64_vec2 projendpt0, edge_normal;
+		if ((info.flag == INNERMOST) || (info.flag == OUTERMOST)) iend = tri_len - 2;
+
+		// Bear in mind for OUTERMOST, the triangles go clockwise not anticlockwise.
+
+		if ((info.flag == INNERMOST)) {
+			endpt0.project_to_radius(projendpt0, FRILL_CENTROID_INNER_RADIUS_d); // back of cell for Lap purposes
+			edge_normal.x = endpt0.y - projendpt0.y;
+			edge_normal.y = projendpt0.x - endpt0.x;
+			AreaMinor += (0.5*projendpt0.x + 0.5*endpt0.x)*edge_normal.x;
+		};
+		
+		//	if (info.flag == OUTERMOST) {
+		//		printf("DEBUG: iVertex %d info.neigh_len %d iend %d izTri[0] %d izTri[iend-1] %d izTri[iend-2] %d "
+		//			"flags 0 %d 1 %d 2 %d 3 %d 4 %d 5 %d\n"
+		//			"positions 01234 (%1.8E, %1.8E) (%1.8E, %1.8E) (%1.8E, %1.8E) (%1.8E, %1.8E) (%1.8E, %1.8E) \n"
+		//			, iVertex, info.neigh_len,
+		//			iend, izTri[0], izTri[iend - 1],
+		//			izTri[iend - 2], 
+		//			p_info[izTri[0]].flag, p_info[izTri[1]].flag, p_info[izTri[2]].flag,
+		//			p_info[izTri[3]].flag, p_info[izTri[4]].flag,
+		//			p_info[izTri[0]].pos.x, p_info[izTri[0]].pos.y, p_info[izTri[1]].pos.x, p_info[izTri[1]].pos.y,
+		//			p_info[izTri[2]].pos.x, p_info[izTri[2]].pos.y, p_info[izTri[3]].pos.x, p_info[izTri[3]].pos.y,
+		//			p_info[izTri[4]].pos.x, p_info[izTri[4]].pos.y
+		//			);
+		//	
+		//		if (DIRICHLET == false) {
+		//			endpt0.project_to_radius(projendpt0, FRILL_CENTROID_OUTER_RADIUS_d); // back of cell for Lap purposes
+		//		}
+		//		else {
+		//			f64 radius = info.pos.modulus();
+		//			endpt0.project_to_radius(projendpt0,
+		//				0.5*(FRILL_CENTROID_OUTER_RADIUS_d + radius)); // back of cell for Lap purposes
+		//			// flatten the cell to get wall halfway out to 0 line.
+		//		}
+
+		if (iend > MAXNEIGH) printf("####################\nvertex %d iend = %d info.neigh_len = %d\n", iVertex, iend, info.neigh_len);
+
+		for (i = 0; i < iend; i++)
+		{
+			// Tri 0 is anticlockwise of neighbour 0, we think
+			inext = i + 1; if (inext >= tri_len) inext = 0;
+
+			if ((izTri[inext] >= StartMinor) && (izTri[inext] < EndMinor))
+			{
+				nextAz = shared_Az[izTri[inext] - StartMinor];
+				nextpos = shared_pos[izTri[inext] - StartMinor];
+			}
+			else {
+				nextAz = p_Az[izTri[inext]];
+				nextpos = p_info[izTri[inext]].pos;
+			}
+			if (szPBC[inext] == ROTATE_ME_CLOCKWISE) nextpos = Clockwise_d*nextpos;
+			if (szPBC[inext] == ROTATE_ME_ANTICLOCKWISE) nextpos = Anticlockwise_d*nextpos;
+			
+			CalculateCircumcenter(&endpt1, info.pos, opppos, nextpos);
+
+			f64_vec2 edge_normal;
+			edge_normal.x = endpt1.y - endpt0.y;
+			edge_normal.y = endpt0.x - endpt1.x;
+
+			// Symmetric, with circumcenters:
+			//		normal_gradient = (oppAz - ourAz) / ((opppos - info.pos).modulus());
+			//		Our_integral_Lap_Az += normal_gradient*edge_normal.modulus();
+			// Reduce number of square roots:
+			Our_integral_Lap_Az += (oppAz - ourAz)*sqrt((edge_normal.dot(edge_normal)) / ((opppos - info.pos).dot(opppos - info.pos)));
+
+			if (Our_integral_Lap_Az != Our_integral_Lap_Az) printf("%d oppAz %1.8E ourAz %1.8E edge_normal.dot(en) %1.8E opposdot %1.8E \n",
+				iMinor, oppAz, ourAz, edge_normal.dot(edge_normal), ((opppos - info.pos).dot(opppos - info.pos)));
+
+			AreaMinor += (0.5*endpt0.x + 0.5*endpt1.x)*edge_normal.x;
+
+			if (TESTLAP) printf("iVertex %d izTri[%d] %d ourAz %1.8E oppAz %1.8E delta_out %1.8E delta_edge %1.8E\n",
+				iVertex, i, izTri[i],
+				ourAz, oppAz,
+				(opppos - info.pos).modulus(),
+				edge_normal.modulus()
+			);
+
+			endpt0 = endpt1;
+			prevpos = opppos;
+			opppos = nextpos;
+			prevAz = oppAz;
+			oppAz = nextAz;
+
+			iprev = i;
+		}; // next i
+
+		if (info.flag == INNERMOST) {
+			// Now add on the final sides to give area:
+
+			f64_vec2 projendpt1;
+			endpt1.project_to_radius(projendpt1, FRILL_CENTROID_INNER_RADIUS_d);
+			edge_normal.x = projendpt1.y - endpt1.y;
+			edge_normal.y = endpt1.x - projendpt1.x;
+			AreaMinor += (0.5*projendpt1.x + 0.5*endpt1.x)*edge_normal.x;
+			edge_normal.x = projendpt0.y - projendpt1.y;
+			edge_normal.y = projendpt1.x - projendpt0.x;
+			AreaMinor += (0.5*projendpt1.x + 0.5*projendpt0.x)*edge_normal.x;
+			// unchanged... check later
+		}
+
+		if (info.flag == OUTERMOST)
+		{
+			// 3 sides to add.
+
+			//       3   4
+			//     2       0
+			//         1
+			// endpt0=endpt1 is now the point north of edge facing 2.
+			// opppos is centre of tri (3).
+
+			oppAz = 0.0;
+			nextAz = 0.0;
+			info.pos.project_to_radius(nextpos, FRILL_CENTROID_OUTER_RADIUS_d);
+			CalculateCircumcenter(&endpt1, info.pos, opppos, nextpos); // THIRD*(opppos + info.pos + nextpos);
+
+			edge_normal.x = endpt1.y - endpt0.y;
+			edge_normal.y = endpt0.x - endpt1.x;
+
+			if (DIRICHLET)
+				Our_integral_Lap_Az += (oppAz - ourAz)*sqrt((edge_normal.dot(edge_normal)) / ((opppos - info.pos).dot(opppos - info.pos)));
+			
+			// "map radially inwards so that radius is halfway out to the zero arc:"
+			// no can do... nor should we need to since the edge is equidistant from both points that generated it.
+
+			AreaMinor += (0.5*endpt0.x + 0.5*endpt1.x)*edge_normal.x;
+
+			endpt0 = endpt1;
+			prevpos = opppos;
+			opppos = nextpos;
+			prevAz = oppAz;
+			oppAz = nextAz;
+
+			inext = tri_len - 1;
+			if ((izTri[inext] >= StartMinor) && (izTri[inext] < EndMinor))
+			{
+				nextpos = shared_pos[izTri[inext] - StartMinor];
+			}
+			else {
+				nextpos = p_info[izTri[inext]].pos;
+			}
+			if (szPBC[inext] == ROTATE_ME_CLOCKWISE) nextpos = Clockwise_d*nextpos;
+			if (szPBC[inext] == ROTATE_ME_ANTICLOCKWISE) nextpos = Anticlockwise_d*nextpos;
+			nextAz = 0.0;
+
+			CalculateCircumcenter(&endpt1, info.pos, opppos, nextpos); // THIRD*(opppos + info.pos + nextpos);
+
+			edge_normal.x = endpt1.y - endpt0.y;
+			edge_normal.y = endpt0.x - endpt1.x;
+			// As with our other points, edge_normal points inwards because 1 is clockwise of 0.
+
+			if (DIRICHLET)
+				Our_integral_Lap_Az += (oppAz - ourAz)*sqrt((edge_normal.dot(edge_normal)) / ((opppos - info.pos).dot(opppos - info.pos)));
+
+			AreaMinor += (0.5*endpt0.x + 0.5*endpt1.x)*edge_normal.x;
+
+			// That was the side looking out.
+
+			endpt0 = endpt1;
+			prevpos = opppos;
+			opppos = nextpos;
+			prevAz = oppAz;
+			oppAz = nextAz;
+
+			endpt1 = store_first_point;
+			//xtAz = p_Az[izTri[0]];
+			nextpos = p_info[izTri[0]].pos;
+
+			edge_normal.x = endpt1.y - endpt0.y;
+			edge_normal.y = endpt0.x - endpt1.x;
+			// As with our other points, edge_normal points inwards because 1 is clockwise of 0.
+
+			if (DIRICHLET)
+				Our_integral_Lap_Az += (oppAz - ourAz)*sqrt((edge_normal.dot(edge_normal)) / ((opppos - info.pos).dot(opppos - info.pos)));
+
+			if (Our_integral_Lap_Az != Our_integral_Lap_Az) printf(" at dirichlet oppAz %1.8E ourAz %1.8E edge_normal.dot(en) %1.8E opposdot %1.8E \n",
+				oppAz, ourAz, edge_normal.dot(edge_normal), ((opppos - info.pos).dot(opppos - info.pos)));
+
+			AreaMinor += (0.5*endpt0.x + 0.5*endpt1.x)*edge_normal.x;
+		};
+
+		// But this points up why CG doesn't roll properly. The presence of the AreaMinor factor makes
+		// the equations not symmetric.
+		// MULTIPLY!!
+
+		p_LapAz[iVertex + BEGINNING_OF_CENTRAL] = Our_integral_Lap_Az / AreaMinor;	
+		p_AreaMinor[iVertex + BEGINNING_OF_CENTRAL] = AreaMinor;
+
+		if (AreaMinor < 0.0) printf("iVertex %d : AreaMinor %1.10E \n", iVertex, AreaMinor);
+
+	}; // was thread in the first half of the block
+
+	info = p_info[iMinor];
+	ourAz = shared_Az[threadIdx.x];
+
+	long izNeighMinor[6];
+	char szPBC[6];
+
+	memcpy(izNeighMinor, p_izNeighMinor + iMinor * 6, sizeof(long) * 6);
+	memcpy(szPBC, p_szPBCtriminor + iMinor * 6, sizeof(char) * 6);
+
+	if ((info.flag == OUTER_FRILL) || (info.flag == INNER_FRILL)) {
+
+		// izNeighMinor[0] is actually vertex 0 if you are triangle 0.
+		// Rethink:  
+		// Try izNeighMinor[3] because this is meant to be neighbour 0.
+		// Why are we doing all this? Just set = 0 out here.
+
+		p_LapAz[iMinor] = 0.0;
+	} else {
+
+		f64 Our_integral_Lap_Az = 0.0;
+		f64 AreaMinor = 0.0;
+		short inext, i = 0, iprev = 5;
+		if ((izNeighMinor[iprev] >= StartMinor) && (izNeighMinor[iprev] < EndMinor))
+		{
+			prevAz = shared_Az[izNeighMinor[iprev] - StartMinor];
+			prevpos = shared_pos[izNeighMinor[iprev] - StartMinor];
+		} else {
+			if ((izNeighMinor[iprev] >= StartMajor + BEGINNING_OF_CENTRAL) &&
+				(izNeighMinor[iprev] < EndMajor + BEGINNING_OF_CENTRAL))
+			{
+	//			prevAz = shared_Az_verts[izNeighMinor[iprev] - BEGINNING_OF_CENTRAL - StartMajor];
+				prevpos = shared_pos_verts[izNeighMinor[iprev] - BEGINNING_OF_CENTRAL - StartMajor];
+			}
+			else {
+	//			prevAz = p_Az[izNeighMinor[iprev]];
+				prevpos = p_info[izNeighMinor[iprev]].pos;
+			};
+		};
+		if (szPBC[iprev] == ROTATE_ME_CLOCKWISE) prevpos = Clockwise_d*prevpos;
+		if (szPBC[iprev] == ROTATE_ME_ANTICLOCKWISE) prevpos = Anticlockwise_d*prevpos;
+
+		i = 0;
+		if ((izNeighMinor[i] >= StartMinor) && (izNeighMinor[i] < EndMinor))
+		{
+			oppAz = shared_Az[izNeighMinor[i] - StartMinor];
+			opppos = shared_pos[izNeighMinor[i] - StartMinor];
+		} else {
+			if ((izNeighMinor[i] >= StartMajor + BEGINNING_OF_CENTRAL) &&
+				(izNeighMinor[i] < EndMajor + BEGINNING_OF_CENTRAL))
+			{
+				oppAz = shared_Az_verts[izNeighMinor[i] - BEGINNING_OF_CENTRAL - StartMajor];
+				opppos = shared_pos_verts[izNeighMinor[i] - BEGINNING_OF_CENTRAL - StartMajor];
+			} else {
+				oppAz = p_Az[izNeighMinor[i]];
+				opppos = p_info[izNeighMinor[i]].pos;
+			};
+		};
+		if (szPBC[i] == ROTATE_ME_CLOCKWISE) opppos = Clockwise_d*opppos;
+		if (szPBC[i] == ROTATE_ME_ANTICLOCKWISE) opppos = Anticlockwise_d*opppos;
+
+		CalculateCircumcenter(&endpt0, info.pos, opppos, prevpos);
+#pragma unroll 
+		for (i = 0; i < 6; i++)
+		{
+			inext = i + 1; if (inext > 5) inext = 0;
+
+			if ((izNeighMinor[inext] >= StartMinor) && (izNeighMinor[inext] < EndMinor))
+			{
+				nextAz = shared_Az[izNeighMinor[inext] - StartMinor];
+				nextpos = shared_pos[izNeighMinor[inext] - StartMinor];
+			}
+			else {
+				if ((izNeighMinor[inext] >= StartMajor + BEGINNING_OF_CENTRAL) &&
+					(izNeighMinor[inext] < EndMajor + BEGINNING_OF_CENTRAL))
+				{
+					nextAz = shared_Az_verts[izNeighMinor[inext] - BEGINNING_OF_CENTRAL - StartMajor];
+					nextpos = shared_pos_verts[izNeighMinor[inext] - BEGINNING_OF_CENTRAL - StartMajor];
+				}
+				else {
+					nextAz = p_Az[izNeighMinor[inext]];
+					nextpos = p_info[izNeighMinor[inext]].pos;
+				};
+			};
+			if (szPBC[inext] == ROTATE_ME_CLOCKWISE) nextpos = Clockwise_d*nextpos;
+			if (szPBC[inext] == ROTATE_ME_ANTICLOCKWISE) nextpos = Anticlockwise_d*nextpos;
+
+			CalculateCircumcenter(&endpt1, info.pos, opppos, nextpos);
+
+			// ______________________________________________________-
+			//	Az_edge = SIXTH * (2.0*ourdata.Az + 2.0*oppAz + prevAz + nextAz);
+			//	Our_integral_grad_Az += Az_edge * edge_normal;
+			//	Our_integral_curl_Az += Az_edge * (endpt1 - endpt0); // looks anticlockwise
+			//f64_vec2 integ_grad_Az;
+
+			//integ_grad_Az.x = 0.5*(
+			//	(ourAz + nextAz)*(info.pos.y - nextpos.y)
+			//	+ (prevAz + ourAz)*(prevpos.y - info.pos.y)
+			//	+ (oppAz + prevAz)*(opppos.y - prevpos.y)
+			//	+ (nextAz + oppAz)*(nextpos.y - opppos.y)
+			//	);
+
+			//integ_grad_Az.y = -0.5*( // notice minus
+			//	(ourAz + nextAz)*(info.pos.x - nextpos.x)
+			//	+ (prevAz + ourAz)*(prevpos.x - info.pos.x)
+			//	+ (oppAz + prevAz)*(opppos.x - prevpos.x)
+			//	+ (nextAz + oppAz)*(nextpos.x - opppos.x)
+			//	);
+
+			//f64 area_quadrilateral = 0.5*(
+			//	(info.pos.x + nextpos.x)*(info.pos.y - nextpos.y)
+			//	+ (prevpos.x + info.pos.x)*(prevpos.y - info.pos.y)
+			//	+ (opppos.x + prevpos.x)*(opppos.y - prevpos.y)
+			//	+ (nextpos.x + opppos.x)*(nextpos.y - opppos.y)
+			//	);
+
+			f64_vec2 edge_normal;
+			edge_normal.x = endpt1.y - endpt0.y;
+			edge_normal.y = endpt0.x - endpt1.x;
+
+			if (
+				((opppos.dot(opppos) < 0.99999*0.99999*FRILL_CENTROID_OUTER_RADIUS_d*FRILL_CENTROID_OUTER_RADIUS_d) || (DIRICHLET)) &&
+				(opppos.dot(opppos) > 1.00001*1.00001*FRILL_CENTROID_INNER_RADIUS_d*FRILL_CENTROID_INNER_RADIUS_d)
+				)
+			{
+				// neighbour's not a frill, or it's Dirichlet looking outwards.
+				
+				// Symmetric, with circumcenters:
+				//		normal_gradient = (oppAz - ourAz) / ((opppos - info.pos).modulus());
+				//		Our_integral_Lap_Az += normal_gradient*edge_normal.modulus();
+				// Reduce number of square roots:
+				Our_integral_Lap_Az += (oppAz - ourAz)*sqrt((edge_normal.dot(edge_normal)) / ((opppos - info.pos).dot(opppos - info.pos)));
+
+				if (Our_integral_Lap_Az != Our_integral_Lap_Az) 
+					printf("oppAz %1.8E ourAz %1.8E edge_normal.dot(en) %1.8E opposdot %1.8E \n",
+						oppAz, ourAz, edge_normal.dot(edge_normal), ((opppos - info.pos).dot(opppos - info.pos)));
+
+				// Is there a cunning way to get rid of sqrt. We know that edge_normal faces the same way as opppos-info.pos...
+				// thus, (opppos-info.pos).dot(edge_normal) = product of moduli. Hmmmm.
+
+			}
+			AreaMinor += (0.5*endpt0.x + 0.5*endpt1.x)*edge_normal.x;
+			//if (iMinor == 57364) printf("%d AreaMinor %1.8E contrib %1.8E, endpt0.x %1.9E endpt0.y %1.9E endpt1.x %1.9E endpt1.y %1.9E edge.x %1.8E info.pos %1.9E %1.9E oppos %1.9E %1.9E\n",
+			//	iMinor, AreaMinor, (0.5*endpt0.x + 0.5*endpt1.x)*edge_normal.x,
+			//	endpt0.x, endpt0.y, endpt1.x, endpt1.y, edge_normal.x,
+			//	info.pos.x, info.pos.y, opppos.x, opppos.y);
+
+			endpt0 = endpt1;
+		//	prevAz = oppAz;
+			oppAz = nextAz;
+			prevpos = opppos;
+			opppos = nextpos;
+		};
+
+		p_LapAz[iMinor] = Our_integral_Lap_Az / AreaMinor;
+		p_AreaMinor[iMinor] = AreaMinor; // reset for each substep	 // careful what we pass it
+
+		if (AreaMinor < 0.0) printf("%d : AreaMinor %1.10E \n", iMinor, AreaMinor);
 	};
 }
 
@@ -17494,7 +17996,6 @@ __global__ void kernelGetLap_minor__sum_detectcontribs(
 }*/
 
 __global__ void kernelComputeJacobianValues(
-
 	structural * __restrict__ p_info,
 //	f64 * __restrict__ p_Aznext,
 //	f64 * __restrict__ p_Azk,
@@ -29035,4 +29536,157 @@ __global__ void kernelGet_AreaMinorFluid(
 			p_AreaMinor[iMinor] = AreaMinor;
 		} // non-domain tri
 	}; // was it FRILL
+}
+
+
+
+__global__ void kernelAccumulateSummandsVisc(
+	f64_vec2 * __restrict__ p_eps_xy, // 
+	f64 * __restrict__ p_eps_iz,
+	f64 * __restrict__ p_eps_ez,
+	f64_vec2 * __restrict__ p_d_epsxy_by_d_beta, // f64_vec2
+	f64 * __restrict__ p_d_eps_iz_by_d_beta,
+	f64 * __restrict__ p_d_eps_ez_by_d_beta,	
+	// outputs:
+	f64 * __restrict__ p_sum_eps_deps_,  // 8 values for this block
+	f64 * __restrict__ p_sum_product_matrix_
+)
+{
+	__shared__ f64 sumdata_eps_deps[threadsPerTileMinor / 4][REGRESSORS];
+	__shared__ f64 sum_product[threadsPerTileMinor / 4][REGRESSORS][REGRESSORS];
+	// Call with threadsPerTileMinor/4
+
+	// !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+	long const iMinor = threadIdx.x + blockIdx.x * threadsPerTileMinor;
+	// !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+	f64_vec2 depsbydbeta2[REGRESSORS];
+	f64 depsbydbeta[REGRESSORS], depsbydbeta_e[REGRESSORS];
+
+	f64_vec2 eps_xy;
+	f64 eps_iz, eps_ez;
+	int i, j;
+	memset(&(sumdata_eps_deps[threadIdx.x]), 0, sizeof(f64)*REGRESSORS);
+	memset(&(sum_product[threadIdx.x]), 0, sizeof(f64)*REGRESSORS*REGRESSORS);
+	
+	eps_xy = p_eps_xy[iMinor];
+	eps_iz = p_eps_iz[iMinor];
+	eps_ez = p_eps_ez[iMinor];
+#pragma unroll
+	for (i = 0; i < REGRESSORS; i++)
+	{
+		depsbydbeta2[i] = p_d_epsxy_by_d_beta[iMinor + i*NMINOR];
+		depsbydbeta[i] = p_d_eps_iz_by_d_beta[iMinor + i*NMINOR];
+		depsbydbeta_e[i] = p_d_eps_ez_by_d_beta[iMinor + i*NMINOR];
+	};
+#pragma unroll
+	for (i = 0; i < REGRESSORS; i++)
+	{
+		sumdata_eps_deps[threadIdx.x][i] = depsbydbeta2[i].dot(eps_xy)
+			+ depsbydbeta[i]*eps_iz + depsbydbeta_e[i]*eps_ez;
+		for (j = 0; j < REGRESSORS; j++)
+			sum_product[threadIdx.x][i][j] = depsbydbeta2[i].dot(depsbydbeta2[j])
+			+ depsbydbeta[i] * depsbydbeta[j] + depsbydbeta_e[i] * depsbydbeta_e[j];				
+	};
+
+	eps_xy = p_eps_xy[iMinor + threadsPerTileMinor / 4];
+	eps_iz = p_eps_iz[iMinor + threadsPerTileMinor / 4];
+	eps_ez = p_eps_ez[iMinor + threadsPerTileMinor / 4];
+#pragma unroll
+	for (i = 0; i < REGRESSORS; i++)
+	{
+		depsbydbeta2[i] = p_d_epsxy_by_d_beta[iMinor + threadsPerTileMinor / 4 + i*NMINOR];
+		depsbydbeta[i] = p_d_eps_iz_by_d_beta[iMinor + threadsPerTileMinor / 4 + i*NMINOR];
+		depsbydbeta_e[i] = p_d_eps_ez_by_d_beta[iMinor + threadsPerTileMinor / 4 + i*NMINOR];
+	};
+#pragma unroll
+	for (i = 0; i < REGRESSORS; i++)
+	{
+		sumdata_eps_deps[threadIdx.x][i] += depsbydbeta2[i].dot(eps_xy)
+			+ depsbydbeta[i] * eps_iz + depsbydbeta_e[i] * eps_ez;
+		for (j = 0; j < REGRESSORS; j++)
+			sum_product[threadIdx.x][i][j] += depsbydbeta2[i].dot(depsbydbeta2[j])
+			+ depsbydbeta[i] * depsbydbeta[j] + depsbydbeta_e[i] * depsbydbeta_e[j];
+	};
+
+	eps_xy = p_eps_xy[iMinor + threadsPerTileMinor / 2];
+	eps_iz = p_eps_iz[iMinor + threadsPerTileMinor / 2];
+	eps_ez = p_eps_ez[iMinor + threadsPerTileMinor / 2];
+#pragma unroll
+	for (i = 0; i < REGRESSORS; i++)
+	{
+		depsbydbeta2[i] = p_d_epsxy_by_d_beta[iMinor + threadsPerTileMinor / 2 + i*NMINOR];
+		depsbydbeta[i] = p_d_eps_iz_by_d_beta[iMinor + threadsPerTileMinor / 2 + i*NMINOR];
+		depsbydbeta_e[i] = p_d_eps_ez_by_d_beta[iMinor + threadsPerTileMinor / 2 + i*NMINOR];
+	};
+#pragma unroll
+	for (i = 0; i < REGRESSORS; i++)
+	{
+		sumdata_eps_deps[threadIdx.x][i] += depsbydbeta2[i].dot(eps_xy)
+			+ depsbydbeta[i] * eps_iz + depsbydbeta_e[i] * eps_ez;
+		for (j = 0; j < REGRESSORS; j++)
+			sum_product[threadIdx.x][i][j] += depsbydbeta2[i].dot(depsbydbeta2[j])
+			+ depsbydbeta[i] * depsbydbeta[j] + depsbydbeta_e[i] * depsbydbeta_e[j];
+	};
+
+	eps_xy = p_eps_xy[iMinor + 3 * threadsPerTileMinor / 4];
+	eps_iz = p_eps_iz[iMinor + 3 * threadsPerTileMinor / 4];
+	eps_ez = p_eps_ez[iMinor + 3 * threadsPerTileMinor / 4];
+#pragma unroll
+	for (i = 0; i < REGRESSORS; i++)
+	{
+		depsbydbeta2[i] = p_d_epsxy_by_d_beta[iMinor + 3 * threadsPerTileMinor / 4 + i*NMINOR];
+		depsbydbeta[i] = p_d_eps_iz_by_d_beta[iMinor + 3 * threadsPerTileMinor / 4 + i*NMINOR];
+		depsbydbeta_e[i] = p_d_eps_ez_by_d_beta[iMinor + 3 * threadsPerTileMinor / 4 + i*NMINOR];
+	};
+#pragma unroll
+	for (i = 0; i < REGRESSORS; i++)
+	{
+		sumdata_eps_deps[threadIdx.x][i] += depsbydbeta2[i].dot(eps_xy)
+			+ depsbydbeta[i] * eps_iz + depsbydbeta_e[i] * eps_ez;
+		for (j = 0; j < REGRESSORS; j++)
+			sum_product[threadIdx.x][i][j] += depsbydbeta2[i].dot(depsbydbeta2[j])
+			+ depsbydbeta[i] * depsbydbeta[j] + depsbydbeta_e[i] * depsbydbeta_e[j];
+	};
+
+
+
+	__syncthreads();
+
+	int s = blockDim.x;
+	int k = s / 2;
+
+	while (s != 1) {
+		if (threadIdx.x < k)
+		{
+			for (i = 0; i < REGRESSORS; i++)
+			{
+				sumdata_eps_deps[threadIdx.x][i] += sumdata_eps_deps[threadIdx.x + k][i];
+				for (j = 0; j < REGRESSORS; j++)
+					sum_product[threadIdx.x][i][j] += sum_product[threadIdx.x + k][i][j];
+			};
+		};
+		__syncthreads();
+
+		// Modify for case blockdim not 2^n:
+		if ((s % 2 == 1) && (threadIdx.x == k - 1)) {
+			for (i = 0; i < REGRESSORS; i++)
+			{
+				sumdata_eps_deps[threadIdx.x][i] += sumdata_eps_deps[threadIdx.x + s - 1][i];
+				for (j = 0; j < REGRESSORS; j++)
+					sum_product[threadIdx.x][i][j] += sum_product[threadIdx.x + s - 1][i][j];
+			};
+		};
+		// In case k == 81, add [39] += [80]
+		// Otherwise we only get to 39+40=79.
+		s = k;
+		k = s / 2;
+		__syncthreads();
+	};
+
+	if (threadIdx.x == 0)
+	{
+		memcpy(&(p_sum_eps_deps_[blockIdx.x*REGRESSORS]), sumdata_eps_deps[0], sizeof(f64)*REGRESSORS);
+		memcpy(&(p_sum_product_matrix_[blockIdx.x*REGRESSORS*REGRESSORS]), &(sum_product[0][0][0]), sizeof(f64)*REGRESSORS*REGRESSORS);
+	};
 }

@@ -1775,6 +1775,26 @@ __global__ void kernelAccumulateMatrix(
 	f64_vec3 * __restrict__ p_eps_against_deps
 	);
 
+__global__ void kernelAccumulateSummandsVisc(
+	f64_vec2 * __restrict__ p_eps_xy, // 
+	f64 * __restrict__ p_eps_iz,
+	f64 * __restrict__ p_eps_ez,
+	f64_vec2 * __restrict__ p_d_epsxy_by_d_beta, // f64_vec2
+	f64 * __restrict__ p_d_eps_iz_by_d_beta,
+	f64 * __restrict__ p_d_eps_ez_by_d_beta,
+	// outputs:
+	f64 * __restrict__ p_sum_eps_deps_,  // 8 values for this block
+	f64 * __restrict__ p_sum_product_matrix_
+);
+
+__global__ void SubtractVector4(v4 * __restrict__ p_output,
+	v4 * __restrict__ p_a, v4 * __restrict__ p_b);
+
+__global__ void AddLCtoVector4component(
+	v4 * __restrict__ p_operand,
+	v4 * __restrict__ p_regr,
+	v4 * __restrict__ p_storemove);
+
 __global__ void kernelCreate_further_regressor(
 	structural * __restrict__ p_info,
 	f64 h_use,
@@ -1784,14 +1804,34 @@ __global__ void kernelCreate_further_regressor(
 	f64 * __restrict__ p_gamma,
 	f64 * __restrict__ p_regressor2);
 
+__global__ void AssembleVector4(v4 * __restrict__ p_output,
+	f64_vec2 * __restrict__ p_xy, f64 * __restrict__ p_iz, f64 * __restrict__ p_ez);
+
+__global__ void kernelAccumulateSumOfSquares_4(
+	v4 * __restrict__ p_eps,
+	f64 * __restrict__ p_SS);
+
+__global__ void SubtractVector4stuff(v4 * __restrict__ p_output,
+	f64_vec2 * __restrict__ p_xy,
+	f64 * __restrict__ p_iz,
+	f64 * __restrict__ p_ez,
+	v4 * __restrict__ p_to_subtract);
+
 __global__ void NegateVector(
 	f64 * __restrict__ p_x1);
+
+__global__ void kernelAccumulateSumOfSquares2vec(
+	f64_vec2 * __restrict__ p_eps,
+	f64 * __restrict__ p_SS);
+
+__global__ void ScaleVector4(
+	v4 * __restrict__ p_eps,
+	f64 const factor);
 
 __global__ void kernelCreateAzbymultiplying(
 	f64 * __restrict__ p_Az,
 	f64 * __restrict__ p_scaledAz,
-	f64 const h_use,
-	f64 * __restrict__ p_gamma
+	f64 * __restrict__ p_factor
 );
 
 __global__ void kernelAccumulateSumOfSquares1(
@@ -1808,9 +1848,11 @@ __global__ void VectorAddMultiple1(
 __global__ void kernelDividebyroothgamma
 (
 	f64 * __restrict__ result,
+	f64 * __restrict__ p__sqrtfactor,
 	f64 * __restrict__ Az,
 	f64 const hsub,
-	f64 * __restrict__ p_gamma
+	f64 * __restrict__ p_gamma,
+	f64 * __restrict__ p_Area
 );
 
 __global__ void kernelCreateSeedAz(
@@ -1907,6 +1949,18 @@ __global__ void kernelGetLapCoeffs_and_min_DEBUG(
 	long * __restrict__ p_min_index);
 
 
+__global__ void kernelGetLap_minor_SYMMETRIC(
+	structural * __restrict__ p_info,
+	f64 * __restrict__ p_Az,
+	long * __restrict__ p_izTri,
+	long * __restrict__ p_izNeighMinor,
+	char * __restrict__ p_szPBCtri_vertex,
+	char * __restrict__ p_szPBCtriminor,
+	f64 * __restrict__ p_LapAz,
+	f64 * __restrict__ p_AreaMinor 
+);
+
+
 __global__ void kernelGetLap_minor_debug(
 	structural * __restrict__ p_info,
 	f64 * __restrict__ p_Az,
@@ -1934,21 +1988,21 @@ __global__ void kernelCreateEpsilon_Az_CG(
 	f64 * __restrict__ p_gamma,
 	f64 * __restrict__ p_Lap_Az,
 	f64 * __restrict__ p_epsilon,
+	f64 * __restrict__ p__sqrtfactor,
 	bool * __restrict__ p_bFail,
 	bool const bSaveFail);
 
-__global__ void kernelGet_AreaMinorFluid(
 
+__global__ void kernelGet_AreaMinorFluid(
 	structural * __restrict__ p_info_minor,
 	long * __restrict__ p_izTri,
 	char * __restrict__ p_szPBC,
 	long * __restrict__ p_izNeighMinor,
 	char * __restrict__ p_szPBCtriminor,
-
 	bool * __restrict__ bz_pressureflag,
-
 	f64 * __restrict__ p_AreaMinor
 );
+
 
 __global__ void kernelGetLap_minor(
 	structural * __restrict__ p_info,
