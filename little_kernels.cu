@@ -977,7 +977,6 @@ __global__ void kernelAccumulateSummands4(
 }
 
 
-
 __global__ void kernelAccumulateSummands7(
 	f64 * __restrict__ p_epsilon,
 	f64 * __restrict__ p_d_eps_by_dbeta,
@@ -985,9 +984,9 @@ __global__ void kernelAccumulateSummands7(
 	f64 * __restrict__ p_sum_eps_depsbydbeta_x8,
 	f64 * __restrict__ p_sum_depsbydbeta__8x8
 ) {
-	__shared__ f64 sumdata[threadsPerTileMajor][24]; 
+	__shared__ f64 sumdata[threadsPerTileMajor][24];
 	// Row-major memory layout implies that this is a contiguous array for each thread.
-	
+
 	// We can have say 24 doubles in shared. We need to sum 64 + 8 + 1 = 73 things. 24*3 = 72. hah!
 	// It would be nicer then if we just called this multiple times. But it has to be for distinct input data..
 	// Note that given threadsPerTileMajor = 128 we could comfortably put 48 doubles in shared and still run something.
@@ -998,22 +997,22 @@ __global__ void kernelAccumulateSummands7(
 
 	long const iVertex = threadIdx.x + blockIdx.x * blockDim.x;
 	f64 eps = p_epsilon[iVertex];
-	f64 d_eps_by_d_beta[REGRESSORS]; 
+	f64 d_eps_by_d_beta[REGRESSORS];
 	int i;
 	for (i = 0; i < REGRESSORS; i++) {
 		d_eps_by_d_beta[i] = p_d_eps_by_dbeta[iVertex + i*NUMVERTICES];
-	};	
+	};
 
 #pragma unroll 
 	for (i = 0; i < REGRESSORS; i++)
 		sumdata[threadIdx.x][i] = eps*d_eps_by_d_beta[i];
 #pragma unroll 
 	for (i = 0; i < REGRESSORS; i++)
-		sumdata[threadIdx.x][REGRESSORS+i] = d_eps_by_d_beta[0] *d_eps_by_d_beta[i];
+		sumdata[threadIdx.x][REGRESSORS + i] = d_eps_by_d_beta[0] * d_eps_by_d_beta[i];
 #pragma unroll 
 	for (i = 0; i < REGRESSORS; i++)
 		sumdata[threadIdx.x][2 * REGRESSORS + i] = d_eps_by_d_beta[1] * d_eps_by_d_beta[i];
-	
+
 	// That was 24.
 
 	__syncthreads();
@@ -1043,9 +1042,9 @@ __global__ void kernelAccumulateSummands7(
 
 	if (threadIdx.x == 0)
 	{
-		memcpy(&(p_sum_eps_depsbydbeta_x8[blockIdx.x*REGRESSORS]), &(sumdata[0][0]), sizeof(f64)*8);
+		memcpy(&(p_sum_eps_depsbydbeta_x8[blockIdx.x*REGRESSORS]), &(sumdata[0][0]), sizeof(f64) * 8);
 		memcpy(&(p_sum_depsbydbeta__8x8[blockIdx.x * REGRESSORS * REGRESSORS]), &(sumdata[0][REGRESSORS]),
-			2*REGRESSORS * sizeof(f64));		
+			2 * REGRESSORS * sizeof(f64));
 	};
 
 	__syncthreads();
@@ -1058,7 +1057,7 @@ __global__ void kernelAccumulateSummands7(
 		sumdata[threadIdx.x][i + REGRESSORS] = d_eps_by_d_beta[3] * d_eps_by_d_beta[i];
 #pragma unroll 
 	for (i = 0; i < REGRESSORS; i++)
-		sumdata[threadIdx.x][i + 2*REGRESSORS] = d_eps_by_d_beta[4] * d_eps_by_d_beta[i];
+		sumdata[threadIdx.x][i + 2 * REGRESSORS] = d_eps_by_d_beta[4] * d_eps_by_d_beta[i];
 
 	__syncthreads();
 
@@ -1099,7 +1098,7 @@ __global__ void kernelAccumulateSummands7(
 		sumdata[threadIdx.x][i + REGRESSORS] = d_eps_by_d_beta[6] * d_eps_by_d_beta[i];
 #pragma unroll 
 	for (i = 0; i < REGRESSORS; i++)
-		sumdata[threadIdx.x][i + 2*REGRESSORS] = d_eps_by_d_beta[7] * d_eps_by_d_beta[i];
+		sumdata[threadIdx.x][i + 2 * REGRESSORS] = d_eps_by_d_beta[7] * d_eps_by_d_beta[i];
 
 	__syncthreads();
 
@@ -1134,7 +1133,86 @@ __global__ void kernelAccumulateSummands7(
 		memcpy(&(p_sum_depsbydbeta__8x8[blockIdx.x * REGRESSORS * REGRESSORS + 5 * REGRESSORS]),
 			&(sumdata[0][0]), 3 * REGRESSORS * sizeof(f64));
 	};
+
+}
+
+
+__global__ void kernelAccumulateSummands_4x4(
+	f64 * __restrict__ p_epsilon,
+	f64 * __restrict__ p_d_eps_by_dbeta,
+	// outputs:
+	f64 * __restrict__ p_sum_eps_depsbydbeta_x4,
+	f64 * __restrict__ p_sum_depsbydbeta__4x4
+) {
+	__shared__ f64 sumdata[threadsPerTileMajorClever][20]; 
+	// Row-major memory layout implies that this is a contiguous array for each thread.
 	
+	// We can have say 24 doubles in shared. We need to sum 64 + 8 + 1 = 73 things. 24*3 = 72. hah!
+	// It would be nicer then if we just called this multiple times. But it has to be for distinct input data..
+	// Note that given threadsPerTileMajor = 128 we could comfortably put 48 doubles in shared and still run something.
+
+	// The inputs are only 9 doubles so we can have them.
+	// We only need the upper matrix. 1 + 2 + 3 + 4 +5 +6+7+8+9 = 45
+	// So we can do it in 2 goes.
+
+	long const iVertex = threadIdx.x + blockIdx.x * blockDim.x;
+	f64 eps = p_epsilon[iVertex];
+	f64 d_eps_by_d_beta[4]; 
+	int i;
+	for (i = 0; i < 4; i++) {
+		d_eps_by_d_beta[i] = p_d_eps_by_dbeta[iVertex + i*NUMVERTICES];
+	};	
+
+#pragma unroll 
+	for (i = 0; i < 4; i++)
+		sumdata[threadIdx.x][i] = eps*d_eps_by_d_beta[i];
+#pragma unroll 
+	for (i = 0; i < 4; i++)
+		sumdata[threadIdx.x][4+i] = d_eps_by_d_beta[0] *d_eps_by_d_beta[i];
+#pragma unroll 
+	for (i = 0; i < 4; i++)
+		sumdata[threadIdx.x][8 + i] = d_eps_by_d_beta[1] * d_eps_by_d_beta[i];
+#pragma unroll 
+	for (i = 0; i < 4; i++)
+		sumdata[threadIdx.x][12 + i] = d_eps_by_d_beta[2] * d_eps_by_d_beta[i];
+#pragma unroll 
+	for (i = 0; i < 4; i++)
+		sumdata[threadIdx.x][16 + i] = d_eps_by_d_beta[3] * d_eps_by_d_beta[i];
+
+	// That was 20. Repeated some!
+
+	__syncthreads();
+
+	int s = blockDim.x;
+	int k = s / 2;
+
+	while (s != 1) {
+		if (threadIdx.x < k)
+		{
+			for (int y = 0; y < 20; y++)
+				sumdata[threadIdx.x][y] += sumdata[threadIdx.x + k][y];
+		};
+		__syncthreads();
+
+		// Modify for case blockdim not 2^n:
+		if ((s % 2 == 1) && (threadIdx.x == k - 1)) {
+			for (int y = 0; y < 20; y++)
+				sumdata[threadIdx.x][y] += sumdata[threadIdx.x + s - 1][y];
+		};
+		// In case k == 81, add [39] += [80]
+		// Otherwise we only get to 39+40=79.
+		s = k;
+		k = s / 2;
+		__syncthreads();
+	};
+
+	if (threadIdx.x == 0)
+	{
+		memcpy(&(p_sum_eps_depsbydbeta_x4[blockIdx.x*4]), &(sumdata[0][0]), sizeof(f64)*4);
+		memcpy(&(p_sum_depsbydbeta__4x4[blockIdx.x *4 * 4]), &(sumdata[0][4]),
+			4*4 * sizeof(f64));		
+	};
+		
 }
 
 
@@ -2415,8 +2493,92 @@ __global__ void kernelCalculate_kappa_nu(
 		p_kappa_e[iMinor] = kappa_e;
 		p_nu_i[iMinor] = nu.i;
 		p_nu_e[iMinor] = nu.e;
-	}
+
+	};
 }
+
+
+__global__ void kernelCalculate_kappa_nu_vertices(
+	structural * __restrict__ p_info_major, // NB: MAJOR
+	nvals * __restrict__ p_n_major,
+	T3 * __restrict__ p_T_major,
+
+	f64 * __restrict__ p_kappa_n_major,
+	f64 * __restrict__ p_kappa_i_major,
+	f64 * __restrict__ p_kappa_e_major,
+	f64 * __restrict__ p_nu_i_major,
+	f64 * __restrict__ p_nu_e_major // CHECK DIMENSIONS IF USING BIG ARRAY
+)
+{
+	long const iVertex = threadIdx.x + blockIdx.x * blockDim.x;
+	
+	f64 TeV, sigma_MT, sigma_visc, sqrt_T, nu_en_visc;
+	T3 T;
+	f64 nu_in_visc, nu_ni_visc, nu_ii;
+	nvals our_n;
+	species3 nu;
+	
+	structural info = p_info_major[iVertex];
+	if ((info.flag == DOMAIN_TRIANGLE) || (info.flag == CROSSING_INS))
+	{
+		our_n = p_n_major[iVertex];
+		T = p_T_major[iVertex];
+
+		TeV = T.Ti*one_over_kB;
+		Estimate_Ion_Neutral_Cross_sections_d(TeV, &sigma_MT, &sigma_visc); // could easily save one call
+		sqrt_T = sqrt(T.Ti); // again not that hard to save one call
+		nu_in_visc = our_n.n_n * sigma_visc * sqrt(T.Ti / m_ion + T.Tn / m_n);
+		nu_ni_visc = nu_in_visc * (our_n.n / our_n.n_n);
+		//nu_nn_visc:
+		nu.n = our_n.n_n * Estimate_Neutral_Neutral_Viscosity_Cross_section_d(T.Tn * one_over_kB)
+			* sqrt(T.Tn / m_n);
+
+		nu.n = 0.74*nu_ni_visc + 0.4*nu.n; // Rate to use in thermal conductivity.
+
+		nu_ii = our_n.n*kB_to_3halves*Get_lnLambda_ion_d(our_n.n, T.Ti) *Nu_ii_Factor /
+			(sqrt_T*T.Ti);
+		// nu_iHeart:
+		nu.i = 0.75*nu_in_visc + 0.8*nu_ii - 0.25*(nu_in_visc*nu_ni_visc) / (3.0*nu_ni_visc + nu.n);
+		//  ita uses nu_ion =  0.3*nu_ii + 0.4*nu_in_visc + 0.000273*nu_eiBar;
+		// which again is only about half as much. BUT WE KNOW HE WORKS in DOUBLE Braginskii ??
+		// says Vranjes -- so check that the rest of the formula does not compensate.
+
+		// Would like consistent approach.
+		// 1. We approached the heat flux directly per Golant. Where did it say what nu to use and how to add up?
+		// Can we follow our own logic and then compare with what Zhdanov says?
+		// 2. What about the limit of full ionization? Zero ionization? Does Zhdanov attain sensible limit?
+		// Our version made sense.
+
+		TeV = T.Te * one_over_kB;
+		Estimate_Ion_Neutral_Cross_sections_d(TeV, &sigma_MT, &sigma_visc);
+		sqrt_T = sqrt(T.Te);
+		nu_en_visc = our_n.n_n * sigma_visc * sqrt_T * over_sqrt_m_e;
+		f64 nu_eiBar = nu_eiBarconst * kB_to_3halves * our_n.n *
+			Get_lnLambda_d(our_n.n, T.Te) / (T.Te*sqrt_T);
+		//nu_eHeart:
+		nu.e = nu_en_visc + 1.87*nu_eiBar;
+
+		// Comparison with Zhdanov's denominator for ita looks like this one overestimated
+		// by a factor of something like 1.6?
+
+		f64 kappa_n = NEUTRAL_KAPPA_FACTOR * our_n.n_n * T.Tn / (m_n * nu.n);
+		f64 kappa_i = (20.0 / 9.0) * our_n.n*T.Ti / (m_i * nu.i);
+		f64 kappa_e = 2.5*our_n.n*T.Te / (m_e * nu.e);
+
+		//if ((TESTKAPPA)) printf("kappa_e %1.9E our_n.n %1.9E Te %1.9E nu %1.9E\n",
+		//	kappa_e, our_n.n, T.Te, nu.e);
+
+		if (kappa_i != kappa_i) printf("iVertex %d kappa_i = NaN T %1.9E %1.9E %1.9E n %1.9E %1.9E \n", iVertex,
+			T.Tn, T.Ti, T.Te, our_n.n_n, our_n.n);
+		p_kappa_n_major[iVertex] = kappa_n;
+		p_kappa_i_major[iVertex] = kappa_i;
+		p_kappa_e_major[iVertex] = kappa_e;
+		p_nu_i_major[iVertex] = nu.i;
+		p_nu_e_major[iVertex] = nu.e;
+
+	};
+}
+
 
 __global__ void kernelSetPressureFlag(
 	structural * __restrict__ p_info_minor,
@@ -2826,14 +2988,42 @@ __global__ void kernelAddtoT(
 
 __global__ void kernelAddtoT_lc(
 	f64 * __restrict__ p__T,
-	f64 * __restrict__ p_addition
+	f64 * __restrict__ p_addition,
+	int const howmany
 )
 {
 	long const iVertex = blockDim.x*blockIdx.x + threadIdx.x;
 	f64 T = p__T[iVertex];
-	for (int i = 0; i < REGRESSORS; i++)
+	for (int i = 0; i < howmany; i++)
 		T += beta_n_c[i] * p_addition[i*NUMVERTICES+iVertex];
 	p__T[iVertex] = T;
+}
+
+__global__ void kernelAddtoT_lc___(
+	f64 * __restrict__ p__T,
+	f64 * __restrict__ p_T_src,
+	f64 * __restrict__ p_addition,
+	int const howmany,
+	f64 const multiplier
+)
+{
+	long const iVertex = blockDim.x*blockIdx.x + threadIdx.x;
+	f64 T = p_T_src[iVertex];
+	for (int i = 0; i < howmany; i++)
+		T += beta_n_c[i] * p_addition[i*NUMVERTICES + iVertex]*multiplier;
+	p__T[iVertex] = T;
+
+}
+__global__ void kernelAdd_to_T_lc(
+	f64 * __restrict__ p__T,
+	f64 const beta1,
+	f64 * __restrict__ p_add1,
+	f64 const beta2,
+	f64 * __restrict__ p_add2
+)
+{
+	long const iVertex = blockDim.x*blockIdx.x + threadIdx.x;
+	p__T[iVertex] += beta1*p_add1[iVertex] + beta2*p_add2[iVertex];
 }
 
 __global__ void kernelAddtoT_volleys(
@@ -2886,6 +3076,18 @@ __global__ void kernelAdd(
 	long const index = blockDim.x*blockIdx.x + threadIdx.x;
 	p_updated[index] += beta * p_added[index];
 }
+
+__global__ void kernelAdd2(
+	f64 * __restrict__ p_result,
+	f64 * __restrict__ p_src,
+	f64 const beta_,
+	f64 * __restrict__ p_addition
+)
+{
+	long const index = blockDim.x*blockIdx.x + threadIdx.x;
+	p_result[index] = p_src[index] + beta_ * p_addition[index];
+}
+
 
 __global__ void kernelAdd_to_v(
 	v4 * __restrict__ p_vie,
@@ -3285,6 +3487,23 @@ __global__ void VectorCompareMax(
 		p_max[blockIdx.x] = diff[0];
 	}
 }
+
+__global__ void AddLCtoT(f64 * __restrict__ p_T_,
+	f64 * __restrict__ p_T_use,
+	f64 const bet, f64 * __restrict__ p_add) {
+	long const iVertex = blockIdx.x*blockDim.x + threadIdx.x;
+	p_T_[iVertex] = p_T_use[iVertex] + p_add[iVertex] * bet;
+}
+__global__ void AddLC(
+	f64 * __restrict__ p_result,
+	f64 * __restrict__ p_summand1,
+	f64 const betaa,
+	f64 * __restrict__ p_summand2) 
+{
+	long const iVertex = blockIdx.x*blockDim.x + threadIdx.x;
+	p_result[iVertex] = p_summand1[iVertex] + betaa*p_summand2[iVertex];
+}
+
 
 
 //
@@ -4462,8 +4681,8 @@ __global__ void kernelCreateWhoAmI_verts(
 
 	// BEWARE THEN that info.neigh_len is not apparently accurate.
 
-	if (iVertex == 40949) printf("40949 info.neigh_len %d izNeigh[%d-1] %d\n", info.neigh_len,
-		info.neigh_len-1, izNeigh[threadIdx.x][info.neigh_len-1]);
+	if (iVertex == 19180) printf("%d info.neigh_len %d izNeigh[%d-1] %d\n", iVertex, 
+		info.neigh_len, info.neigh_len-1, izNeigh[threadIdx.x][info.neigh_len-1]);
 
 	if ((info.flag == INNERMOST) || (info.flag == OUTERMOST)) info.neigh_len--;
 
@@ -4478,9 +4697,14 @@ __global__ void kernelCreateWhoAmI_verts(
 		if ((iNeigh >= StartMajor) && (iNeigh < EndMajor))
 		{
 			p = izNeigh[iNeigh - StartMajor];			
+			if (iVertex == 19180) printf("shared p. %d %d %d \n",
+				p[0], p[1], p[2]);
 		} else {
 			memcpy(izNeigh_neigh, p_izNeigh_vert + MAXNEIGH*iNeigh,	sizeof(long)*MAXNEIGH);
 			p = izNeigh_neigh;
+
+			if (iVertex == 19180) printf("non-shared p. %d %d %d \n",
+				p[0], p[1], p[2]);
 		};
 		short j = 0;
 		while ((*p != iVertex) && (j < MAXNEIGH+1)) {
@@ -4489,6 +4713,8 @@ __global__ void kernelCreateWhoAmI_verts(
 			if (j >= MAXNEIGH) printf(" j = %d iVertex %d iNeigh %d\n", j, iVertex, iNeigh);
 		};
 		result[i] = j;
+		if (iVertex == 19180) printf("i %d iVertex %d iNeigh %d result j %d",
+			i, iVertex, iNeigh, j);
 	};
 
 	memcpy(p_sz_who_am_I + MAXNEIGH*iVertex, result, sizeof(short)*MAXNEIGH);
@@ -4589,8 +4815,6 @@ __global__ void MeasureAccelxy_and_JxB_and_soak(
 
 	};
 }
-
-
 
 
 __global__ void Collect_Ntotal_major(

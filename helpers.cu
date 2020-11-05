@@ -6,7 +6,7 @@
 
 #ifdef __CUDACC__
 __device__ __forceinline__ f64 GetEzShape(f64 r) {
-	return 1.0; 
+	return 1.0 - 1.0 / (1.0 + exp(-24.0*(r - 4.32)));
 	// return 1.0 - 1.0 / (1.0 + exp(-16.0*(r - 4.2))); // At 4.0cm it is 96% as strong as at tooth. At 4.4 it is 4%.
 }
 #else
@@ -57,11 +57,15 @@ __device__ __forceinline__ f64 Get_lnLambda_d(real n_e,real T_e)
 
 		// There is also a quantum ceiling. It will not be anywhere near. At n=1e20, 0.5eV, the ceiling is only down to 29; it requires cold dense conditions to apply.
 
+		if (lnLambda < 2.0) lnLambda = 2.0; // deal with negative inputs
+
 	} else {
 		lnLambda = 20.0;
 	};
 	return lnLambda;
 }		
+
+
 __device__ __forceinline__ f64_vec2 Anticlock_rotate2(const f64_vec2 arg)
 {
 	f64_vec2 result;

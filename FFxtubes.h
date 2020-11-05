@@ -19,7 +19,9 @@ bool const bScrewPinch = false;
 //#define FLATAZBC
  
 #define FOLDER "C:/outputs/"
-#define INITIALAVI "more.avi"		
+#define INITIALAVI "scrap.avi"		
+#define STORYFILE "temp.txt"
+#define STORYFILE2 "temp2.txt"
   
 #define FUNCTIONALFILE_START FOLDER "functionals"
 #define DATAFILENAME FOLDER "Data_"
@@ -34,14 +36,14 @@ bool const bScrewPinch = false;
 
 #define STEPS_PER_LOOP               1    // soon change to 500
 // frames between file pinch-offs:
-#define AVI_FILE_PINCHOFF_FREQUENCY     250
+#define AVI_FILE_PINCHOFF_FREQUENCY     200
 
 // 1 frame = 0.01 so 100 frames == 1 ns
 
 // milliseconds between frames:
 #define AVIFRAMEPERIOD         15  // milliseconds; 20 ms => 50 fps.
 
-#define DATA_SAVE_FREQUENCY					 7
+#define DATA_SAVE_FREQUENCY					 5
 // For debug. For production change it to 25
 
 // Program Mechanics:
@@ -235,7 +237,6 @@ real const UNIFORM_T = 4.0e-14; // 300K
 
 #define INITIAL_BACKGROUND_ION_DENSITY 1.0e8
 #define INITIAL_TOTAL_DENSITY 1.0e18
-
 
 #define BZ_CONSTANT     2.7  
 							   // Constant Bz before any plasma Bz:

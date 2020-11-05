@@ -39,7 +39,7 @@ extern TriMesh X4;
 #define CHOSEN  105169
 #define CHOSEN1 59805
 #define CHOSEN2 59806
-#define VERTCHOSEN 19168
+#define VERTCHOSEN 19153
 #define VERTCHOSEN2 19180
    
 #define ITERATIONS_BEFORE_SWITCH  18
@@ -93,9 +93,11 @@ four_pi_over_c_ReverseJz, RELTHRESH_AZ_d,
 FRILL_CENTROID_OUTER_RADIUS_d, FRILL_CENTROID_INNER_RADIUS_d;
 
 __constant__ f64 UNIFORM_n_d;
+
 __constant__ f64 cross_s_vals_viscosity_ni_d[10], cross_s_vals_viscosity_nn_d[10],
                  cross_T_vals_d[10], cross_s_vals_MT_ni_d[10];
 __constant__ f64 beta_n_c[32], beta_i_c[8], beta_e_c[8];
+
 
 __constant__ f64 recomb_coeffs[32][3][5];
 f64 recomb_coeffs_host[32][3][5];
@@ -113,6 +115,7 @@ __constant__ long numStartZCurrentTriangles, numEndZCurrentTriangles;
 #define CallMAC(cudaStatus) Call(cudaStatus, #cudaStatus )   
 // { Call(cudaStatus, "cudaStatus") } ?
 extern real FRILL_CENTROID_OUTER_RADIUS, FRILL_CENTROID_INNER_RADIUS;
+
 extern bool flaglist[NMINOR];
 
 cuSyst cuSyst1, cuSyst2, cuSyst3;
@@ -137,13 +140,17 @@ f64 * p_accelgraph_host[12];
 f64 * p_Ohmsgraph_host[20];
 __device__ f64 * p_Ohmsgraph[20];
 __device__ f64 * p_eps_against_d_eps;
+
 __device__ f64 * p_arelz_graph[12];
 f64 * p_arelz_graph_host[12];
+
 __device__ f64 * p_AreaMinor_cc, *p_sqrtfactor;
+
 __device__ v4 * v4temparray, *zero_vec4;
 __device__ f64_vec3 * p_MAR_ion3, *p_MAR_elec3, *p_MAR_neut3 , *p_MAR_neut2;
 __device__ f64_vec3 * p_MAR_ion_pressure_major_stored, *p_MAR_ion_visc_major_stored, *p_MAR_elec_pressure_major_stored, *p_MAR_elec_visc_major_stored, *p_MAR_elec_ionization_major_stored;
-__device__ v4 * p_vie_k_stored;	
+__device__ v4 * p_vie_k_stored;
+	
 __device__ bool * p_pressureflag;
 __device__ f64_vec3 * p_d_epsilon_by_d_beta_x, *p_d_epsilon_by_d_beta_y,
 *p_d_epsilon_by_d_beta_z, *p_epsilon3, *v3temp, *zero_vec3;
@@ -156,37 +163,46 @@ __device__ f64 * p_regressor_n, *p_regressor_i, *p_regressor_e, *p_Effect_self_n
 *d_eps_by_dx_neigh_n, *d_eps_by_dx_neigh_i, *d_eps_by_dx_neigh_e;
 __device__ T3 * p_store_T_move1, *p_store_T_move2;
 NTrates * p_NTrates_host;
+
 __device__ f64 * p_sqrtD_inv_n, *p_sqrtD_inv_i, *p_sqrtD_inv_e;
 __device__ f64 * p_regressors;
 f64 * p_sum_eps_deps_by_dbeta_x8_host;
+
 __device__ f64_vec3 * p_tempvec3, *p_regressors3, *p_stored_move3;
 __device__ v4 * p_tempvec4, *p_regressors4, *p_stored_move4;
+
 __device__ f64 * p_SS, * p_epsilon_x, * p_epsilon_y, * p_epsilon_z, *p_d_eps_by_d_beta_x_, *p_d_eps_by_d_beta_y_,
 			*p_d_eps_by_d_beta_z_;
 f64_vec3 * p_tempvec3host;
 f64 * p_SS_host;
 f64_vec2 * p_tempvec2_host;
+
 __device__ short * sz_who_vert_vert;
+
 __device__ long * p_indicator;
 __device__ f64 * p_Jacobian_list;
+
 __device__ NTrates * p_store_NTFlux;
+
 #define SQUASH_POINTS  24
 __device__ f64 * p_matrix_blocks;
 __device__ f64 * p_vector_blocks;
+
 f64 * p_matrix_blocks_host, *p_vector_blocks_host;
 f64 * p_sum_product_matrix_host;
 f64_vec3 * p_eps_against_deps_host;
 f64 * p_eps_against_d_eps_host;
 v4 * p_tempvec4_host;
+
 __device__ f64_vec3 * p_eps_against_deps;
 __device__ f64 * p_sum_product_matrix;
 
 #define p_slot1n p_Ap_n
 #define p_slot1i p_Ap_i
 #define p_slot1e p_Ap_e
-#define p_slot2n p_d_eps_iz_by_d_beta_i
-#define p_slot2i p_d_eps_iz_by_d_beta_e
-#define p_slot2e p_d_eps_ez_by_d_beta_i
+#define p_slot2n p_NnTn
+#define p_slot2i p_NTi
+#define p_slot2e p_NTe
 
 __device__ f64 * p_Tn, *p_Ti, *p_Te, *p_Ap_n, *p_Ap_i, *p_Ap_e, * p_NnTn, * p_NTi, * p_NTe,
 			* stored_Az_move;
@@ -2518,7 +2534,7 @@ __device__ f64 * regressors;
 __device__ f64 * p_coeffself;
 
 
-int RunGeometricHeatConduction_NonlinearCG__singleregression(f64 * p_T_k, f64 * p_T, 
+int RunGeometricHeatConduction_NonlinearCG(f64 * p_T_k, f64 * p_T, 
 	f64 hsub, cuSyst * pX_use, bool bUseMask, f64 * p_kappa, f64 * p_nu,
 	int iSpecies) 
 {
@@ -2543,29 +2559,20 @@ int RunGeometricHeatConduction_NonlinearCG__singleregression(f64 * p_T_k, f64 * 
 	CallMAC(cudaMemset(p_Ax, 0, sizeof(f64)*NUMVERTICES));
 	CallMAC(cudaMemset(p_epsilon, 0, sizeof(f64)*NUMVERTICES));
 	CallMAC(cudaMemset(zerovec1, 0, sizeof(f64)*NUMVERTICES));
-	
+	//kernelCalculate_kappa_nu_vertices(
+	//	structural * __restrict__ p_info_major, // NB: MAJOR
+	//	nvals * __restrict__ p_n_major,
+	//	T3 * __restrict__ p_T_major,
+
+	//	f64 * __restrict__ p_kappa_n_major,
+	//	f64 * __restrict__ p_kappa_i_major,
+	//	f64 * __restrict__ p_kappa_e_major,
+	//	f64 * __restrict__ p_nu_i_major,
+	//	f64 * __restrict__ p_nu_e_major // CHECK DIMENSIONS IF USING BIG ARRAY
+	//)
+	//Call(cudaThreadSynchronize(), "cudaTS Kappa on vertices");
 	// call that first and send species kappa.
 
-	GlobalSuppressSuccessVerbosity = true;
-
-	HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
-
-	if (iSpecies == 0) SetConsoleTextAttribute(hConsole, 14);
-	if (iSpecies == 1) SetConsoleTextAttribute(hConsole, 10);
-	if (iSpecies == 2) SetConsoleTextAttribute(hConsole, 15); // 12= red 11=cyan
-
-
-
-
-	// Don't forget to actually augment d/dt NT when we are done here.
-
-
-
-
-
-
-
-	bool bContinue1 = true;
 	do {
 		// There should be a 0th step where we use previous moves.
 		// Ideally store 2 moves, do multivariate regression to get direction;
@@ -2573,7 +2580,6 @@ int RunGeometricHeatConduction_NonlinearCG__singleregression(f64 * p_T_k, f64 * 
 		
 		// Get epsilon for use in SD calc:
 
-		cudaMemset(NT_addition_rates_d_temp, 0, sizeof(NTrates)*NUMVERTICES);
 		kernelAccumulateDiffusiveHeatRate_1species_Geometric << < numTilesMajorClever, threadsPerTileMajorClever >> >(
 			pX_use->p_info, pX_use->p_izNeigh_vert, pX_use->p_szPBCneigh_vert, pX_use->p_izTri_vert,
 			pX_use->p_szPBCtri_vert, pX_use->p_cc, pX_use->p_n_major,
@@ -2630,12 +2636,8 @@ int RunGeometricHeatConduction_NonlinearCG__singleregression(f64 * p_T_k, f64 * 
 			if (iSpecies == 2) over = over_iEquations_e;
 			L2eps = sqrt(sum_eps_eps * over);
 		}
-		printf(" L2eps %1.11E  :\n ", L2eps);
-		f64 RSS1 = sum_eps_eps;
+		printf(" L2eps %1.11E  : ", L2eps);
 
-
-		if (L2eps < 1.0e-19) bContinue1 = false; // FOR NOW
-		
 		// &&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&
 		//  1. Calculate steepest descent direction.
 		// &&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&
@@ -2659,7 +2661,7 @@ int RunGeometricHeatConduction_NonlinearCG__singleregression(f64 * p_T_k, f64 * 
 			iSpecies,
 			p_large_array_maxneigh_by_numvertices,
 			p_temp1 // effect self
-		); 
+		);
 		Call(cudaThreadSynchronize(), "cudaTS AccumulateDiffusiveHeatRate__array_of_deps_by_dxj_1species_Geometric");
 
 		AddFromMyNeighbours << < numTilesMajor, threadsPerTileMajor >> >( // Also add + 1.0 on self, so + epsilon in other words.
@@ -2672,115 +2674,6 @@ int RunGeometricHeatConduction_NonlinearCG__singleregression(f64 * p_T_k, f64 * 
 		);
 		Call(cudaThreadSynchronize(), "cudaTS AddFromMyNeighbours");
 		
-		// Let's do an empirical test and see whether this "p_regressors" contains predictive information.
-	/*	f64 tempf64, dRSS_i, dRSS_ii;
-		cudaMemcpy(&dRSS_i, &(p_regressors[VERTCHOSEN]), sizeof(f64), cudaMemcpyDeviceToHost);
-		cudaMemcpy(&dRSS_ii, &(p_regressors[VERTCHOSEN2]), sizeof(f64), cudaMemcpyDeviceToHost);
-		f64 predicted = 1.0e-15*(dRSS_i + dRSS_ii);
-
-		// Add 1e-14 to 2 vertices:
-	//	cudaMemcpy(&tempf64, &(p_T[VERTCHOSEN]), sizeof(f64), cudaMemcpyDeviceToHost);		
-	//	tempf64 += 1.0e-14;
-	//	cudaMemcpy(&(p_T[VERTCHOSEN]), &tempf64, sizeof(f64), cudaMemcpyHostToDevice);
-		
-		cudaMemcpy(&tempf64, &(p_T[VERTCHOSEN2]), sizeof(f64), cudaMemcpyDeviceToHost);
-		printf("T = %1.14E beforehand ; ", tempf64);
-		tempf64 += 1.0e-15;
-		printf("new T %1.14E \n\n", tempf64);
-		cudaMemcpy(&(p_T[VERTCHOSEN2]), &tempf64, sizeof(f64), cudaMemcpyHostToDevice);
-		
-
-		cudaMemset(NT_addition_rates_d_temp, 0, sizeof(NTrates)*NUMVERTICES);
-		kernelAccumulateDiffusiveHeatRate_1species_Geometric << < numTilesMajorClever, threadsPerTileMajorClever >> >(
-			pX_use->p_info, pX_use->p_izNeigh_vert, pX_use->p_szPBCneigh_vert, pX_use->p_izTri_vert,
-			pX_use->p_szPBCtri_vert, pX_use->p_cc, pX_use->p_n_major,
-			p_T, pX_use->p_B + BEGINNING_OF_CENTRAL, // NEED POPULATED
-			p_kappa, p_nu,  // make sure we are passing what is calc'd for vertices.
-			NT_addition_rates_d_temp, pX_use->p_AreaMajor,		
-			p_boolarray2 + NUMVERTICES*iSpecies, p_boolarray_block, false,
-			iSpecies);
-		Call(cudaThreadSynchronize(), "cudaTS AccumulateDiffusiveHeatRate");
-
-		CallMAC(cudaMemset(p_bFailed, 0, sizeof(bool)*numTilesMajorClever));
-		kernelCreateEpsilonHeat_1species << < numTilesMajorClever, threadsPerTileMajorClever >> > (
-			// eps = T - (T_k +- h/N sum kappa dot grad T)
-			// x = -eps/coeffself
-			hsub,	pX_use->p_info + BEGINNING_OF_CENTRAL,	p_T, p_T_k,
-			NT_addition_rates_d_temp,			// NEED N = n*AreaMajor
-			pX_use->p_n_major, // got this
-			pX_use->p_AreaMajor, // got this -> N, Nn
-			p_epsilon,			p_bFailed,
-			p_boolarray2 + NUMVERTICES*iSpecies, p_boolarray_block,	bUseMask,
-			iSpecies		);
-		Call(cudaThreadSynchronize(), "cudaTS Create epsilon heat");
-		kernelAccumulateSumOfSquares1 << < numTilesMajorClever, threadsPerTileMajorClever >> >
-			(p_epsilon, p_sum_eps_eps);
-		Call(cudaThreadSynchronize(), "cudaTS AccSum");
-		cudaMemcpy(p_sum_eps_eps_host, p_sum_eps_eps, sizeof(f64)*numTilesMajorClever, cudaMemcpyDeviceToHost);
-		sum_eps_eps = 0.0;
-		for (iTile = 0; iTile < numTilesMajorClever; iTile++)
-			sum_eps_eps += p_sum_eps_eps_host[iTile];
-
-		f64 RSS2 = sum_eps_eps;
-		printf("RSS2-RSS1 %1.14E predicted %1.14E RSS1 %1.14E RSS2 %1.14E \n", RSS2 - RSS1, predicted, RSS1, RSS2);
-
-		cudaMemcpy(&tempf64, &(p_T[VERTCHOSEN2]), sizeof(f64), cudaMemcpyDeviceToHost);
-		printf("T = %1.14E beforehand ; ", tempf64);
-		tempf64 += 0.9e-14;
-		printf("new T %1.14E \n\n", tempf64);
-		cudaMemcpy(&(p_T[VERTCHOSEN2]), &tempf64, sizeof(f64), cudaMemcpyHostToDevice);
-
-
-		cudaMemset(NT_addition_rates_d_temp, 0, sizeof(NTrates)*NUMVERTICES);
-		kernelAccumulateDiffusiveHeatRate_1species_Geometric << < numTilesMajorClever, threadsPerTileMajorClever >> >(
-			pX_use->p_info, pX_use->p_izNeigh_vert, pX_use->p_szPBCneigh_vert, pX_use->p_izTri_vert,
-			pX_use->p_szPBCtri_vert, pX_use->p_cc, pX_use->p_n_major,
-			p_T, pX_use->p_B + BEGINNING_OF_CENTRAL, // NEED POPULATED
-			p_kappa, p_nu,  // make sure we are passing what is calc'd for vertices.
-			NT_addition_rates_d_temp, pX_use->p_AreaMajor,
-			p_boolarray2 + NUMVERTICES*iSpecies, p_boolarray_block, false,
-			iSpecies);
-		Call(cudaThreadSynchronize(), "cudaTS AccumulateDiffusiveHeatRate");
-
-		CallMAC(cudaMemset(p_bFailed, 0, sizeof(bool)*numTilesMajorClever));
-		kernelCreateEpsilonHeat_1species << < numTilesMajorClever, threadsPerTileMajorClever >> > (
-			// eps = T - (T_k +- h/N sum kappa dot grad T)
-			// x = -eps/coeffself
-			hsub, pX_use->p_info + BEGINNING_OF_CENTRAL, p_T, p_T_k,
-			NT_addition_rates_d_temp,			// NEED N = n*AreaMajor
-			pX_use->p_n_major, // got this
-			pX_use->p_AreaMajor, // got this -> N, Nn
-			p_epsilon, p_bFailed,
-			p_boolarray2 + NUMVERTICES*iSpecies, p_boolarray_block, bUseMask,
-			iSpecies);
-		Call(cudaThreadSynchronize(), "cudaTS Create epsilon heat");
-		kernelAccumulateSumOfSquares1 << < numTilesMajorClever, threadsPerTileMajorClever >> >
-			(p_epsilon, p_sum_eps_eps);
-		Call(cudaThreadSynchronize(), "cudaTS AccSum");
-		cudaMemcpy(p_sum_eps_eps_host, p_sum_eps_eps, sizeof(f64)*numTilesMajorClever, cudaMemcpyDeviceToHost);
-		sum_eps_eps = 0.0;
-		for (iTile = 0; iTile < numTilesMajorClever; iTile++)
-			sum_eps_eps += p_sum_eps_eps_host[iTile];
-		
-		predicted = 1.0e-14*(dRSS_i + dRSS_ii);
-		RSS2 = sum_eps_eps;
-		printf("RSS2-RSS1 %1.14E predicted[1e-15] %1.14E RSS1 %1.14E RSS2 %1.14E\n", RSS2 - RSS1, predicted, RSS1, RSS2);
-
-		cudaMemcpy(&tempf64, &(p_T[VERTCHOSEN2]), sizeof(f64), cudaMemcpyDeviceToHost);
-		printf("T = %1.14E beforehand ; ", tempf64);
-		tempf64 -= 1.0e-14;
-		printf("new T %1.14E \n\n", tempf64);
-		cudaMemcpy(&(p_T[VERTCHOSEN2]), &tempf64, sizeof(f64), cudaMemcpyHostToDevice);
-
-		getch();
-		getch();
-		*/
-		// 
-
-
-		cudaMemcpy(p_regressors + NUMVERTICES*2, p_regressors, sizeof(f64)*NUMVERTICES, cudaMemcpyDeviceToDevice);
-		// hold on to Steepest Descent!
-
 		if (iIteration > 0) {
 			// &&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&
 			// 2. Calculate "beta_PR" and subtract previous regr if beta_PR > 0
@@ -2811,74 +2704,23 @@ int RunGeometricHeatConduction_NonlinearCG__singleregression(f64 * p_T_k, f64 * 
 				sprev_SS += p_sum_eps_eps_host[iTile];
 			
 			beta_PR = (sn_SS - sn_dot_sprev)/sprev_SS;
-
-			f64 beta_FR = sn_SS / sprev_SS;
-		//	printf("sn_SS %1.9E sn.sprev %1.9E diff %1.9E sprev_SS %1.9E beta_PR %1.9E beta_FR %1.9E\n",
-		//		sn_SS, sn_dot_sprev, sn_SS-sn_dot_sprev, sprev_SS, beta_PR, beta_FR);
-			
-			// Correlations:
-			// steepest descent vs previous regressor :
-			
-			kernelAccumulateDotProduct << < numTilesMajorClever, threadsPerTileMajorClever >> >
-				(p_regressors, p_regressors + 3*NUMVERTICES, p_temp2);
-			Call(cudaThreadSynchronize(), "cudaTS DotProduct");
-			cudaMemcpy(p_sum_eps_eps_host, p_temp2, sizeof(f64)*numTilesMajorClever, cudaMemcpyDeviceToHost);
-			f64 xn_dot_xprev = 0.0;
-			for (iTile = 0; iTile < numTilesMajorClever; iTile++)
-				xn_dot_xprev += p_sum_eps_eps_host[iTile];
-
-			kernelAccumulateSumOfSquares1 << < numTilesMajorClever, threadsPerTileMajorClever >> >
-				(p_regressors + 3*NUMVERTICES, p_temp2);
-			Call(cudaThreadSynchronize(), "cudaTS AccSum");
-			cudaMemcpy(p_sum_eps_eps_host, p_temp2, sizeof(f64)*numTilesMajorClever, cudaMemcpyDeviceToHost);
-			f64 xprev_SS = 0.0;
-			for (iTile = 0; iTile < numTilesMajorClever; iTile++)
-				xprev_SS += p_sum_eps_eps_host[iTile];
-
-			f64 correl1 = xn_dot_xprev / sqrt(xprev_SS*sn_SS);
-			printf("correl between SD and previous regressor: %1.10E\n", correl1);
-
-			// steepest descent vs previous steepest descent:
-			f64 correl2 = sn_dot_sprev / sqrt(sprev_SS*sn_SS);
-			printf("correl between SD and previous SD: %1.10E\n", correl2);
-						
+			// dot products (sn.sn - sn.sprev)/sprev.sprev
 			beta_PR = max(0.0, beta_PR);
-			// CHANGED:
-			if ((beta_PR > 0.0)) // && (iIteration % 12 != 0)) 
-			{
+			if (beta_PR > 0.0) {
 				VectorAddMultiple1 << < numTilesMajorClever, threadsPerTileMajorClever >> >(
-					p_regressors, -beta_PR, p_regressors + NUMVERTICES	);
+					p_regressors, -beta_PR, p_regressors + NUMVERTICES
+				);
 				Call(cudaThreadSynchronize(), "cudaTS VectorAddMultiple1");
+
 			};
-
-			kernelAccumulateDotProduct << < numTilesMajorClever, threadsPerTileMajorClever >> >
-				(p_regressors, p_regressors + 3 * NUMVERTICES, p_temp2);
-			Call(cudaThreadSynchronize(), "cudaTS DotProduct");
-			cudaMemcpy(p_sum_eps_eps_host, p_temp2, sizeof(f64)*numTilesMajorClever, cudaMemcpyDeviceToHost);
-			xn_dot_xprev = 0.0;
-			for (iTile = 0; iTile < numTilesMajorClever; iTile++)
-				xn_dot_xprev += p_sum_eps_eps_host[iTile];
-			kernelAccumulateSumOfSquares1 << < numTilesMajorClever, threadsPerTileMajorClever >> >
-				(p_regressors, p_temp2);
-			Call(cudaThreadSynchronize(), "cudaTS AccSum");
-			cudaMemcpy(p_sum_eps_eps_host, p_temp2, sizeof(f64)*numTilesMajorClever, cudaMemcpyDeviceToHost);
-			f64 xn_SS = 0.0;
-			for (iTile = 0; iTile < numTilesMajorClever; iTile++)
-				xn_SS += p_sum_eps_eps_host[iTile];
-			f64 correl3 = xn_dot_xprev / sqrt(xprev_SS*xn_SS);
-			printf("correl between regressors: %1.10E\n", correl3);
-		};
-		// save steepest descent:
-		cudaMemcpy(p_regressors + NUMVERTICES, p_regressors + 2*NUMVERTICES, sizeof(f64)*NUMVERTICES, cudaMemcpyDeviceToDevice);
-
-		// save regressor:
-		cudaMemcpy(p_regressors + NUMVERTICES * 3, p_regressors, sizeof(f64)*NUMVERTICES, cudaMemcpyDeviceToDevice);
+		}
 
 		// &&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&
 		//  3. Line search for how much regressor to add: 
 		// &&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&
 
 		// . Do linear regression estimate for first proposal beta_1:
+
 		kernelAccumulateDiffusiveHeatRateROC_wrt_regressor_1species_Geometric << < numTilesMajorClever, threadsPerTileMajorClever >> >(
 			pX_use->p_info, pX_use->p_izNeigh_vert, pX_use->p_szPBCneigh_vert, pX_use->p_izTri_vert,
 			pX_use->p_szPBCtri_vert, pX_use->p_cc, pX_use->p_n_major,
@@ -2895,18 +2737,6 @@ int RunGeometricHeatConduction_NonlinearCG__singleregression(f64 * p_T_k, f64 * 
 			iSpecies);
 		Call(cudaThreadSynchronize(), "cudaTS AccumulateDiffusiveHeatRateROC_wrt_regressor_1s");
 
-		//// make ascii file:
-		//char buff[255];
-		//sprintf(buff, "Iter%d.txt", iIteration);
-		//FILE * fp = fopen(buff, "w");
-		//cudaMemcpy(p_temphost1, p_epsilon, sizeof(f64)*NUMVERTICES, cudaMemcpyDeviceToHost);
-		//cudaMemcpy(p_temphost2, p_d_eps_by_d_beta_x_, sizeof(f64)*NUMVERTICES, cudaMemcpyDeviceToHost);
-		//cudaMemcpy(p_temphost3, p_T, sizeof(f64)*NUMVERTICES, cudaMemcpyDeviceToHost);
-		//for (i = 0; i < NUMVERTICES; i++)
-		//	fprintf(fp, "%d epsilon %1.12E dbydbeta %1.12E T %1.12E \n",
-		//		i, p_temphost1[i], p_temphost2[i], p_temphost3[i]);
-		//fclose(fp);
-
 		// collect eps against d_eps and d_eps against itself:
 		// This ought to work even though it's set up for minor cells:
 		kernelAccumulateSummands2 << < numTilesMajorClever, threadsPerTileMajorClever >> > (
@@ -2918,43 +2748,33 @@ int RunGeometricHeatConduction_NonlinearCG__singleregression(f64 * p_T_k, f64 * 
 			p_temp3 // p_sum_eps_eps
 			);
 		Call(cudaThreadSynchronize(), "cudaTS kernelAccumulateSummands2");
-		
 		cudaMemcpy(p_temphost1, p_temp1, sizeof(f64)*numTilesMajorClever, cudaMemcpyDeviceToHost);
 		cudaMemcpy(p_temphost2, p_temp2, sizeof(f64)*numTilesMajorClever, cudaMemcpyDeviceToHost);
 		cudaMemcpy(p_temphost3, p_temp3, sizeof(f64)*numTilesMajorClever, cudaMemcpyDeviceToHost);
-			
 		f64 sum_eps_d = 0.0, sum_d_d = 0.0;
 		sum_eps_eps = 0.0;
 		for (iTile = 0; iTile < numTilesMajorClever; iTile++) {
 			sum_eps_d += p_temphost1[iTile];
 			sum_d_d += p_temphost2[iTile];
 			sum_eps_eps += p_temphost3[iTile];
-		//	printf("iTile %d %1.9E %1.9E %1.9E ", iTile, p_temphost1[iTile], p_temphost2[iTile], p_temphost3[iTile]);		
 		};
-		
-		f64 beta_1 = -sum_eps_d / sum_d_d; // WHY NOT MINUS?		
-		// strangely makes almost no difference + or -. Coeff large?
-
+		f64 beta_1 = -sum_eps_d / sum_d_d;
 		f64 RSS0 = sum_eps_eps;
-		f64 sum_eps_d_0 = sum_eps_d; 
 
-		printf("eps_d %1.12E _d_d %1.12E sum_epssq %1.12E\n",
-			sum_eps_d, sum_d_d, sum_eps_eps);
+		f64 sum_eps_d_0 = sum_eps_d; 
 
 		if (sum_eps_d > 0.0) {
 			printf("alert -- sum_eps_d > 0.0\n");
 			getch();
 		};
-		
-		printf("beta_1 %1.12E \n", beta_1);
-		
+
 		// Now make the move and make another assessment of derivative:
 
 		// Bear in mind we did not find derivative of RSS -- that is sum [2 eps deps]
 		// That is something however that we are trying to minimize.
 
-#define p_Tcurr p_regressor_i
-#define p_T0    p_regressor_e
+#define p_Tcurr p_Tn
+#define p_T0    p_Ti
 
 		// STORE T:
 		cudaMemcpy(p_T0, p_T, sizeof(f64)*NUMVERTICES, cudaMemcpyDeviceToDevice);
@@ -2968,29 +2788,15 @@ int RunGeometricHeatConduction_NonlinearCG__singleregression(f64 * p_T_k, f64 * 
 		if (iSpecies > 0) {
 			// For neutrals we do not need to do line search.
 
-			printf("\n");
-
 			bool bContinue = true;
 			bool b_vanWijngaarden_Dekker_Brent = false;
 			do {
-				cudaMemcpy(&tempf64, &(p_regressors[VERTCHOSEN]), sizeof(f64), cudaMemcpyDeviceToHost);
-				printf("beforehand p_regressors[%d] = %1.12E \n", VERTCHOSEN, tempf64);
-				cudaMemcpy(&tempf64, &(p_T0[VERTCHOSEN]), sizeof(f64), cudaMemcpyDeviceToHost);
-				printf("beforehand p_T0[%d] = %1.12E \n", VERTCHOSEN, tempf64);
-
-				AddLC << < numTilesMajorClever, threadsPerTileMajorClever >> >
-					(p_Tcurr, p_T0, beta_curr, p_regressors); // Tcurr = T0 + beta_curr*regressors
-				Call(cudaThreadSynchronize(), "cudaTS AddLC");
+				AddLCtoT << < numTilesMajorClever, threadsPerTileMajorClever >> >
+					(p_Tcurr, p_T, beta_curr, p_regressors);
+				Call(cudaThreadSynchronize(), "cudaTS AddLCtoT");
 				
-				printf("Added beta_curr = %1.9E times regressor to produce p_Tcurr \n", beta_curr);
-				
-				cudaMemcpy(&tempf64, &(p_Tcurr[VERTCHOSEN]), sizeof(f64), cudaMemcpyDeviceToHost);
-				printf("now p_Tcurr[%d] = %1.12E \n", VERTCHOSEN, tempf64);
-
 				// EvaluateRSSandDeriv(p_Tcurr) :
 				// call to get heatflux and hence epsilon:
-
-				cudaMemset(NT_addition_rates_d_temp, 0, sizeof(NTrates)*NUMVERTICES);
 				kernelAccumulateDiffusiveHeatRate_1species_Geometric << < numTilesMajorClever, threadsPerTileMajorClever >> >(
 					pX_use->p_info, pX_use->p_izNeigh_vert, pX_use->p_szPBCneigh_vert, pX_use->p_izTri_vert,
 					pX_use->p_szPBCtri_vert, pX_use->p_cc, pX_use->p_n_major,
@@ -3049,7 +2855,7 @@ int RunGeometricHeatConduction_NonlinearCG__singleregression(f64 * p_T_k, f64 * 
 					p_d_eps_by_d_beta_x_, // will this fail?
 					p_temp1, //p_sum_eps_d,
 					p_temp2, //p_sum_d_d,
-					p_temp3 // p_sum_eps_eps -- overwrites it
+					p_temp3 // p_sum_eps_eps
 					);
 				Call(cudaThreadSynchronize(), "cudaTS kernelAccumulateSummands2");
 				cudaMemcpy(p_temphost1, p_temp1, sizeof(f64)*numTilesMajorClever, cudaMemcpyDeviceToHost);
@@ -3064,19 +2870,13 @@ int RunGeometricHeatConduction_NonlinearCG__singleregression(f64 * p_T_k, f64 * 
 					sum_eps_eps_curr += p_temphost3[iTile];
 				};
 
-				printf("sum_eps_eps_curr %1.11E \n", sum_eps_eps_curr);
-
 				// note: dRSS/dbeta = 2 sum eps*deps/dbeta
-				if ((fabs(sum_eps_d_curr) < 0.0005*fabs(sum_eps_d_prev))
+				if ((fabs(sum_eps_d_curr) < 0.0008*fabs(sum_eps_d_prev))
 					|| ((fabs(beta_curr-beta_prev) < 0.001*fabs(beta_curr))
 						&& (sum_eps_eps_curr < sum_eps_eps_prev)) )
 				{					
 					// break out:
 					bContinue = false;
-
-					printf("Set bContinue = false. |DSS2| %1.9E |DSS1| %1.9E fabs(b2-b1) %1.9E fabs(b1) %1.9E\n",
-						fabs(sum_eps_d_curr), fabs(sum_eps_d_prev), fabs(beta_curr - beta_prev), fabs(beta_curr));
-
 				} else {
 						
 					// Now there are a number of cases.
@@ -3085,8 +2885,6 @@ int RunGeometricHeatConduction_NonlinearCG__singleregression(f64 * p_T_k, f64 * 
 
 						// root is bracketed so drop out to vWDB routine.
 						b_vanWijngaarden_Dekker_Brent = true;
-
-						printf("Pass now to van Wijngaarden-Dekker-Brent.\n");
 
 					} else {
 
@@ -3100,44 +2898,29 @@ int RunGeometricHeatConduction_NonlinearCG__singleregression(f64 * p_T_k, f64 * 
 							f64 f1 = 2.0*sum_eps_d_curr;
 							f64 f0 = 2.0*sum_eps_d_prev;
 							f64 overdelta = 1.0 / (0.5*(beta_curr - beta_prev));
-							printf("f0 %1.14E f1 %1.14E beta_curr %1.14E beta_prev %1.8E RSS2 %1.14E RSS1 %1.14E\n",
-								f0, f1, beta_curr, beta_prev, sum_eps_eps_curr, sum_eps_eps_prev);
-
+							
 							// In a nasty enough case we could still get stuck in a loop.
 							// Maybe we should just ignore this possibility and concentrate on WDB for f'.
 							// Too much code overall.
 							
 							f64 b = (f1 - f0) / (beta_curr - beta_prev);
-							f64 over_a = 1.0 / (-0.75*((sum_eps_eps_curr - sum_eps_eps_prev)*overdelta - (f1 + f0))*overdelta*overdelta);
-							f64 c = 0.75*(sum_eps_eps_curr - sum_eps_eps_prev)*overdelta - 0.25*(f0 + f1);
+							f64 over_a = 1.0 / (-1.5*(b - 0.5*(f1 + f0))*overdelta*overdelta);
+							f64 c = 1.5*b - 0.25*(f0 + f1);
+
 							f64 tempsqrt = sqrt(-c*over_a + 0.25*b*b*over_a*over_a);
-
-							printf("b %1.14E over_a %1.14E c %1.14E tempsqrt %1.14E \n", b, over_a, c, tempsqrt);
-
 							f64 beta_minus = 0.5*(beta_prev + beta_curr) - tempsqrt - 0.5*(b*over_a);
 							f64 beta_plus = 0.5*(beta_prev + beta_curr) + tempsqrt - 0.5*(b*over_a);
 							if ((beta_minus > beta_prev) && (beta_minus < beta_curr))
 							{
 								beta_curr = beta_minus;
-
-								printf("Quadratic succeeded -- beta_minus = %1.9E \n", beta_minus);
-
 							} else {
 								if ((beta_plus > beta_prev) && (beta_plus < beta_curr))
 								{
 									beta_curr = beta_plus; // probably never happens
-
-									printf("Quadratic succeeded -- beta_plus = %1.9E \n", beta_plus);
 								} else {
-									printf("Quadratic failed! beta_prev %1.9E minus %1.9E plus %1.9E curr %1.9E\n", 
+									printf("Quadratic failed! %d %1.9E %1.9E %1.9E %1.9E\n", iVertex,
 										beta_prev, beta_minus, beta_plus, beta_curr);
 									beta_curr = (beta_curr + beta_prev)*0.5;
-
-									// Why & how did this fail?
-
-
-
-
 								};
 							};
 						} else {
@@ -3147,8 +2930,6 @@ int RunGeometricHeatConduction_NonlinearCG__singleregression(f64 * p_T_k, f64 * 
 							f64 beta_additional = -sum_eps_d_curr / sum_d_d_curr;
 							f64 empiricalderiv = (sum_eps_eps_curr - sum_eps_eps_prev) / (beta_curr - beta_prev);
 
-							printf("RSS decreased. beta_additional %1.11E empiricalderiv %1.11E \n", beta_additional, empiricalderiv);
-
 							if ((sum_eps_d_curr > sum_eps_d_prev) ||
 								(empiricalderiv > 2.0*sum_eps_d_prev) ||
 								(empiricalderiv < 2.0*sum_eps_d_curr))
@@ -3157,17 +2938,12 @@ int RunGeometricHeatConduction_NonlinearCG__singleregression(f64 * p_T_k, f64 * 
 
 								beta_prev = beta_curr;
 								beta_curr = beta_curr + beta_additional;
-
-								printf("Weirdness occurred, so use beta_curr to go again: add beta_additional. \n");
-
-							} else {
+							}
+							else {
 								// Let's go extra bit:
 								beta_prev = beta_curr;
 								beta_curr += beta_additional*(beta_curr + beta_additional - 0.0) / (beta_1);
 								// trying to get past the root by multiplying addition by amount that first linear estimate was apparently wrong.
-
-								printf("expanded beta_additional to the tune of %1.11E \n",
-									(beta_curr + beta_additional - 0.0) / (beta_1)	);
 							};
 						};
 					};
@@ -3255,14 +3031,12 @@ int RunGeometricHeatConduction_NonlinearCG__singleregression(f64 * p_T_k, f64 * 
 							// b += SIGN(tol1, xm); // I think, tol1 with the sign of xm
 						};
 						// Here we must compute RSS' at beta = b.
-						AddLC << < numTilesMajorClever, threadsPerTileMajorClever >> >
-							(p_Tcurr, p_T0, b, p_regressors); // Tcurr = T0 + beta_curr*regressors
-						Call(cudaThreadSynchronize(), "cudaTS AddLC");
+						AddLCtoT << < numTilesMajorClever, threadsPerTileMajorClever >> >
+							(p_Tcurr, p_T, b, p_regressors);
+						Call(cudaThreadSynchronize(), "cudaTS AddLCtoT");
 
 						// EvaluateRSSandDeriv(p_Tcurr) :
 						// call to get heatflux and hence epsilon:
-
-						cudaMemset(NT_addition_rates_d_temp, 0, sizeof(NTrates)*NUMVERTICES);
 						kernelAccumulateDiffusiveHeatRate_1species_Geometric << < numTilesMajorClever, threadsPerTileMajorClever >> >(
 							pX_use->p_info, pX_use->p_izNeigh_vert, pX_use->p_szPBCneigh_vert, pX_use->p_izTri_vert,
 							pX_use->p_szPBCtri_vert, pX_use->p_cc, pX_use->p_n_major,
@@ -3329,15 +3103,14 @@ int RunGeometricHeatConduction_NonlinearCG__singleregression(f64 * p_T_k, f64 * 
 						cudaMemcpy(p_temphost3, p_temp3, sizeof(f64)*numTilesMajorClever, cudaMemcpyDeviceToHost);
 						//sum_eps_d_curr = 0.0;
 						//sum_d_d_curr = 0.0;
-						sum_eps_eps_curr = 0.0;
+						//sum_eps_eps_curr = 0.0;
 						fb = 0.0;
 						for (iTile = 0; iTile < numTilesMajorClever; iTile++) {
 							fb += p_temphost1[iTile];
 //							sum_d_d_curr += p_temphost2[iTile];
-							sum_eps_eps_curr += p_temphost3[iTile];
+//							sum_eps_eps_curr += p_temphost3[iTile];
 						};
 
-						printf("vWDB : b = %1.11E RSS = 1.11E \n", b, sum_eps_eps_curr);
 
 	//					fb = (*func)(b);
 						
@@ -3360,35 +3133,16 @@ int RunGeometricHeatConduction_NonlinearCG__singleregression(f64 * p_T_k, f64 * 
 
 			cudaMemcpy(p_T, p_Tcurr, sizeof(f64)*NUMVERTICES, cudaMemcpyDeviceToDevice);
 
-			cudaMemcpy(&tempf64, &(p_T[VERTCHOSEN]), sizeof(f64), cudaMemcpyDeviceToHost);
-			printf("p_T[%d] = %1.12E \n", VERTCHOSEN, tempf64);
 		} else {
 			// Neutrals: just accept the linear move.
 			// We have only calc'd beta, we have not computed RSS or T. !
-			cudaMemcpy(&tempf64, &(p_T[VERTCHOSEN]), sizeof(f64), cudaMemcpyDeviceToHost);
-			printf("beforehand p_T[%d] = %1.12E \n", VERTCHOSEN, tempf64);
 
-			AddLCtoT << < numTilesMajorClever, threadsPerTileMajorClever >> >
-				(p_Tcurr, p_T, beta_curr, p_regressors);
-			Call(cudaThreadSynchronize(), "cudaTS AddLCtoT");
-
-			cudaMemcpy(&tempf64, &(p_regressors[VERTCHOSEN]), sizeof(f64), cudaMemcpyDeviceToHost);
-			printf("p_regressors[%d] = %1.12E \n", VERTCHOSEN, tempf64);
-
-			printf("Added beta_curr = %1.9E times regressor to produce p_Tcurr \n", beta_curr);
-
-			cudaMemcpy(p_T, p_Tcurr, sizeof(f64)*NUMVERTICES, cudaMemcpyDeviceToDevice);
-			
-			cudaMemcpy(&tempf64, &(p_T[VERTCHOSEN]), sizeof(f64), cudaMemcpyDeviceToHost);
-			printf("p_T[%d] = %1.12E \n", VERTCHOSEN, tempf64);
 
 		};
 		// save regressor:
-		//cudaMemcpy(p_regressors + NUMVERTICES, p_regressors, sizeof(f64)*NUMVERTICES, cudaMemcpyDeviceToDevice);
-		// We don't save the regressor itself, but the previous steepest descent direction.
+		cudaMemcpy(p_regressors + NUMVERTICES, p_regressors, sizeof(f64)*NUMVERTICES, cudaMemcpyDeviceToDevice);
 
-		++iIteration;
-	} while (bContinue1);
+	} while (bContinue);
 
 	// 0 .. Make a video talking to self. <------------- Tuesday after admin-ish tasks.
 	
@@ -3404,508 +3158,6 @@ int RunGeometricHeatConduction_NonlinearCG__singleregression(f64 * p_T_k, f64 * 
 	return 0;
 }
 
-int RunGeometricHeatConduction_NonlinearCG(f64 * p_T_k, f64 * p_T,
-	f64 hsub, cuSyst * pX_use, bool bUseMask, f64 * p_kappa, f64 * p_nu,
-	int iSpecies)
-{
-	f64 L2eps, L2reg;
-	bool bFailedTest, bContinue;
-	Triangle * pTri;
-	f64 tempf64;
-	long iTile, i;
-
-	int iIteration = 0;
-	f64 beta_PR;
-	f64 tempdebug;
-	Vertex * pVertex;
-	long iVertex;
-	plasma_data * pdata;
-	// We certainly should run with previous move as regressor and do a line search from that before we do anything.
-#define zerovec1 p_Residuals
-
-	printf("RunGeometricHeatConduction_Nonlinear__SDx3:\n");
-
-	CallMAC(cudaMemset(p_regressors, 0, sizeof(f64)*NUMVERTICES*REGRESSORS));
-	CallMAC(cudaMemset(p_Ax, 0, sizeof(f64)*NUMVERTICES*REGRESSORS));
-	CallMAC(cudaMemset(p_epsilon, 0, sizeof(f64)*NUMVERTICES));
-	CallMAC(cudaMemset(zerovec1, 0, sizeof(f64)*NUMVERTICES));
-
-	// call that first and send species kappa.
-
-	GlobalSuppressSuccessVerbosity = true;
-
-	HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
-
-	if (iSpecies == 0) SetConsoleTextAttribute(hConsole, 14);
-	if (iSpecies == 1) SetConsoleTextAttribute(hConsole, 11);
-	if (iSpecies == 2) SetConsoleTextAttribute(hConsole, 15); // 12= red 11=cyan
-
-	
-
-	printf("\n\n Don't forget to actually augment d/dt NT when we are done here.\n\n");
-	
-
-
-
-
-	bool bContinue1 = true;
-	do {
-		// There should be a 0th step where we use previous moves.
-		// Ideally store 2 moves, do multivariate regression to get direction;
-		// line search for that direction.
-		
-		// Store initial position:
-		cudaMemcpy(p_T0, p_T, sizeof(f64)*NUMVERTICES, cudaMemcpyDeviceToDevice);
-	//	cudaMemcpy(&tempf64, &(p_T0[VERTCHOSEN]), sizeof(f64), cudaMemcpyDeviceToHost);
-	//	printf("p_T0[%d] = %1.12E \n", VERTCHOSEN, tempf64);
-
-	//	cudaMemcpy(&tempf64, &(p_T[VERTCHOSEN]), sizeof(f64), cudaMemcpyDeviceToHost);
-	//	printf("BEFORE L2EPS CALC: p_T[%d] = %1.12E \n", VERTCHOSEN, tempf64);
-
-		// Get epsilon for use in SD calc:
-		cudaMemset(NT_addition_rates_d_temp, 0, sizeof(NTrates)*NUMVERTICES);
-		kernelAccumulateDiffusiveHeatRate_1species_Geometric << < numTilesMajorClever, threadsPerTileMajorClever >> >(
-			pX_use->p_info, pX_use->p_izNeigh_vert, pX_use->p_szPBCneigh_vert, pX_use->p_izTri_vert,
-			pX_use->p_szPBCtri_vert, pX_use->p_cc, pX_use->p_n_major,
-			p_T,
-			pX_use->p_B + BEGINNING_OF_CENTRAL, p_kappa, p_nu, 
-			NT_addition_rates_d_temp,
-			pX_use->p_AreaMajor,
-			p_boolarray2 + NUMVERTICES*iSpecies, p_boolarray_block,	false, 
-			iSpecies);
-		Call(cudaThreadSynchronize(), "cudaTS AccumulateDiffusiveHeatRate");
-
-		CallMAC(cudaMemset(p_bFailed, 0, sizeof(bool)*numTilesMajorClever));
-		kernelCreateEpsilonHeat_1species << < numTilesMajorClever, threadsPerTileMajorClever >> > (
-			hsub,pX_use->p_info + BEGINNING_OF_CENTRAL,
-			p_T, p_T_k, NT_addition_rates_d_temp,
-			pX_use->p_n_major, pX_use->p_AreaMajor, 
-			p_epsilon, p_bFailed,
-			p_boolarray2 + NUMVERTICES*iSpecies,p_boolarray_block,bUseMask,
-			iSpecies
-			);
-		Call(cudaThreadSynchronize(), "cudaTS Create epsilon heat");
-		
-		kernelAccumulateSumOfSquares1 << < numTilesMajorClever, threadsPerTileMajorClever >> >
-			(p_epsilon, p_sum_eps_eps);
-		Call(cudaThreadSynchronize(), "cudaTS AccSum");
-		cudaMemcpy(p_sum_eps_eps_host, p_sum_eps_eps, sizeof(f64)*numTilesMajorClever, cudaMemcpyDeviceToHost);
-		f64 sum_eps_eps = 0.0;
-		for (iTile = 0; iTile < numTilesMajorClever; iTile++)
-			sum_eps_eps += p_sum_eps_eps_host[iTile];
-		if (bUseMask == 0) {
-			L2eps = sqrt(sum_eps_eps / (real)NUMVERTICES);
-		} else {
-			f64 over = over_iEquations_n;
-			if (iSpecies == 1) over = over_iEquations_i;
-			if (iSpecies == 2) over = over_iEquations_e;
-			L2eps = sqrt(sum_eps_eps * over);
-		}
-		printf(" L2eps %1.11E  :\n ", L2eps);
-		f64 RSS1 = sum_eps_eps; // stored.
-		
-		if (L2eps > 1.0) getch();
-
-		if (L2eps < 1.0e-19) bContinue1 = false; // FOR NOW
-
-		// &&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&
-		//  1. Calculate new steepest descent direction.
-		// &&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&
-
-		// Shift memory out ; we could use pointers to cycle and avoid doing this!
-		if (iIteration >= 3) 
-			cudaMemcpy(p_regressors + NUMVERTICES * 3, p_regressors + 2*NUMVERTICES, sizeof(f64)*NUMVERTICES, cudaMemcpyDeviceToDevice);
-		if (iIteration >= 2) 
-			cudaMemcpy(p_regressors + NUMVERTICES*2, p_regressors+NUMVERTICES, sizeof(f64)*NUMVERTICES, cudaMemcpyDeviceToDevice);
-		if (iIteration >= 1)
-			cudaMemcpy(p_regressors + NUMVERTICES, p_regressors, sizeof(f64)*NUMVERTICES, cudaMemcpyDeviceToDevice);
-		
-#define p_large_array_maxneigh_by_numvertices  d_eps_by_dx_neigh_n
-		kernelAccumulateDiffusiveHeatRate__array_of_deps_by_dxj_1species_Geometric << < numTilesMajorClever, threadsPerTileMajorClever >> >(
-			pX_use->p_info, pX_use->p_izNeigh_vert, pX_use->p_szPBCneigh_vert, pX_use->p_izTri_vert,
-			pX_use->p_szPBCtri_vert, pX_use->p_cc, pX_use->p_n_major,
-			p_T, p_epsilon,	hsub,
-			pX_use->p_B + BEGINNING_OF_CENTRAL, p_kappa, p_nu,  // make sure we are passing what is calc'd for vertices.
-			pX_use->p_AreaMajor,
-			p_boolarray2 + NUMVERTICES*iSpecies,p_boolarray_block,false, 
-			iSpecies,
-			p_large_array_maxneigh_by_numvertices,
-			p_temp1 // effect self
-			);
-		Call(cudaThreadSynchronize(), "cudaTS AccumulateDiffusiveHeatRate__array_of_deps_by_dxj_1species_Geometric");
-		AddFromMyNeighbours << < numTilesMajor, threadsPerTileMajor >> >( // Also add + 1.0 on self, so + epsilon in other words.
-			pX_use->p_info + BEGINNING_OF_CENTRAL,
-			p_large_array_maxneigh_by_numvertices, // needs to be MAXNEIGH*NUMVERTICES
-			p_temp1, // effect self
-			p_regressors,
-			pX_use->p_izNeigh_vert,
-			sz_who_vert_vert
-			);
-		Call(cudaThreadSynchronize(), "cudaTS AddFromMyNeighbours");
-		
-		// &&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&
-		// 2. Search in up-to-4-dimensional space using these regressor directions:
-		// &&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&
-
-		for (int ii = 0; ii <= min(iIteration, 3); ii++) {
-			kernelAccumulateDiffusiveHeatRateROC_wrt_regressor_1species_Geometric << < numTilesMajorClever, threadsPerTileMajorClever >> > (
-				pX_use->p_info, pX_use->p_izNeigh_vert, pX_use->p_szPBCneigh_vert, pX_use->p_izTri_vert,
-				pX_use->p_szPBCtri_vert, pX_use->p_cc, pX_use->p_n_major,
-				p_T, hsub,
-				p_regressors + NUMVERTICES * ii,
-				pX_use->p_B + BEGINNING_OF_CENTRAL, p_kappa, p_nu,
-				p_Ax + NUMVERTICES * ii,
-				pX_use->p_AreaMajor,
-				p_boolarray2 + NUMVERTICES*iSpecies, p_boolarray_block, false, //bool bUseMask,
-				iSpecies);
-			Call(cudaThreadSynchronize(), "cudaTS AccumulateDiffusiveHeatRateROC_wrt_regressor_1s");
-		};
-		// Notice that the rate of change is dependent on T position so we cannot store and reuse it between iterations.
-
-		kernelAccumulateSummands_4x4 << < numTilesMajorClever, threadsPerTileMajorClever >> >(
-			p_epsilon,
-			p_Ax,
-			p_sum_eps_deps_by_dbeta_x8,
-			p_sum_depsbydbeta_8x8
-			);
-		Call(cudaThreadSynchronize(), "cudaTS AccumulateSummands_4x4");
-
-		// have 20 doubles per thread in shared. That's ok with 256 in tile : 40K ish. Check that shared is preferred
-		
-		cudaMemcpy(p_sum_eps_deps_by_dbeta_x8_host, p_sum_eps_deps_by_dbeta_x8, sizeof(f64) * 4 * numTilesMajorClever, cudaMemcpyDeviceToHost);
-		cudaMemcpy(p_sum_depsbydbeta_8x8_host, p_sum_depsbydbeta_8x8, sizeof(f64) * 4 * 4 * numTilesMajorClever, cudaMemcpyDeviceToHost);
-		f64 sum_eps_deps_by_dbeta_vector[4];
-		
-		lapack_int ipiv[4];
-		double mat[4 * 4];
-		lapack_int Nrows = 4,
-			Ncols = 4,  // lda
-			Nrhscols = 1, // ldb
-			Nrhsrows = 4, info; // MUST SOLVE ALL 4 EVERY TIME. Matrix is not drawn up to have 2x2 elements in correct positions for solve 2x2.
-
-		memset(sum_eps_deps_by_dbeta_vector, 0, 4 * sizeof(f64));
-		memset(mat, 0, 4 * 4 * sizeof(f64));
-		sum_eps_eps = 0.0;
-		int i, j;
-		for (i = 0; i < 4; i++)
-			for (j = 0; j < 4; j++)
-				for (iTile = 0; iTile < numTilesMajorClever; iTile++)
-					mat[i * 4 + j] += p_sum_depsbydbeta_8x8_host[iTile * 4 * 4 + i * 4 + j];
-		for (iTile = 0; iTile < numTilesMajorClever; iTile++)
-			for (i = 0; i < 4; i++)
-				sum_eps_deps_by_dbeta_vector[i] -= p_sum_eps_deps_by_dbeta_x8_host[iTile * 4 + i];
-		
-		// Here ensure that unwanted rows are 0. First wipe out any that accumulated 0.
-		// or are beyond #equations.
-		for (i = 0; i < 4; i++)
-		{
-			if ((mat[i * 4 + i] == 0.0) || (i > iIteration))
-			{
-				memset(mat + i * 4, 0, sizeof(f64) * 4);
-				mat[i * 4 + i] = 1.0;
-				sum_eps_deps_by_dbeta_vector[i] = 0.0;
-			};
-		};
-		// Note that if a colour was not relevant for volleys, that just covered it.
-				
-		f64 storeRHS[4];
-		f64 storemat[4 * 4];
-		f64 beta[4];
-
-		memcpy(storeRHS, sum_eps_deps_by_dbeta_vector, sizeof(f64) * 4);
-		memcpy(storemat, mat, sizeof(f64) * 4 * 4);
-		// Solve the equations A*X = B 
-		info = LAPACKE_dgesv(LAPACK_ROW_MAJOR, Nrows, 1, mat, Ncols, ipiv, sum_eps_deps_by_dbeta_vector, Nrhscols);
-		// Check for the exact singularity :
-		if (info != 0) {
-			//	printf("The diagonal element of the triangular factor of A,\n");
-			//	printf("U(%i,%i) is zero, so that A is singular;\n", info, info);
-			printf("the solution could not be computed.\n");
-			getch();
-		}
-		else {
-			memcpy(beta, sum_eps_deps_by_dbeta_vector, 4 * sizeof(f64));
-		};
-
-		printf(" ( %1.9E %1.9E %1.9E %1.9E ) ( beta0 )   ( %1.9E )\n",
-			storemat[0], storemat[1], storemat[2], storemat[3], storeRHS[0]);
-		printf(" ( %1.9E %1.9E %1.9E %1.9E ) ( beta0 ) = ( %1.9E )\n",
-			storemat[4], storemat[5], storemat[6], storemat[7], storeRHS[1]);
-		printf(" ( %1.9E %1.9E %1.9E %1.9E ) ( beta0 )   ( %1.9E )\n",
-			storemat[8], storemat[9], storemat[10], storemat[11], storeRHS[2]);
-		printf(" ( %1.9E %1.9E %1.9E %1.9E ) ( beta0 )   ( %1.9E )\n",
-			storemat[12], storemat[13], storemat[14], storemat[15], storeRHS[3]);
-		printf("\n beta : %1.9E %1.9E %1.9E %1.9E\n"
-			"-----------------------------------------------------------------------------\n",
-			beta[0], beta[1], beta[2], beta[3]);
-		
-		// How to decide 'magnitude of dRSS/dbeta_overall' at point 0 ?
-		// d / dbeta_overall represents increasing all components proportionally.
-		// ie coefficient = beta_overall * beta
-
-		// This is only half the actual deriv = sum eps.deps 
-		f64 dRSSbydbeta0 = storeRHS[0] * beta[0] + storeRHS[1] * beta[1] + storeRHS[2] * beta[2] + storeRHS[3] * beta[3];
-#define p_regr_x p_Ap_n
-
-		CallMAC(cudaMemcpyToSymbol(beta_n_c, beta, 4 * sizeof(f64)));
-
-		// store directional regressor:
-		kernelAddtoT_lc___ << < numTilesMajorClever, threadsPerTileMajorClever >> >(
-			p_regr_x, zerovec1,
-			p_regressors, // regressors
-			4,  // number of regrs
-			1.0 // multiply beta_n_c by this factor.
-			);
-		Call(cudaThreadSynchronize(), "cudaTS kernelAddtoT_lc___");
-		
-	//	cudaMemcpy(&tempf64, &(p_regressors[VERTCHOSEN]), sizeof(f64), cudaMemcpyDeviceToHost);
-	//	printf("p_regressors[%d] = %1.12E \n", VERTCHOSEN, tempf64);
-	//	cudaMemcpy(&tempf64, &(p_regr_x[VERTCHOSEN]), sizeof(f64), cudaMemcpyDeviceToHost);
-	//	printf("p_regr_x[%d] = %1.12E \n", VERTCHOSEN, tempf64);
-
-
-		if (iSpecies == 0) {
-			// For neutrals we do not need to do line search.
-
-		//	cudaMemcpy(&tempf64, &(p_T[VERTCHOSEN]), sizeof(f64), cudaMemcpyDeviceToHost);
-		//	printf("beforehand p_T[%d] = %1.12E \n", VERTCHOSEN, tempf64);
-
-			kernelAdd2 << < numTilesMajorClever, threadsPerTileMajorClever >> > (
-				p_T, p_T0,
-				1.0, // multiply x by this factor.
-				p_regr_x // regressor
-				);
-			Call(cudaThreadSynchronize(), "cudaTS kernelAddtoT_lc___");
-
-	//		cudaMemcpy(&tempf64, &(p_T[VERTCHOSEN]), sizeof(f64), cudaMemcpyDeviceToHost);
-	//		printf("p_T[%d] = %1.12E \n", VERTCHOSEN, tempf64);
-	//		cudaMemcpy(&tempf64, &(p_T0[VERTCHOSEN]), sizeof(f64), cudaMemcpyDeviceToHost);
-	//		printf("p_T0[%d] = %1.12E \n", VERTCHOSEN, tempf64);
-
-
-			printf("p_T neutral computed using beta_curr = %1.9E \n", 1.0);
-
-			// done.
-		} else {
-
-			// &&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&
-			//   3. Do a brief line search in the computed direction.
-			// &&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&
-			f64 RSS_prev = RSS1;
-			f64 beta_prev = 0.0;
-			f64 beta_curr = 1.0;
-			f64 sum_eps_d_prev = dRSSbydbeta0, sum_eps_d_curr;
-			f64 RSS_curr;
-
-			bContinue = true;
-			while (bContinue) {
-
-	//			cudaMemcpy(&tempf64, &(p_T[VERTCHOSEN]), sizeof(f64), cudaMemcpyDeviceToHost);
-	//			printf("beforehand p_T[%d] = %1.12E \n", VERTCHOSEN, tempf64);
-	//			cudaMemcpy(&tempf64, &(p_T0[VERTCHOSEN]), sizeof(f64), cudaMemcpyDeviceToHost);
-	//			printf("p_T0[%d] = %1.12E \n", VERTCHOSEN, tempf64);
-
-				kernelAdd2 << < numTilesMajorClever, threadsPerTileMajorClever >> > (
-					p_T, p_T0,
-					beta_curr, // multiply x by this factor.
-					p_regr_x // regressor
-					);
-				Call(cudaThreadSynchronize(), "cudaTS kernelAddtoT_lc___");
-
-	//			cudaMemcpy(&tempf64, &(p_T[VERTCHOSEN]), sizeof(f64), cudaMemcpyDeviceToHost);
-	//			printf("p_T[%d] = %1.12E \n", VERTCHOSEN, tempf64);
-	//			cudaMemcpy(&tempf64, &(p_T0[VERTCHOSEN]), sizeof(f64), cudaMemcpyDeviceToHost);
-	//			printf("p_T0[%d] = %1.12E \n", VERTCHOSEN, tempf64);
-
-				printf("p_T computed using beta_curr = %1.9E \n", beta_curr);
-
-				// ===============================================================================
-				// Compute new epsilon and RSS:
-				// ===============================================================================
-				// Note that if we stop here we could avoid recalc'ing at the start of the loop.
-
-				cudaMemset(NT_addition_rates_d_temp, 0, sizeof(NTrates)*NUMVERTICES);
-				kernelAccumulateDiffusiveHeatRate_1species_Geometric << < numTilesMajorClever, threadsPerTileMajorClever >> > (
-					pX_use->p_info, pX_use->p_izNeigh_vert, pX_use->p_szPBCneigh_vert, pX_use->p_izTri_vert,
-					pX_use->p_szPBCtri_vert, pX_use->p_cc, pX_use->p_n_major,
-					p_T,
-					pX_use->p_B + BEGINNING_OF_CENTRAL, p_kappa, p_nu,
-					NT_addition_rates_d_temp,
-					pX_use->p_AreaMajor,
-					p_boolarray2 + NUMVERTICES*iSpecies, p_boolarray_block, false,
-					iSpecies);
-				Call(cudaThreadSynchronize(), "cudaTS AccumulateDiffusiveHeatRate");
-
-				CallMAC(cudaMemset(p_bFailed, 0, sizeof(bool)*numTilesMajorClever));
-				kernelCreateEpsilonHeat_1species << < numTilesMajorClever, threadsPerTileMajorClever >> > (
-					hsub, pX_use->p_info + BEGINNING_OF_CENTRAL,
-					p_T, p_T_k, NT_addition_rates_d_temp,
-					pX_use->p_n_major, pX_use->p_AreaMajor,
-					p_epsilon, p_bFailed,
-					p_boolarray2 + NUMVERTICES*iSpecies, p_boolarray_block, bUseMask,
-					iSpecies
-					);
-				Call(cudaThreadSynchronize(), "cudaTS Create epsilon heat");
-
-				kernelAccumulateSumOfSquares1 << < numTilesMajorClever, threadsPerTileMajorClever >> >
-					(p_epsilon, p_sum_eps_eps);
-				Call(cudaThreadSynchronize(), "cudaTS AccSum");
-				cudaMemcpy(p_sum_eps_eps_host, p_sum_eps_eps, sizeof(f64)*numTilesMajorClever, cudaMemcpyDeviceToHost);
-				f64 sum_eps_eps = 0.0;
-				for (iTile = 0; iTile < numTilesMajorClever; iTile++)
-					sum_eps_eps += p_sum_eps_eps_host[iTile];
-				RSS_curr = sum_eps_eps;
-
-				printf("RSS_curr = %1.10E L2eps = %1.10E \n", RSS_curr,
-					sqrt(RSS_curr / (real)NUMVERTICES));
-
-				// Now compute dRSS/dbeta at this new position.
-
-				// The directional vector [x = sum beta regressor] should be first stored.
-				// Now we can take deps/d beta_x at our present position.
-
-				kernelAccumulateDiffusiveHeatRateROC_wrt_regressor_1species_Geometric << < numTilesMajorClever, threadsPerTileMajorClever >> > (
-					pX_use->p_info, pX_use->p_izNeigh_vert, pX_use->p_szPBCneigh_vert, pX_use->p_izTri_vert,
-					pX_use->p_szPBCtri_vert, pX_use->p_cc, pX_use->p_n_major,
-					p_T, hsub,
-					p_regr_x,
-					pX_use->p_B + BEGINNING_OF_CENTRAL, p_kappa, p_nu,
-					p_d_eps_by_d_beta_x_,
-					pX_use->p_AreaMajor,
-					p_boolarray2 + NUMVERTICES*iSpecies, p_boolarray_block, false, //bool bUseMask,
-					iSpecies);
-				Call(cudaThreadSynchronize(), "cudaTS AccumulateDiffusiveHeatRateROC_wrt_regressor_1s LINESEARCH");
-
-				// collect eps against d_eps and d_eps against itself:
-				// This ought to work even though it's set up for minor cells:
-				kernelAccumulateSummands2 << < numTilesMajorClever, threadsPerTileMajorClever >> > (
-					pX_use->p_info + BEGINNING_OF_CENTRAL,
-					p_epsilon,
-					p_d_eps_by_d_beta_x_, // will this fail?
-					p_temp1, //p_sum_eps_d,
-					p_temp2, //p_sum_d_d,
-					p_temp3 // p_sum_eps_eps
-					);
-				Call(cudaThreadSynchronize(), "cudaTS kernelAccumulateSummands2");
-
-				cudaMemcpy(p_temphost1, p_temp1, sizeof(f64)*numTilesMajorClever, cudaMemcpyDeviceToHost);
-				cudaMemcpy(p_temphost2, p_temp2, sizeof(f64)*numTilesMajorClever, cudaMemcpyDeviceToHost);
-				cudaMemcpy(p_temphost3, p_temp3, sizeof(f64)*numTilesMajorClever, cudaMemcpyDeviceToHost);
-
-				f64 sum_eps_d = 0.0, sum_d_d = 0.0;
-				sum_eps_eps = 0.0;
-				for (iTile = 0; iTile < numTilesMajorClever; iTile++) {
-					sum_eps_d += p_temphost1[iTile];
-					sum_d_d += p_temphost2[iTile];
-					sum_eps_eps += p_temphost3[iTile];
-					//	printf("iTile %d %1.9E %1.9E %1.9E ", iTile, p_temphost1[iTile], p_temphost2[iTile], p_temphost3[iTile]);		
-				};
-				sum_eps_d_curr = sum_eps_d;
-				f64 beta_1 = -sum_eps_d / sum_d_d;
-				// beta_1 says how much more of this regressor to add.
-				// Bear in mind the initial move said add 1.0 of it.
-
-				printf("sum_eps_eps %1.12E \n", sum_eps_eps);
-
-				if (fabs(beta_1) < 0.0001) {
-					// good enough.
-					beta_curr += beta_1;
-		//			cudaMemcpy(&tempf64, &(p_regr_x[VERTCHOSEN]), sizeof(f64), cudaMemcpyDeviceToHost);
-		//			printf("p_regr_x[%d] = %1.12E \n", VERTCHOSEN, tempf64);
-		//			cudaMemcpy(&tempf64, &(p_T0[VERTCHOSEN]), sizeof(f64), cudaMemcpyDeviceToHost);
-		//			printf("p_T0[%d] = %1.12E \n", VERTCHOSEN, tempf64);
-
-					kernelAdd2 << < numTilesMajorClever, threadsPerTileMajorClever >> > (
-						p_T, p_T0,
-						beta_curr, // multiply x by this factor.
-						p_regr_x // regressor
-						);
-					Call(cudaThreadSynchronize(), "cudaTS kernelAddtoT_lc___");
-
-		//			cudaMemcpy(&tempf64, &(p_T[VERTCHOSEN]), sizeof(f64), cudaMemcpyDeviceToHost);
-		//			printf("p_T[%d] = %1.12E \n", VERTCHOSEN, tempf64);
-		//			cudaMemcpy(&tempf64, &(p_T0[VERTCHOSEN]), sizeof(f64), cudaMemcpyDeviceToHost);
-		//			printf("p_T0[%d] = %1.12E \n", VERTCHOSEN, tempf64);
-
-					bContinue = false;
-					printf("end of line search; beta_curr used: %1.9E\n", beta_curr);
-				} else {
-
-					if ((RSS_curr < RSS_prev) && (beta_1 > 0.0))// -0.5*fabs(beta_curr-beta_prev))) {
-					{
-						sum_eps_d_prev = sum_eps_d_curr;
-						RSS_prev = RSS_curr;
-						beta_prev = beta_curr;
-						beta_curr += beta_1;
-
-						// We need a special procedure if we allow walking backwards
-					} else {
-						
-						// Either beta_1 says move backwards, but RSS has decreased;
-						// so dRSS/dbeta has crossed 0.
-						// Or RSS has increased even though beta_1 says still move forwards,
-						// which implies derivative has to have crossed 0 twice.
-
-						// Fit a quadratic to find where dRSS/dbeta went through 0 :
-						f64 f1 = 2.0*sum_eps_d_curr;
-						f64 f0 = 2.0*sum_eps_d_prev;
-						f64 overdelta = 1.0 / (0.5*(beta_curr - beta_prev));
-						//printf("f0 %1.14E f1 %1.14E beta_curr %1.14E beta_prev %1.8E RSS2 %1.14E RSS1 %1.14E\n",
-						//	f0, f1, beta_curr, beta_prev, sum_eps_eps_curr, sum_eps_eps_prev);
-						// In a nasty enough case we could still get stuck in a loop.
-						// Maybe we should just ignore this possibility and concentrate on WDB for f'.
-						// Too much code overall.
-						f64 b = (f1 - f0) / (beta_curr - beta_prev);
-						f64 over_a = 1.0 / (-0.75*((RSS_curr - RSS_prev)*overdelta - (f1 + f0))*overdelta*overdelta);
-						f64 c = 0.75*(RSS_curr - RSS_prev)*overdelta - 0.25*(f0 + f1);
-						f64 tempsqrt = sqrt(-c*over_a + 0.25*b*b*over_a*over_a);
-						printf("b %1.14E over_a %1.14E c %1.14E tempsqrt %1.14E \n", b, over_a, c, tempsqrt);
-						f64 beta_minus = 0.5*(beta_prev + beta_curr) - tempsqrt - 0.5*(b*over_a);
-						f64 beta_plus = 0.5*(beta_prev + beta_curr) + tempsqrt - 0.5*(b*over_a);
-						if ((beta_minus > beta_prev) && (beta_minus < beta_curr))
-						{
-							beta_curr = beta_minus;
-
-							printf("Quadratic succeeded -- beta_minus = %1.9E \n", beta_minus);
-						} else {
-							if ((beta_plus > beta_prev) && (beta_plus < beta_curr))
-							{
-								beta_curr = beta_plus; // probably never happens
-
-								printf("Quadratic succeeded -- beta_plus = %1.9E \n", beta_plus);
-							}
-							else {
-								printf("Quadratic failed! beta_prev %1.9E minus %1.9E plus %1.9E curr %1.9E\n",
-									beta_prev, beta_minus, beta_plus, beta_curr);
-								beta_curr = (beta_curr + beta_prev)*0.5;
-							};
-						};
-					};
-				};
-			};
-
-		};
-				
-		printf("iteration %d complete \n", iIteration);
-
-		++iIteration;
-	} while (bContinue1);
-
-	printf("\nconvergence achieved.\n");
-
-	// 0 .. Make a video talking to self. <------------- Tuesday after admin-ish tasks.
-
-	// 1 . Add vWDB move above, go over data logic, compare routine to the one below. Finish it off.
-
-	// . 2 Call this !& Work to debug
-
-	// . II: See about BC's --- what needs to change?
-	// . III: AZCG !!!!
-	// . IV: separate simulation.
-
-	//	;  MUST OVERCOME. ;
-	return 0;
-}
  
 int RunBwdJnLSForHeat(f64 * p_T_k, f64 * p_T, f64 hsub, cuSyst * pX_use, bool bUseMask,
 	int species, f64 * p_kappa, f64 * p_nu) // not sure if we can pass device pointers or not
@@ -4594,7 +3846,7 @@ int RunBwdJnLSForHeat(f64 * p_T_k, f64 * p_T, f64 hsub, cuSyst * pX_use, bool bU
 				// add lc to our T
 
 				kernelAddtoT_lc << <numTilesMajor, threadsPerTileMajor >> > (
-					p_T, p_regressors, REGRESSORS);
+					p_T, p_regressors);
 				Call(cudaThreadSynchronize(), "cudaTS AddtoT");
 			};
 			
@@ -4614,8 +3866,7 @@ int RunBwdJnLSForHeat(f64 * p_T_k, f64 * p_T, f64 hsub, cuSyst * pX_use, bool bU
 	return 0;	
 }
 
-int RunBwdRnLSForHeat(f64 * p_T_k, f64 * p_T, f64 hsub,
-	cuSyst * pX_use, bool bUseMask,
+int RunBwdRnLSForHeat(f64 * p_T_k, f64 * p_T, f64 hsub, cuSyst * pX_use, bool bUseMask,
 	int species, f64 * p_kappa, f64 * p_nu) // not sure if we can pass device pointers or not
 {
 	// The idea: pick Jacobi for definiteness. 
@@ -4640,13 +3891,6 @@ int RunBwdRnLSForHeat(f64 * p_T_k, f64 * p_T, f64 hsub,
 	long iVertex;
 	plasma_data * pdata;
 #define zerovec1 p_temp1
-
-	HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
-
-	if (species == 0) SetConsoleTextAttribute(hConsole, 14);
-	if (species == 1) SetConsoleTextAttribute(hConsole, 10);
-	if (species == 2) SetConsoleTextAttribute(hConsole, 15); // 12= red 11=cyan
-
 
 	CallMAC(cudaMemset(p_regressors, 0, sizeof(f64)*NUMVERTICES*(REGRESSORS + 1)));
 	CallMAC(cudaMemset(p_Ax, 0, sizeof(f64)*NUMVERTICES*REGRESSORS));
@@ -4709,26 +3953,27 @@ int RunBwdRnLSForHeat(f64 * p_T_k, f64 * p_T, f64 hsub,
 		//	and all the similar routines. What did we do near insulator?!
 
 		cudaMemset(NT_addition_rates_d_temp, 0, sizeof(NTrates)*NUMVERTICES);
-		
-		kernelAccumulateDiffusiveHeatRate_1species_Geometric << < numTilesMajorClever, threadsPerTileMajorClever >> >(
-			pX_use->p_info, pX_use->p_izNeigh_vert, pX_use->p_szPBCneigh_vert, pX_use->p_izTri_vert,
-			pX_use->p_szPBCtri_vert, pX_use->p_cc, pX_use->p_n_major,
-			p_T,
-			pX_use->p_B + BEGINNING_OF_CENTRAL, // NEED POPULATED
-			p_kappa, p_nu,  // make sure we are passing what is calc'd for vertices.
-
-			NT_addition_rates_d_temp,
-			pX_use->p_AreaMajor,
-
-			// scrap masking for now --- but bring it back intelligently???			
-			p_boolarray2 + NUMVERTICES*species,
-			p_boolarray_block,
-			false, //bool bUseMask,
-
-				   // Just hope that our clever version will converge fast.
-			species);
-		Call(cudaThreadSynchronize(), "cudaTS AccumulateDiffusiveHeatRate");
-
+		kernelAccumulateDiffusiveHeatRate_new_Longitudinalonly_1species << < numTilesMajorClever, threadsPerTileMajorClever >> >
+			(
+				pX_use->p_info,
+				pX_use->p_izNeigh_vert,
+				pX_use->p_szPBCneigh_vert,
+				pX_use->p_izTri_vert,
+				pX_use->p_szPBCtri_vert,
+				pX_use->p_cc,
+				pX_use->p_n_major,
+				p_T,
+				pX_use->p_B + BEGINNING_OF_CENTRAL, // NEED POPULATED
+				p_kappa,
+				p_nu,
+				NT_addition_rates_d_temp,
+				pX_use->p_AreaMajor,
+				p_boolarray2 + NUMVERTICES*species, // FOR SPECIES NOW
+				p_boolarray_block,
+				bUseMask,
+				species
+				);
+		Call(cudaThreadSynchronize(), "cudaTS AccumulateDiffusiveHeatRate_new");
 
 		if (REGRESSORS < iEquations[species]) {
 			// Note: most are near 1, a few are like 22 or 150.
@@ -4937,676 +4182,6 @@ int RunBwdRnLSForHeat(f64 * p_T_k, f64 * p_T, f64 hsub,
 				for (i = 1; ((i <= REGRESSORS) || ((bUseVolleys) && (i <= 2))); i++)
 				{
 
-					// Here we need to be careful.
-					// ... we want to take deps/dbeta at the position T.
-
-					// create depsilon/dbeta and Jacobi for this regressor
-					CallMAC(cudaMemset(p_Ax + (i - 1)*NUMVERTICES, 0, sizeof(f64)*NUMVERTICES));
-					kernelAccumulateDiffusiveHeatRateROC_wrt_regressor_1species_Geometric << < numTilesMajorClever, threadsPerTileMajorClever >> >
-						(
-							pX_use->p_info,
-							pX_use->p_izNeigh_vert,
-							pX_use->p_szPBCneigh_vert,
-							pX_use->p_izTri_vert,
-							pX_use->p_szPBCtri_vert,
-							pX_use->p_cc,
-							pX_use->p_n_major,
-							
-							p_T,  // evaluation point
-							hsub,
-							p_regressors + (i-1)*NUMVERTICES, // proposed direction
-							//p_regressors + (i - 1)*NUMVERTICES, // input as T
-							pX_use->p_B + BEGINNING_OF_CENTRAL, // NEED POPULATED
-							p_kappa,
-							p_nu,
-							p_Ax + (i - 1)*NUMVERTICES, // output = deps/dbeta
-							pX_use->p_AreaMajor,
-							p_boolarray2 + NUMVERTICES*species,
-							p_boolarray_block,
-							bUseMask,
-							species);
-					// used for epsilon (T)
-					Call(cudaThreadSynchronize(), "cudaTS kernelAccumulateDiffusiveHeatRateROC_wrt_regressor_1species_Geometric ");
-
-					//kernelCreateEpsilonHeat_1species << < numTilesMajorClever, threadsPerTileMajorClever >> > (
-					//	// eps = T - (T_k +- h sum kappa dot grad T)
-					//	// x = -eps/coeffself
-					//	hsub,
-					//	pX_use->p_info + BEGINNING_OF_CENTRAL,
-					//	p_regressors + (i - 1)*NUMVERTICES, // input
-					//	zerovec1,
-					//	NT_addition_rates_d_temp,
-					//	pX_use->p_n_major,
-					//	pX_use->p_AreaMajor,
-					//	p_Ax + (i - 1)*NUMVERTICES, // the Ax for i-1; they will thus be defined for 0 up to 7 
-					//	0,
-					//	p_boolarray2 + NUMVERTICES*species,
-					//	p_boolarray_block,
-					//	bUseMask,
-					//	species
-					//	);
-					//Call(cudaThreadSynchronize(), "cudaTS Create epsilon heat");
-
-					cudaMemcpy(p_regressors + i*NUMVERTICES,
-						p_Ax + (i - 1)*NUMVERTICES, sizeof(f64)*NMINOR, cudaMemcpyDeviceToDevice);
-
-
-//#define DO_NOT_NORMALIZE_REGRESSORS
-#ifndef DO_NOT_NORMALIZE_REGRESSORS
-
-					kernelAccumulateSumOfSquares1 << < numTilesMajorClever, threadsPerTileMajorClever >> >
-						(p_regressors + i*NUMVERTICES, p_sum_eps_eps);
-					Call(cudaThreadSynchronize(), "cudaTS AccSum");
-					cudaMemcpy(p_sum_eps_eps_host, p_sum_eps_eps, sizeof(f64)*numTilesMajorClever, cudaMemcpyDeviceToHost);
-					f64 sum_eps_eps = 0.0;
-					for (iTile = 0; iTile < numTilesMajorClever; iTile++)
-						sum_eps_eps += p_sum_eps_eps_host[iTile];
-					if (bUseMask == 0) {
-						L2reg = sqrt(sum_eps_eps / (real)NUMVERTICES);
-					}
-					else {
-						f64 over = over_iEquations_n;
-						if (species == 1) over = over_iEquations_i;
-						if (species == 2) over = over_iEquations_e;
-						L2reg = sqrt(sum_eps_eps * over);
-					};
-					// Now in order to set L2reg = L2eps say, we want to multiply by
-					// alpha = sqrt(L2eps/L2reg)
-					f64 alpha = sqrt(L2eps / L2reg);
-					kernelMultiplyVector << < numTilesMajorClever, threadsPerTileMajorClever >> > (p_regressors + i*NUMVERTICES, alpha);
-					Call(cudaThreadSynchronize(), "cudaTS MultiplyVector");
-
-#endif
-				};
-			};
-
-			if ((iEquations[species] > REGRESSORS) && (bUseVolleys)) {
-				// Now create volleys:
-				kernelVolleyRegressors << < numTilesMajorClever, threadsPerTileMajorClever >> > (
-					p_regressors,
-					NUMVERTICES,
-					pX_use->p_iVolley
-					);
-				Call(cudaThreadSynchronize(), "cudaTS volley regressors");
-			};
-
-			if ((iEquations[species] <= REGRESSORS) || (bUseVolleys)) {
-				cudaMemset(p_Ax, 0, sizeof(f64)*NUMVERTICES*REGRESSORS);
-				// only first few columns actually needed it
-				for (i = 0; ((i < iEquations[species]) && (i < REGRESSORS)); i++)
-				{
-					// create depsilon/dbeta and Jacobi for this regressor
-					CallMAC(cudaMemset(p_Ax + i*NUMVERTICES, 0, sizeof(f64)*NUMVERTICES));
-					kernelAccumulateDiffusiveHeatRateROC_wrt_regressor_1species_Geometric << < numTilesMajorClever, threadsPerTileMajorClever >> >
-						(
-							pX_use->p_info,
-							pX_use->p_izNeigh_vert,
-							pX_use->p_szPBCneigh_vert,
-							pX_use->p_izTri_vert,
-							pX_use->p_szPBCtri_vert,
-							pX_use->p_cc,
-							pX_use->p_n_major,
-
-							p_T,  // evaluation point
-							hsub,
-							p_regressors + i*NUMVERTICES, // proposed direction
-																//p_regressors + (i - 1)*NUMVERTICES, // input as T
-							pX_use->p_B + BEGINNING_OF_CENTRAL, // NEED POPULATED
-							p_kappa,
-							p_nu,
-							p_Ax +i*NUMVERTICES, // output = deps/dbeta
-							pX_use->p_AreaMajor,
-							p_boolarray2 + NUMVERTICES*species,
-							p_boolarray_block,
-							bUseMask,
-							species);
-					// used for epsilon (T)
-					Call(cudaThreadSynchronize(), "cudaTS kernelAccumulateDiffusiveHeatRateROC_wrt_regressor_1species_Geometric ");
-					
-				};
-
-			};
-
-
-			lapack_int ipiv[REGRESSORS];
-			double mat[REGRESSORS*REGRESSORS];
-			lapack_int Nrows = REGRESSORS,
-				Ncols = REGRESSORS,  // lda
-				Nrhscols = 1, // ldb
-				Nrhsrows = REGRESSORS, info;
-
-			// We don't need to test for domain, we need to make sure the summands are zero otherwise.
-
-			// if we introduce skipping blocks, must change to MajorClever
-			kernelAccumulateSummands7 << <numTilesMajor, threadsPerTileMajor >> > (
-				p_epsilon,
-				p_Ax, // be careful: what do we take minus?
-				p_sum_eps_deps_by_dbeta_x8,
-				p_sum_depsbydbeta_8x8  // not sure if we want to store 64 things in memory?
-				);			// L1 48K --> divide by 256 --> 24 doubles/thread in L1.
-							// Better off running through multiple times and doing 4 saves. But it's optimization.
-			Call(cudaThreadSynchronize(), "cudaTS AccumulateSummands");
-			// Say we store 24 doubles/thread. So 4x4?. We could multiply 2 sets of 4.
-			// We are at 8 for now so let's stick with the 8-way routine.
-
-			cudaMemcpy(p_sum_eps_deps_by_dbeta_x8_host, p_sum_eps_deps_by_dbeta_x8, sizeof(f64) * REGRESSORS * numTilesMajor, cudaMemcpyDeviceToHost);
-			cudaMemcpy(p_sum_depsbydbeta_8x8_host, p_sum_depsbydbeta_8x8, sizeof(f64) * REGRESSORS * REGRESSORS * numTilesMajor, cudaMemcpyDeviceToHost);
-
-			memset(sum_eps_deps_by_dbeta_vector, 0, REGRESSORS * sizeof(f64));
-			memset(mat, 0, REGRESSORS*REGRESSORS * sizeof(f64));
-			sum_eps_eps = 0.0;
-			int i, j;
-
-			//for (iTile = 0; iTile < numTilesMajor; iTile++) {
-			//	printf("iTile %d : %1.9E %1.9E\n",iTile,
-			//		p_sum_depsbydbeta_8x8_host[iTile *  REGRESSORS *  REGRESSORS],
-			//		p_sum_eps_deps_by_dbeta_x8_host[iTile*REGRESSORS]);
-			//};
-
-			for (i = 0; i < REGRESSORS; i++)
-				for (j = 0; j < REGRESSORS; j++)
-					for (iTile = 0; iTile < numTilesMajor; iTile++)
-						mat[i*REGRESSORS + j] += p_sum_depsbydbeta_8x8_host[iTile *  REGRESSORS *  REGRESSORS + i *  REGRESSORS + j];
-
-			for (iTile = 0; iTile < numTilesMajor; iTile++)
-				for (i = 0; i < REGRESSORS; i++)
-					sum_eps_deps_by_dbeta_vector[i] -= p_sum_eps_deps_by_dbeta_x8_host[iTile*REGRESSORS + i];
-			// let's say they are in rows of 8 per tile.
-
-			//		print_matrix("Entry Matrix A", Nrows, Ncols, mat, Ncols);
-			//		print_matrix("Right Hand Side", Nrows, Nrhscols, sum_eps_deps_by_dbeta_vector, Nrhscols);
-			//		printf("\n");
-
-			// Here ensure that unwanted rows are 0. First wipe out any that accumulated 0.
-			// or are beyond #equations.
-			for (i = 0; i < REGRESSORS; i++)
-			{
-				if ((mat[i*REGRESSORS + i] == 0.0) || (i >= iEquations[species]))
-				{
-					memset(mat + i*REGRESSORS, 0, sizeof(f64)*REGRESSORS);
-					mat[i*REGRESSORS + i] = 1.0;
-					sum_eps_deps_by_dbeta_vector[i] = 0.0;
-				}
-			}
-			// Note that if a colour was not relevant for volleys, that just covered it.
-
-			f64 storeRHS[REGRESSORS];
-			f64 storemat[REGRESSORS*REGRESSORS];
-			memcpy(storeRHS, sum_eps_deps_by_dbeta_vector, sizeof(f64)*REGRESSORS);
-			memcpy(storemat, mat, sizeof(f64)*REGRESSORS*REGRESSORS);
-
-			// * Need to test speed against our own LU method.
-
-			//	printf("LAPACKE_dgesv Results\n");
-			// Solve the equations A*X = B 
-			info = LAPACKE_dgesv(LAPACK_ROW_MAJOR, Nrows, 1, mat, Ncols, ipiv, sum_eps_deps_by_dbeta_vector, Nrhscols);
-			// Check for the exact singularity :
-
-			if (info > 0) {
-				//	printf("The diagonal element of the triangular factor of A,\n");
-				//	printf("U(%i,%i) is zero, so that A is singular;\n", info, info);
-				printf("the solution could not be computed.\n");
-
-				if (bUseVolleys) {
-					// Try deleting every other regressor
-					memcpy(mat, storemat, sizeof(f64)*REGRESSORS*REGRESSORS);
-					memcpy(sum_eps_deps_by_dbeta_vector, storeRHS, sizeof(f64)*REGRESSORS);
-
-					memset(mat + 8, 0, sizeof(f64) * 8);
-					memset(mat + 3 * 8, 0, sizeof(f64) * 8);
-					memset(mat + 5 * 8, 0, sizeof(f64) * 8);
-					memset(mat + 7 * 8, 0, sizeof(f64) * 8);
-					mat[1 * 8 + 1] = 1.0;
-					mat[3 * 8 + 3] = 1.0;
-					mat[5 * 8 + 5] = 1.0;
-					mat[7 * 8 + 7] = 1.0;
-					sum_eps_deps_by_dbeta_vector[1] = 0.0;
-					sum_eps_deps_by_dbeta_vector[3] = 0.0;
-					sum_eps_deps_by_dbeta_vector[5] = 0.0;
-					sum_eps_deps_by_dbeta_vector[7] = 0.0;
-
-					//		print_matrix("Entry Matrix A", Nrows, Ncols, mat, Ncols);
-					//		print_matrix("Right Hand Side", Nrows, Nrhscols, sum_eps_deps_by_dbeta_vector, Nrhscols);
-					//		printf("\n");
-
-					//		f64 storeRHS[REGRESSORS];
-					//		f64 storemat[REGRESSORS*REGRESSORS];
-					memcpy(storeRHS, sum_eps_deps_by_dbeta_vector, sizeof(f64)*REGRESSORS);
-					memcpy(storemat, mat, sizeof(f64)*REGRESSORS*REGRESSORS);
-
-					// * making sure that we had zeroed any unwanted colours already.
-
-					printf("LAPACKE_dgesv Results (volleys for 1 regressor only) \n");
-					// Solve the equations A*X = B 
-					info = LAPACKE_dgesv(LAPACK_ROW_MAJOR, Nrows, 1, mat, Ncols, ipiv, sum_eps_deps_by_dbeta_vector, Nrhscols);
-					// Check for the exact singularity :
-					if (info > 0) {
-						printf("still didn't work..\n");
-						print_matrix("Entry Matrix A", Nrows, Ncols, storemat, Ncols);
-						print_matrix("Right Hand Side", Nrows, Nrhscols, storeRHS, Nrhscols);
-
-						while (1) getch();
-					};
-
-					// Do not know whether my own LU is faster than LAPACKE dgesv.
-				}; // (bUseVolleys)
-			};
-
-			//	print_matrix("Solution",Nrows, 1, sum_eps_deps_by_dbeta_vector, Nrhscols);
-			//	print_matrix("Details of LU factorization",Nrows,Ncols,mat, Ncols);
-			//	print_int_vector("Pivot indices",Nrows, ipiv);
-			//
-			if (info == 0) {
-				memcpy(beta, sum_eps_deps_by_dbeta_vector, REGRESSORS * sizeof(f64));
-
-				//sum_ROC_products.Invoke(REGRESSORS); // does set to zero
-				// oooh memset(&sum_eps_deps_by_dbeta_vector, 0, REGRESSORS * sizeof(f64)); // why & ????
-				//sum_eps_eps = 0.0;
-				//int i, j;
-
-				////for (iTile = 0; iTile < numTilesMajor; iTile++) {
-				////	printf("iTile %d : %1.9E %1.9E\n",iTile,
-				////		p_sum_depsbydbeta_8x8_host[iTile *  REGRESSORS *  REGRESSORS],
-				////		p_sum_eps_deps_by_dbeta_x8_host[iTile*REGRESSORS]);
-				////};
-
-				//for (i = 0; i < REGRESSORS; i++)
-				//	for (j = 0; j < REGRESSORS; j++)
-				//		for (iTile = 0; iTile < numTilesMajor; iTile++) {
-				//			sum_ROC_products.LU[i][j] += p_sum_depsbydbeta_8x8_host[iTile *  REGRESSORS *  REGRESSORS + i *  REGRESSORS + j];
-				//		}
-				//for (iTile = 0; iTile < numTilesMajor; iTile++)
-				//	for (i = 0; i < REGRESSORS; i++)
-				//		sum_eps_deps_by_dbeta_vector[i] -= p_sum_eps_deps_by_dbeta_x8_host[iTile*REGRESSORS + i];
-				//// let's say they are in rows of 8 per tile.
-
-				//for (i = 0; i < REGRESSORS; i++) {
-				//	printf("{ ");
-				//	for (j = 0; j < REGRESSORS; j++)
-				//		printf(" %1.8E ", sum_ROC_products.LU[i][j]);
-				//	printf(" } { beta%d } ", i);
-				//	if (i == 3) { printf(" = "); }
-				//	else { printf("   "); };
-				//	printf("{ %1.8E }\n", sum_eps_deps_by_dbeta_vector[i]);
-				//	// Or is it minus??
-				//};
-
-				//memset(beta, 0, sizeof(f64) * REGRESSORS);
-				////if (L2eps > 1.0e-28) { // otherwise just STOP !
-				//					   // 1e-30 is reasonable because 1e-15 * typical temperature 1e-14 = 1e-29.
-				//					   // Test for a zero row:
-				// 
-				//bool zero_present = false;
-				//for (i = 0; i <  REGRESSORS; i++)
-				//{
-				//	f64 sum = 0.0;
-				//	for (j = 0; j < REGRESSORS; j++)
-				//		sum += sum_ROC_products.LU[i][j];
-				//	if (sum == 0.0) zero_present = true;
-				//};
-				//if (zero_present == false) {
-				//	
-				//	// DEBUG:
-				//	printf("sum_ROC_products.LUdecomp() :");
-				//	sum_ROC_products.LUdecomp();
-				//	printf("done\n");
-				//	printf("sum_ROC_products.LUSolve : ");
-				//	sum_ROC_products.LUSolve(sum_eps_deps_by_dbeta_vector, beta);
-				//	printf("done\n");
-
-				//} else {
-				//	printf("zero row present -- gah\n");
-				//};
-
-				printf("\nbeta: ");
-				for (i = 0; i < REGRESSORS; i++)
-					printf(" %1.8E ", beta[i]);
-				printf("\n");
-
-				CallMAC(cudaMemcpyToSymbol(beta_n_c, beta, REGRESSORS * sizeof(f64)));
-
-				// add lc to our T
-
-				kernelAddtoT_lc << <numTilesMajor, threadsPerTileMajor >> > (
-					p_T, p_regressors, REGRESSORS);
-				Call(cudaThreadSynchronize(), "cudaTS AddtoT");
-			};
-
-			// store predicted difference:
-			ScaleVector << <numTilesMajor, threadsPerTileMajor >> > (p_temp5, beta[0], p_Ax);
-			Call(cudaThreadSynchronize(), "ScaleVector");
-
-			iIteration++;
-
-		}; // if (bContinue)
-	} while (bContinue);
-
-	// To test whether this is sane, we need to spit out typical element in 0th and 8th iterate.
-
-	GlobalSuppressSuccessVerbosity = DEFAULTSUPPRESSVERBOSITY;
-
-	return 0;
-}
-
-
-int RunBwdRnLSForHeatBackup(f64 * p_T_k, f64 * p_T, f64 hsub, cuSyst * pX_use, bool bUseMask,
-	int species, f64 * p_kappa, f64 * p_nu) // not sure if we can pass device pointers or not
-{
-	// The idea: pick Jacobi for definiteness. 
-	// First write without equilibration, then compare two versions.
-	// Try n = 6, 12 regressors.
-	Matrix_real sum_ROC_products;
-	f64 sum_eps_deps_by_dbeta_vector[24];
-	f64 beta[24];
-
-	printf("\nRLS%d for heat: \n", REGRESSORS);
-	//long iMinor;
-	f64 L2eps, L2reg;
-	bool bFailedTest, bContinue;
-	Triangle * pTri;
-	f64 tempf64;
-	long iTile, i;
-
-	int iIteration = 0;
-
-	f64 tempdebug;
-	Vertex * pVertex;
-	long iVertex;
-	plasma_data * pdata;
-#define zerovec1 p_temp1
-
-	CallMAC(cudaMemset(p_regressors, 0, sizeof(f64)*NUMVERTICES*(REGRESSORS + 1)));
-	CallMAC(cudaMemset(p_Ax, 0, sizeof(f64)*NUMVERTICES*REGRESSORS));
-	CallMAC(cudaMemset(p_epsilon, 0, sizeof(f64)*NUMVERTICES));
-	cudaMemset(zerovec1, 0, sizeof(f64)*NUMVERTICES);
-
-	printf("iEquations[%d] %d\n", species, iEquations[species]);
-
-	if (iEquations[species] <= REGRESSORS) {
-		// solve with regressors that are Kronecker delta for each point.
-		// Solution should be same as just solving equations directly.
-
-		// CPU search for which elements and put them into a list.
-		long equationindex[REGRESSORS];
-
-		cudaMemcpy(p_boolhost, p_boolarray2 + species*NUMVERTICES, sizeof(bool)*NUMVERTICES, cudaMemcpyDeviceToHost);
-
-		long iCaret = 0;
-		for (i = 0; i < NUMVERTICES; i++)
-		{
-			if (p_boolhost[i]) {
-				equationindex[iCaret] = i;
-				//		printf("eqnindex[%d] = %d\n", iCaret, i);
-				iCaret++;
-			};
-		}
-		if (iCaret != iEquations[species]) {
-			printf("(iCaret != iEquations[species])\n");
-			getch(); getch(); getch(); getch(); getch(); return 1000;
-		}
-		else {
-			//	printf("iCaret %d iEquations[%d] %d \n", iCaret, species, iEquations[species]);
-		}
-
-		f64 one = 1.0;
-		for (i = 0; i < iCaret; i++) {
-			cudaMemcpy(p_regressors + i*NUMVERTICES + equationindex[i], &one, sizeof(f64), cudaMemcpyHostToDevice);
-		};
-		// Then we want to fall out of branch into creating Ax.
-
-		// And we want to make sure we construct the matrix with ID & 0 RHS for the unused equations.
-
-		// Solution should be exact but then we can let it fall out of loop naturally?
-
-		// Leave this as done and just skip regressor creation.
-
-	}
-	else {
-
-	};
-
-	::GlobalSuppressSuccessVerbosity = true;
-	char buffer[256];
-
-	iIteration = 0;
-	do {
-		printf("\nspecies %d ITERATION %d : ", species, iIteration);
-		// create epsilon, & Jacobi 0th regressor.
-
-		//		And we want to look into this:
-		//	and all the similar routines. What did we do near insulator?!
-
-		cudaMemset(NT_addition_rates_d_temp, 0, sizeof(NTrates)*NUMVERTICES);
-		kernelAccumulateDiffusiveHeatRate_new_Longitudinalonly_1species << < numTilesMajorClever, threadsPerTileMajorClever >> >
-			(
-				pX_use->p_info,
-				pX_use->p_izNeigh_vert,
-				pX_use->p_szPBCneigh_vert,
-				pX_use->p_izTri_vert,
-				pX_use->p_szPBCtri_vert,
-				pX_use->p_cc,
-				pX_use->p_n_major,
-				p_T,
-				pX_use->p_B + BEGINNING_OF_CENTRAL, // NEED POPULATED
-				p_kappa,
-				p_nu,
-				NT_addition_rates_d_temp,
-				pX_use->p_AreaMajor,
-				p_boolarray2 + NUMVERTICES*species, // FOR SPECIES NOW
-				p_boolarray_block,
-				bUseMask,
-				species
-				);
-		Call(cudaThreadSynchronize(), "cudaTS AccumulateDiffusiveHeatRate_new");
-
-		if (REGRESSORS < iEquations[species]) {
-			// Note: most are near 1, a few are like 22 or 150.
-			CallMAC(cudaMemset(p_bFailed, 0, sizeof(bool)*numTilesMajorClever));
-			kernelCreateEpsilonHeat_1species << < numTilesMajorClever, threadsPerTileMajorClever >> > (
-				// eps = T - (T_k +- h sum kappa dot grad T)
-				// x = -eps/coeffself
-				hsub,
-				pX_use->p_info + BEGINNING_OF_CENTRAL,
-				p_T,
-				p_T_k,
-				NT_addition_rates_d_temp,
-				// NEED N = n*AreaMajor
-				pX_use->p_n_major, // got this
-				pX_use->p_AreaMajor, // got this -> N, Nn
-
-				p_epsilon,
-				p_bFailed,
-				p_boolarray2 + NUMVERTICES*species,
-				p_boolarray_block,
-				bUseMask,
-				species
-				);
-			Call(cudaThreadSynchronize(), "cudaTS Create epsilon heat");
-			// Note that for most cells it does NOTHING --- so we need Jacobi defined as 0
-
-			cudaMemcpy(p_regressors, p_epsilon, sizeof(f64)*NMINOR, cudaMemcpyDeviceToDevice);
-
-		}
-		else {
-			CallMAC(cudaMemset(p_bFailed, 0, sizeof(bool)*numTilesMajorClever));
-			kernelCreateEpsilonHeat_1species << < numTilesMajorClever, threadsPerTileMajorClever >> > (
-				// eps = T - (T_k +- h sum kappa dot grad T)
-				// x = -eps/coeffself
-				hsub,
-				pX_use->p_info + BEGINNING_OF_CENTRAL,
-				p_T,
-				p_T_k,
-				NT_addition_rates_d_temp,
-				// NEED N = n*AreaMajor
-				pX_use->p_n_major, // got this
-				pX_use->p_AreaMajor, // got this -> N, Nn
-				p_epsilon,
-				p_bFailed,
-				p_boolarray2 + NUMVERTICES*species,
-				p_boolarray_block,
-				bUseMask,
-				species
-				);
-			Call(cudaThreadSynchronize(), "cudaTS Create epsilon heat");
-		};
-
-		kernelAccumulateSumOfSquares1 << < numTilesMajorClever, threadsPerTileMajorClever >> >
-			(p_epsilon, p_sum_eps_eps);
-		Call(cudaThreadSynchronize(), "cudaTS AccSum");
-		cudaMemcpy(p_sum_eps_eps_host, p_sum_eps_eps, sizeof(f64)*numTilesMajorClever, cudaMemcpyDeviceToHost);
-		f64 sum_eps_eps = 0.0;
-		for (iTile = 0; iTile < numTilesMajorClever; iTile++)
-			sum_eps_eps += p_sum_eps_eps_host[iTile];
-		if (bUseMask == 0) {
-			L2eps = sqrt(sum_eps_eps / (real)NUMVERTICES);
-		}
-		else {
-			f64 over = over_iEquations_n;
-			if (species == 1) over = over_iEquations_i;
-			if (species == 2) over = over_iEquations_e;
-			L2eps = sqrt(sum_eps_eps * over);
-		}
-		printf(" L2eps %1.11E  : ", L2eps);
-
-		// Weird: it picks coefficients on normalized regressors that are all high,
-		// yet it never reduces L2eps by much.
-		// Is it worth understanding why that is?
-
-
-		// graph:
-		// draw a graph:
-		/*
-		SetActiveWindow(hwndGraphics);
-
-		cudaMemcpy(p_temphost1, p_epsilon, sizeof(f64)*NUMVERTICES, cudaMemcpyDeviceToHost);
-
-		pVertex = pTriMesh->X;
-		pdata = pTriMesh->pData + BEGINNING_OF_CENTRAL;
-		for (iVertex = 0; iVertex < NUMVERTICES; iVertex++)
-		{
-		pdata->temp.x = p_temphost1[iVertex];
-		pdata->temp.y = p_temphost1[iVertex];
-
-		++pVertex;
-		++pdata;
-		}
-
-		sprintf(buffer, "epsilon iteration %d", iIteration);
-		Graph[0].DrawSurface(buffer,
-		DATA_HEIGHT, (real *)(&((pTriMesh->pData[0]).temp.x)),
-		AZSEGUE_COLOUR, (real *)(&((pTriMesh->pData[0]).temp.y)),
-		false,
-		GRAPH_EPSILON, pTriMesh);
-
-		cudaMemcpy(p_temphost1, p_regressors, sizeof(f64)*NUMVERTICES, cudaMemcpyDeviceToHost);
-
-		pVertex = pTriMesh->X;
-		pdata = pTriMesh->pData + BEGINNING_OF_CENTRAL;
-		for (iVertex = 0; iVertex < NUMVERTICES; iVertex++)
-		{
-		pdata->temp.x = p_temphost1[iVertex];
-		pdata->temp.y = p_temphost1[iVertex];
-
-		++pVertex;
-		++pdata;
-		}
-		sprintf(buffer, "Jac0 iteration %d", iIteration);
-		Graph[1].DrawSurface(buffer,
-		DATA_HEIGHT, (real *)(&((pTriMesh->pData[0]).temp.x)),
-		AZSEGUE_COLOUR, (real *)(&((pTriMesh->pData[0]).temp.y)),
-		false,
-		GRAPH_AZ, pTriMesh);
-		cudaMemcpy(p_temphost1, p_regressors + NUMVERTICES, sizeof(f64)*NUMVERTICES, cudaMemcpyDeviceToHost);
-
-
-		// temp5 is predicted difference
-		// temp6 is old epsilon
-		SubtractVector << < numTilesMajorClever, threadsPerTileMajorClever >> > (p_temp4, p_temp6, p_epsilon);
-		// temp4 = actual difference & it's right-left, so new eps-old eps
-		Call(cudaThreadSynchronize(), "subtractvector");
-		SubtractVector << < numTilesMajorClever, threadsPerTileMajorClever >> > (p_temp3, p_temp5, p_temp4);
-		// temp3 = predicted-actual
-		Call(cudaThreadSynchronize(), "subtractvector");
-
-
-		cudaMemcpy(p_temphost3, p_temp5, sizeof(f64)*NUMVERTICES, cudaMemcpyDeviceToHost);
-
-		pVertex = pTriMesh->X;
-		pdata = pTriMesh->pData + BEGINNING_OF_CENTRAL;
-		for (iVertex = 0; iVertex < NUMVERTICES; iVertex++)
-		{
-		pdata->temp.x = p_temphost3[iVertex];
-		pdata->temp.y = p_temphost3[iVertex];
-
-		++pVertex;
-		++pdata;
-		}
-
-		Graph[2].DrawSurface("predicted difference",
-		DATA_HEIGHT, (real *)(&((pTriMesh->pData[0]).temp.x)),
-		AZSEGUE_COLOUR, (real *)(&((pTriMesh->pData[0]).temp.y)),
-		false,
-		GRAPH_AZ, pTriMesh);
-
-		//cudaMemcpy(p_temphost1, p_regressors + 2 * NUMVERTICES, sizeof(f64)*NUMVERTICES, cudaMemcpyDeviceToHost);
-
-		cudaMemcpy(p_temphost1, p_temp3, sizeof(f64)*NUMVERTICES, cudaMemcpyDeviceToHost);
-		pVertex = pTriMesh->X;
-		pdata = pTriMesh->pData + BEGINNING_OF_CENTRAL;
-		for (iVertex = 0; iVertex < NUMVERTICES; iVertex++)
-		{
-		pdata->temp.x = p_temphost1[iVertex];
-		pdata->temp.y = p_temphost1[iVertex];
-
-		++pVertex;
-		++pdata;
-		}
-
-		Graph[3].DrawSurface("difference from pred",
-		DATA_HEIGHT, (real *)(&((pTriMesh->pData[0]).temp.x)),
-		AZSEGUE_COLOUR, (real *)(&((pTriMesh->pData[0]).temp.y)),
-		false,
-		GRAPH_AZ, pTriMesh);
-
-		SetActiveWindow(hwndGraphics);
-		ShowWindow(hwndGraphics, SW_HIDE);
-		ShowWindow(hwndGraphics, SW_SHOW);
-		Direct3D.pd3dDevice->Present(NULL, NULL, NULL, NULL);
-
-		printf("done graphs\n\n");
-
-		getch();
-
-		cudaMemcpy(p_temp6, p_epsilon, sizeof(f64)*NUMVERTICES, cudaMemcpyDeviceToDevice);
-
-		*/
-
-		// Did epsilon now pass test? If so, skip to the end.
-
-		bFailedTest = false;
-		cudaMemcpy(p_boolhost, p_bFailed, sizeof(bool)*numTilesMajorClever, cudaMemcpyDeviceToHost);
-		for (iTile = 0; iTile < numTilesMajorClever; iTile++)
-			if (p_boolhost[iTile]) bFailedTest = true;
-		if (bFailedTest) {
-			printf("bFailedTest true \n");
-		}
-		else {
-			printf("bFailedTest false \n");
-		};
-
-		bContinue = bFailedTest;
-		if (bContinue) {
-
-			// DEBUG:
-			bool bUseVolleys = false;//(iIteration % 2 == 0);
-									 //if (bUseMask == 0) bUseVolleys = !bUseVolleys; // start without volleys for unmasked.
-
-									 // To prepare volley regressors we only need 2 x Jacobi:
-			if (iEquations[species] > REGRESSORS) {
-
-				for (i = 1; ((i <= REGRESSORS) || ((bUseVolleys) && (i <= 2))); i++)
-				{
-
 					// create depsilon/dbeta and Jacobi for this regressor
 					CallMAC(cudaMemset(NT_addition_rates_d_temp, 0, sizeof(NTrates)*NUMVERTICES));
 					kernelAccumulateDiffusiveHeatRate_new_Longitudinalonly_1species << < numTilesMajorClever, threadsPerTileMajorClever >> >
@@ -5654,7 +4229,7 @@ int RunBwdRnLSForHeatBackup(f64 * p_T_k, f64 * p_T, f64 hsub, cuSyst * pX_use, b
 						p_Ax + (i - 1)*NUMVERTICES, sizeof(f64)*NMINOR, cudaMemcpyDeviceToDevice);
 
 
-					//#define DO_NOT_NORMALIZE_REGRESSORS
+//#define DO_NOT_NORMALIZE_REGRESSORS
 #ifndef DO_NOT_NORMALIZE_REGRESSORS
 
 					kernelAccumulateSumOfSquares1 << < numTilesMajorClever, threadsPerTileMajorClever >> >
@@ -5947,7 +4522,7 @@ int RunBwdRnLSForHeatBackup(f64 * p_T_k, f64 * p_T, f64 hsub, cuSyst * pX_use, b
 				// add lc to our T
 
 				kernelAddtoT_lc << <numTilesMajor, threadsPerTileMajor >> > (
-					p_T, p_regressors, REGRESSORS);
+					p_T, p_regressors);
 				Call(cudaThreadSynchronize(), "cudaTS AddtoT");
 			};
 
@@ -5966,6 +4541,7 @@ int RunBwdRnLSForHeatBackup(f64 * p_T_k, f64 * p_T, f64 hsub, cuSyst * pX_use, b
 
 	return 0;
 }
+
 
 int RunBackwardJLSForHeat(T3 * p_T_k, T3 * p_T, f64 hsub, cuSyst * pX_use,
 	bool bUseMask)
@@ -6583,7 +5159,7 @@ int RunBackwardJLSForHeat(T3 * p_T_k, T3 * p_T, f64 hsub, cuSyst * pX_use,
 }
 
 
-void RegressionSeedTe__damaged(f64 hsub, T3 * p_move1, T3 * p_move2, T3 * p_T, T3 * p_T_k, 
+void RegressionSeedTe(f64 hsub, T3 * p_move1, T3 * p_move2, T3 * p_T, T3 * p_T_k, 
 	cuSyst * pX_use, bool bUseMask)
 {
 
@@ -6664,92 +5240,28 @@ void RegressionSeedTe__damaged(f64 hsub, T3 * p_move1, T3 * p_move2, T3 * p_T, T
 
 	// . Create epsilon for p_Tn etc
 	cudaMemset(NT_addition_rates_d_temp, 0, sizeof(NTrates)*NUMVERTICES);
-			
-	kernelAccumulateDiffusiveHeatRate_1species_Geometric << < numTilesMajorClever, threadsPerTileMajorClever >> > (
-		pX_use->p_info,
-		pX_use->p_izNeigh_vert,
-		pX_use->p_szPBCneigh_vert,
-		pX_use->p_izTri_vert,
-		pX_use->p_szPBCtri_vert,
-		pX_use->p_cc,
-		pX_use->p_n_major,
-		p_Tn,
-		pX_use->p_B + BEGINNING_OF_CENTRAL, // NEED POPULATED
-		p_kappa_n,
-		p_nu_i,
-		NT_addition_rates_d_temp,
-		pX_use->p_AreaMajor,
-		p_boolarray2,
-		p_boolarray_block,
-		bUseMask,
-		0);
-	Call(cudaThreadSynchronize(), "cudaTS AccumulateDiffusiveHeatRate neut");
-	
-	kernelAccumulateDiffusiveHeatRate_1species_Geometric << < numTilesMajorClever, threadsPerTileMajorClever >> > (
-		pX_use->p_info,
-		pX_use->p_izNeigh_vert,
-		pX_use->p_szPBCneigh_vert,
-		pX_use->p_izTri_vert,
-		pX_use->p_szPBCtri_vert,
-		pX_use->p_cc,
-		pX_use->p_n_major,
-		p_Ti,
-		pX_use->p_B + BEGINNING_OF_CENTRAL, // NEED POPULATED
-		p_kappa_i,
-		p_nu_i,
-		NT_addition_rates_d_temp,
-		pX_use->p_AreaMajor,
-		p_boolarray2,
-		p_boolarray_block,
-		bUseMask,
-		1);
-	Call(cudaThreadSynchronize(), "cudaTS AccumulateDiffusiveHeatRate ion");
-
-	kernelAccumulateDiffusiveHeatRate_1species_Geometric << < numTilesMajorClever, threadsPerTileMajorClever >> > (
-		pX_use->p_info,
-		pX_use->p_izNeigh_vert,
-		pX_use->p_szPBCneigh_vert,
-		pX_use->p_izTri_vert,
-		pX_use->p_szPBCtri_vert,
-		pX_use->p_cc,
-		pX_use->p_n_major,
-		p_Te,
-		pX_use->p_B + BEGINNING_OF_CENTRAL, // NEED POPULATED
-		p_kappa_e,
-		p_nu_e,
-		NT_addition_rates_d_temp,
-		pX_use->p_AreaMajor,
-		p_boolarray2,
-		p_boolarray_block,
-		bUseMask,
-		2);
-	Call(cudaThreadSynchronize(), "cudaTS AccumulateDiffusiveHeatRate elec");
-
-
-
-	//
-	//kernelAccumulateDiffusiveHeatRate_new_Longitudinalonly_scalarT << < numTilesMajorClever, threadsPerTileMajorClever >> >
-	//	(
-	//		pX_use->p_info,
-	//		pX_use->p_izNeigh_vert,
-	//		pX_use->p_szPBCneigh_vert,
-	//		pX_use->p_izTri_vert,
-	//		pX_use->p_szPBCtri_vert,
-	//		pX_use->p_cc,
-	//		pX_use->p_n_major,
-	//		p_Tn, p_Ti, p_Te,
-	//		pX_use->p_B + BEGINNING_OF_CENTRAL, // NEED POPULATED
-	//		p_kappa_n,
-	//		p_kappa_i,
-	//		p_kappa_e,
-	//		p_nu_i,
-	//		p_nu_e,
-	//		NT_addition_rates_d_temp,
-	//		pX_use->p_AreaMajor,
-	//		p_boolarray2,
-	//		p_boolarray_block,
-	//		bUseMask);
-	//Call(cudaThreadSynchronize(), "cudaTS AccumulateDiffusiveHeatRate_new");
+	kernelAccumulateDiffusiveHeatRate_new_Longitudinalonly_scalarT << < numTilesMajorClever, threadsPerTileMajorClever >> >
+		(
+			pX_use->p_info,
+			pX_use->p_izNeigh_vert,
+			pX_use->p_szPBCneigh_vert,
+			pX_use->p_izTri_vert,
+			pX_use->p_szPBCtri_vert,
+			pX_use->p_cc,
+			pX_use->p_n_major,
+			p_Tn, p_Ti, p_Te,
+			pX_use->p_B + BEGINNING_OF_CENTRAL, // NEED POPULATED
+			p_kappa_n,
+			p_kappa_i,
+			p_kappa_e,
+			p_nu_i,
+			p_nu_e,
+			NT_addition_rates_d_temp,
+			pX_use->p_AreaMajor,
+			p_boolarray2,
+			p_boolarray_block,
+			bUseMask);
+	Call(cudaThreadSynchronize(), "cudaTS AccumulateDiffusiveHeatRate_new");
 
 	cudaMemset(p_epsilon_n, 0, sizeof(f64)*NUMVERTICES); 
 	cudaMemset(p_epsilon_i, 0, sizeof(f64)*NUMVERTICES);
@@ -6768,8 +5280,8 @@ void RegressionSeedTe__damaged(f64 hsub, T3 * p_move1, T3 * p_move2, T3 * p_T, T
 		p_boolarray_block,
 		bUseMask
 		);
-	Call(cudaThreadSynchronize(), "cudaTS Create epsilon heat");  
-	
+	Call(cudaThreadSynchronize(), "cudaTS Create epsilon heat");
+
 	// . Now pretend p_move1 is p_T and enter zerovec for T_k
 	// That gives us d_eps_by_d_1
 
@@ -7210,305 +5722,6 @@ void RegressionSeedTe__damaged(f64 hsub, T3 * p_move1, T3 * p_move2, T3 * p_T, T
 }
 
 
-void RegressionSeedT_1species(f64 hsub, f64 * p_move1,
-	//f64 * p_move2, 
-	f64 * p_T, f64 * p_T_k,
-	cuSyst * pX_use, f64 * p_kappa, f64 * p_nu, int iSpecies, bool bUseMask)
-{
-
-	f64 beta_eJ, beta_iJ, beta_nJ, beta_eR, beta_iR, beta_nR;
-	long iTile;
-	f64 beta[8];
-
-	f64 sum_eps_deps_by_dbeta_J, sum_eps_deps_by_dbeta_R,
-		sum_depsbydbeta_J_times_J, sum_depsbydbeta_R_times_R, sum_depsbydbeta_J_times_R,
-		sum_eps_eps;
-
-	long iVertex;
-	f64 L2eps_n, L2eps_e, L2eps_i;
-
-	f64 tempf64;
-	cudaMemcpy(&tempf64, &(p_T_k[VERTCHOSEN]), sizeof(f64), cudaMemcpyDeviceToHost);
-	printf("p_T_k[%d] = %1.10E \n", VERTCHOSEN, tempf64);
-
-	cudaMemcpy(p_slot1i, p_move1, sizeof(f64)*NUMVERTICES, cudaMemcpyDeviceToDevice);
-	//cudaMemcpy(p_slot2i, p_move2, sizeof(f64)*NUMVERTICES, cudaMemcpyDeviceToDevice);
-	// move2 never gets used.
-
-	// !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-	// Important to ensure regressors were 0 in mask.
-	// !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-	cudaMemcpy(&tempf64, &(p_T_k[VERTCHOSEN]), sizeof(f64), cudaMemcpyDeviceToHost);
-	printf("p_T_k[%d] = %1.10E \n", VERTCHOSEN, tempf64);
-
-	
-	kernelHeat_1species_geometric_coeffself << < numTilesMajorClever, threadsPerTileMajorClever >> >(
-		pX_use->p_info, // minor
-		pX_use->p_izNeigh_vert,
-		pX_use->p_szPBCneigh_vert,
-		pX_use->p_izTri_vert,
-		pX_use->p_szPBCtri_vert,
-		pX_use->p_cc,
-		pX_use->p_n_major,
-		p_T,
-		hsub,
-		pX_use->p_B + BEGINNING_OF_CENTRAL, // NEED POPULATED
-		p_kappa,
-		p_nu,
-		pX_use->p_AreaMajor,
-		p_boolarray2,
-		p_boolarray_block,
-		bUseMask,
-		iSpecies,
-		p_coeffself_i
-	);
-	Call(cudaThreadSynchronize(), "cudaTS kernelHeat_1species_geometric_coeffself");
-	cudaMemcpy(&tempf64, &(p_T_k[VERTCHOSEN]), sizeof(f64), cudaMemcpyDeviceToHost);
-	printf("p_T_k[%d] = %1.10E \n", VERTCHOSEN, tempf64);
-
-	// . Create epsilon for p_Tn etc
-	cudaMemset(NT_addition_rates_d_temp, 0, sizeof(NTrates)*NUMVERTICES);
-	kernelAccumulateDiffusiveHeatRate_1species_Geometric << < numTilesMajorClever, threadsPerTileMajorClever >> > (
-		pX_use->p_info,
-		pX_use->p_izNeigh_vert,
-		pX_use->p_szPBCneigh_vert,
-		pX_use->p_izTri_vert,
-		pX_use->p_szPBCtri_vert,
-		pX_use->p_cc,
-		pX_use->p_n_major,
-		p_T,
-		pX_use->p_B + BEGINNING_OF_CENTRAL, // NEED POPULATED
-		p_kappa,
-		p_nu,
-		NT_addition_rates_d_temp,
-		pX_use->p_AreaMajor,
-		p_boolarray2,
-		p_boolarray_block,
-		bUseMask,
-		iSpecies);
-	Call(cudaThreadSynchronize(), "cudaTS AccumulateDiffusiveHeatRate neut");
-	cudaMemcpy(&tempf64, &(p_T_k[VERTCHOSEN]), sizeof(f64), cudaMemcpyDeviceToHost);
-	printf("p_T_k[%d] = %1.10E \n", VERTCHOSEN, tempf64);
-
-	cudaMemset(p_epsilon, 0, sizeof(f64)*NUMVERTICES);
-	cudaMemset(p_slot2i, 0, sizeof(f64)*NUMVERTICES);
-	// because we are about to overwrite it
-	cudaMemcpy(&tempf64, &(p_T_k[VERTCHOSEN]), sizeof(f64), cudaMemcpyDeviceToHost);
-	printf("p_T_k[%d] = %1.10E \n", VERTCHOSEN, tempf64);
-
-	kernelCreateEpsilonAndJacobi_Heat_1species << < numTilesMajorClever, threadsPerTileMajorClever >> > (
-		// eps = T - (T_k +- h sum kappa dot grad T)
-		hsub,
-		pX_use->p_info + BEGINNING_OF_CENTRAL,
-		p_T,
-		p_T_k,
-		NT_addition_rates_d_temp,
-		pX_use->p_n_major, // got this
-		pX_use->p_AreaMajor, // got this -> N, Nn
-		p_coeffself_i,
-		p_epsilon,
-		p_slot2i, // Jacobi regressor
-		0,
-		p_boolarray2,
-		p_boolarray_block,
-		bUseMask,
-		iSpecies,
-		true
-		);
-	Call(cudaThreadSynchronize(), "cudaTS Create epsilon heat 1 and Jacobi");
-
-	cudaMemset(p_d_eps_by_dbeta_n, 0, sizeof(f64)*NUMVERTICES);
-	cudaMemset(p_d_eps_by_dbetaR_n, 0, sizeof(f64)*NUMVERTICES);
-
-	kernelAccumulateDiffusiveHeatRateROC_wrt_regressor_1species_Geometric << < numTilesMajorClever, threadsPerTileMajorClever >> > (
-		pX_use->p_info,
-		pX_use->p_izNeigh_vert,
-		pX_use->p_szPBCneigh_vert,
-		pX_use->p_izTri_vert,
-		pX_use->p_szPBCtri_vert,
-		pX_use->p_cc,
-		pX_use->p_n_major,
-		p_T, 
-		hsub,
-		p_slot1i,
-		pX_use->p_B + BEGINNING_OF_CENTRAL, 
-		p_kappa,
-		p_nu,
-
-		p_d_eps_by_dbetaR_n,  // for move1
-
-		pX_use->p_AreaMajor,
-		p_boolarray2,
-		p_boolarray_block,
-		bUseMask,
-		iSpecies);
-	Call(cudaThreadSynchronize(), "cudaTS Create d/dbeta for p_slot1i");
-	
-	kernelAccumulateDiffusiveHeatRateROC_wrt_regressor_1species_Geometric << < numTilesMajorClever, threadsPerTileMajorClever >> > (
-		pX_use->p_info,
-		pX_use->p_izNeigh_vert,
-		pX_use->p_szPBCneigh_vert,
-		pX_use->p_izTri_vert,
-		pX_use->p_szPBCtri_vert,
-		pX_use->p_cc,
-		pX_use->p_n_major,
-		p_T,
-		hsub,
-		p_slot2i,
-		pX_use->p_B + BEGINNING_OF_CENTRAL,
-		p_kappa,
-		p_nu,
-
-		p_d_eps_by_dbeta_n,  // for Jacobi
-
-		pX_use->p_AreaMajor,
-		p_boolarray2,
-		p_boolarray_block,
-		bUseMask,
-		iSpecies);
-	Call(cudaThreadSynchronize(), "cudaTS Create d/dbeta for p_slot2i");
-
-	// We have a 2-regression programmed. Should we have a 3-regression programmed also?
-	// Do each species in turn:
-
-	kernelAccumulateSummands4 << <numTilesMajor, threadsPerTileMajor >> > (
-		// We don't need to test for domain, we need to make sure the summands are zero otherwise.
-		p_epsilon,
-		p_d_eps_by_dbeta_n,
-		p_d_eps_by_dbetaR_n,
-		// 6 outputs:
-		p_sum_eps_deps_by_dbeta_J,
-		p_sum_eps_deps_by_dbeta_R,
-		p_sum_depsbydbeta_J_times_J,
-		p_sum_depsbydbeta_R_times_R,
-		p_sum_depsbydbeta_J_times_R,
-		p_sum_eps_eps);
-	Call(cudaThreadSynchronize(), "cudaTS AccumulateSummands neut");
-
-	cudaMemcpy(p_sum_eps_deps_by_dbeta_J_host, p_sum_eps_deps_by_dbeta_J, sizeof(f64)*numTilesMajor, cudaMemcpyDeviceToHost);
-	cudaMemcpy(p_sum_eps_deps_by_dbeta_R_host, p_sum_eps_deps_by_dbeta_R, sizeof(f64)*numTilesMajor, cudaMemcpyDeviceToHost);
-	cudaMemcpy(p_sum_depsbydbeta_J_times_J_host, p_sum_depsbydbeta_J_times_J, sizeof(f64)*numTilesMajor, cudaMemcpyDeviceToHost);
-	cudaMemcpy(p_sum_depsbydbeta_R_times_R_host, p_sum_depsbydbeta_R_times_R, sizeof(f64)*numTilesMajor, cudaMemcpyDeviceToHost);
-	cudaMemcpy(p_sum_depsbydbeta_J_times_R_host, p_sum_depsbydbeta_J_times_R, sizeof(f64)*numTilesMajor, cudaMemcpyDeviceToHost);
-	cudaMemcpy(p_sum_eps_eps_host, p_sum_eps_eps, sizeof(f64)*numTilesMajor, cudaMemcpyDeviceToHost);
-
-	sum_eps_deps_by_dbeta_J = 0.0;
-	sum_eps_deps_by_dbeta_R = 0.0;
-	sum_depsbydbeta_J_times_J = 0.0;
-	sum_depsbydbeta_R_times_R = 0.0;
-	sum_depsbydbeta_J_times_R = 0.0;
-	sum_eps_eps = 0.0;
-	for (iTile = 0; iTile < numTilesMajor; iTile++)
-	{
-		sum_eps_deps_by_dbeta_J += p_sum_eps_deps_by_dbeta_J_host[iTile];
-		sum_eps_deps_by_dbeta_R += p_sum_eps_deps_by_dbeta_R_host[iTile];
-		sum_depsbydbeta_J_times_J += p_sum_depsbydbeta_J_times_J_host[iTile];
-		sum_depsbydbeta_R_times_R += p_sum_depsbydbeta_R_times_R_host[iTile];
-		sum_depsbydbeta_J_times_R += p_sum_depsbydbeta_J_times_R_host[iTile];
-		sum_eps_eps += p_sum_eps_eps_host[iTile];
-	}
-
-	if ((sum_depsbydbeta_J_times_J*sum_depsbydbeta_R_times_R - sum_depsbydbeta_J_times_R*sum_depsbydbeta_J_times_R == 0.0)
-		|| (sum_depsbydbeta_R_times_R*sum_depsbydbeta_J_times_J - sum_depsbydbeta_J_times_R*sum_depsbydbeta_J_times_R == 0.0))
-	{
-		printf("Could not define coefficient.");
-		beta_nJ = 0.0;
-		beta_nR = 0.0;
-	}
-	else {
-		beta_nJ = -(sum_eps_deps_by_dbeta_J*sum_depsbydbeta_R_times_R - sum_eps_deps_by_dbeta_R*sum_depsbydbeta_J_times_R) /
-			(sum_depsbydbeta_J_times_J*sum_depsbydbeta_R_times_R - sum_depsbydbeta_J_times_R*sum_depsbydbeta_J_times_R);
-		beta_nR = -(sum_eps_deps_by_dbeta_R*sum_depsbydbeta_J_times_J - sum_eps_deps_by_dbeta_J*sum_depsbydbeta_J_times_R) /
-			(sum_depsbydbeta_R_times_R*sum_depsbydbeta_J_times_J - sum_depsbydbeta_J_times_R*sum_depsbydbeta_J_times_R);
-	}
-	f64 L2eps;
-	if (bUseMask) {
-		long over_iEquations;
-		if (iSpecies == 0) over_iEquations = over_iEquations_n;
-		if (iSpecies == 1) over_iEquations = over_iEquations_i;
-		if (iSpecies == 2) over_iEquations = over_iEquations_e;
-		L2eps = sqrt(sum_eps_eps * over_iEquations);
-	}
-	else {
-		L2eps = sqrt(sum_eps_eps / (real)NUMVERTICES);
-	};
-	printf("\n [ Beta1 %1.10E Beta2 %1.10E L2eps(old) %1.10E ] ", beta_nJ, beta_nR, L2eps);
-
-	kernelAdd_to_T_lc << < numTilesMajorClever, threadsPerTileMajorClever >> > (
-		p_T, beta_nR, p_slot1i, beta_nJ, p_slot2i);
-	Call(cudaThreadSynchronize(), "cudaTS AddtoT ___1");
-
-
-	// Test effect of additions:
-
-	// . Create epsilon for p_Tn etc
-	cudaMemset(NT_addition_rates_d_temp, 0, sizeof(NTrates)*NUMVERTICES);
-	kernelAccumulateDiffusiveHeatRate_1species_Geometric << < numTilesMajorClever, threadsPerTileMajorClever >> > (
-		pX_use->p_info,
-		pX_use->p_izNeigh_vert,
-		pX_use->p_szPBCneigh_vert,
-		pX_use->p_izTri_vert,
-		pX_use->p_szPBCtri_vert,
-		pX_use->p_cc,
-		pX_use->p_n_major,
-		p_T,
-		pX_use->p_B + BEGINNING_OF_CENTRAL, // NEED POPULATED
-		p_kappa,
-		p_nu,
-		NT_addition_rates_d_temp,
-		pX_use->p_AreaMajor,
-		p_boolarray2,
-		p_boolarray_block,
-		bUseMask,
-		iSpecies);
-	Call(cudaThreadSynchronize(), "cudaTS AccumulateDiffusiveHeatRate neut");
-
-	cudaMemset(p_epsilon, 0, sizeof(f64)*NUMVERTICES);
-
-	kernelCreateEpsilonHeat_1species << < numTilesMajorClever, threadsPerTileMajorClever >> > (
-		// eps = T - (T_k +- h sum kappa dot grad T)
-		hsub,
-		pX_use->p_info + BEGINNING_OF_CENTRAL,
-		p_T,
-		p_T_k,
-		NT_addition_rates_d_temp,
-		pX_use->p_n_major, // got this
-		pX_use->p_AreaMajor, // got this -> N, Nn
-		p_epsilon,
-		0,
-		p_boolarray2,
-		p_boolarray_block,
-		bUseMask,
-		iSpecies
-		);
-	Call(cudaThreadSynchronize(), "cudaTS 	kernelCreateEpsilonHeat_1species");
-
-	kernelAccumulateSumOfSquares1 << < numTilesMajorClever, threadsPerTileMajorClever >> >
-		(p_epsilon, p_temp1);
-	Call(cudaThreadSynchronize(), "cudaTS Sumof squares");
-	f64 SS_n = 0.0;
-	cudaMemcpy(p_temphost1, p_temp1, sizeof(f64)*numTilesMajorClever, cudaMemcpyDeviceToHost);
-	for (iTile = 0; iTile < numTilesMajorClever; iTile++)
-	{
-		SS_n += p_temphost1[iTile];
-	}
-
-	if (bUseMask) {
-		long over_iEquations;
-		if (iSpecies == 0) over_iEquations = over_iEquations_n;
-		if (iSpecies == 1) over_iEquations = over_iEquations_i;
-		if (iSpecies == 2) over_iEquations = over_iEquations_e;
-		L2eps = sqrt(SS_n * over_iEquations);
-	}
-	else {
-		L2eps = sqrt(SS_n / (real)NUMVERTICES);
-	};
-
-	printf("L2eps %1.10E \n\n", L2eps);
-		
-	// Next stop: be careful what we are adding to what.
-	// TO produce seed regressors.
-}
 
 
 /*
@@ -10653,9 +8866,9 @@ void PerformCUDA_Invoke_Populate(
 	};
 	fclose(fp);
 
-	printf("ionize_temps[8][3] %1.14E \n", ionize_temps_host[8][3]);
-	printf("ionize_coeffs[11][4][2] %1.14E \n", ionize_coeffs_host[11][4][2]);
-	printf("recomb_coeffs[28][1][3] %1.14E \n", recomb_coeffs_host[28][1][3]);
+	printf("ionize_temps[8][3] %1.14E /n", ionize_temps_host[8][3]);
+	printf("ionize_coeffs[11][4][2] %1.14E /n", ionize_coeffs_host[11][4][2]);
+	printf("recomb_coeffs[28][1][3] %1.14E /n", recomb_coeffs_host[28][1][3]);
 	//getch(); // test what we loaded
 	Call(cudaMemcpyToSymbol(ionize_temps, ionize_temps_host, 32*10 * sizeof(f64)), 
 		"cudaMemcpyToSymbol(ionize_temps)");
@@ -11217,9 +9430,6 @@ void PerformCUDA_Invoke_Populate(
 	cudaFuncSetCacheConfig(kernelComputeJacobianValues,
 		cudaFuncCachePreferL1);
 
-	// check some others here for speed.
-
-
 	pX1 = &cuSyst1;
 	pX_half = &cuSyst2;
 	pX2 = &cuSyst3;
@@ -11309,7 +9519,6 @@ void PerformCUDA_RunStepsAndReturnSystem(cuSyst * pX_host)
 		);
 	Call(cudaThreadSynchronize(), "cudaTS kernelCreateWhoAmI_verts");
 	
-
 	long iSubstep;
 	int i;
 	// Ultimately this 10 steps .. so 1e-11? .. can be 1 advective step.
@@ -12722,7 +10931,7 @@ void cuSyst::PerformCUDA_Advance_noadvect(//const
 		printf("\nNeTe rate [%d] : %1.13E\n\n", VERTCHOSEN, tempf64);
 		SetConsoleTextAttribute(hConsole, 15);
 	}
-	 
+
 	// ``````````````````````````````````````````````````````````````````````
 	//              Heat conduction:
 	// ``````````````````````````````````````````````````````````````````````
@@ -12732,7 +10941,6 @@ void cuSyst::PerformCUDA_Advance_noadvect(//const
 	// Not changing it right now, but worth a rethink if possible.
 	// The aim of the following is to put T on cc.
 
-	// values never used:
 	kernelAverage_n_T_x_to_tris << <numTriTiles, threadsPerTileMinor >> > (
 		this->p_n_minor,
 		this->p_n_major,
@@ -12764,60 +10972,35 @@ void cuSyst::PerformCUDA_Advance_noadvect(//const
 		SetConsoleTextAttribute(hConsole, 15);
 	};
 
-	//kernelCalculate_kappa_nu << <numTriTiles, threadsPerTileMinor >> > (
-	//	this->p_info,
-	//	this->p_n_minor,
-	//	this->p_T_minor,
-
-	//	p_kappa_n,
-	//	p_kappa_i,
-	//	p_kappa_e,
-	//	p_nu_i,
-	//	p_nu_e		// define all these.
-	//	);
-	//Call(cudaThreadSynchronize(), "cudaTS Calculate_kappa_nu(this)");
-	
-	kernelCalculate_kappa_nu_vertices << <numTilesMajor, threadsPerTileMajor >> >(
-		this->p_info + BEGINNING_OF_CENTRAL,
-		this->p_n_major,
-		this->p_T_minor + BEGINNING_OF_CENTRAL,
+	kernelCalculate_kappa_nu << <numTriTiles, threadsPerTileMinor >> > (
+		this->p_info,
+		this->p_n_minor,
+		this->p_T_minor,
 
 		p_kappa_n,
 		p_kappa_i,
 		p_kappa_e,
 		p_nu_i,
-		p_nu_e
-	);
-	Call(cudaThreadSynchronize(), "cudaTS Kappa on vertices");
+		p_nu_e		// define all these.
+		);
+	Call(cudaThreadSynchronize(), "cudaTS Calculate_kappa_nu(this)");
 
 	cudaMemcpy(pX_half->p_T_minor + BEGINNING_OF_CENTRAL,
 		this->p_T_minor + BEGINNING_OF_CENTRAL, sizeof(T3)*NUMVERTICES, cudaMemcpyDeviceToDevice);
 
-#define p_move1n p_sqrtD_inv_n
-#define p_move1i p_sqrtD_inv_i
-#define p_move1e p_sqrtD_inv_e
-
-	kernelUnpack << <numTilesMajorClever, threadsPerTileMajorClever >> >
-		(p_move1n, p_move1i, p_move1e, p_store_T_move1); // create T
-	Call(cudaThreadSynchronize(), "cudaTS kernelUnpack move");
-	kernelUnpack << <numTilesMajorClever, threadsPerTileMajorClever >> >
-		(p_Tn, p_Ti, p_Te, pX_half->p_T_minor + BEGINNING_OF_CENTRAL); // create T
-	Call(cudaThreadSynchronize(), "cudaTS kernelUnpack k+1 ");
-	kernelUnpack << <numTilesMajorClever, threadsPerTileMajorClever >> >
-		(p_Tnk, p_Tik, p_Tek, this->p_T_minor + BEGINNING_OF_CENTRAL); // create T
-	Call(cudaThreadSynchronize(), "cudaTS kernelUnpack k");
-	
-	// Ion is coming out 0 the second time.
-	// spit out some values:
-
-	f64 tempf64_2, tempf64_3;
-	cudaMemcpy(&tempf64, &(p_Tnk[VERTCHOSEN]), sizeof(f64), cudaMemcpyDeviceToHost);
-	cudaMemcpy(&tempf64_2, &(p_Tik[VERTCHOSEN]), sizeof(f64), cudaMemcpyDeviceToHost);
-	cudaMemcpy(&tempf64_3, &(p_Tek[VERTCHOSEN]), sizeof(f64), cudaMemcpyDeviceToHost);
-
-	printf("%d Tk %1.10E %1.10E %1.10E \n", VERTCHOSEN, tempf64, tempf64_2, tempf64_3);
-
-	
+	if (iHistory > 0)
+	{
+		SetConsoleTextAttribute(hConsole, 11);
+		RegressionSeedTe(0.5*Timestep, p_store_T_move2, p_store_T_move1,
+			pX_half->p_T_minor + BEGINNING_OF_CENTRAL,
+			this->p_T_minor + BEGINNING_OF_CENTRAL,
+			this,
+			false);
+		SetConsoleTextAttribute(hConsole, 14);
+	}
+	else {
+		printf("iHistory %d\n", iHistory);
+	}
 
 	int iSuccess;
 #define WOOLLY
@@ -12838,134 +11021,59 @@ void cuSyst::PerformCUDA_Advance_noadvect(//const
 	} while (iSuccess != 0);
 
 #else
-	
+
+	kernelUnpack << <numTilesMajorClever, threadsPerTileMajorClever >> >
+		(p_Tn, p_Ti, p_Te, pX_half->p_T_minor + BEGINNING_OF_CENTRAL); // create T
+	Call(cudaThreadSynchronize(), "cudaTS kernelUnpack k+1 B");
+
+	kernelUnpack << <numTilesMajorClever, threadsPerTileMajorClever >> >
+		(p_Tnk, p_Tik, p_Tek, this->p_T_minor + BEGINNING_OF_CENTRAL); // create T
+	Call(cudaThreadSynchronize(), "cudaTS kernelUnpack k");
+
 	iEquations[0] = NUMVERTICES;
 	iEquations[1] = NUMVERTICES;
 	iEquations[2] = NUMVERTICES;
 
 	printf("NEUTRAL SOLVE:\n");
-	if (iHistory > 0)
-	{
-		SetConsoleTextAttribute(hConsole, 11);
-		RegressionSeedT_1species(
-			0.5*Timestep,
-			p_move1n,
-			p_Tn,
-			p_Tnk,
-			this,
-			p_kappa_n, p_nu_i,
+	do {
+		iSuccess = RunBwdJnLSForHeat(p_Tnk, p_Tn,
+			0.5*Timestep, this, false,
 			0,
-			false);
-		SetConsoleTextAttribute(hConsole, 14);
-	}
-	else {
-		printf("iHistory %d\n", iHistory);
-	};
-	do {
-		iSuccess =
-
-			RunBwdRnLSForHeat(
-				p_Tnk, p_Tn,
-				0.5*Timestep, this, false, 
-				0, p_kappa_n, p_nu_i);
-		//	
-		//	RunBwdJnLSForHeat(p_Tnk, p_Tn,
-		//	0.5*Timestep, this, false,
-		//	0,
-		//	p_kappa_n,
-		//	p_nu_i);
+			p_kappa_n,
+			p_nu_i);
 		
 	} while (iSuccess != 0);
-	cudaMemcpy(&tempf64, &(p_Tn[VERTCHOSEN]), sizeof(f64), cudaMemcpyDeviceToHost);
-	cudaMemcpy(&tempf64_2, &(p_Ti[VERTCHOSEN]), sizeof(f64), cudaMemcpyDeviceToHost);
-	cudaMemcpy(&tempf64_3, &(p_Te[VERTCHOSEN]), sizeof(f64), cudaMemcpyDeviceToHost);
-
-	printf("%d T %1.10E %1.10E %1.10E \n", VERTCHOSEN, tempf64, tempf64_2, tempf64_3);
-
+	
 	printf("ION SOLVE:\n");
-	
-	cudaMemcpy(&tempf64, &(p_kappa_i[VERTCHOSEN]), sizeof(f64), cudaMemcpyDeviceToHost);
-	cudaMemcpy(&tempf64_2, &(p_nu_i[VERTCHOSEN]), sizeof(f64), cudaMemcpyDeviceToHost);
-	cudaMemcpy(&tempf64_3, &(p_move1i[VERTCHOSEN]), sizeof(f64), cudaMemcpyDeviceToHost);
-
-	printf("%d kappa_i %1.10E nu_i %1.10E move1i %1.10E \n", VERTCHOSEN, tempf64, tempf64_2, tempf64_3);
-
-	if (iHistory > 0)
-	{
-		SetConsoleTextAttribute(hConsole, 11);
-		RegressionSeedT_1species(
-			0.5*Timestep,
-			p_move1i,
-			p_Ti,
-			p_Tik,
-			this,
-			p_kappa_i, p_nu_i,
+	do {
+		iSuccess = RunBwdJnLSForHeat(p_Tik, p_Ti,
+			0.5*Timestep, this, false,
 			1,
-			false);
-		SetConsoleTextAttribute(hConsole, 14);
-	}
-	else {
-		printf("iHistory %d\n", iHistory);
-	};
-	do {
-		iSuccess = RunBwdRnLSForHeat(
-			p_Tik, p_Ti,			
-			0.5*Timestep, this, false, 1, p_kappa_i, p_nu_i
-			);
-		//iSuccess = RunBwdJnLSForHeat(p_Tik, p_Ti,
-		//	0.5*Timestep, this, false,
-		//	1,
-		//	p_kappa_i,
-		//	p_nu_i);
+			p_kappa_i,
+			p_nu_i);
 	} while (iSuccess != 0);
 
-	cudaMemcpy(&tempf64, &(p_Tn[VERTCHOSEN]), sizeof(f64), cudaMemcpyDeviceToHost);
-	cudaMemcpy(&tempf64_2, &(p_Ti[VERTCHOSEN]), sizeof(f64), cudaMemcpyDeviceToHost);
-	cudaMemcpy(&tempf64_3, &(p_Te[VERTCHOSEN]), sizeof(f64), cudaMemcpyDeviceToHost);
-
-	printf("%d T %1.10E %1.10E %1.10E \n", VERTCHOSEN, tempf64, tempf64_2, tempf64_3);
-
-
-	
 	printf("ELECTRON SOLVE:\n");
-	if (iHistory > 0)
-	{
-		SetConsoleTextAttribute(hConsole, 11);
-		RegressionSeedT_1species(
-			0.5*Timestep,
-			p_move1e,
-			p_Te,
-			p_Tek,
-			this,
-			p_kappa_e, p_nu_e,
-			2,
-			false);
-		SetConsoleTextAttribute(hConsole, 14);
-	}
-	else {
-		printf("iHistory %d\n", iHistory);
-	};
 	do {
-		iSuccess = RunBwdRnLSForHeat(
-			p_Tek, p_Te,
-			0.5*Timestep, this, false, 2,p_kappa_e, p_nu_e
-			); 
-		
+		iSuccess = RunBwdJnLSForHeat(p_Tek, p_Te,
+			0.5*Timestep, this, false,
+			2,
+			p_kappa_e,
+			p_nu_e);
 	} while (iSuccess != 0);
-	// Almost instant. Whereas NLCG (formula) takes 40s and NLCG(ours) takes nearly 4 minutes.
-
+	
 	kernelPackupT3 << <numTilesMajorClever, threadsPerTileMajorClever >> >
 		(pX_half->p_T_minor + BEGINNING_OF_CENTRAL, p_Tn, p_Ti, p_Te); // create T
 	Call(cudaThreadSynchronize(), "cudaTS kernelPack k+1");
 
 #endif
 	
-	// Store move:
 	SubtractT3 << <numTilesMajor, threadsPerTileMajor >> >
-		(p_store_T_move1,
+		(p_store_T_move2,
 			pX_half->p_T_minor + BEGINNING_OF_CENTRAL,
 			this->p_T_minor + BEGINNING_OF_CENTRAL);
 	Call(cudaThreadSynchronize(), "cudaTS subtractT3");
+
 	SetConsoleTextAttribute(hConsole, 15);
 
 	cudaMemcpy(&tempf64, &((pX_half->p_T_minor + BEGINNING_OF_CENTRAL + VERTCHOSEN)->Te), sizeof(f64), cudaMemcpyDeviceToHost);
@@ -12974,76 +11082,12 @@ void cuSyst::PerformCUDA_Advance_noadvect(//const
 		printf("4getch");  getch(); getch(); getch(); getch(); 
 		PerformCUDA_Revoke(); printf("end");
 		while (1) getch();
-	}	
+	}
+	
 	if ((DEBUGTE) && (tempf64 > 1.0e-11)) {
 		printf("press f");
 		while (getch() != 'f');
 	}
-	
-	// Now create dNT from T_k+1/2 ! :
-	// ================================
-
-	kernelAccumulateDiffusiveHeatRate_1species_Geometric << < numTilesMajorClever, threadsPerTileMajorClever >> > (
-			this->p_info,
-			this->p_izNeigh_vert,
-			this->p_szPBCneigh_vert,
-			this->p_izTri_vert,
-			this->p_szPBCtri_vert,
-			this->p_cc,
-			this->p_n_major,
-			p_Tn, // T_k+1/2 just calculated
-			this->p_B + BEGINNING_OF_CENTRAL, // NEED POPULATED
-			p_kappa_n,
-			p_nu_i,
-			NT_addition_rates_d,
-			this->p_AreaMajor,
-			p_boolarray2,
-			p_boolarray_block,
-			false,//bUseMask,
-			0);
-	Call(cudaThreadSynchronize(), "cudaTS AccumulateDiffusiveHeatRate neut");
-
-	kernelAccumulateDiffusiveHeatRate_1species_Geometric << < numTilesMajorClever, threadsPerTileMajorClever >> > (
-		this->p_info,
-		this->p_izNeigh_vert,
-		this->p_szPBCneigh_vert,
-		this->p_izTri_vert,
-		this->p_szPBCtri_vert,
-		this->p_cc,
-		this->p_n_major,
-		p_Ti, // T_k+1/2 just calculated
-		this->p_B + BEGINNING_OF_CENTRAL, // NEED POPULATED
-		p_kappa_i,
-		p_nu_i,
-		NT_addition_rates_d,
-		this->p_AreaMajor,
-		p_boolarray2,
-		p_boolarray_block,
-		false,//bUseMask,
-		1);
-	Call(cudaThreadSynchronize(), "cudaTS AccumulateDiffusiveHeatRate neut");
-
-	kernelAccumulateDiffusiveHeatRate_1species_Geometric << < numTilesMajorClever, threadsPerTileMajorClever >> > (
-		this->p_info,
-		this->p_izNeigh_vert,
-		this->p_szPBCneigh_vert,
-		this->p_izTri_vert,
-		this->p_szPBCtri_vert,
-		this->p_cc,
-		this->p_n_major,
-		p_Te, // T_k+1/2 just calculated
-		this->p_B + BEGINNING_OF_CENTRAL, // NEED POPULATED
-		p_kappa_e,
-		p_nu_e,
-		NT_addition_rates_d,
-		this->p_AreaMajor,
-		p_boolarray2,
-		p_boolarray_block,
-		false,//bUseMask,
-		2);
-	Call(cudaThreadSynchronize(), "cudaTS AccumulateDiffusiveHeatRate neut");
-	
-	getch();
 
 	// This isn't ideal ---- for this one we might like the old half move and the old
 	// full move stored
@@ -13054,86 +11098,102 @@ void cuSyst::PerformCUDA_Advance_noadvect(//const
 	// dNT/dt = 0 here anyway!
 	cudaMemcpy(NT_addition_rates_d_temp, NT_addition_rates_d, sizeof(NTrates)*NUMVERTICES, cudaMemcpyDeviceToDevice);
 	cudaMemset(p_boolarray, 0, sizeof(bool)*NUMVERTICES * 2); // initially allow all flows good
-//
-	//int iPass = 0;
-	//bool bContinue;
-	//do {
-	//	printf("iPass %d :\n", iPass);
-	//	// reset NTrates:
-	//	cudaMemcpy(NT_addition_rates_d, NT_addition_rates_d_temp, sizeof(NTrates)*NUMVERTICES, cudaMemcpyDeviceToDevice);
-	//	kernelAccumulateDiffusiveHeatRate_new_Full << <numTilesMajorClever, threadsPerTileMajorClever >> > (
-	//		this->p_info,
-	//		this->p_izNeigh_vert,
-	//		this->p_szPBCneigh_vert,
-	//		this->p_izTri_vert,
-	//		this->p_szPBCtri_vert,
-	//		this->p_cc,
-	//		this->p_n_major,
-	//		  
-	//		pX_half->p_T_minor + BEGINNING_OF_CENTRAL, // Use T_k+1 just calculated...
-	//		p_boolarray, // array of which ones require longi flows
-	//			 		 // 2 x NMAJOR
-	//		this->p_B + BEGINNING_OF_CENTRAL, // NEED POPULATED
-	//		p_kappa_n,
-	//		p_kappa_i, 
-	//		p_kappa_e,
-	//		p_nu_i, 
-	//		p_nu_e,
-	//		NT_addition_rates_d,
-	//		this->p_AreaMajor,
-	//		(iPass == 0) ? false : true,
-	//		     
-	//		p_boolarray2,
-	//		p_boolarray_block,
-	//		false);
-	//	Call(cudaThreadSynchronize(), "cudaTS AccumulateDiffusiveHeatRate pX_half");
-	//	// To increase the efficiency we want to make a clever 2nd set of major tiles of size 192. Also try 256, 384.
-	//	
-	////	cudaMemcpy(&tempf64, &(NT_addition_rates_d[VERTCHOSEN].Nn), sizeof(f64), cudaMemcpyDeviceToHost);
-	////	printf("%d NT_addition_rates_d Nn rate %1.10E \n", VERTCHOSEN, tempf64);
-		//	cudaMemset(p_bFailed, 0, sizeof(bool)*numTilesMajorClever);
-	//	kernelCreatePutativeT << < numTilesMajorClever, threadsPerTileMajorClever >> > (
-	//		0.5*Timestep,
-	//		this->p_info,
-	//		this->p_T_minor + BEGINNING_OF_CENTRAL,
-	//		//	p_T_upwind_minor_and_putative_T + BEGINNING_OF_CENTRAL, // putative T storage
-	//		this->p_n_major,
-	//		this->p_AreaMajor,
-	//		NT_addition_rates_d,
-	//		p_boolarray, // an array of whether this one requires longi flows --- did it come out T < 0
-	//					 // 2x NMAJOR
-	//		p_bFailed, // did we hit any new negative T to add
-	//		p_boolarray2,
-	//		p_boolarray_block,
-	//		false
-	//		);
-	//	Call(cudaThreadSynchronize(), "cudaTS kernelCreatePutativeT");
-		//	f64 Te;
-	//	cudaMemcpy(&Te, &(this->p_T_minor[BEGINNING_OF_CENTRAL + VERTCHOSEN].Te), sizeof(f64), cudaMemcpyDeviceToHost);
-	//	printf("%d Te (this) %1.10E \n", VERTCHOSEN, Te);
-	//	cudaMemcpy(&tempf64, &(pX_half->p_T_minor[BEGINNING_OF_CENTRAL + VERTCHOSEN].Te), sizeof(f64), cudaMemcpyDeviceToHost);
-	//	printf("%d Te (pX_half) %1.10E \n", VERTCHOSEN, tempf64);
-		//	f64 area;
-	//	cudaMemcpy(&area, &(this->p_AreaMajor[VERTCHOSEN]), sizeof(f64), cudaMemcpyDeviceToHost);
-	//	printf("Area %1.10E ", area);
-	//	f64 temp2;
-	//	cudaMemcpy(&temp2, &(this->p_n_major[VERTCHOSEN].n), sizeof(f64), cudaMemcpyDeviceToHost);
-	//	printf("* n %1.10E = %1.10E \n", temp2, temp2*tempf64);
-	//	f64 temp3;
-	//	cudaMemcpy(&temp3, &(NT_addition_rates_d[VERTCHOSEN].NeTe), sizeof(f64), cudaMemcpyDeviceToHost);
-	//	printf("%d NT_addition_rates_d NeTe rate %1.10E \n", VERTCHOSEN, temp3);
-	//	
-	//	printf("predicted Te: %1.10E \n", Te + 0.5e-12*temp3 / (temp2*area));
-		//	bContinue = false;
-	//	cudaMemcpy(p_boolhost, p_bFailed, sizeof(bool)*numTilesMajorClever, cudaMemcpyDeviceToHost);
-	//	int i;
-	//	for (i = 0; ((i < numTilesMajorClever) && (p_boolhost[i] == 0)); i++);
-	//	if (i < numTilesMajorClever) bContinue = true;
-	//	iPass++;
-	//} while (bContinue);
+
+	cudaMemcpy(&tempf64, &(NT_addition_rates_d[VERTCHOSEN].Nn), sizeof(f64), cudaMemcpyDeviceToHost);
+	printf("%d NT_addition_rates_d Nn rate %1.10E \n", VERTCHOSEN, tempf64);
+
+	cudaMemcpy(&tempf64, &(NT_addition_rates_d[VERTCHOSEN].NeTe), sizeof(f64), cudaMemcpyDeviceToHost);
+	printf("%d NT_addition_rates_d NeTe rate %1.10E \n", VERTCHOSEN, tempf64);
+
+	int iPass = 0;
+	bool bContinue;
+	do {
+		printf("iPass %d :\n", iPass);
+
+		// reset NTrates:
+		cudaMemcpy(NT_addition_rates_d, NT_addition_rates_d_temp, sizeof(NTrates)*NUMVERTICES, cudaMemcpyDeviceToDevice);
+
+		kernelAccumulateDiffusiveHeatRate_new_Full << <numTilesMajorClever, threadsPerTileMajorClever >> > (
+			this->p_info,
+			this->p_izNeigh_vert,
+			this->p_szPBCneigh_vert,
+			this->p_izTri_vert,
+			this->p_szPBCtri_vert,
+			this->p_cc,
+			this->p_n_major,
+			  
+			pX_half->p_T_minor + BEGINNING_OF_CENTRAL, // Use T_k+1 just calculated...
+			p_boolarray, // array of which ones require longi flows
+				 		 // 2 x NMAJOR
+			this->p_B + BEGINNING_OF_CENTRAL, // NEED POPULATED
+			p_kappa_n,
+			p_kappa_i, 
+			p_kappa_e,
+			p_nu_i, 
+			p_nu_e,
+			NT_addition_rates_d,
+			this->p_AreaMajor,
+			(iPass == 0) ? false : true,
+			     
+			p_boolarray2,
+			p_boolarray_block,
+			false);
+		Call(cudaThreadSynchronize(), "cudaTS AccumulateDiffusiveHeatRate pX_half");
+		// To increase the efficiency we want to make a clever 2nd set of major tiles of size 192. Also try 256, 384.
+		
+	//	cudaMemcpy(&tempf64, &(NT_addition_rates_d[VERTCHOSEN].Nn), sizeof(f64), cudaMemcpyDeviceToHost);
+	//	printf("%d NT_addition_rates_d Nn rate %1.10E \n", VERTCHOSEN, tempf64);
+
+		cudaMemset(p_bFailed, 0, sizeof(bool)*numTilesMajorClever);
+		kernelCreatePutativeT << < numTilesMajorClever, threadsPerTileMajorClever >> > (
+			0.5*Timestep,
+			this->p_info,
+			this->p_T_minor + BEGINNING_OF_CENTRAL,
+			//	p_T_upwind_minor_and_putative_T + BEGINNING_OF_CENTRAL, // putative T storage
+			this->p_n_major,
+			this->p_AreaMajor,
+			NT_addition_rates_d,
+			p_boolarray, // an array of whether this one requires longi flows --- did it come out T < 0
+						 // 2x NMAJOR
+			p_bFailed, // did we hit any new negative T to add
+
+			p_boolarray2,
+			p_boolarray_block,
+			false
+			);
+		Call(cudaThreadSynchronize(), "cudaTS kernelCreatePutativeT");
+
+		f64 Te;
+		cudaMemcpy(&Te, &(this->p_T_minor[BEGINNING_OF_CENTRAL + VERTCHOSEN].Te), sizeof(f64), cudaMemcpyDeviceToHost);
+		printf("%d Te (this) %1.10E \n", VERTCHOSEN, Te);
+		cudaMemcpy(&tempf64, &(pX_half->p_T_minor[BEGINNING_OF_CENTRAL + VERTCHOSEN].Te), sizeof(f64), cudaMemcpyDeviceToHost);
+		printf("%d Te (pX_half) %1.10E \n", VERTCHOSEN, tempf64);
+
+		f64 area;
+		cudaMemcpy(&area, &(this->p_AreaMajor[VERTCHOSEN]), sizeof(f64), cudaMemcpyDeviceToHost);
+		printf("Area %1.10E ", area);
+		f64 temp2;
+		cudaMemcpy(&temp2, &(this->p_n_major[VERTCHOSEN].n), sizeof(f64), cudaMemcpyDeviceToHost);
+		printf("* n %1.10E = %1.10E \n", temp2, temp2*tempf64);
+		f64 temp3;
+		cudaMemcpy(&temp3, &(NT_addition_rates_d[VERTCHOSEN].NeTe), sizeof(f64), cudaMemcpyDeviceToHost);
+		printf("%d NT_addition_rates_d NeTe rate %1.10E \n", VERTCHOSEN, temp3);
+		
+		printf("predicted Te: %1.10E \n", Te + 0.5e-12*temp3 / (temp2*area));
+
+		bContinue = false;
+		cudaMemcpy(p_boolhost, p_bFailed, sizeof(bool)*numTilesMajorClever, cudaMemcpyDeviceToHost);
+		int i;
+		for (i = 0; ((i < numTilesMajorClever) && (p_boolhost[i] == 0)); i++);
+		if (i < numTilesMajorClever) bContinue = true;
+		iPass++;
+	} while (bContinue);
 	  
-//	cudaMemcpy(&tempf64, &(NT_addition_rates_d[VERTCHOSEN].Nn), sizeof(f64), cudaMemcpyDeviceToHost);
-//	printf("%d NT_addition_rates_d Nn rate %1.10E \n", VERTCHOSEN, tempf64);
+	getch();
+
+
+	cudaMemcpy(&tempf64, &(NT_addition_rates_d[VERTCHOSEN].Nn), sizeof(f64), cudaMemcpyDeviceToHost);
+	printf("%d NT_addition_rates_d Nn rate %1.10E \n", VERTCHOSEN, tempf64);
 
 	cudaMemcpy(store_heatcond_NTrates, NT_addition_rates_d, sizeof(NTrates)*NUMVERTICES, cudaMemcpyDeviceToDevice);
 
@@ -13505,7 +11565,8 @@ void cuSyst::PerformCUDA_Advance_noadvect(//const
 		);
 	// Add in a test for T<0 !!!
 	Call(cudaThreadSynchronize(), "cudaTS Advance_n_and_T _noadvect"); // vertex
-	
+
+
 	if (!DEFAULTSUPPRESSVERBOSITY) {
 		printf("\nDebugNaN pX_half\n\n");
 		DebugNaN(pX_half);
@@ -13562,6 +11623,7 @@ void cuSyst::PerformCUDA_Advance_noadvect(//const
 			sizeof(f64_vec3), cudaMemcpyDeviceToHost);
 		printf("\n%d ? : pMAR_neut.xy %1.9E %1.9E \n\n", CHOSEN, tempvec3.x, tempvec3.y);
 	};
+
 
 	kernelGetLapCoeffs_and_min << <numTriTiles, threadsPerTileMinor >> >(
 		pX_target->p_info,
@@ -13835,218 +11897,21 @@ void cuSyst::PerformCUDA_Advance_noadvect(//const
 
 	// Do not need cc shard model
 
-	// Do need cc for the following THOUGH !!!
-
-	// HEAT DIFFUSION:
-
-	kernelCalculate_kappa_nu_vertices << <numTilesMajor, threadsPerTileMajor >> >(
-		pX_half->p_info + BEGINNING_OF_CENTRAL,
-		pX_half->p_n_major,
-		pX_half->p_T_minor + BEGINNING_OF_CENTRAL,
+	kernelCalculate_kappa_nu << <numTriTiles, threadsPerTileMinor >> > (
+		pX_half->p_info,
+		pX_half->p_n_minor,
+		pX_half->p_T_minor,
 
 		p_kappa_n,
 		p_kappa_i,
 		p_kappa_e,
 		p_nu_i,
-		p_nu_e
-		);
-	Call(cudaThreadSynchronize(), "cudaTS Kappa on vertices");
-
-	// Simple edit, 5th November 2020: Turn off mask for now. :/
-
+		p_nu_e		// define all these.
+		); 
+	Call(cudaThreadSynchronize(), "cudaTS Calculate_kappa_nu(pXhalf)");
+	 
 #define HEATBASESYST this
 #define HEATSTEP Timestep
-
-	cudaMemcpy(pX_target->p_T_minor + BEGINNING_OF_CENTRAL,
-		pX_half->p_T_minor + BEGINNING_OF_CENTRAL, sizeof(T3)*NUMVERTICES, cudaMemcpyDeviceToDevice);
-	
-	kernelUnpack << <numTilesMajorClever, threadsPerTileMajorClever >> >
-		(p_move1n, p_move1i, p_move1e, p_store_T_move2); // create T
-	Call(cudaThreadSynchronize(), "cudaTS kernelUnpack move");
-	kernelUnpack << <numTilesMajorClever, threadsPerTileMajorClever >> >
-		(p_Tn, p_Ti, p_Te, pX_target->p_T_minor + BEGINNING_OF_CENTRAL); // create T
-	Call(cudaThreadSynchronize(), "cudaTS kernelUnpack k+1 ");
-	kernelUnpack << <numTilesMajorClever, threadsPerTileMajorClever >> >
-		(p_Tnk, p_Tik, p_Tek, HEATBASESYST->p_T_minor + BEGINNING_OF_CENTRAL); // create T
-	Call(cudaThreadSynchronize(), "cudaTS kernelUnpack k");
-
-	iEquations[0] = NUMVERTICES;
-	iEquations[1] = NUMVERTICES;
-	iEquations[2] = NUMVERTICES;
-
-	printf("NEUTRAL SOLVE:\n");
-	if (iHistory > 0)
-	{
-		SetConsoleTextAttribute(hConsole, 11);
-		RegressionSeedT_1species(
-			HEATSTEP,
-			p_move1n,
-			p_Tn,
-			p_Tnk,
-			HEATBASESYST,
-			p_kappa_n, p_nu_i,
-			0,
-			false);
-		SetConsoleTextAttribute(hConsole, 14);
-	}
-	else {
-		printf("iHistory %d\n", iHistory);
-	};
-	do {
-		iSuccess = RunBwdRnLSForHeat(
-				p_Tnk, p_Tn,
-				HEATSTEP, pX_half, false,
-				0, p_kappa_n, p_nu_i);		
-
-	} while (iSuccess != 0);
-
-
-	printf("ION SOLVE:\n");
-	if (iHistory > 0)
-	{
-		SetConsoleTextAttribute(hConsole, 11);
-		RegressionSeedT_1species(
-			HEATSTEP,
-			p_move1i,
-			p_Ti,
-			p_Tik,
-			HEATBASESYST,
-			p_kappa_i, p_nu_i,
-			1,
-			false);
-		SetConsoleTextAttribute(hConsole, 14);
-	}
-	else {
-		printf("iHistory %d\n", iHistory);
-	};
-	do {
-		iSuccess = RunBwdRnLSForHeat(
-			p_Tik, p_Ti,
-			HEATSTEP, pX_half, false,
-			1, p_kappa_i, p_nu_i);
-	} while (iSuccess != 0);
-
-
-	printf("ELECTRON SOLVE:\n");
-	if (iHistory > 0)
-	{
-		SetConsoleTextAttribute(hConsole, 11);
-		RegressionSeedT_1species(
-			HEATSTEP,
-			p_move1e,
-			p_Te,
-			p_Tek,
-			HEATBASESYST,
-			p_kappa_e, p_nu_e,
-			2,
-			false);
-		SetConsoleTextAttribute(hConsole, 14);
-	}
-	else {
-		printf("iHistory %d\n", iHistory);
-	};
-	do {
-		iSuccess = RunBwdRnLSForHeat(
-			p_Tek, p_Te,
-			HEATSTEP, pX_half, false, 
-			2, p_kappa_e, p_nu_e
-		);
-	} while (iSuccess != 0);
-	
-	kernelPackupT3 << <numTilesMajorClever, threadsPerTileMajorClever >> >
-		(pX_target->p_T_minor + BEGINNING_OF_CENTRAL, p_Tn, p_Ti, p_Te); // create T
-	Call(cudaThreadSynchronize(), "cudaTS kernelPack k+1");
-
-	// Store move:
-	SubtractT3 << <numTilesMajor, threadsPerTileMajor >> >
-		(p_store_T_move2,
-			pX_target->p_T_minor + BEGINNING_OF_CENTRAL,
-			this->p_T_minor + BEGINNING_OF_CENTRAL);
-	Call(cudaThreadSynchronize(), "cudaTS subtractT3");
-	SetConsoleTextAttribute(hConsole, 15);
-
-
-	// Now create dNT from T_k+1/2 ! :
-	// ================================
-
-	kernelAccumulateDiffusiveHeatRate_1species_Geometric << < numTilesMajorClever, threadsPerTileMajorClever >> > (
-		pX_half->p_info,
-		pX_half->p_izNeigh_vert,
-		pX_half->p_szPBCneigh_vert,
-		pX_half->p_izTri_vert,
-		pX_half->p_szPBCtri_vert,
-		pX_half->p_cc,
-		pX_half->p_n_major,
-		p_Tn, // T_k+1/2 just calculated
-		pX_half->p_B + BEGINNING_OF_CENTRAL, // NEED POPULATED
-		p_kappa_n,
-		p_nu_i,
-		NT_addition_rates_d,
-		pX_half->p_AreaMajor,
-		p_boolarray2,
-		p_boolarray_block,
-		false,//bUseMask,
-		0);
-	Call(cudaThreadSynchronize(), "cudaTS AccumulateDiffusiveHeatRate neut");
-
-	kernelAccumulateDiffusiveHeatRate_1species_Geometric << < numTilesMajorClever, threadsPerTileMajorClever >> > (
-		pX_half->p_info,
-		pX_half->p_izNeigh_vert,
-		pX_half->p_szPBCneigh_vert,
-		pX_half->p_izTri_vert,
-		pX_half->p_szPBCtri_vert,
-		pX_half->p_cc,
-		pX_half->p_n_major,
-		p_Ti, // T_k+1/2 just calculated
-		pX_half->p_B + BEGINNING_OF_CENTRAL, // NEED POPULATED
-		p_kappa_i,
-		p_nu_i,
-		NT_addition_rates_d,
-		pX_half->p_AreaMajor,
-		p_boolarray2,
-		p_boolarray_block,
-		false,//bUseMask,
-		1);
-	Call(cudaThreadSynchronize(), "cudaTS AccumulateDiffusiveHeatRate neut");
-
-	kernelAccumulateDiffusiveHeatRate_1species_Geometric << < numTilesMajorClever, threadsPerTileMajorClever >> > (
-		pX_half->p_info,
-		pX_half->p_izNeigh_vert,
-		pX_half->p_szPBCneigh_vert,
-		pX_half->p_izTri_vert,
-		pX_half->p_szPBCtri_vert,
-		pX_half->p_cc,
-		pX_half->p_n_major,
-		p_Te, // T_k+1/2 just calculated
-		pX_half->p_B + BEGINNING_OF_CENTRAL, // NEED POPULATED
-		p_kappa_e,
-		p_nu_e,
-		NT_addition_rates_d,
-		pX_half->p_AreaMajor,
-		p_boolarray2,
-		p_boolarray_block,
-		false,//bUseMask,
-		2);
-	Call(cudaThreadSynchronize(), "cudaTS AccumulateDiffusiveHeatRate neut");
-
-	iHistory++;
-
-	getch();
-
-	/*
-	//kernelCalculate_kappa_nu << <numTriTiles, threadsPerTileMinor >> > (
-	//	pX_half->p_info,
-	//	pX_half->p_n_minor,
-	//	pX_half->p_T_minor,
-
-	//	p_kappa_n,
-	//	p_kappa_i,
-	//	p_kappa_e,
-	//	p_nu_i,
-	//	p_nu_e		// define all these.
-	//	); 
-	//Call(cudaThreadSynchronize(), "cudaTS Calculate_kappa_nu(pXhalf)");
-	// 
 
 	// not ready to try and change .. means changing the advance also ...
 
@@ -14102,6 +11967,7 @@ void cuSyst::PerformCUDA_Advance_noadvect(//const
 	// It should also be a quicker solve if there are effectively only a smaller number
 	// of equations --- which may not even connect.
 	
+	// This is 100% legit.
 
 	bool btemp;
 	bool bBackward = false;
@@ -14118,16 +11984,6 @@ void cuSyst::PerformCUDA_Advance_noadvect(//const
 	
 	cudaMemcpy(&tempf64, &(store_heatcond_NTrates[VERTCHOSEN].Nn), sizeof(f64), cudaMemcpyDeviceToHost);
 	printf("%d store_heatcond_NTrates Nn rate %1.10E \n", VERTCHOSEN, tempf64);
-
-
-
-
-
-	don't need to do any of the following, just call geometric heat calc.'
-
-
-
-		;
 
 	cudaMemset(p_bFailed, 0, sizeof(bool)*numTilesMajorClever);
 	kernelCreatePutativeTandsave << < numTilesMajorClever, threadsPerTileMajorClever >> > (
@@ -14373,7 +12229,7 @@ void cuSyst::PerformCUDA_Advance_noadvect(//const
 			//printf("Neutral solve:\n"); // should have a way to skip if iEquations == 0
 			do {
 			
-				iSuccess = RunBwdRnLSForHeat(p_Tnk, p_Tn, 
+				iSuccess = RunBwdJnLSForHeat(p_Tnk, p_Tn, 
 					HEATSTEP, pX_half, true,
 					0, 
 					p_kappa_n, 
@@ -14386,7 +12242,7 @@ void cuSyst::PerformCUDA_Advance_noadvect(//const
 		if (iEquations[1] > 0) {
 			printf("Ion solve:\n");
 			do {
-				iSuccess = RunBwdRnLSForHeat(p_Tik, p_Ti,
+				iSuccess = RunBwdJnLSForHeat(p_Tik, p_Ti,
 					HEATSTEP, pX_half, true,
 					1,
 					p_kappa_i,
@@ -14402,7 +12258,7 @@ void cuSyst::PerformCUDA_Advance_noadvect(//const
 		if (iEquations[2] > 0) {
 			printf("Electron solve:\n");
 			do {
-				iSuccess = RunBwdRnLSForHeat(p_Tek, p_Te,
+				iSuccess = RunBwdJnLSForHeat(p_Tek, p_Te,
 					HEATSTEP, pX_half, true,
 					2,
 					p_kappa_e,
@@ -14494,9 +12350,8 @@ void cuSyst::PerformCUDA_Advance_noadvect(//const
 		cudaMemcpy(&tempf64, &(NT_addition_rates_d_temp[VERTCHOSEN].Nn), sizeof(f64), cudaMemcpyDeviceToHost);
 		printf("%d NT_addition_rates_d_temp Nn rate %1.10E \n", VERTCHOSEN, tempf64);
 
-		bool bContinue;
 
-		int iPass = 0;
+		iPass = 0;
 		do {
 			printf("iPass %d :\n", iPass);
 			cudaMemcpy(&tempf64, &(NT_addition_rates_d[VERTCHOSEN].Nn), sizeof(f64), cudaMemcpyDeviceToHost);
@@ -14567,8 +12422,6 @@ void cuSyst::PerformCUDA_Advance_noadvect(//const
 			iPass++;
 		} while (bContinue);
 	}
-	*/
-
 	if (!DEFAULTSUPPRESSVERBOSITY)
 	{
 

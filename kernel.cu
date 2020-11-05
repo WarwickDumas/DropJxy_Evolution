@@ -15,8 +15,8 @@
 
  
 #define FOUR_PI 12.5663706143592
-#define TEST  (iVertex == VERTCHOSEN) 
-#define TEST_T (iVertex == VERTCHOSEN) 
+#define TEST  (0) 
+#define TEST_T (0) 
 #define TEST3  (0)
 #define TEST1 (0)
 #define TESTTRI (0) //iMinor == CHOSEN) // thermal pressure output & infer minor density
@@ -24,22 +24,24 @@
 #define TESTADVECTNEUT (0) //iVertex == VERTCHOSEN)
 #define TESTIONVERTVISC (0)
 #define TESTNEUTVISC (0) // iVertex == VERTCHOSEN) 
-#define TESTVISC (0)// iMinor == CHOSEN) 
+#define TESTVISC (0) //iMinor == CHOSEN) 
 #define TESTIONVISC (0) 
-#define TESTHEAT (0)//iVertex == VERTCHOSEN)
-#define TESTHEATFULL (iVertex == VERTCHOSEN) 
+#define TESTHEAT (iVertex == VERTCHOSEN)
+#define TESTHEATFULL (0)
 #define TESTHEAT1 (0) // iVertex == VERTCHOSEN)
 #define TESTTRI2 (0)
 #define TESTTRI3 (0)
 #define TESTHEAT2 (0)
 #define TESTIONISE (0)
 #define TESTOHMS (0) //iMinor == VERTCHOSEN + BEGINNING_OF_CENTRAL)
-#define TEST_IONIZE (0)
-#define TESTACCEL (0) // iMinor == CHOSEN)
+#define TEST_IONIZE (0)//iVertex == VERTCHOSEN)
+#define TESTACCEL (0) //iMinor == VERTCHOSEN + BEGINNING_OF_CENTRAL)
 #define TESTACCEL2 (0) // iMinor - BEGINNING_OF_CENTRAL == VERTCHOSEN)
 #define TESTACCEL_X (0) // PopOhms output
 #define TESTLAP (0)
-#define TESTVEZ (0) // iMinor == VERTCHOSEN + BEGINNING_OF_CENTRAL)
+#define TESTVEZ (0) //iMinor == VERTCHOSEN + BEGINNING_OF_CENTRAL)
+#define TEST_VS_MATRIX (0) //iMinor == VERTCHOSEN + BEGINNING_OF_CENTRAL)
+#define TEST_VS_MATRIX2 (0) // iVertex == VERTCHOSEN
 #define TESTVNX (0)
 #define TESTVNY (0) //iMinor == CHOSEN)//PopOhms
 #define TESTVNY2 (0) // iMinor == CHOSEN) //neutral momflux
@@ -49,10 +51,10 @@
 #define TEST_ADV_MASS_FLAG 0
 #define TESTVNXVERT (0)
 #define TESTVNYVERT (0)
-#define TEST_ACCEL_Y (0)//iMinor == VERTCHOSEN + BEGINNING_OF_CENTRAL)
+#define TEST_ACCEL_Y (0) //iMinor == VERTCHOSEN + BEGINNING_OF_CENTRAL)
 #define VISCMAG 1 
 #define MIDPT_A
-#define TEST_ACCEL_EZ (0)
+#define TEST_ACCEL_EZ (0) //iMinor == VERTCHOSEN + BEGINNING_OF_CENTRAL)
 
 #define ARTIFICIAL_RELATIVE_THRESH  1.0e10 // if we let it be more strict than heat thresh then it drives a difference generating heat!
 #define ARTIFICIAL_RELATIVE_THRESH_HEAT  1.0e10   // typical initial density is 1e8 vs 1e18
@@ -5357,7 +5359,6 @@ __global__ void kernelAccumulateDiffusiveHeatRate_new_Longitudinalonly_scalarT(
 
 }
 
-
 __global__ void kernelAccumulateDiffusiveHeatRate_new_Longitudinalonly_1species(
 	structural * __restrict__ p_info_minor,
 	long * __restrict__ pIndexNeigh,
@@ -5387,11 +5388,11 @@ __global__ void kernelAccumulateDiffusiveHeatRate_new_Longitudinalonly_1species(
 
 																	 // DO NOT WANT:
 	__shared__ f64_vec2 shared_pos[2 * threadsPerTileMajorClever]; // but as far as we know, we are having to use circumcenters.
-	// Maybe it works without them now that we have the longitudinal assumptions --- don't know for sure.
-	// But it means we are not being consistent with our definition of a cell?
-	// Like having major cells Voronoi => velocity living on centroids (which it must, for visc + A) is in slightly the wrong place.
+																   // Maybe it works without them now that we have the longitudinal assumptions --- don't know for sure.
+																   // But it means we are not being consistent with our definition of a cell?
+																   // Like having major cells Voronoi => velocity living on centroids (which it must, for visc + A) is in slightly the wrong place.
 
-	__shared__ f64 shared_T[threadsPerTileMajorClever];      
+	__shared__ f64 shared_T[threadsPerTileMajorClever];
 
 	__shared__ f64_vec2 shared_B[threadsPerTileMajorClever]; // +2
 
@@ -5456,7 +5457,8 @@ __global__ void kernelAccumulateDiffusiveHeatRate_new_Longitudinalonly_1species(
 	if ((info.flag == DOMAIN_VERTEX) || (info.flag == OUTERMOST)) {
 		shared_B[threadIdx.x] = p_B_major[iVertex].xypart();
 		shared_T[threadIdx.x] = p__T[iVertex];
-	} else {
+	}
+	else {
 		// SHOULD NOT BE LOOKING INTO INS.
 		// How do we avoid?
 		memset(&(shared_B[threadIdx.x]), 0, sizeof(f64_vec2));
@@ -5481,7 +5483,7 @@ __global__ void kernelAccumulateDiffusiveHeatRate_new_Longitudinalonly_1species(
 	short iNeigh; // only fixed # of addresses so short makes no difference.
 	char PBC; // char makes no difference.
 
-	if ((info.flag == DOMAIN_VERTEX) && ((bUseMask == 0) || (bMask == true)) )
+	if ((info.flag == DOMAIN_VERTEX) && ((bUseMask == 0) || (bMask == true)))
 	{
 		// Need this, we are adding on to existing d/dt N,NT :
 		memcpy(&ourrates, NTadditionrates + iVertex, sizeof(NTrates));
@@ -5498,9 +5500,9 @@ __global__ void kernelAccumulateDiffusiveHeatRate_new_Longitudinalonly_1species(
 		memcpy(izTri, //+ MAXNEIGH_d * threadIdx.x,
 			izTri_verts + MAXNEIGH_d * iVertex, MAXNEIGH_d * sizeof(long));
 
-			// The idea of not sending blocks full of non-domain vertices is another idea. Fiddly with indices.
+		// The idea of not sending blocks full of non-domain vertices is another idea. Fiddly with indices.
 
-			// Now do Tn:
+		// Now do Tn:
 
 		indexneigh = Indexneigh[MAXNEIGH_d*threadIdx.x + info.neigh_len - 1];
 		if ((indexneigh >= StartMajor) && (indexneigh < EndMajor))
@@ -5556,10 +5558,10 @@ __global__ void kernelAccumulateDiffusiveHeatRate_new_Longitudinalonly_1species(
 		if (PBC == ROTATE_ME_CLOCKWISE) endpt_clock = Clockwise_d * endpt_clock;
 		if (PBC == ROTATE_ME_ANTICLOCKWISE) endpt_clock = Anticlockwise_d * endpt_clock;
 
-//		if (T_clock == 0.0) {
-//			T_clock = 0.5*(shared_T[threadIdx.x] + T_out);
-//		};
-//		Mimic
+		//		if (T_clock == 0.0) {
+		//			T_clock = 0.5*(shared_T[threadIdx.x] + T_out);
+		//		};
+		//		Mimic
 
 
 #pragma unroll MAXNEIGH_d
@@ -5591,8 +5593,8 @@ __global__ void kernelAccumulateDiffusiveHeatRate_new_Longitudinalonly_1species(
 			//	T_anti = 0.5*(shared_T[threadIdx.x] + T_out);
 			//}; // So we are receiving 0 then doing this. But how come?
 			//Mimic
-				// Now let's see
-				// tri 0 has neighs 0 and 1 I'm pretty sure (check....) CHECK
+			// Now let's see
+			// tri 0 has neighs 0 and 1 I'm pretty sure (check....) CHECK
 
 			if ((izTri[iNeigh] >= StartMinor) && (izTri[iNeigh] < EndMinor))
 			{
@@ -5612,11 +5614,11 @@ __global__ void kernelAccumulateDiffusiveHeatRate_new_Longitudinalonly_1species(
 
 			edge_normal.x = (endpt_anti.y - endpt_clock.y);
 			edge_normal.y = (endpt_clock.x - endpt_anti.x);
-			
+
 			// SMARTY:
 			if (TestDomainPos(pos_out))
-			{				
-				kappa_parallel = 0.0; 
+			{
+				kappa_parallel = 0.0;
 				f64 nu;
 				if (iSpecies == 0) {
 					if ((izTri[iNeigh] >= StartMinor) && (izTri[iNeigh] < EndMinor))
@@ -5637,13 +5639,14 @@ __global__ void kernelAccumulateDiffusiveHeatRate_new_Longitudinalonly_1species(
 						}
 					}
 
-					if ((!TestDomainPos(pos_clock) ) ||	(!TestDomainPos(pos_anti)))
+					if ((!TestDomainPos(pos_clock)) || (!TestDomainPos(pos_anti)))
 					{
 						f64 edgelen = edge_normal.modulus();
 
 						ourrates.NnTn += TWOTHIRDS * kappa_parallel * edgelen *
 							(T_out - shared_T[threadIdx.x]) / (pos_out - info.pos).modulus();
-					} else {
+					}
+					else {
 						f64 Area_quadrilateral = 0.5*(
 							(info.pos.x + pos_anti.x)*(info.pos.y - pos_anti.y)
 							+ (pos_clock.x + info.pos.x)*(pos_clock.y - info.pos.y)
@@ -5670,8 +5673,9 @@ __global__ void kernelAccumulateDiffusiveHeatRate_new_Longitudinalonly_1species(
 						ourrates.NnTn += TWOTHIRDS * kappa_parallel * grad_T.dot(edge_normal);
 					};
 					// This is correct, grad T in same coordinates as edge_normal...
-					
-				} else {
+
+				}
+				else {
 					if ((izTri[iNeigh] >= StartMinor) && (izTri[iNeigh] < EndMinor))
 					{
 						kappa_parallel = 0.5*shared_kappa[izTri[iNeigh] - StartMinor];
@@ -5679,7 +5683,7 @@ __global__ void kernelAccumulateDiffusiveHeatRate_new_Longitudinalonly_1species(
 					}
 					else {
 						kappa_parallel = 0.5*p__kappa[izTri[iNeigh]];
-						nu = 0.5*p__nu[izTri[iNeigh]];						
+						nu = 0.5*p__nu[izTri[iNeigh]];
 					};
 					{
 						short iPrev = iNeigh - 1; if (iPrev < 0) iPrev = info.neigh_len - 1;
@@ -5687,9 +5691,10 @@ __global__ void kernelAccumulateDiffusiveHeatRate_new_Longitudinalonly_1species(
 						{
 							kappa_parallel += 0.5*shared_kappa[izTri[iPrev] - StartMinor];
 							nu += 0.5*shared_nu[izTri[iPrev] - StartMinor];
-						} else {							
+						}
+						else {
 							kappa_parallel += 0.5*p__kappa[izTri[iPrev]];
-							nu += 0.5*p__nu[izTri[iPrev]];							
+							nu += 0.5*p__nu[izTri[iPrev]];
 						};
 					};
 
@@ -5714,7 +5719,7 @@ __global__ void kernelAccumulateDiffusiveHeatRate_new_Longitudinalonly_1species(
 						else {
 							omega = Make3(qovermc * 0.5*(shared_B[threadIdx.x] + B_out), BZ_CONSTANT*qovermc);
 						};
-					
+
 						f64 edgelen = edge_normal.modulus();
 						f64 delta_out = sqrt((info.pos.x - pos_out.x)*(info.pos.x - pos_out.x) + (info.pos.y - pos_out.y)*(info.pos.y - pos_out.y));
 
@@ -5722,12 +5727,13 @@ __global__ void kernelAccumulateDiffusiveHeatRate_new_Longitudinalonly_1species(
 							ourrates.NiTi += TWOTHIRDS * kappa_parallel *  (T_out - shared_T[threadIdx.x]) *
 								(nu*nu*edgelen*edgelen + omega.dotxy(edge_normal)*omega.dotxy(edge_normal))
 								/ (delta_out*edgelen *(nu * nu + omega.dot(omega)));
-						} else {
+						}
+						else {
 							ourrates.NeTe += TWOTHIRDS * kappa_parallel *  (T_out - shared_T[threadIdx.x]) *
 								(nu*nu*edgelen*edgelen + omega.dotxy(edge_normal)*omega.dotxy(edge_normal))
-								/ (delta_out*edgelen *(nu * nu + omega.dot(omega)));	
+								/ (delta_out*edgelen *(nu * nu + omega.dot(omega)));
 
-							if (TESTHEAT) 
+							if (TESTHEAT)
 								printf("%d %d iSpecies %d contrib %1.10E kappa_par %1.9E\nT_out %1.9E T %1.9E nu %1.9E omega %1.9E %1.9E\n", iVertex, iNeigh, iSpecies,
 									TWOTHIRDS * kappa_parallel *  (T_out - shared_T[threadIdx.x]) *
 									(nu*nu*edgelen*edgelen + omega.dotxy(edge_normal)*omega.dotxy(edge_normal))
@@ -5740,21 +5746,24 @@ __global__ void kernelAccumulateDiffusiveHeatRate_new_Longitudinalonly_1species(
 
 			} // if (pos_out.x*pos_out.x + pos_out.y*pos_out.y > ...)
 
-				// Now go round:	
+			  // Now go round:	
 			endpt_clock = endpt_anti;
 			pos_clock = pos_out;
 			pos_out = pos_anti;
 			T_clock = T_out;
 			T_out = T_anti;
 		}; // next iNeigh
-				
+
 	}; // DOMAIN vertex active in mask
 
-	// Turned out to be stupid having a struct called NTrates. We just want to modify one scalar at a time.
-	
+	   // Turned out to be stupid having a struct called NTrates. We just want to modify one scalar at a time.
+
 	memcpy(NTadditionrates + iVertex, &ourrates, sizeof(NTrates));
 }
 
+#include "heatflux.cu"
+
+;
 
 __global__ void kernelCalc_SelfCoefficient_for_HeatConduction 
 (
@@ -9334,10 +9343,10 @@ __global__ void kernelIonisationRates(
 //			}
 
 			// DEBUG:
-			if (TEST_IONIZE) printf("iVertex %d n_k %1.9E N_k %1.9E Te_k %1.9E NeTe %1.9E h*NeTe %1.9E \n"
+			if (TEST_IONIZE) printf("iVertex %d n_k %1.9E n_n_k %1.9E N_k %1.9E Te_k %1.9E NeTe %1.9E \n h*NeTe %1.9E "
 				"Ti_k %1.9E h*NiTi %1.9E Tn_k %1.9E h*NnTn %1.9E \n"
 				"Delta_ionise %1.9E rec %1.9E \n",
-				iVertex, n_k, n_k*AreaMajor, T_k.Te, ourrates.NeTe, h_use*ourrates.NeTe,
+				iVertex, n_k, n_n_k, n_k*AreaMajor, T_k.Te, ourrates.NeTe, h_use*ourrates.NeTe,
 				T_k.Ti, h_use*ourrates.NiTi, T_k.Tn, h_use*ourrates.NnTn,
 				Delta_ionise, Delta_rec
 			);
@@ -10344,8 +10353,6 @@ __global__ void kernelAdvanceDensityAndTemperature_noadvectioncompression_Copy(
 			// Dimensioning inside a brace allows the following vars to go out of scope at the end of the brace.
 			f64 sqrt_Te, ionneut_thermal, electron_thermal, lnLambda, s_in_MT, s_en_MT, s_en_visc;
 
-
-
 			n_src_or_use[threadIdx.x] = p_n_use[iVertex];
 			T3 T_use = p_T_use[iVertex];
 
@@ -10384,6 +10391,33 @@ __global__ void kernelAdvanceDensityAndTemperature_noadvectioncompression_Copy(
 				n_src_or_use[threadIdx.x].n, n_src_or_use[threadIdx.x].n_n, electron_thermal, T_use.Te);
 
 			nu_eiBar = nu_eiBarconst * kB_to_3halves*n_src_or_use[threadIdx.x].n*lnLambda / (T_use.Te*sqrt_Te);
+
+			if (TEST) {
+				printf("nu_eiBar %1.12E n %1.12E lnLambda %1.10E \n\n", nu_eiBar, n_src_or_use[threadIdx.x].n, lnLambda);
+
+				real Te_eV = T_use.Te*one_over_kB;
+				real Te_eV2 = Te_eV*Te_eV;
+				real Te_eV3 = Te_eV*Te_eV2;
+
+				if (n_src_or_use[threadIdx.x].n*Te_eV3 > 0.0) {
+
+					f64	lnLambda1 = 23.0 - 0.5*log(n_src_or_use[threadIdx.x].n / Te_eV3);
+					f64	lnLambda2 = 24.0 - 0.5*log(n_src_or_use[threadIdx.x].n / Te_eV2);
+					// smooth between the two:
+					f64	factorxx = 2.0*fabs(Te_eV - 10.0)*(Te_eV - 10.0) / (1.0 + 4.0*(Te_eV - 10.0)*(Te_eV - 10.0));
+					lnLambda = lnLambda1*(0.5 - factorxx) + lnLambda2*(0.5 + factorxx);
+
+					printf("lnLambda1 2 %1.14E %1.14E lnLambda %1.14E Te_eV %1.12E factorxx %1.12E \n", lnLambda1, lnLambda2, lnLambda, Te_eV, factorxx);
+
+					// floor at 2 just in case, but it should not get near:
+				f64	lnLambda_sq = lnLambda*lnLambda;
+					factorxx = 1.0 + 0.5*lnLambda + 0.25*lnLambda_sq + 0.125*lnLambda*lnLambda_sq + 0.0625*lnLambda_sq*lnLambda_sq;
+					lnLambda += 2.0 / factorxx;
+					printf("lnLambda %1.14E after floor at 2 ... \n", lnLambda);
+					if (lnLambda < 2.0) lnLambda = 2.0;
+				};
+			};
+			
 			f64 nu_eHeart = 1.87*nu_eiBar + n_src_or_use[threadIdx.x].n_n*s_en_visc*electron_thermal;
 
 			f64_vec3 omega = p_B_major[iVertex] * qovermc;
@@ -10487,15 +10521,8 @@ __global__ void kernelAdvanceDensityAndTemperature_noadvectioncompression_Copy(
 			LHS.zz = 1.0 - 2.0*h_use * (-M_en * nu_en_MT - M_ei * nu_eiBar);
 
 			// some indices appear reversed because NT not T.
-			if (TEST) printf("LHS.zz %1.10E h_use %1.10E M_en %1.10E nu_en_MT %1.10E \n",
-				LHS.zz, h_use, M_en, nu_en_MT);
-
-
-
-			// Verify. 2343.
-
-
-
+			if (TEST) printf("LHS.zz %1.10E h_use %1.10E M_en %1.10E nu_en_MT %1.10E nu_eiBar %1.10E\n",
+				LHS.zz, h_use, M_en, nu_en_MT, nu_eiBar);
 
 			if (TEST) {
 				printf("LHS | \n %1.14E %1.14E %1.14E |\n %1.14E %1.14E %1.14E |  \n %1.14E %1.14E %1.14E | \n",
@@ -10504,6 +10531,7 @@ __global__ void kernelAdvanceDensityAndTemperature_noadvectioncompression_Copy(
 					LHS.zx, LHS.zy, LHS.zz);
 				printf("GPU %d : NnTn %1.14E NeTe %1.14E \n", VERTCHOSEN, newdata.NnTn, newdata.NeTe);
 				printf("GPU nu_en_MT %1.14E\n", nu_en_MT);
+				
 			}
 			LHS.Inverse(inverted);
 		}
@@ -12449,8 +12477,10 @@ __global__ void kernelCreateLinearRelationshipBwd_noadvect(
 		// on cycles that we do advection
 
 		// So do the addition in here.
+		
+		// THIS WAS IN ERROR.
 
-		f64 viz0_coeff_on_Lap_Az = h_use*h_use*qoverM*c / denom_i;
+		f64 viz0_coeff_on_Lap_Az = -h_use*h_use*qoverM*c / denom_i;
 		f64 vez0_coeff_on_Lap_Az = h_use*h_use*eoverm*c / denom_e
 			+ coeff_of_vez_upon_viz*viz0_coeff_on_Lap_Az;
 
@@ -12482,6 +12512,9 @@ __global__ void kernelCreateLinearRelationshipBwd_noadvect(
 		}
 	};
 }
+
+
+
 
 /*
 __global__ void kernelPopulateOhmsLaw(
@@ -13290,6 +13323,515 @@ __global__ void kernelCollectOhmsGraphs(
 	}
 }
 
+__global__ void MeasureAccelz(
+	structural * __restrict__ p_info,
+	v4 * __restrict__ p_vie_initial,
+	v4 * __restrict__ p_vie_final,
+	f64_vec3 * __restrict__ p_v_nk,
+	f64_vec3 * __restrict__ p_v_nkplus1,
+
+	f64 const h_use, // substep
+	f64_vec2 * __restrict__ pGradAz,
+	f64_vec2 * __restrict__ pGradTe,
+	AAdot * __restrict__ p_AAdot,
+	AAdot * __restrict__ p_AAdot_k,
+	f64 * __restrict__ pLapAz,
+
+	nvals * __restrict__ p_n_central,
+	T3 * __restrict__ p_T_central,
+	f64_vec3 * __restrict__ p_B,
+	f64_vec3 * __restrict__ p_MAR_ion,
+	f64_vec3 * __restrict__ p_MAR_elec,
+	f64_vec3 * __restrict__ p_MAR_neut,
+	f64 * __restrict__ p_AreaMinor,
+
+	f64 * __restrict__ p_arelz,
+	f64 * __restrict__ p_MAR_ion_effect,
+	f64 * __restrict__ p_MAR_elec_effect,
+	f64 * __restrict__ p_Ezext_electromotive,
+	f64 * __restrict__ p_inductive_electromotive,
+	f64 * __restrict__ p_vxB,
+	f64 * __restrict__ p_thermal_force_effect,
+	f64 * __restrict__ p_friction_neutrals,
+	f64 * __restrict__ p_friction_ei,
+	f64 * __restrict__ p_sum_of_effects,
+	f64 * __restrict__ p_difference
+) {
+	long iVertex = blockDim.x*blockIdx.x + threadIdx.x;
+	structural info = p_info[iVertex];
+
+	if ((info.flag == DOMAIN_VERTEX) || (info.flag == DOMAIN_TRIANGLE)
+		|| (info.flag == CROSSING_INS) || (info.flag == OUTERMOST))
+	{
+		
+		v4 vie_i = p_vie_initial[iVertex];
+		v4 vie_f = p_vie_final[iVertex];
+		f64 accel;
+		p_arelz[iVertex] = (vie_f.vez - vie_f.viz - vie_i.vez + vie_i.viz) / h_use;
+
+		f64_vec2 Grad_Az = pGradAz[iVertex];
+		f64_vec2 gradTe = pGradTe[iVertex];
+		f64 Azdot = p_AAdot[iVertex].Azdot;
+		f64 dAzdt_k = p_AAdot_k[iVertex].Azdot;
+		f64 AreaMinor = p_AreaMinor[iVertex];
+		nvals n_use = p_n_central[iVertex];
+
+		if (iVertex == VERTCHOSEN) printf("iVertex = %d BOC = %d sum = %d \n",
+			iVertex, BEGINNING_OF_CENTRAL, iVertex + BEGINNING_OF_CENTRAL);
+
+		f64_vec3 MAR, MAR_ion, MAR_elec;
+
+		memcpy(&MAR_ion, p_MAR_ion + iVertex, sizeof(f64_vec3));		
+		p_MAR_ion_effect[iVertex] = -MAR_ion.z / (n_use.n*AreaMinor); // note minus
+
+		memcpy(&MAR_elec, p_MAR_elec + iVertex, sizeof(f64_vec3));
+		p_MAR_elec_effect[iVertex] = MAR_elec.z / (n_use.n*AreaMinor); 
+
+		p_Ezext_electromotive[iVertex] = -(eoverm + qoverM) * GetEzShape(info.pos.modulus()) * Ez_strength;
+
+		p_inductive_electromotive[iVertex] = (eoverm + qoverM) *Azdot / c;
+
+		p_vxB[iVertex] = (qovermc+qoverMc)*Grad_Az.dot(vie_f.vxy);
+
+		f64_vec3 omega_ce; 
+		omega_ce.x = p_B[iVertex].x*qovermc;
+		omega_ce.y = p_B[iVertex].y*qovermc;
+		omega_ce.z = BZ_CONSTANT*qovermc;
+		f64 cross_section_times_thermal_en, cross_section_times_thermal_in,
+			nu_eiBar, nu_eHeart;
+		T3 T = p_T_central[iVertex];
+		
+		f64 sqrt_Te, ionneut_thermal, electron_thermal,
+				lnLambda, s_in_MT, s_en_MT, s_en_visc;
+		sqrt_Te = sqrt(T.Te);
+		ionneut_thermal = sqrt(T.Ti / m_ion + T.Tn / m_n); // hopefully not sqrt(0)
+		electron_thermal = sqrt_Te * over_sqrt_m_e;
+		lnLambda = Get_lnLambda_d(n_use.n, T.Te);
+		{
+			f64 s_in_visc_dummy;
+			Estimate_Ion_Neutral_Cross_sections_d(T.Ti*one_over_kB, &s_in_MT, &s_in_visc_dummy);
+		}
+		Estimate_Ion_Neutral_Cross_sections_d(T.Te*one_over_kB, &s_en_MT, &s_en_visc);
+		//nu_ne_MT = s_en_MT * electron_thermal * n_use.n; // have to multiply by n_e for nu_ne_MT
+		//nu_ni_MT = s_in_MT * ionneut_thermal * n_use.n;
+		//nu_in_MT = s_in_MT * ionneut_thermal * n_use.n_n;
+		//nu_en_MT = s_en_MT * electron_thermal * n_use.n_n;
+
+		cross_section_times_thermal_en = s_en_MT * electron_thermal;
+		cross_section_times_thermal_in = s_in_MT * ionneut_thermal;
+
+		nu_eiBar = nu_eiBarconst * kB_to_3halves*n_use.n*lnLambda / (T.Te*sqrt_Te);
+		nu_eHeart = 1.87*nu_eiBar + n_use.n_n*s_en_visc*electron_thermal;
+		f64 nu_ei_effective =
+			nu_eiBar * (1.0 - 0.9*nu_eiBar*(nu_eHeart*nu_eHeart + omega_ce.z*omega_ce.z) /
+			                (nu_eHeart*(nu_eHeart*nu_eHeart + omega_ce.dot(omega_ce) )) );
+
+
+			// ARTIFICIAL CHANGE TO STOP IONS SMEARING AWAY OFF OF NEUTRAL BACKGROUND:
+		if (n_use.n_n > ARTIFICIAL_RELATIVE_THRESH *n_use.n) {
+			cross_section_times_thermal_en *= n_use.n_n / (ARTIFICIAL_RELATIVE_THRESH *n_use.n);
+			cross_section_times_thermal_in *= n_use.n_n / (ARTIFICIAL_RELATIVE_THRESH *n_use.n);
+		}
+		
+		p_thermal_force_effect[iVertex] =
+			// viz part:
+			-(1.5*nu_eiBar*(
+			(omega_ce.x*omega_ce.z - nu_eHeart * omega_ce.y)*gradTe.x +
+				(omega_ce.y*omega_ce.z + nu_eHeart * omega_ce.x)*gradTe.y) /
+				(m_i*nu_eHeart*(nu_eHeart*nu_eHeart + omega_ce.dot(omega_ce)))
+				)
+			// vez part:
+			- 1.5*nu_eiBar*(
+			(omega_ce.x*omega_ce.z - nu_eHeart * omega_ce.y)*gradTe.x +
+			(omega_ce.y*omega_ce.z + nu_eHeart * omega_ce.x)*gradTe.y) /
+				(m_e*nu_eHeart*(nu_eHeart*nu_eHeart + omega_ce.dot(omega_ce)));
+		;
+
+		f64_vec3 v_nk = p_v_nk[iVertex];
+		f64_vec3 v_nkplus1 = p_v_nkplus1[iVertex];
+
+		// Is this the right sign?
+		p_friction_neutrals[iVertex] =
+			M_n_over_ne*(cross_section_times_thermal_en*n_use.n_n)*
+			(p_v_nkplus1[iVertex].z - vie_f.vez)
+			- M_n_over_ni*(cross_section_times_thermal_in*n_use.n_n)*
+			(p_v_nkplus1[iVertex].z - vie_f.viz);
+
+		p_friction_ei[iVertex] = -(1.0 + moverM)*nu_ei_effective*(vie_f.vez-vie_f.viz);
+
+		p_sum_of_effects[iVertex] = 
+			p_MAR_ion_effect[iVertex] + p_MAR_elec_effect[iVertex] +
+			p_Ezext_electromotive[iVertex] + p_inductive_electromotive[iVertex] +
+			p_vxB[iVertex] + p_thermal_force_effect[iVertex] +
+			p_friction_neutrals[iVertex] + p_friction_ei[iVertex]			
+			; 
+		// should equal acceleration that obtained. Is it different??
+		p_difference[iVertex] = p_arelz[iVertex] - p_sum_of_effects[iVertex];
+		
+		if (TEST_VS_MATRIX2) {
+			printf("vie_f.vez %1.10E vie_i.vez %1.10E vie_f.viz %1.8E vie_i.viz %1.8E \narelz %1.13E hsub %1.9E \n  sum %1.13E diff %1.8E \n\n",
+				vie_f.vez, vie_i.vez, vie_f.viz, vie_i.viz, p_arelz[iVertex], h_use, p_sum_of_effects[iVertex], p_difference[iVertex]);
+			printf("effects: %1.8E %1.8E Ez %1.8E %1.8E vxB %1.8E thermalforce %1.8E fric %1.8E %1.8E\n\n######################\n\n",
+				p_MAR_ion_effect[iVertex], p_MAR_elec_effect[iVertex],
+				p_Ezext_electromotive[iVertex], p_inductive_electromotive[iVertex],
+				p_vxB[iVertex], p_thermal_force_effect[iVertex],
+				p_friction_neutrals[iVertex], p_friction_ei[iVertex]);
+		
+
+			//// Now consider an intermediate formula:
+			//f64 beta_ie_z = (h_use*h_use*4.0*M_PI*qoverM*q*n_use.n
+			//	+ h_use*qoverMc*(Grad_Az.dot(ohm.beta_xy_z))
+			//	+ h_use * M_n_over_ni*(cross_section_times_thermal_in*n_use.n_n) *ohm.beta_ne
+			//	+ h_use * moverM*nu_ei_effective) / denom;
+
+			//f64 denom = 1.0 + h_use*h_use*q*eoverm*FOUR_PI*n_use.n
+			//	+ M_n_over_ne*h_use*(cross_section_times_thermal_en*n_use.n_n)
+			//	+ h_use*nu_ei_effective				
+			//	+ h_use*qovermc*(Grad_Az.dot(ohm.beta_xy_z)))*(1.0 - beta_ie_z)				
+			//	;
+
+			//f64 vez_test_2 = vie_i.vez
+			//	+ h_use*p_MAR_elec_effect[iVertex]
+			//	+ h_use*(-(eoverm) * GetEzShape(info.pos.modulus()) * Ez_strength)//p_Ezext_electromotive[iVertex]				
+			//	+ h_use*qovermc*(dAzdt_k + h_use*c*c*(pLapAz[iVertex] + FOURPI_OVER_C*q*n_use.n*vie_f.viz))								
+			//	+ h_use*((qovermc + qoverMc)*Grad_Az.dot(vie_f.vxy)) //p_vxB[iVertex]
+			//	+ h_use*(-1.5*nu_eiBar*(
+			//	(omega_ce.x*omega_ce.z - nu_eHeart * omega_ce.y)*gradTe.x +
+			//		(omega_ce.y*omega_ce.z + nu_eHeart * omega_ce.x)*gradTe.y) /
+			//		(m_e*nu_eHeart*(nu_eHeart*nu_eHeart + omega_ce.dot(omega_ce))))//p_thermal_force_effect[iVertex]
+			//	- M_n_over_ne*h_use*(cross_section_times_thermal_en*n_use.n_n)*(-v_nkplus1.z)
+			//	- h_use*nu_ei_effective*(-vie_f.viz);
+
+			//vez_test_2 /= denom;
+
+			//if (iVertex == VERTCHOSEN) {
+			//	printf("MAR elec component %1.12E \n"
+			//		"Ez ext component %1.12E \n",
+			//		"dAz/dt component %1.12E vie_f.viz %1.12E\n",
+			//		"v x B component %1.12E \n",
+			//		"thermal force component %1.12E \n",
+			//		"- M_n_over_ne*h_use*nu_en*(-v_nkplus1.z) %1.12E \n"
+			//		"- h_use*nu_ei_effective*(-vie_f.viz) %1.12E \n"
+			//		"denom %1.12E \n------------------\nresult vez = %1.12E",
+			//		h_use*p_MAR_elec_effect[iVertex],
+			//		h_use*(-(eoverm)* GetEzShape(info.pos.modulus()) * Ez_strength),
+			//		h_use*qovermc*(dAzdt_k + h_use*c*c*(pLapAz[iVertex] + FOURPI_OVER_C*q*n_use.n*vie_f.viz)),
+			//		vie_f.viz,
+			//		h_use*((qovermc + qoverMc)*Grad_Az.dot(vie_f.vxy)), //p_vxB[iVertex]
+			//		h_use*(-1.5*nu_eiBar*(
+			//		(omega_ce.x*omega_ce.z - nu_eHeart * omega_ce.y)*gradTe.x +
+			//			(omega_ce.y*omega_ce.z + nu_eHeart * omega_ce.x)*gradTe.y) /
+			//			(m_e*nu_eHeart*(nu_eHeart*nu_eHeart + omega_ce.dot(omega_ce))))//p_thermal_force_effect[iVertex]
+			//		,
+			//		-M_n_over_ne*h_use*(cross_section_times_thermal_en*n_use.n_n)*(-v_nkplus1.z),
+			//		-h_use*nu_ei_effective*(-vie_f.viz),
+			//		denom, vez_test_2
+			//	);
+			//}
+
+			// Recreate vie_f from components:
+
+			f64 vdifftest_1 = vie_i.vez - vie_i.viz + h_use*(p_MAR_ion_effect[iVertex] + p_MAR_elec_effect[iVertex] +
+				p_Ezext_electromotive[iVertex] + p_inductive_electromotive[iVertex] +
+				p_vxB[iVertex] + p_thermal_force_effect[iVertex] +
+				p_friction_neutrals[iVertex] + p_friction_ei[iVertex]);
+			
+			// Produce vez 1 : make it simpler.
+
+			f64 vez_1 = vie_i.vez + h_use*p_MAR_ion_effect[iVertex] 
+
+				+h_use*p_MAR_elec_effect[iVertex]
+
+				+ h_use*(-(eoverm)* GetEzShape(info.pos.modulus()) * Ez_strength)//p_Ezext_electromotive[iVertex]
+
+				+ h_use*qovermc*(dAzdt_k + h_use*c*c*(pLapAz[iVertex] + FOURPI_OVER_C*q*n_use.n*vie_f.viz))
+
+				+ h_use*((qovermc + qoverMc)*Grad_Az.dot(vie_f.vxy)) //p_vxB[iVertex]
+
+				+ h_use*(-1.5*nu_eiBar*(
+				(omega_ce.x*omega_ce.z - nu_eHeart * omega_ce.y)*gradTe.x +
+					(omega_ce.y*omega_ce.z + nu_eHeart * omega_ce.x)*gradTe.y) /
+					(m_e*nu_eHeart*(nu_eHeart*nu_eHeart + omega_ce.dot(omega_ce))))//p_thermal_force_effect[iVertex]
+
+				- M_n_over_ne*h_use*(cross_section_times_thermal_en*n_use.n_n)*(vie_f.vez-v_nkplus1.z)
+
+				- h_use*nu_ei_effective*(vie_f.vez-vie_f.viz);
+
+
+		//	f64 vdiff2 = vez_test_2 - vie_f.viz;
+
+			printf("vie_i.vez vie_f.vez diff | vdifftest_1 "//veztest_2 vdiff2
+				"\n%1.14E %1.14E %1.14E %1.14E vez1 %1.14E\n",
+					vie_i.vez, vie_f.vez, vie_f.vez-vie_f.viz, vdifftest_1, //vez_test_2, vdiff2, 
+				vez_1);
+
+			printf("Azdot_k+1 %1.14E calc'd %1.14E dA/dt_k %1.10E LapAz %1.10E 4pi/c Jz %1.10E n %1.14E vie_f.viz %1.14E vie_f.vez %1.14E\n",
+				Azdot,
+				dAzdt_k + h_use*c*c*(pLapAz[iVertex] + FOURPI_OVER_C*q*n_use.n*(vie_f.viz - vie_f.vez)),
+				dAzdt_k, pLapAz[iVertex], FOURPI_OVER_C*q*n_use.n*(vie_f.viz - vie_f.vez),
+				n_use.n, vie_f.viz, vie_f.vez);
+
+
+			// Result : difference 2 is closer to the program difference. Diff 1 is quite different.
+			// Explain diff between diff 2 and diff 1.
+
+
+
+
+
+			// Magic up matrix eqn:
+
+			if (TEST_VS_MATRIX2) {
+				
+
+
+				memcpy(&MAR, p_MAR_neut + iVertex, sizeof(f64_vec3));
+				// 1. Need to work out vn coefficients !!!
+				f64 nu_ne_MT = cross_section_times_thermal_en*n_use.n;
+				f64 nu_ni_MT = cross_section_times_thermal_in*n_use.n;
+				f64 nu_in_MT = cross_section_times_thermal_in*n_use.n_n;
+				f64 nu_en_MT = cross_section_times_thermal_en*n_use.n_n;
+
+				f64 denom = 1.0 + h_use*M_e_over_en*nu_ne_MT +
+					h_use*M_i_over_in*nu_ni_MT;
+				f64_vec3 vn0 = (v_nk + h_use*MAR / (AreaMinor*n_use.n_n))
+					/ denom;
+				f64	beta_ne = h_use*M_e_over_en*nu_ne_MT / denom;
+				f64	beta_ni = h_use*M_i_over_in*nu_ni_MT / denom;
+
+				printf("v_nk.xy %1.14E %1.14E MAR.xy %1.14E %1.14E Nn %1.14E Area %1.14E denom %1.14E\n", v_nk.x,
+					v_nk.y, MAR.x, MAR.y, (AreaMinor*n_use.n_n), AreaMinor, denom);
+				printf("vn0 %1.14E %1.14E %1.14E beta_ni %1.14E beta_ne %1.14E \n",
+					vn0.x, vn0.y, vn0.z, beta_ni, beta_ne);
+
+
+
+				// vx, vy :
+				// from bwd eqn :
+
+				// given Lap Az and EzStrength, (Azdot -- do both ways) :
+				// the Azdot we got given used the vie_f that got calculated, so no we have to go back to Lap Az.
+
+
+				// Do without Ez terms. Put into separate sigma_izz, sigma_ezz
+
+
+				// 2. vx equation?
+
+				f64 temp = (h_use / (m_i + m_e))*
+					(m_n*m_i*nu_in_MT / (m_i + m_n) + m_e*m_n*nu_en_MT / (m_e + m_n));
+			
+				f64 M_i_over_ie = m_i / (m_i + m_e);
+				f64 M_e_over_ie = m_e / (m_i + m_e);
+				f64 M_n_over_in = m_n / (m_i + m_n);
+				f64 M_n_over_en = m_n / (m_e + m_n);
+
+				f64_vec2 vxy0 = vie_i.vxy
+					+ h_use*M_i_over_ie*MAR_ion.xypart()/(AreaMinor*n_use.n)
+					+ h_use*M_e_over_ie*MAR_elec.xypart()/(AreaMinor*n_use.n)
+					+ temp*vn0.xypart(); // added
+
+				printf("vxy0 components:\n"
+					"vie_i.vxy %1.14E %1.14E  MAR_ion_contrib %1.14E %1.14E \n"
+					"MAR_elec_contrib %1.14E %1.14E  temp %1.14E vn0contrib %1.14E %1.14E\n\n",
+					vie_i.vxy.x, vie_i.vxy.y,
+					h_use*M_i_over_ie*MAR_ion.x / (AreaMinor*n_use.n),
+					h_use*M_i_over_ie*MAR_ion.y / (AreaMinor*n_use.n),
+					h_use*M_e_over_ie*MAR_elec.x / (AreaMinor*n_use.n),
+					h_use*M_e_over_ie*MAR_elec.y / (AreaMinor*n_use.n),
+					temp,
+					temp*vn0.x, temp*vn0.y
+				);
+
+				f64 vx_viz = (h_use*q / (c*(m_i + m_e)))*Grad_Az.x;				
+				f64 vx_vez = (-h_use*q / (c*(m_i + m_e)))*Grad_Az.x;
+
+				f64 vy_viz = (h_use*q / (c*(m_i + m_e)))*Grad_Az.y;
+				f64 vy_vez = (-h_use*q / (c*(m_i + m_e)))*Grad_Az.y;
+
+				f64 vxy_vxy = -temp*(1.0- beta_ne - beta_ni);
+
+				vxy_vxy -= 1.0; // move LHS over to RHS so we've got 0 = .
+ 
+				printf("    ...     1   vx   vy   viz   vez \n");
+				printf("    vx     %1.14E %1.14E %1.14E %1.14E %1.14E \n"
+					   "    vy     %1.14E %1.14E %1.14E %1.14E %1.14E \n",
+					vxy0.x, vxy_vxy, 0.0, vx_viz, vx_vez,
+					vxy0.y, 0.0, vxy_vxy, vy_viz, vy_vez
+					);
+
+				// VERIFY AGAIN THAT THIS IS GIVING SAME COEFFICIENTS.
+
+				// Work systematically: reduce vxy equation and sub in.
+
+				denom = -vxy_vxy; // move to LHS .. 
+				OhmsCoeffs ohm;
+				v4 v0;
+
+
+				v0.vxy = vxy0 / denom;
+				ohm.beta_xy_z.x = vx_viz/denom;
+				ohm.beta_xy_z.y = vy_viz/denom;
+
+				printf("=-----------------\nv0.vxy %1.14E %1.14E beta_xy_z %1.14E %1.14E \n---------------\n",
+					v0.vxy.x, v0.vxy.y, ohm.beta_xy_z.x, ohm.beta_xy_z.y);
+
+
+
+				f64 EzExt = Ez_strength*GetEzShape(info.pos.modulus());
+
+				// Worry afterwards about what sigma Ez does.
+				// Do this in stages.
+
+				f64 viz0 = vie_i.viz + h_use*MAR_ion.z / (AreaMinor*n_use.n)
+					+ h_use*qoverM*EzExt
+					- h_use*qoverMc*(dAzdt_k + h_use*c*c*(pLapAz[iVertex]))
+					+ h_use*1.5*nu_eiBar*
+					((omega_ce.x*omega_ce.z - nu_eHeart * omega_ce.y)*gradTe.x +
+						(omega_ce.y*omega_ce.z + nu_eHeart * omega_ce.x)*gradTe.y) /
+						(m_i*nu_eHeart*(nu_eHeart*nu_eHeart + omega_ce.dot(omega_ce)))				
+					+ h_use*M_n_over_in*nu_in_MT*vn0.z;
+
+
+				printf("viz0 components: vie_i.viz %1.14E \n"
+					"from MAR_ion.z : %1.14E  |  from EzExt %1.14E \n"
+					"from Azdot_k+hc^2LapAz %1.14E \n"
+					"thermalforceterm %1.14E \n"
+					"vn0.z effect %1.14E \n"
+					"total = viz0 : %1.14E \n",
+					vie_i.viz, h_use*MAR_ion.z / (AreaMinor*n_use.n),
+					h_use*qoverM*EzExt,
+					-h_use*qoverMc*(dAzdt_k + h_use*c*c*(pLapAz[iVertex])),
+					h_use*1.5*nu_eiBar*
+					((omega_ce.x*omega_ce.z - nu_eHeart * omega_ce.y)*gradTe.x +
+					(omega_ce.y*omega_ce.z + nu_eHeart * omega_ce.x)*gradTe.y) /
+						(m_i*nu_eHeart*(nu_eHeart*nu_eHeart + omega_ce.dot(omega_ce))),
+					h_use*M_n_over_in*nu_in_MT*vn0.z, viz0
+				);
+
+				f64 viz_vx = -h_use*qoverMc*Grad_Az.x;
+				f64 viz_vy = -h_use*qoverMc*Grad_Az.y;
+
+				f64 viz_viz = -h_use*qoverM*h_use*4.0*M_PI*q*n_use.n
+
+					-h_use*M_n_over_in*nu_in_MT*(1.0-beta_ni)
+					- h_use*moverM*nu_ei_effective
+					
+					;
+				f64 viz_vez = h_use*qoverM*h_use*4.0*M_PI*q*n_use.n
+					+ h_use*M_n_over_in*nu_in_MT*(beta_ne)
+					+ h_use*moverM*nu_ei_effective;
+
+				// Think about how it will be solved.
+
+				// Eqn: vxvx vx + vxvy vy + .. = -vx0.
+				// And here vxvx should include -1 vx
+
+				viz_viz -= 1.0;
+
+				printf("    viz    %1.14E %1.14E %1.14E %1.14E %1.14E \n",
+					viz0, viz_vx, viz_vy, viz_viz, viz_vez);
+
+
+
+				f64 vez0 = vie_i.vez + h_use*MAR_elec.z / (AreaMinor*n_use.n)
+					- h_use*eoverm*EzExt
+					+ h_use*qovermc*(dAzdt_k + h_use*c*c*pLapAz[iVertex])
+					- h_use*1.5*nu_eiBar*
+					((omega_ce.x*omega_ce.z - nu_eHeart * omega_ce.y)*gradTe.x +
+					(omega_ce.y*omega_ce.z + nu_eHeart * omega_ce.x)*gradTe.y) /
+						(m_e*nu_eHeart*(nu_eHeart*nu_eHeart + omega_ce.dot(omega_ce)))
+
+					+ h_use*M_n_over_en*nu_en_MT*vn0.z;
+
+				printf("\nvez0 : vez_k %1.14E \n"
+					"MAReffect %1.14E \n"
+					"EzExteffect %1.14E \n"
+					"Azdot_effect %1.14E \n"
+					"thermalforceeffect %1.14E \n"
+					"vn0.z_effect %1.14E \n"
+					"vez0 %1.14E\n",
+					vie_i.vez,
+					h_use*MAR_elec.z / (AreaMinor*n_use.n),
+					-h_use*eoverm*EzExt,
+					h_use*qovermc*(dAzdt_k + h_use*c*c*pLapAz[iVertex]),
+					-h_use*1.5*nu_eiBar*
+					((omega_ce.x*omega_ce.z - nu_eHeart * omega_ce.y)*gradTe.x +
+					(omega_ce.y*omega_ce.z + nu_eHeart * omega_ce.x)*gradTe.y) /
+						(m_e*nu_eHeart*(nu_eHeart*nu_eHeart + omega_ce.dot(omega_ce))),
+					h_use*M_n_over_en*nu_en_MT*vn0.z,
+					vez0
+				);
+
+
+				f64 vez_vx = h_use*qovermc*Grad_Az.x;
+				f64 vez_vy = h_use*qovermc*Grad_Az.y;
+				f64 vez_viz = h_use*eoverm*h_use*4.0*M_PI*q*n_use.n 
+					+ h_use*M_n_over_en*nu_en_MT*beta_ni
+					+ h_use*nu_ei_effective;
+				f64 vez_vez = -h_use*eoverm*h_use*4.0*M_PI*q*n_use.n
+					- h_use*M_n_over_en*nu_en_MT*(1.0-beta_ne)
+					- h_use*nu_ei_effective;
+				
+				printf("\n vez_vx %1.14E vez_vez %1.14E \n"
+					"vezvez components: hhq4piqn/m %1.14E hnu_en %1.14E hnu_ei %1.14E\n\n",
+					vez_vx, vez_vez, -h_use*eoverm*h_use*4.0*M_PI*q*n_use.n,
+					- h_use*M_n_over_en*nu_en_MT*(1.0 - beta_ne),
+					- h_use*nu_ei_effective
+					);
+
+				// FIGURE IT OUT : WHAT DOES THIS GIVE AND DOES IT SATISFY BWD EQN
+				// It practically is the bwd eqn
+				// If the result from our PopOhms is different, should be possible to detect exactly why.
+				// We do not take Azdot_k+1 as given but this also should be possible to compute
+				// given the v_k+1 from this.
+				// This is bound to work.
+				
+				vez_vez -= 1.0;
+
+				printf("    vez    %1.14E %1.14E %1.14E %1.14E %1.14E \n",
+					vez0, vez_vx, vez_vy, vez_viz, vez_vez);
+				printf(" ----------------------------------------------------\n");
+					
+
+				// Work systematically: reduce vxy equation and sub in.
+
+				denom = -vxy_vxy; // move to LHS .. 
+
+				vxy0.x /= denom;
+				vxy0.y /= denom;
+				vx_viz /= denom;
+				vx_vez /= denom;
+				vy_viz /= denom;
+				vy_vez /= denom;
+
+				// Substitute in:
+				viz0 += viz_vx*vxy0.x + viz_vy*vxy0.y;
+				viz_viz += viz_vx*vx_viz + viz_vy*vy_viz;
+				viz_vez += viz_vx*vx_vez + viz_vy*vy_vez;
+
+				vez0 += vez_vx*vxy0.x + vez_vy*vxy0.y;
+				vez_viz += vez_vx*vx_viz + vez_vy*vy_viz;
+				vez_vez += vez_vx*vx_vez + vez_vy*vy_vez;
+				
+				printf("    viz0 vizviz vizvez    %1.14E %1.14E %1.14E \n",
+					viz0, viz_viz, viz_vez);
+				printf("    vez0 vezviz vezvez    %1.14E %1.14E %1.14E \n",
+					vez0, vez_viz, vez_vez);
+				printf(" ----------------------------------------------------\n");
+				printf("REDUCE viz:\n");
+
+				viz0 /= viz_viz;
+				printf("viz0 %1.14E vizvez %1.14E \n", viz0, viz_vez);
+
+				printf(" ----------------------------------------------------\n");
+
+
+
+			};
+		};
+	};
+}
 
 __global__ void kernelPopulateBackwardOhmsLaw_noadvect(
 	f64 h_use,
@@ -13359,24 +13901,28 @@ __global__ void kernelPopulateBackwardOhmsLaw_noadvect(
 			memcpy(&MAR, p_MAR_neut + iMinor, sizeof(f64_vec3));
 			// CHECK IT IS INTENDED TO AFFECT Nv
 
-			if (TESTVNY) printf("%d v_nk.y %1.10E MAR.y %1.9E Nn %1.9E \n",
-				iMinor, vn0.y, MAR.y, (AreaMinor*n_use.n_n));
-			if (TESTVNX) printf("%d v_nk.x %1.10E MAR.x %1.9E Nn %1.9E \n",
-				iMinor, vn0.x, MAR.x, (AreaMinor*n_use.n_n));
+			if (TEST_VS_MATRIX) {
+				printf("%d VS_MAT: v_nk.y %1.14E MAR.y %1.14E Nn %1.14E Area %1.14E\n",
+					iMinor, vn0.y, MAR.y, (AreaMinor*n_use.n_n), AreaMinor);
+
+				printf("%d VS_MAT: v_nk.x %1.14E MAR.x %1.14E Nn %1.14E \n",
+					iMinor, vn0.x, MAR.x, (AreaMinor*n_use.n_n));
+			};
 
 			// REVERTED THE EDIT TO USE 1/n -- THIS WILL NOT GIVE CORRECT M.A.R. EFFECT ON INTEGRAL nv
 			// We need conservation laws around shock fronts.
-			vn0.x += h_use * (MAR.x / (AreaMinor*n_use.n_n));
-			// p_one_over_n[iMinor].n_n/ (AreaMinor));
+			vn0.x += h_use * (MAR.x / (AreaMinor*n_use.n_n));			// p_one_over_n[iMinor].n_n/ (AreaMinor));
 			vn0.y += h_use * (MAR.y / (AreaMinor*n_use.n_n));// MomAddRate is addition rate for Nv. Divide by N.
 			vn0.z += h_use * (MAR.z / (AreaMinor*n_use.n_n));
-			// was a bit of an omission. Go tf again.
-
-
 			
 			memcpy(&MAR, p_MAR_ion + iMinor, sizeof(f64_vec3));
 			v0.vxy = vie_k.vxy + h_use * (m_i*MAR.xypart() / (n_use.n*(m_i + m_e)*AreaMinor));
 			v0.viz = vie_k.viz + h_use * MAR.z / (n_use.n*AreaMinor);
+
+			if (TEST_VS_MATRIX) {
+				printf("%d VS_MAT viz_k %1.14E viz0 with MAR %1.14E \n",
+					iMinor, vie_k.viz, v0.viz);
+			}
 
 			if (TESTACCEL_X) printf("%d vx_k %1.9E with MARi %1.9E n %1.8E N %1.8E\n", iMinor, vie_k.vxy.x, v0.vxy.x,
 				n_use.n, n_use.n*AreaMinor);
@@ -13394,7 +13940,7 @@ __global__ void kernelPopulateBackwardOhmsLaw_noadvect(
 
 			if (v0.vez != v0.vez) printf("NANVEZ %d v_k %1.9E MAR.z %1.9E \n", iMinor, vie_k.vez, MAR.z);
 
-			if (TESTOHMS) printf("\nGPU %d MAR: changexy %1.10E %1.10E vezchange %1.10E Area %1.10E v0.vez %1.9E vie_k.vez %1.9E\n", iMinor,
+			if (TESTVEZ) printf("\nGPU %d MAR: changexy %1.10E %1.10E vezchange %1.10E Area %1.10E v0.vez %1.9E vie_k.vez %1.9E\n", iMinor,
 				h_use * (m_e*MAR.x / (n_use.n*(m_i + m_e)*AreaMinor)),
 				h_use * (m_e*MAR.y / (n_use.n*(m_i + m_e)*AreaMinor)),
 				h_use * MAR.z / (n_use.n*AreaMinor),
@@ -13440,17 +13986,16 @@ __global__ void kernelPopulateBackwardOhmsLaw_noadvect(
 
 			// ARTIFICIAL CHANGE TO STOP IONS SMEARING AWAY OFF OF NEUTRAL BACKGROUND:
 			if (n_use.n_n > ARTIFICIAL_RELATIVE_THRESH *n_use.n) {
-				cross_section_times_thermal_en *= n_use.n_n / (ARTIFICIAL_RELATIVE_THRESH *n_use.n);
-				cross_section_times_thermal_in *= n_use.n_n / (ARTIFICIAL_RELATIVE_THRESH *n_use.n);
+				cross_section_times_thermal_en *= n_use.n_n / (ARTIFICIAL_RELATIVE_THRESH*n_use.n);
+				cross_section_times_thermal_in *= n_use.n_n / (ARTIFICIAL_RELATIVE_THRESH*n_use.n);
 				// So at 1e18 vs 1e8 it's 10 times stronger
 				// At 1e18 vs 1e6 it's 1000 times stronger
 				// nu starts at about 1e11 at the place it failed at 35ns. So 10000 times stronger gives us 1e15.
-			}
+			};
+		};
 
-		}
-
-		denom = 1.0 + h_use * M_e_over_en* (cross_section_times_thermal_en*n_use.n)
-			+ h_use*M_i_over_in* (cross_section_times_thermal_in*n_use.n);
+		denom = 1.0 + h_use*M_e_over_en*(cross_section_times_thermal_en*n_use.n)
+					+ h_use*M_i_over_in*(cross_section_times_thermal_in*n_use.n);
 
 		if (TESTVNX) printf("%d v_n.x before divide %1.10E \n", iMinor, vn0.x);
 		if (TESTVNY) printf("%d v_n.y before divide %1.10E \n", iMinor, vn0.y);
@@ -13466,6 +14011,9 @@ __global__ void kernelPopulateBackwardOhmsLaw_noadvect(
 		ohm.beta_ne = h_use*(M_e_over_en)*(cross_section_times_thermal_en*n_use.n) / denom;
 		ohm.beta_ni = h_use*(M_i_over_in)*(cross_section_times_thermal_in*n_use.n) / denom;
 
+		if (TEST_VS_MATRIX) printf("VS_MAT: vn0 %1.14E %1.14E %1.14E beta_ni %1.14E beta_ne %1.14E denom %1.14E\n",
+			vn0.x, vn0.y, vn0.z, ohm.beta_ni, ohm.beta_ne, denom);
+
 		// Now we do vexy:
 
 		grad_Az[threadIdx.x] = p_GradAz[iMinor];
@@ -13478,14 +14026,15 @@ __global__ void kernelPopulateBackwardOhmsLaw_noadvect(
 			  (h_use / ((m_i + m_e)))*(m_n*M_i_over_in*(cross_section_times_thermal_in*n_use.n_n)
 				+ m_n * M_e_over_en*(cross_section_times_thermal_en*n_use.n_n))*
 				( vn0.xypart()); // this reflects v_n and the next reflects minus itself
-
-		// The issue here seems to be we were subtracting instead of adding.
-		
-		// Wouldn't documentation be a grand thing?		
-
+				
 		denom = 1.0 + (h_use / (m_i + m_e))*(
 			m_n* M_i_over_in* (cross_section_times_thermal_in*n_use.n_n)
-			+ m_n * M_e_over_en*(cross_section_times_thermal_en*n_use.n_n))*(1.0 - ohm.beta_ne - ohm.beta_ni);
+			+ m_n * M_e_over_en*(cross_section_times_thermal_en*n_use.n_n))*
+			         (1.0 - ohm.beta_ne - ohm.beta_ni);
+		
+		if (TEST_VS_MATRIX) printf("VS_MAT: vxy0 before divide %1.14E %1.14E denom %1.14E\n",
+			v0.vxy.x, v0.vxy.y, denom);
+		
 		v0.vxy /= denom;
 
 		if (TESTACCEL_X) printf("%d v0x with neut soak %1.9E\n", iMinor, v0.vxy.x);
@@ -13493,13 +14042,15 @@ __global__ void kernelPopulateBackwardOhmsLaw_noadvect(
 
 		ohm.beta_xy_z = (h_use * q / (c*(m_i + m_e)*denom)) * grad_Az[threadIdx.x]; // coeff on viz-vez
 		
+		if (TEST_VS_MATRIX) printf("VS_MAT: vxy0 %1.14E %1.14E beta_xy_z %1.14E %1.14E \n\n",
+			v0.vxy.x, v0.vxy.y, ohm.beta_xy_z.x, ohm.beta_xy_z.y);
+
+		// ================================================================================================
+
 		omega[threadIdx.x] = qovermc*p_B[iMinor].xypart();
 
 		f64 nu_ei_effective = nu_eiBar * (1.0 - 0.9*nu_eiBar*(nu_eHeart*nu_eHeart + qovermc*BZ_CONSTANT*qovermc*BZ_CONSTANT) /
 			(nu_eHeart*(nu_eHeart*nu_eHeart + omega[threadIdx.x].x*omega[threadIdx.x].x + omega[threadIdx.x].y*omega[threadIdx.x].y + qovermc*BZ_CONSTANT*qovermc*BZ_CONSTANT)));
-
-		//	if (nu_ei_effective != nu_ei_effective) printf("nu_ei NaN: omega %1.8E %1.8E nu_eHeart %1.8E nu_eiBar %1.8E\n",
-		//		omega[threadIdx.x].x, omega[threadIdx.x].y, nu_eHeart, nu_eiBar);
 
 		AAdot AAzdot_k = p_AAdot_src[iMinor];
 
@@ -13507,6 +14058,13 @@ __global__ void kernelPopulateBackwardOhmsLaw_noadvect(
 				-h_use*qoverMc*(AAzdot_k.Azdot + h_use * c*c*LapAz)
 				- h_use*qoverMc*(v0.vxy).dot(grad_Az[threadIdx.x]);// v x B
 
+		if (TEST_VS_MATRIX) {
+			printf("%d VS_MAT viz0 %1.14E Azdot+ccLapAz term %1.14E vxy.gradAz term %1.14E \n",
+				iMinor, v0.viz,
+				-h_use*qoverMc*(AAzdot_k.Azdot + h_use * c*c*LapAz),
+				-h_use*qoverMc*(v0.vxy).dot(grad_Az[threadIdx.x])
+				);
+		}
 		// Still omega_ce . Check formulas.
 		
 		v0.viz +=
@@ -13516,7 +14074,17 @@ __global__ void kernelPopulateBackwardOhmsLaw_noadvect(
 				(m_i*nu_eHeart*(nu_eHeart*nu_eHeart + omega[threadIdx.x].dot(omega[threadIdx.x])));
 
 		v0.viz += h_use * M_n_over_ni*(cross_section_times_thermal_in*n_use.n_n) *vn0.z;
+		if (TEST_VS_MATRIX) {
+			printf("%d VS_MAT viz0 %1.14E thermalforceterm %1.14E vn0.z for friction %1.14E \n",
+				iMinor, v0.viz,
+				1.5*h_use*nu_eiBar*(
+				(omega[threadIdx.x].x*qovermc*BZ_CONSTANT - nu_eHeart * omega[threadIdx.x].y)*gradTe[threadIdx.x].x +
+					(omega[threadIdx.x].y*qovermc*BZ_CONSTANT + nu_eHeart * omega[threadIdx.x].x)*gradTe[threadIdx.x].y) /
+					(m_i*nu_eHeart*(nu_eHeart*nu_eHeart + omega[threadIdx.x].dot(omega[threadIdx.x]))),
+				h_use * M_n_over_ni*(cross_section_times_thermal_in*n_use.n_n) *vn0.z
+			);
 			
+		}
 		denom = 1.0 + h_use * h_use*4.0*M_PI*qoverM*q*n_use.n 
 			+ h_use * qoverMc*(grad_Az[threadIdx.x].dot(ohm.beta_xy_z)) +
 			h_use * M_n_over_ni*(cross_section_times_thermal_in*n_use.n_n) *(1.0 - ohm.beta_ni)
@@ -13527,6 +14095,22 @@ __global__ void kernelPopulateBackwardOhmsLaw_noadvect(
 
 		v0.viz /= denom;
 
+
+		if (TEST_VS_MATRIX)
+			printf("Denom %1.14E = 1+components:\n"
+				"h_use*h_use*4.0*M_PI*qoverM*q*n_use.n %1.14E \n"
+				"h_use*qoverMc*(grad_Az[threadIdx.x].dot(ohm.beta_xy_z)) %1.14E \n"
+				"h_use*M_n_over_ni*(cross_section_times_thermal_in*n_use.n_n)*(1.0-ohm.beta_ni) %1.14E \n"
+				"h_use *moverM*nu_ei_effective %1.14E \n"
+				"------------------------------------- new value of viz0 %1.14E \n"
+				,
+				denom,
+				h_use * h_use*4.0*M_PI*qoverM*q*n_use.n,
+				h_use * qoverMc*(grad_Az[threadIdx.x].dot(ohm.beta_xy_z)),
+				h_use*M_n_over_ni*(cross_section_times_thermal_in*n_use.n_n)*(1.0 - ohm.beta_ni),
+				h_use *moverM*nu_ei_effective,
+				v0.viz
+			);
 		//if (((TESTTRI))) printf("viz0 divided %1.14E denom %1.14E \n", v0.viz, denom);
 
 		ohm.sigma_i_zz = h_use * qoverM / denom;
@@ -13535,53 +14119,112 @@ __global__ void kernelPopulateBackwardOhmsLaw_noadvect(
 			+ h_use * M_n_over_ni*(cross_section_times_thermal_in*n_use.n_n) *ohm.beta_ne
 			+ h_use * moverM*nu_ei_effective) / denom;
 
+		if (TEST_VS_MATRIX)
+			printf("ohm.sigma_i_zz %1.14E = hq/M / denom \n"
+				"beta_ie_z %1.14E components before divide by denom:\n"
+				"h_use*h_use*4.0*M_PI*qoverM*q*n_use.n %1.14E \n"
+				"h_use*qoverMc*(grad_Az[threadIdx.x].dot(ohm.beta_xy_z)) %1.14E \n"
+				"h_use*M_n_over_ni*(cross_section_times_thermal_in*n_use.n_n)*ohm.beta_ne %1.14E \n"
+				"h_use*moverM*nu_ei_effective %1.14E \n"
+				"-----------------------------------------------\n",
+				ohm.sigma_i_zz,
+				beta_ie_z,
+				h_use*h_use*4.0*M_PI*qoverM*q*n_use.n,
+				h_use*qoverMc*(grad_Az[threadIdx.x].dot(ohm.beta_xy_z)),
+				h_use * M_n_over_ni*(cross_section_times_thermal_in*n_use.n_n) *ohm.beta_ne,
+				h_use * moverM*nu_ei_effective);
+		
 		if (TESTOHMS) printf("%d v0.vez %1.12E before Azdot LapAz and JxB\n", iMinor, v0.vez);
+		
+
+
+		// ====================================================================
+		// vez:
+
+
+
+
 
 		v0.vez +=
 			h_use *qovermc*(AAzdot_k.Azdot
 				+ h_use * c*c*(LapAz + FOURPI_Q_OVER_C*n_use.n*v0.viz))
 			+ h_use*qovermc*(v0.vxy + ohm.beta_xy_z*v0.viz ).dot(grad_Az[threadIdx.x]); // v x B
 
-		if (TESTVEZ) printf("%d vh_use *qovermc*(AAzdot_k.Azdot) %1.9E hhqc_overm(LapAz) %1.9E LapAz %1.9E \n"
-			"hh4piqqoverm n viz %1.9E  hq/mc v0.vxy.gradAz %1.9E hq/mc beta_xyz viz.gradAz %1.9E \n", 
+		if (TESTVEZ) printf("%d AzdotLapAzcomponent(v0.viz) %1.12E v0.viz %1.12E \n"
+			"v x B term (v0) %1.12E \n--------------------------\n"
+			, iMinor,
+			h_use *qovermc*(AAzdot_k.Azdot
+				+ h_use * c*c*(LapAz + FOURPI_Q_OVER_C*n_use.n*v0.viz)), v0.viz,
+			h_use*qovermc*(v0.vxy + ohm.beta_xy_z*v0.viz).dot(grad_Az[threadIdx.x])
+			);
+
+		if (TESTVEZ) printf("%d vh_use *qovermc*(AAzdot_k.Azdot) %1.14E \nhhqc_overm(LapAz) %1.14E LapAz %1.14E \n"
+			"hh4piqqoverm n viz %1.14E  hq/mc v0.vxy.gradAz %1.14E hq/mc beta_xyz viz.gradAz %1.14E \n"
+			"v0.vxy %1.12E %1.12E grad Az %1.12E %1.12E \n", 
 			iMinor, h_use *qovermc*(AAzdot_k.Azdot), 
 			h_use *qovermc*(h_use * c*c*(LapAz )),
 			LapAz,
 			h_use *qovermc*(h_use * c*c*(FOURPI_Q_OVER_C*n_use.n*v0.viz)),
 			h_use*qovermc*v0.vxy.dot(grad_Az[threadIdx.x]),
-			h_use*qovermc*(ohm.beta_xy_z*v0.viz).dot(grad_Az[threadIdx.x])
+			h_use*qovermc*(ohm.beta_xy_z*v0.viz).dot(grad_Az[threadIdx.x]),
+			v0.vxy.x, v0.vxy.y, grad_Az[threadIdx.x].x, grad_Az[threadIdx.x].y
 			);
 
 		// implies:
 		f64 effect_of_viz0_on_vez0 =
 			h_use * qovermc*h_use * c*c* FOURPI_Q_OVER_C*n_use.n
-			+ h_use*qovermc*(ohm.beta_xy_z.dot(grad_Az[threadIdx.x]));
+			+ h_use*qovermc*(ohm.beta_xy_z.dot(grad_Az[threadIdx.x])); // from the instruction above
 
-		if (TESTOHMS) printf("%d v0.vez %1.12E before thermal force\n", iMinor, v0.vez);
+		if (TESTOHMS) printf("%d v0.vez %1.14E before thermal force\n", iMinor, v0.vez);
 
 		v0.vez -=
 			1.5*h_use*nu_eiBar*((omega[threadIdx.x].x*qovermc*BZ_CONSTANT - nu_eHeart * omega[threadIdx.x].y)*gradTe[threadIdx.x].x +
 			(omega[threadIdx.x].y*qovermc*BZ_CONSTANT + nu_eHeart * omega[threadIdx.x].x)*gradTe[threadIdx.x].y) /
 				(m_e*nu_eHeart*(nu_eHeart*nu_eHeart + omega[threadIdx.x].dot(omega[threadIdx.x]) + qovermc*BZ_CONSTANT*qovermc*BZ_CONSTANT));
 
+		if (TESTVEZ) printf("%d thermal force %1.14E \n", iMinor, -1.5*h_use*nu_eiBar*((omega[threadIdx.x].x*qovermc*BZ_CONSTANT - nu_eHeart * omega[threadIdx.x].y)*gradTe[threadIdx.x].x +
+			(omega[threadIdx.x].y*qovermc*BZ_CONSTANT + nu_eHeart * omega[threadIdx.x].x)*gradTe[threadIdx.x].y) /
+			(m_e*nu_eHeart*(nu_eHeart*nu_eHeart + omega[threadIdx.x].dot(omega[threadIdx.x]) + qovermc*BZ_CONSTANT*qovermc*BZ_CONSTANT)));
+
 		// could store this from above and put opposite -- dividing by m_e instead of m_i
 		// overdue..?
 
 		if (TESTVEZ) printf("%d v0.vez %1.12E MARKER1 \n", iMinor, v0.vez);
-
-		
-		// implies:
+		 
 		effect_of_viz0_on_vez0 +=
 				h_use*M_n_over_ne*(cross_section_times_thermal_en*n_use.n_n) *ohm.beta_ni + h_use*nu_ei_effective;
 		
+		// Apparently we thought to save this INSTEAD of putting it into vez0
+		// So the question is-- - have we deliberately excluded the effect from vez0 IN THE CASE that we are setting up a linear relationship ?
+		
+			// NEUE:
+
+		v0.vez += (h_use*M_n_over_ne*(cross_section_times_thermal_en*n_use.n_n) *ohm.beta_ni + h_use*nu_ei_effective)*v0.viz
+			+ h_use*M_n_over_ne*(cross_section_times_thermal_en*n_use.n_n)*vn0.z;
+		
+
 		denom = 1.0 + (h_use*h_use*4.0*M_PI*q*eoverm*n_use.n
 			+ h_use*qovermc*(grad_Az[threadIdx.x].dot(ohm.beta_xy_z)))*(1.0 - beta_ie_z)
 			+ h_use*M_n_over_ne*(cross_section_times_thermal_en*n_use.n_n) *(1.0 - ohm.beta_ne - ohm.beta_ni * beta_ie_z)
 			+ h_use*nu_ei_effective*(1.0 - beta_ie_z);
 
-		if (TESTVEZ) printf("%d v0.vez %1.12E nu_ei_effective %1.10E v0.viz %1.10E \n"
-			"beta_ie_z %1.8E  nu_en %1.9E denom %1.9E\n", iMinor, v0.vez, nu_ei_effective, v0.viz, beta_ie_z,
+		if (TEST_VS_MATRIX)
+			printf("\nPOPOHMS denom_e %1.14E components: \nhh4piqqn/m*(1.0-beta_ie_z) %1.14E grad_Az_dot_beta_xy_z %1.14E \n"
+				"nu_en_without_ni_ie(1-beta_ne) %1.14E nu_en_ni_ie %1.14E\n"
+				"hnu_ei_eff %1.14E times_minus_beta_ie_z %1.14E\n\n",
+				denom,
+				h_use*h_use*4.0*M_PI*q*eoverm*n_use.n*(1.0 - beta_ie_z),
+				h_use*qovermc*(grad_Az[threadIdx.x].dot(ohm.beta_xy_z))*(1.0 - beta_ie_z),
+			h_use*M_n_over_ne*(cross_section_times_thermal_en*n_use.n_n) *(1.0 - ohm.beta_ne),
+			h_use*M_n_over_ne*(cross_section_times_thermal_en*n_use.n_n) *(-ohm.beta_ni*beta_ie_z),
+			h_use*nu_ei_effective,
+			h_use*nu_ei_effective*(- beta_ie_z)
+			);
+
+		if (TESTVEZ) printf("%d v0.vez %1.12E nu_ei_effective %1.12E v0.viz %1.12E \n"
+			"beta_ie_z %1.12E  nu_en %1.12E denom %1.12E\n", iMinor, v0.vez, nu_ei_effective, v0.viz, beta_ie_z,
 			M_n_over_ne*(cross_section_times_thermal_en*n_use.n_n), denom);
+
 
 
 		//		vez0_coeff_on_Lap_Az = h_use * h_use*0.5*qovermc* c*c / denom; 
@@ -14489,12 +15132,13 @@ __global__ void kernelCalculateVelocityAndAzdot_noadvect(
 
 		v.vxy = v0.vxy + ohm.beta_xy_z * (v.viz - v.vez);   // 4
 
-		if (TESTACCEL) printf("iVertex %d ohm.beta_xz %1.9E viz %1.9E vez %1.9E effect %1.9E\n",
+		if (TESTACCEL) printf("iVertex %d ohm.beta_xz yz %1.9E %1.9E viz %1.9E vez %1.9E effect xy %1.9E %1.9E\n",
 			iVertex,
-			ohm.beta_xy_z.x,
+			ohm.beta_xy_z.x, ohm.beta_xy_z.y,
 			v.viz,
 			v.vez,
-			ohm.beta_xy_z.x * (v.viz - v.vez));
+			ohm.beta_xy_z.x * (v.viz - v.vez),
+			ohm.beta_xy_z.y * (v.viz - v.vez));
 
 		//if (TESTACCEL) printf("iVertex %d ohm.beta_yz %1.9E viz %1.9E vez %1.9E effect %1.9E\n",
 		//	iVertex,
@@ -14533,10 +15177,13 @@ __global__ void kernelCalculateVelocityAndAzdot_noadvect(
 	//	}
 		
 		if (TESTACCEL) printf("CVAA:iVertex %d v_out.xy %1.9E %1.9E\n", iVertex, v.vxy.x, v.vxy.y);
-		if (TESTVEZ) printf("%d CVAA vez %1.9E v0 %1.9E Ez %1.9E sigma %1.9E \n"
-			"Azdot %1.9E components: k %1.9E h_use*(c*c*p_LapAz) %1.9E hc4piJ %1.9E\n", iMinor, v.vez, v0.vez,
+		if (TESTVEZ) printf("%d CVAA vez %1.9E v0 %1.9E Ez_strength %1.14E sigma %1.14E \n"
+			"Azdot %1.9E components: k %1.9E h_use*(c*c*p_LapAz) %1.9E hc4piJ %1.9E\n"
+			"n viz vez %1.14E %1.14E %1.14E\n"
+			, iMinor, v.vez, v0.vez,
 			Ez_strength, ohm.sigma_e_zz, temp.Azdot, p_AAzdot_src[iMinor].Azdot, h_use*(c*c*p_LapAz[iMinor]),
-			h_use*c*FOUR_PI*q*n_use.n*(v.viz - v.vez)
+			h_use*c*FOUR_PI*q*n_use.n*(v.viz - v.vez),
+			n_use.n, v.viz, v.vez
 			);
 		
 	} else {
@@ -15068,6 +15715,9 @@ __global__ void kernelCreateEpsilonAndJacobi_Heat_1species
 	// what about dividing by N?
 
 	long const iVertex = blockDim.x*blockIdx.x + threadIdx.x;
+	
+	if (TESTHEAT) printf("%d bUseMask %d info.flag %d \n",
+		iVertex, (bUseMask ? 1 : 0), p_info_major[iVertex].flag);
 
 	if ((bUseMask) && (p_bMaskblock[blockIdx.x] == 0)) return;
 	if (bUseMask) {
@@ -15085,8 +15735,7 @@ __global__ void kernelCreateEpsilonAndJacobi_Heat_1species
 		f64 T, actual_T, epsilon;
 		f64 T_k = p_Tk[iVertex];
 
-		f64 N = (species != 0)?(n.n*Area) : (n.n_n*Area);
-		
+		f64 N = (species != 0)?(n.n*Area) : (n.n_n*Area);		
 		T = p_T[iVertex];
 		
 		if (species == 0) actual_T = T_k + (h_sub / N)*Rates.NnTn;		
@@ -15095,41 +15744,21 @@ __global__ void kernelCreateEpsilonAndJacobi_Heat_1species
 		
 		epsilon = T - actual_T;
 
-		//if ((iVertex == VERTCHOSEN) || (iVertex == VERTCHOSEN2))
-		//	printf("%d species %d T proposed %1.10E actual T %1.10E Rates %1.10E %1.10E %1.10E h/N %1.10E\n\n",
-		//		iVertex, species, T, actual_T, Rates.NnTn, Rates.NiTi, Rates.NeTe, h_sub/N);
-
-		// Why do we do this? :
-		epsilon *= sqrt(N);
-
-		// Was that to help with conjugate gradient? Below we compare with T^2N. 
-		// Let's leave it in for now.
-
 		p__epsilon[iVertex] = epsilon;
 
 		if (bIncorporateEps) {
 			p__Jacobi[iVertex] = -epsilon / p__coeffself[iVertex]; // should never be 0 // match the other function for a minute
 		} else {
-			p__Jacobi[iVertex] = -actual_T;
-			
+			p__Jacobi[iVertex] = -actual_T;			
 			// Try just doing Richardson beyond the 1st regressor.
-
 		}
-		
-		// We have yet to experiment why it failed with Jacobi inc sqrt(N) --- not clear why at all.
-
-		//if ((bUseMask) && (species == 1)) printf("iVertex %d epsilon %1.10E T_k %1.10E \n", iVertex, epsilon, T_k);
-
-
-		// If sqrt N we care about is 1e4 and T we care about is 1e-14 then we get 1e-10 as the sqrt(N)T to add to create absolute threshold
-
-	//	if ((iVertex == VERTCHOSEN) && (species == 2))
-	//		printf("%d : epsilon %1.10E T %1.10E Tk+NeTe %1.10E T_k %1.10E NeTe %1.10E hsub/N %1.10E Jacobi %1.10E\n", iVertex, epsilon,
-	//			T, actual_T, T_k, Rates.NeTe, h_sub / N, p_Jacobi[iVertex]);
+		if (TESTHEAT) printf("%d : T %1.10E T_k %1.10E epsilon %1.10E d/dt NiTi %1.10E hsub/N %1.10E coeffself %1.10E Jacobi %1.10E \n",
+			iVertex, T, T_k, epsilon, Rates.NiTi, h_sub/N, p__coeffself[iVertex], p__Jacobi[iVertex]);
 
 		if (p_bFailedTest != 0) {
-			if (epsilon*epsilon > REL_THRESHOLD_HEAT*REL_THRESHOLD_HEAT*(actual_T*actual_T*N + 1.0e-10*1.0e-10))
+			if (epsilon*epsilon > REL_THRESHOLD_HEAT*REL_THRESHOLD_HEAT*(actual_T*actual_T + 1.0e-14*1.0e-14))
 					p_bFailedTest[blockIdx.x] = true;
+		
 			// Why 1.0e-10 in absolute error, for minimum value we care about:
 			// N = 2.0e12*7e-5 = 1e8 
 			// root N = 1e4
@@ -15189,18 +15818,27 @@ __global__ void kernelCreateEpsilonHeat_1species
 		epsilon = T - actual_T;
 		
 		// although putting this here just seems completely wrong.
-		epsilon *= sqrt(N);
+		// epsilon *= sqrt(N);
 		p__epsilon[iVertex] = epsilon;
 
+		// we did not take account of sqrt N. Is that why we have misjudged ROC? Yes of course.
+
 		// We have yet to experiment why it failed with Jacobi inc sqrt(N) --- not clear why at all.
+		if ((TESTHEAT))
+			printf("%d epsilon %1.14E T %1.10E T_k %1.12E hsub/N %1.14E dbydt{NiTi} %1.14E\n", iVertex, epsilon, T, T_k, h_sub / N, Rates.NiTi);
 
 		if (p_bFailedTest != 0) {
-			if (epsilon*epsilon > REL_THRESHOLD_HEAT*REL_THRESHOLD_HEAT*(actual_T*actual_T*N + 1.0e-10*1.0e-10))
-				p_bFailedTest[blockIdx.x] = true;
+			//if (epsilon*epsilon > REL_THRESHOLD_HEAT*REL_THRESHOLD_HEAT*(actual_T*actual_T*N + 1.0e-10*1.0e-10))
+			//	p_bFailedTest[blockIdx.x] = true;
 			// Why 1.0e-10 in absolute error, for minimum value we care about:
 			// N = 2.0e12*7e-5 = 1e8 
 			// root N = 1e4
 			// root N * 1e-14 erg = 1e-10 for (root N) T
+
+			// NO ROOT N INVOLVED:
+
+			if (epsilon*epsilon > REL_THRESHOLD_HEAT*REL_THRESHOLD_HEAT*(actual_T*actual_T + 4.0e-14*4.0e-14))
+					p_bFailedTest[blockIdx.x] = true;
 		}
 	}
 	else {
@@ -15506,7 +16144,7 @@ __global__ void kernelCreateEpsilon_Az_CG(
 			one_over_sqrt = 1.0 / sqrtfactor;
 		} else {
 			one_over_sqrt = 1.0;
-		}
+		};
 
 		f64 Aznext = p_Az_plus[iMinor];
 		eps = one_over_sqrt*(Aznext - p_Az_k[iMinor] - h_use * p_Azdot0[iMinor])
@@ -21643,8 +22281,10 @@ __global__ void kernelCreate_momflux_minor(
 				} else {
 					ownrates.ion -= 0.5*relvnormal*(n0 + n1)*Make3(opp_v.vxy, opp_v.viz);
 					ownrates.elec -= 0.5*relvnormal*(n0 + n1)*Make3(opp_v.vxy, opp_v.vez);
-					// Why it's minus?
-					// relvnormal was less than zero but we gain a positive amt of opp_v.
+
+					//We are using upwind v ... however, n0 came from ourselves because we look out of our own minor into a triangle.
+					
+					// Why it's minus? : relvnormal was less than zero but we gain a positive amt of opp_v.
 				};
 
 				// OLD, unstable :
@@ -22040,6 +22680,7 @@ __global__ void kernelCreate_momflux_minor(
 							};
 							edge_normal.x = endpt1.y - endpt0.y;
 							edge_normal.y = endpt0.x - endpt1.x;
+
 
 							// have not yet handled how to do momflux between two CROSSING_INS tris.
 							// the above vxy1 etc will be invalid because of taking data from insulator points.

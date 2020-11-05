@@ -14,7 +14,7 @@
 #include "mesh.cu"
 #include "meshutil.cu"
 
-#define VERBOSEGRAPHICS 1 // also in meshutil
+#define VERBOSEGRAPHICS 0 // also in meshutil
 
 //extern FixedMesh Fixed;
 extern int GlobalWhichLabels;
@@ -1004,7 +1004,7 @@ HRESULT surfacegraph::SetDataWithColour(const TriMesh & X,
 			} else {
 				X.ReturnMaxMinData(offset_data, &store_max, &store_min,
 					this->boolDisplayInnerMesh);
-				
+			
 				X.Return3rdmaxData(offset_data, &maximum, &minimum,
 					this->boolDisplayInnerMesh);
 
@@ -2258,6 +2258,11 @@ VOID surfacegraph::Render(const char * szTitle, bool RenderTriLabels,
 
 						tempval = (pPNT->pos.y - zeroplane)/yscale;
 						sprintf(buffer,"%1.2E",tempval);
+						
+						// DEBUG:
+					//	if (tempval == 0.0) printf("r = %f pPNT->pos.y %1.9E zeroplane %1.9E index %d \n",
+					//		r, pPNT->pos.y, zeroplane, VertexIndexArray8000[asdf]);
+
 						strip_0(buffer);
 						if (tempval < 0.0) {
 							RenderLabel(buffer, CUTAWAYANGLE*pPNT->pos.z, zeroplane, pPNT->pos.z, false, true);

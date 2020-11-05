@@ -55,6 +55,8 @@ extern f64 * p_Tgraph_host[9];
 extern f64 * p_accelgraph_host[12];
 extern f64 * p_Ohmsgraph_host[20];
 
+extern f64 * p_arelz_graph_host[12];
+
 // Global variables:
 // =================
 //extern f64_vec3 * p_B_host;
@@ -129,12 +131,13 @@ bool flaglist[NMINOR];
 bool boolGlobalHistory, GlobalboolDisplayMeshWireframe;
 
 // avi file -oriented variables
-int const NUMAVI = 8;
+int const NUMAVI = 9;
 HAVI hAvi[NUMAVI + 1]; // does it work without OHMSLAW? //  OHMSLAW,
 int const GraphFlags[NUMAVI] = { SPECIES_ION, OVERALL, JZAZBXYEZ, ONE_D, IONIZEGRAPH,
-				DTGRAPH, ACCELGRAPHS, OHMS2};
+				DTGRAPH, ACCELGRAPHS, OHMS2, ARELZ};
+
 char szAvi[NUMAVI][128] = { "Elec","Total","JzAzBxy","Test", "Ionize", "dT", "Accel",
-							"Ohms"};
+							"Ohms","arelz"};
 
 AVICOMPRESSOPTIONS opts;
 int counter;
@@ -322,6 +325,11 @@ void Draw1Dgraph(int iWhichGraph, int flag)
 	"viscous aez-aiz","Predicted Jz","Conductivity sigma_zy","Conductivity sigma_zz",
 	"sigma_zz * -electromotive", "Difference: Jz prediction-Jz","$$$" };
 
+	char arelzgraphname[12][128] = { "arelz", "MAR_ion contribution", "MAR_elec contribution",
+	    "Ez_ext effect", "dAz/dt effect","v x B effect", "thermal force effect", "friction to neutrals",
+		"friction_ei", "sum of effects", "difference (error)"};
+
+
 	char buffer[256];
 	float x, y, z;
 	float zeroplane = 0.0f;
@@ -372,6 +380,26 @@ void Draw1Dgraph(int iWhichGraph, int flag)
 		colourlist[5] = 0xff0000ff; // ionization : royal blue
 		colourlist[6] = 0xff906545; // advection :  brown
 		colourlist[7] = 0xffeecd00; // grady_Az : olive?
+	}
+
+	if (flag == ARELZ)
+	{
+		numgraphs = 11;
+		for (int i = 0; i < numgraphs; i++)
+			sprintf(namelist[i], "%s   : graph max&min = +- %1.3E",
+				arelzgraphname[i], maximum[i]);
+		colourlist[0] = 0xff000000; // total: 
+		colourlist[1] = 0xff009999; // ion visc : aqua
+		colourlist[2] = 0xffeecd00; // elec visc : olive
+		colourlist[3] = 0xffdada66; // electromotive
+		colourlist[4] = 0xff4400ff; // inductive electromotive: indigo
+		colourlist[5] = 0xffd500ff; // vxB: heliotrope
+		colourlist[6] = 0xffff7700; // "thermal force effect"
+		colourlist[7] = 0xff00ff33; // neutral soak :green
+		colourlist[8] = 0xff00aa00; // dkgreen e-i friction
+		colourlist[9] = 0xffff2299; // pink : sum
+		colourlist[10] = 0xff000011; // navy 
+		bAlternating[10] = true;		
 	}
 
 	if (flag == OHMS2) {
@@ -567,7 +595,7 @@ void Draw1Dgraph(int iWhichGraph, int flag)
 }
 
 void Create1DGraphingData(TriMesh * pX, bool bTdata = false, bool bAcceldata = false,
-	bool bOhmsData = false)
+	bool bOhmsData = false, bool b_arelz_data = false)
 {
 	// Takes p_temphost3,4,5,6 and turns them into graphdata[iGraph=0,1,2,3][]
 
@@ -592,8 +620,8 @@ void Create1DGraphingData(TriMesh * pX, bool bTdata = false, bool bAcceldata = f
 
 	for (asdf = 0; asdf < num_graph_data_points; asdf++)
 	{
-		if (asdf % 10 == 0) printf("<");
-		printf("%d ; ", VertexIndexArray[asdf]);
+	//	if (asdf % 10 == 0) printf("<");
+	//	printf("%d ; ", VertexIndexArray[asdf]);
 		pVertex = pX->X + VertexIndexArray[asdf];
 
 		// We want the tri directly to the left of it, through which (-1,0) passes.
@@ -684,7 +712,8 @@ void Create1DGraphingData(TriMesh * pX, bool bTdata = false, bool bAcceldata = f
 			}
 
 
-			if ((bTdata == false) && (bAcceldata == false) && (bOhmsData == false)) {
+			if ((bTdata == false) && (bAcceldata == false) && (bOhmsData == false)
+				&& (b_arelz_data == false)) {
 				y0 = p_temphost3[(pTri->cornerptr[0] - pX->X) + BEGINNING_OF_CENTRAL];
 				y1 = p_temphost3[(pTri->cornerptr[1] - pX->X) + BEGINNING_OF_CENTRAL];
 				y2 = p_temphost3[(pTri->cornerptr[2] - pX->X) + BEGINNING_OF_CENTRAL];
@@ -734,8 +763,7 @@ void Create1DGraphingData(TriMesh * pX, bool bTdata = false, bool bAcceldata = f
 						y1 = p_accelgraph_host[j][(pTri->cornerptr[1] - pX->X)];
 						y2 = p_accelgraph_host[j][(pTri->cornerptr[2] - pX->X)];
 						graphdata[0][asdf] = wt0*y0 + wt1*y1 + wt2*y2;
-
-
+						
 						j = 3; // vxB
 						y0 = p_accelgraph_host[j][(pTri->cornerptr[0] - pX->X)];
 						y1 = p_accelgraph_host[j][(pTri->cornerptr[1] - pX->X)];
@@ -791,24 +819,31 @@ void Create1DGraphingData(TriMesh * pX, bool bTdata = false, bool bAcceldata = f
 						graphdata[7][asdf] = wt0*y0 + wt1*y1 + wt2*y2;
 						if (fabs(graphdata[7][asdf]) > maximum[7]) maximum[7] = fabs(graphdata[7][asdf]);
 					} else {
-						int j;
-						j = 0; // frictional coeff
-						for (j = 0; j < 19; j++) {
-							y0 = p_Ohmsgraph_host[j][(pTri->cornerptr[0] - pX->X)];
-							y1 = p_Ohmsgraph_host[j][(pTri->cornerptr[1] - pX->X)];
-							y2 = p_Ohmsgraph_host[j][(pTri->cornerptr[2] - pX->X)];
-							graphdata[j][asdf] = wt0*y0 + wt1*y1 + wt2*y2;
-							
-							if ((pos.y < 4.6)  && (pos.y > 3.44) && (fabs(graphdata[j][asdf]) > maximum[j])) maximum[j] = fabs(graphdata[j][asdf]);
-
-
+						if (bOhmsData) {
+							int j;
+							for (j = 0; j < 19; j++) {
+								y0 = p_Ohmsgraph_host[j][(pTri->cornerptr[0] - pX->X)];
+								y1 = p_Ohmsgraph_host[j][(pTri->cornerptr[1] - pX->X)];
+								y2 = p_Ohmsgraph_host[j][(pTri->cornerptr[2] - pX->X)];
+								graphdata[j][asdf] = wt0*y0 + wt1*y1 + wt2*y2;
+								if ((pos.y < 4.6) && (pos.y > 3.44) && (fabs(graphdata[j][asdf]) > maximum[j])) maximum[j] = fabs(graphdata[j][asdf]);
+							};
+						} else {
+							int j;
+							for (j = 0; j < 12; j++) {
+								y0 = p_arelz_graph_host[j][(pTri->cornerptr[0] - pX->X)];
+								y1 = p_arelz_graph_host[j][(pTri->cornerptr[1] - pX->X)];
+								y2 = p_arelz_graph_host[j][(pTri->cornerptr[2] - pX->X)];
+								graphdata[j][asdf] = wt0*y0 + wt1*y1 + wt2*y2;
+								if ((pos.y < 4.8) && (pos.y > 3.44) && (fabs(graphdata[j][asdf]) > maximum[j])) maximum[j] = fabs(graphdata[j][asdf]);
+							};
 						};
-					}
-				}
-			}
+					};
+				};
+			};
 		}; // found triangle		
 	}; // asdf	
-	if ((bTdata == false) && (bAcceldata == false) && (bOhmsData == false)) {		
+	if ((bTdata == false) && (bAcceldata == false) && (bOhmsData == false) && (b_arelz_data == false)) {		
 		maximum[3] = max(maximum[3], maximum[2]);
 		maximum[2] = maximum[3];
 	} else {
@@ -823,34 +858,49 @@ void Create1DGraphingData(TriMesh * pX, bool bTdata = false, bool bAcceldata = f
 				for (int j = 1; j < 7; j++)
 					maximum[j] = maximum[0];
 			} else {
-				memcpy(truemax, maximum, sizeof(f64) * 20);
+				if (bOhmsData) {
+					memcpy(truemax, maximum, sizeof(f64) * 20);
 
-				// use max 0 and 1 combined:
-				f64 temp = max(maximum[0], maximum[1]);
-				maximum[0] = temp;
-				maximum[1] = temp;
-				temp = max(max(maximum[2], maximum[3]), max(maximum[4],maximum[13]));
-				maximum[2] = temp;
-				maximum[3] = temp;
-				maximum[4] = temp; // thermal force
-				maximum[13] = temp; // viscous
-				temp = max(maximum[5], maximum[6]);
-				maximum[5] = temp;
-				maximum[6] = temp;
-				temp = max(max(maximum[7], maximum[8]), max(maximum[9], maximum[10]));
-				maximum[7] = temp;
-				maximum[8] = temp;
-				maximum[9] = temp;
-				maximum[10] = temp;
-			//	temp = max(maximum[11], maximum[12]); // difference, progress
-			//	maximum[11] = temp;
-			//	maximum[12] = temp;
-				temp = max(maximum[14], maximum[17]);
-				maximum[14] = temp;
-				maximum[17] = temp;
-				temp = max(maximum[15], maximum[16]);
-				maximum[15] = temp;
-				maximum[16] = temp;
+					// use max 0 and 1 combined:
+					f64 temp = max(maximum[0], maximum[1]);
+					maximum[0] = temp;
+					maximum[1] = temp;
+					temp = max(max(maximum[2], maximum[3]), max(maximum[4], maximum[13]));
+					maximum[2] = temp;
+					maximum[3] = temp;
+					maximum[4] = temp; // thermal force
+					maximum[13] = temp; // viscous
+					temp = max(maximum[5], maximum[6]);
+					maximum[5] = temp;
+					maximum[6] = temp;
+					temp = max(max(maximum[7], maximum[8]), max(maximum[9], maximum[10]));
+					maximum[7] = temp;
+					maximum[8] = temp;
+					maximum[9] = temp;
+					maximum[10] = temp;
+					//	temp = max(maximum[11], maximum[12]); // difference, progress
+					//	maximum[11] = temp;
+					//	maximum[12] = temp;
+					temp = max(maximum[14], maximum[17]);
+					maximum[14] = temp;
+					maximum[17] = temp;
+					temp = max(maximum[15], maximum[16]);
+					maximum[15] = temp;
+					maximum[16] = temp;
+				} else {
+					// All same scale except for "difference" = element 10
+					// ... and the arelz itself?
+					int j;
+					f64 temp = maximum[1];
+					for (j = 2; j < 9; j++)
+						temp = max(temp, maximum[j]);
+					for (j = 1; j < 9; j++)
+						maximum[j] = temp;
+					temp = max(maximum[0], maximum[9]);
+					maximum[0] = temp; 
+					maximum[9] = temp; // actual vs sum
+
+				}
 			}
 		}
 	}
@@ -1169,6 +1219,86 @@ void RefreshGraphs(TriMesh & X, // only not const because of such as Reset_verte
 		
 		break;
 
+	case ARELZ:
+
+		// We are going to have to think about using LineTo the way it is done in RenderGraphs
+		// let's start by rendering in the x-y plane and we can let the present camera look at it
+		printf("\n\nRefreshGraphs: ARELZ\n\n");
+
+		// Create data:
+		Create1DGraphingData(&X, false, false, false, true);
+
+		Draw1Dgraph(6, ARELZ);
+
+		// Graphs:
+		// .. arelz
+		// .. electromotive
+		// .. v x B
+		// .. error
+
+		pVertex = X.X;
+		pdata = X.pData + BEGINNING_OF_CENTRAL;
+		for (iVertex = 0; iVertex < NUMVERTICES; iVertex++)
+		{
+			pdata->temp.x = p_arelz_graph_host[0][iVertex];
+			pdata->temp.y = p_arelz_graph_host[0][iVertex];
+			++pVertex;
+			++pdata;
+		}
+		Graph[4].DrawSurface("arelz",
+			DATA_HEIGHT, (real *)(&(X.pData[0].temp.x)),
+			AZSEGUE_COLOUR, (real *)(&(X.pData[0].temp.x)),
+			false,
+			GRAPH_ARELZ, &X);
+
+		pVertex = X.X;
+		pdata = X.pData + BEGINNING_OF_CENTRAL;
+		for (iVertex = 0; iVertex < NUMVERTICES; iVertex++)
+		{
+			pdata->temp.x = p_arelz_graph_host[3][iVertex] +
+				p_arelz_graph_host[4][iVertex];
+
+			++pVertex;
+			++pdata;
+		}
+		Graph[1].DrawSurface("-e/m Ez_total",
+			DATA_HEIGHT, (real *)(&(X.pData[0].temp.x)),
+			AZSEGUE_COLOUR, (real *)(&(X.pData[0].temp.x)),
+			false,
+			GRAPH_ELECTROMOTIVE, &X);
+
+		pdata = X.pData + BEGINNING_OF_CENTRAL;
+		for (iVertex = 0; iVertex < NUMVERTICES; iVertex++)
+		{
+			pdata->temp.x = p_arelz_graph_host[5][iVertex];
+			++pdata;
+		}
+		Graph[3].DrawSurface("arelz : v x B",
+			DATA_HEIGHT, (real *)(&(X.pData[0].temp.x)),
+			AZSEGUE_COLOUR, (real *)(&(X.pData[0].temp.x)),
+			false,
+			GRAPH_VXBARELZ, &X);
+
+		pdata = X.pData + BEGINNING_OF_CENTRAL;
+		for (iVertex = 0; iVertex < NUMVERTICES; iVertex++)
+		{
+			pdata->temp.x = p_arelz_graph_host[10][iVertex];
+			if (pdata->temp.x > 1.0e13) {
+				printf("%d %1.9E | ", iVertex, pdata->temp.x);
+			}
+			++pdata;
+		}
+		Graph[5].DrawSurface("error in sum",
+			DATA_HEIGHT, (real *)(&(X.pData[0].temp.x)),
+			AZSEGUE_COLOUR, (real *)(&(X.pData[0].temp.x)),
+			false,
+			GRAPH_ERROR, &X);
+
+
+	//	Cannot explain why maximum on graph is 1e13 not 1e5 as reported on 1D graph.
+
+
+		break;
 		/*
 		case JXY_RHO_EXY_GRADPHI_AXYDOTOC_AXY:
 
@@ -2887,6 +3017,14 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 		case ID_DISPLAY_TENSOROHMS:
 
 			GlobalSpeciesToGraph = OHMS2;
+			printf("\nGlobalSpeciesToGraph = %d \n", GlobalSpeciesToGraph);
+			RefreshGraphs(*pX, GlobalSpeciesToGraph);
+			Direct3D.pd3dDevice->Present(NULL, NULL, NULL, NULL);
+
+			break;
+
+		case ID_DISPLAY_ACCELRELZ:
+			GlobalSpeciesToGraph = ARELZ;
 			printf("\nGlobalSpeciesToGraph = %d \n", GlobalSpeciesToGraph);
 			RefreshGraphs(*pX, GlobalSpeciesToGraph);
 			Direct3D.pd3dDevice->Present(NULL, NULL, NULL, NULL);

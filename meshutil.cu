@@ -2,7 +2,7 @@
 #define MESHUTILCPP
 
 #define DEFINEexp  exp
-#define VERBOSEGRAPHICS 1
+#define VERBOSEGRAPHICS 0
 // also in surfacegraph_tri
 
 #include "headers.h"

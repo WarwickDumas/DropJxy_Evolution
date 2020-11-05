@@ -14,6 +14,51 @@ __global__ void kernelSetPressureFlag(
 	bool * __restrict__ bz_pressureflag
 );
 
+__global__ void kernelAccumulateSummands_4x4(
+	f64 * __restrict__ p_epsilon,
+	f64 * __restrict__ p_d_eps_by_dbeta,
+	// outputs:
+	f64 * __restrict__ p_sum_eps_depsbydbeta_x4,
+	f64 * __restrict__ p_sum_depsbydbeta__4x4
+);
+
+__global__ void kernelAdd2(
+	f64 * __restrict__ p_result,
+	f64 * __restrict__ p_src,
+	f64 const beta_,
+	f64 * __restrict__ p_addition
+);
+
+__global__ void kernelAddtoT_lc___(
+	f64 * __restrict__ p__T,
+	f64 * __restrict__ p_T_src,
+	f64 * __restrict__ p_addition,
+	int const howmany,
+	f64 const multiplier
+);
+
+__global__ void AddLC(
+	f64 * __restrict__ p_result,
+	f64 * __restrict__ p_summand1,
+	f64 const betaa,
+	f64 * __restrict__ p_summand2);
+
+__global__ void kernelCalculate_kappa_nu_vertices(
+	structural * __restrict__ p_info_major, // NB: MAJOR
+	nvals * __restrict__ p_n_major,
+	T3 * __restrict__ p_T_major,
+
+	f64 * __restrict__ p_kappa_n_major,
+	f64 * __restrict__ p_kappa_i_major,
+	f64 * __restrict__ p_kappa_e_major,
+	f64 * __restrict__ p_nu_i_major,
+	f64 * __restrict__ p_nu_e_major // CHECK DIMENSIONS IF USING BIG ARRAY
+);
+
+__global__ void AddLCtoT(f64 * __restrict__ p_T_,
+	f64 * __restrict__ p_T_use,
+	f64 const bet, f64 * __restrict__ p_add);
+
 __global__ void kernelAccumulateDiffusiveHeatRate_new_Longitudinalonly_1species(
 	structural * __restrict__ p_info_minor,
 	long * __restrict__ pIndexNeigh,
@@ -93,6 +138,44 @@ __global__ void VectorCompareMax(
 	f64 * __restrict__ p_max
 );
 
+__global__ void kernelAdd_to_T_lc(
+	f64 * __restrict__ p__T,
+	f64 const beta1,
+	f64 * __restrict__ p_add1,
+	f64 const beta2,
+	f64 * __restrict__ p_add2
+);
+
+__global__ void kernelHeat_1species_geometric_coeffself(
+	structural * __restrict__ p_info_minor,
+	long * __restrict__ pIndexNeigh,
+	char * __restrict__ pPBCNeigh,
+	long * __restrict__ izTri_verts,
+	char * __restrict__ szPBCtri_verts,
+	f64_vec2 * __restrict__ p_cc,
+
+	nvals * __restrict__ p_n_major,
+	f64 * __restrict__ p__T,
+	f64 const h_use,
+	f64_vec3 * __restrict__ p_B_major,
+
+	f64 * __restrict__ p__kappa_major,
+	f64 * __restrict__ p__nu_major,
+
+	f64 * __restrict__ p_AreaMajor,
+	// scrap masking for now --- but bring it back intelligently???
+
+	bool * __restrict__ p_maskbool,
+	bool * __restrict__ p_maskblock,
+	bool bUseMask,
+
+	// Just hope that our clever version will converge fast.
+
+	int iSpecies,
+
+	f64 * __restrict__ p_effectself // hmmm
+);
+
 __global__ void kernelCreateEpsilonAndJacobi_Heat_1species
 (
 	f64 const h_sub,
@@ -115,7 +198,8 @@ __global__ void kernelCreateEpsilonAndJacobi_Heat_1species
 
 __global__ void kernelAddtoT_lc(
 	f64 * __restrict__ p__T,
-	f64 * __restrict__ p_addition
+	f64 * __restrict__ p_addition,
+	int const howmany
 );
 
 __global__ void kernelMultiply_Get_Jacobi_Visc(
@@ -730,6 +814,133 @@ __global__ void kernelCreateShardModelOfDensities_And_SetMajorArea_Debug(
 	//	long * __restrict__ Tri_n_n_lists	,
 	f64 * __restrict__ p_AreaMajor,
 	f64 * __restrict__ p_CPU_n_cent);
+
+
+__global__ void kernelAccumulateDiffusiveHeatRateROC_wrt_T_1species_Geometric(
+	structural * __restrict__ p_info_minor,
+	long * __restrict__ pIndexNeigh,
+	char * __restrict__ pPBCNeigh,
+	long * __restrict__ izTri_verts,
+	char * __restrict__ szPBCtri_verts,
+	f64_vec2 * __restrict__ p_cc,
+
+	nvals * __restrict__ p_n_major,
+	f64 * __restrict__ p__T,
+	f64_vec3 * __restrict__ p_B_major,
+
+	f64 * __restrict__ p__kappa_major,
+	f64 * __restrict__ p__nu_major,
+
+	f64 * __restrict__ p___result, // d/dT of d(NT)/dt in this cell
+
+	f64 * __restrict__ p_AreaMajor,
+	// scrap masking for now --- but bring it back intelligently???
+
+	bool * __restrict__ p_maskbool,
+	bool * __restrict__ p_maskblock,
+	bool bUseMask,
+
+	// Just hope that our clever version will converge fast.
+
+	int iSpecies);
+
+__global__ void kernelAccumulateDiffusiveHeatRate_1species_Geometric(
+	structural * __restrict__ p_info_minor,
+	long * __restrict__ pIndexNeigh,
+	char * __restrict__ pPBCNeigh,
+	long * __restrict__ izTri_verts,
+	char * __restrict__ szPBCtri_verts,
+	f64_vec2 * __restrict__ p_cc,
+
+	nvals * __restrict__ p_n_major,
+	f64 * __restrict__ p__T,
+	f64_vec3 * __restrict__ p_B_major,
+
+	f64 * __restrict__ p__kappa_major,
+	f64 * __restrict__ p__nu_major,
+
+	NTrates * __restrict__ NTadditionrates,
+	f64 * __restrict__ p_AreaMajor,
+	// scrap masking for now --- but bring it back intelligently???
+
+	bool * __restrict__ p_maskbool,
+	bool * __restrict__ p_maskblock,
+	bool bUseMask,
+
+	// Just hope that our clever version will converge fast.
+
+	int iSpecies);
+
+__global__ void kernelAccumulateDiffusiveHeatRateROC_wrt_regressor_1species_Geometric(
+	structural * __restrict__ p_info_minor,
+	long * __restrict__ pIndexNeigh,
+	char * __restrict__ pPBCNeigh,
+	long * __restrict__ izTri_verts,
+	char * __restrict__ szPBCtri_verts,
+	f64_vec2 * __restrict__ p_cc,
+
+	nvals * __restrict__ p_n_major,
+	f64 * __restrict__ p__T,
+	f64 const h_use,
+	f64 * __restrict__ p__x,
+	f64_vec3 * __restrict__ p_B_major,
+
+	f64 * __restrict__ p__kappa_major,
+	f64 * __restrict__ p__nu_major,
+
+	f64 * __restrict__ p___result, // d/dbeta of d(NT)/dt in this cell
+
+	f64 * __restrict__ p_AreaMajor,
+	// scrap masking for now --- but bring it back intelligently???
+
+	bool * __restrict__ p_maskbool,
+	bool * __restrict__ p_maskblock,
+	bool bUseMask,
+
+	// Just hope that our clever version will converge fast.
+
+	int iSpecies);
+
+__global__ void kernelAccumulateDiffusiveHeatRate__array_of_deps_by_dxj_1species_Geometric(
+	structural * __restrict__ p_info_minor,
+	long * __restrict__ pIndexNeigh,
+	char * __restrict__ pPBCNeigh,
+	long * __restrict__ izTri_verts,
+	char * __restrict__ szPBCtri_verts,
+	f64_vec2 * __restrict__ p_cc,
+
+	nvals * __restrict__ p_n_major,
+	f64 * __restrict__ p__T,
+	f64 * __restrict__ p_epsilon,
+	f64 const h_use,
+	f64_vec3 * __restrict__ p_B_major,
+
+	f64 * __restrict__ p__kappa_major,
+	f64 * __restrict__ p__nu_major,
+
+	f64 * __restrict__ p_AreaMajor,
+	// scrap masking for now --- but bring it back intelligently???
+
+	bool * __restrict__ p_maskbool,
+	bool * __restrict__ p_maskblock,
+	bool bUseMask,
+
+	// Just hope that our clever version will converge fast.
+
+	int iSpecies,
+
+	f64 * __restrict__ p_array,
+	f64 * __restrict__ p_effectself
+);
+__global__ void AddFromMyNeighbours(
+	structural * __restrict__ p_info_major,
+	f64 * __restrict__ p_array,
+	f64 * __restrict__ p_arrayself,
+	f64 * __restrict__ p_sum,
+	long * __restrict__ p_izNeigh_vert,
+	short * __restrict__ p_who_am_I_to_you
+);
+
 
 __global__ void kernelCreateShardModelOfDensities_And_SetMajorArea(
 	structural * __restrict__ p_info_minor,
@@ -1702,6 +1913,40 @@ __global__ void DivideMAR_get_accel(
 	f64 * __restrict__ p_AreaMinor,
 	f64 * __restrict__ p_output_x,
 	f64 * __restrict__ p_output_y
+);
+__global__ void MeasureAccelz(
+	structural * __restrict__ p_info,
+	v4 * __restrict__ p_vie_initial,
+	v4 * __restrict__ p_vie_final,
+	f64_vec3 * __restrict__ p_v_nk,
+	f64_vec3 * __restrict__ p_v_nkplus1,
+
+	f64 const h_use, // substep
+	f64_vec2 * __restrict__ pGradAz,
+	f64_vec2 * __restrict__ pGradTe,
+	AAdot * __restrict__ p_AAdot,
+	AAdot * __restrict__ p_AAdot_k,
+	f64 * __restrict__ pLapAz,
+
+	nvals * __restrict__ p_n_central,
+	T3 * __restrict__ p_T_central,
+	f64_vec3 * __restrict__ p_B,
+	f64_vec3 * __restrict__ p_MAR_ion,
+	f64_vec3 * __restrict__ p_MAR_elec,
+	f64_vec3 * __restrict__ p_MAR_neut,
+	f64 * __restrict__ p_AreaMinor,
+
+	f64 * __restrict__ p_arelz,
+	f64 * __restrict__ p_MAR_ion_effect,
+	f64 * __restrict__ p_MAR_elec_effect,
+	f64 * __restrict__ p_Ezext_electromotive,
+	f64 * __restrict__ p_inductive_electromotive,
+	f64 * __restrict__ p_vxB,
+	f64 * __restrict__ p_thermal_force_effect,
+	f64 * __restrict__ p_friction_neutrals,
+	f64 * __restrict__ p_friction_ei,
+	f64 * __restrict__ p_sum_of_effects,
+	f64 * __restrict__ p_difference
 );
 
 __global__ void MeasureAccelxy_and_JxB_and_soak(
