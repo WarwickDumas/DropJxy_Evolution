@@ -8996,9 +8996,14 @@ void RunBackwardR8LSForNeutralViscosity(f64_vec3 * p_v_n_k, f64_vec3 * p_v_n, f6
 		p_epsilon_x,
 		p_epsilon_y,
 		p_epsilon_z,
-		0
+		p_bFailed
 		);
 	Call(cudaThreadSynchronize(), "cudaTS Create epsilon visc");
+
+	bContinue = false;
+	cudaMemcpy(p_boolhost, p_bFailed, sizeof(bool)*numTilesMinor, cudaMemcpyDeviceToHost);
+	for (i = 0; ((i < numTilesMinor) && (p_boolhost[i] == false)); i++);
+	if (i < numTilesMinor) bContinue = true;
 
 	// Collect L2eps :
 	RSS.x = 0.0;
@@ -9033,7 +9038,7 @@ void RunBackwardR8LSForNeutralViscosity(f64_vec3 * p_v_n_k, f64_vec3 * p_v_n, f6
 
 	if (L2eps.x + L2eps.y + L2eps.z == 0.0) goto labelNeutralBudgie;
 
-	do {
+	while(bContinue) {
 
 		// 2. Create set of 7 or 8 regressors, starting with epsilon3 normalized,
 		// and deps/dbeta for each one.
@@ -9198,6 +9203,23 @@ void RunBackwardR8LSForNeutralViscosity(f64_vec3 * p_v_n_k, f64_vec3 * p_v_n, f6
 					sum_product_matrix[i] += p_sum_product_matrix_host[iTile *REGRESSORS*REGRESSORS + i];
 			};
 
+			// Sometimes get 0 row and column at the end.
+			// Try this:
+			if ((sum_product_matrix[REGRESSORS*REGRESSORS - 1] == 0.0) && (eps_deps[REGRESSORS-1] == 0.0)) 
+				sum_product_matrix[REGRESSORS*REGRESSORS - 1] = 1.0;
+			if ((sum_product_matrix[REGRESSORS*(REGRESSORS-1) - 1] == 0.0) && (eps_deps[REGRESSORS - 2] == 0.0))
+				sum_product_matrix[REGRESSORS*(REGRESSORS-1) - 1] = 1.0;
+			if (!GlobalSuppressSuccessVerbosity)
+			{
+				printf("\n");
+				for (i = 0; i < REGRESSORS; i++) {
+					for (int j = 0; j < REGRESSORS; j++)
+						printf("neut %1.9E ", sum_product_matrix[i*REGRESSORS + j]);
+					printf(" |  %1.9E \n", eps_deps[i]);
+				}
+				printf("\n");
+			};
+
 			// Note that file 1041-Krylov.pdf claims that simple factorization for LS is an
 			// unstable method and that is why the complications of GMRES are needed.
 
@@ -9278,7 +9300,7 @@ void RunBackwardR8LSForNeutralViscosity(f64_vec3 * p_v_n_k, f64_vec3 * p_v_n, f6
 			p_bFailed 
 			);
 		Call(cudaThreadSynchronize(), "cudaTS Create epsilon visc");
-
+		
 		bContinue = false;
 		cudaMemcpy(p_boolhost, p_bFailed, sizeof(bool)*numTilesMinor, cudaMemcpyDeviceToHost);
 		for (i = 0; ((i < numTilesMinor) && (p_boolhost[i] == false)); i++);
@@ -9334,8 +9356,8 @@ void RunBackwardR8LSForNeutralViscosity(f64_vec3 * p_v_n_k, f64_vec3 * p_v_n, f6
 		// So actually simpler.
 		
 		iIteration++;
-	} while (bContinue);
-		
+	} // wend bContinue
+
 	GlobalSuppressSuccessVerbosity = DEFAULTSUPPRESSVERBOSITY;
 labelNeutralBudgie:
 
@@ -9347,7 +9369,7 @@ labelNeutralBudgie:
 }
 
 void RunBackwardR8LSForViscosity(v4 * p_vie_k, v4 * p_vie, f64 const hsub, cuSyst * pX_use)
-	// BE SURE ABOUT PARAMETER ORDER -- CHECK IT CHECK IT
+// BE SURE ABOUT PARAMETER ORDER -- CHECK IT CHECK IT
 {
 	// ***************************************************
 	// Requires averaging of n,T to triangles first. & ita
@@ -9356,13 +9378,13 @@ void RunBackwardR8LSForViscosity(v4 * p_vie_k, v4 * p_vie, f64 const hsub, cuSys
 	static bool bHistory = false;
 
 	f64 beta[REGRESSORS];
-	
+
 	GlobalSuppressSuccessVerbosity = false;
 
 	f64 beta_e, beta_i, beta_n;
-	long iTile;		
+	long iTile;
 	cudaMemcpy(p_vie, p_vie_k, sizeof(v4)*NMINOR, cudaMemcpyDeviceToDevice);
-	f64 sum_eps_deps_by_dbeta, sum_depsbydbeta_sq, sum_eps_eps, depsbydbeta;	
+	f64 sum_eps_deps_by_dbeta, sum_depsbydbeta_sq, sum_eps_eps, depsbydbeta;
 	long iMinor;
 	f64 L2eps;
 	int i;
@@ -9379,7 +9401,7 @@ void RunBackwardR8LSForViscosity(v4 * p_vie_k, v4 * p_vie, f64 const hsub, cuSys
 	cudaMemset(p_MAR_elec2, 0, sizeof(f64_vec3)*NMINOR);
 	cudaMemset(NT_addition_tri_d, 0, sizeof(NTrates)*NUMVERTICES * 2);
 	cudaMemset(NT_addition_rates_d_temp, 0, sizeof(NTrates)*NUMVERTICES);
-	kernelCreate_viscous_contrib_to_MAR_and_NT << <numTriTiles, threadsPerTileMinor >> >(
+	kernelCreate_viscous_contrib_to_MAR_and_NT << <numTriTiles, threadsPerTileMinor >> > (
 
 		pX_use->p_info,
 		p_vie,
@@ -9422,12 +9444,17 @@ void RunBackwardR8LSForViscosity(v4 * p_vie_k, v4 * p_vie, f64 const hsub, cuSys
 		);
 	Call(cudaThreadSynchronize(), "cudaTS Create epsilon visc");
 
+	bContinue = false;
+	cudaMemcpy(p_boolhost, p_bFailed, sizeof(bool)*numTilesMinor, cudaMemcpyDeviceToHost);
+	for (i = 0; ((i < numTilesMinor) && (p_boolhost[i] == false)); i++);
+	if (i < numTilesMinor) bContinue = true;
+
 	// Collect L2:
 	RSS_xy = 0.0;
 	RSS_iz = 0.0;
 	RSS_ez = 0.0;
 
-	kernelAccumulateSumOfSquares2vec << <numTilesMinor, threadsPerTileMinor >> >(
+	kernelAccumulateSumOfSquares2vec << <numTilesMinor, threadsPerTileMinor >> > (
 		p_epsilon_xy, p_SS);
 	cudaMemcpy(p_SS_host, p_SS, sizeof(f64)*numTilesMinor, cudaMemcpyDeviceToHost);
 	for (iTile = 0; iTile < numTilesMinor; iTile++)
@@ -9437,7 +9464,7 @@ void RunBackwardR8LSForViscosity(v4 * p_vie_k, v4 * p_vie, f64 const hsub, cuSys
 
 	if (L2eps_xy == 0.0) goto labelBudgerigar;
 
-	kernelAccumulateSumOfSquares1 << <numTilesMinor, threadsPerTileMinor >> >(
+	kernelAccumulateSumOfSquares1 << <numTilesMinor, threadsPerTileMinor >> > (
 		p_epsilon_iz, p_SS);
 	Call(cudaThreadSynchronize(), "cudaTS Accumulate SS");
 	cudaMemcpy(p_SS_host, p_SS, sizeof(f64)*numTilesMinor, cudaMemcpyDeviceToHost);
@@ -9446,7 +9473,7 @@ void RunBackwardR8LSForViscosity(v4 * p_vie_k, v4 * p_vie, f64 const hsub, cuSys
 	f64 L2eps_iz = sqrt(RSS_iz / (real)NMINOR);
 	printf("iz %1.8E ", L2eps_iz);
 
-	kernelAccumulateSumOfSquares1 << <numTilesMinor, threadsPerTileMinor >> >(
+	kernelAccumulateSumOfSquares1 << <numTilesMinor, threadsPerTileMinor >> > (
 		p_epsilon_ez, p_SS);
 	Call(cudaThreadSynchronize(), "cudaTS Accumulate SS");
 	cudaMemcpy(p_SS_host, p_SS, sizeof(f64)*numTilesMinor, cudaMemcpyDeviceToHost);
@@ -9492,7 +9519,7 @@ void RunBackwardR8LSForViscosity(v4 * p_vie_k, v4 * p_vie, f64 const hsub, cuSys
 
 
 	// set epsilon vectors again at end of loop.		
-	do {
+	while (bContinue) {
 
 		// 2. Create set of 7 or 8 regressors, starting with epsilon3 normalized,
 		// and deps/dbeta for each one.
@@ -9501,7 +9528,7 @@ void RunBackwardR8LSForViscosity(v4 * p_vie_k, v4 * p_vie, f64 const hsub, cuSys
 		cudaMemset(p_d_epsxy_by_d_beta_i, 0, sizeof(f64_vec2)*NMINOR*REGRESSORS);
 		cudaMemset(p_d_eps_iz_by_d_beta_i, 0, sizeof(f64)*NMINOR*REGRESSORS);
 		cudaMemset(p_d_eps_ez_by_d_beta_i, 0, sizeof(f64)*NMINOR*REGRESSORS);
-			
+
 		for (i = 0; i < REGRESSORS; i++)
 		{
 
@@ -9608,7 +9635,7 @@ void RunBackwardR8LSForViscosity(v4 * p_vie_k, v4 * p_vie, f64 const hsub, cuSys
 		}; // next i
 
 		cudaMemset(p_eps_against_deps, 0, sizeof(f64)*REGRESSORS * numTilesMinor);
-		cudaMemset(p_sum_product_matrix, 0, sizeof(f64) * REGRESSORS*REGRESSORS* numTilesMinor);			
+		cudaMemset(p_sum_product_matrix, 0, sizeof(f64) * REGRESSORS*REGRESSORS* numTilesMinor);
 		kernelAccumulateSummandsVisc << <numTilesMinor, threadsPerTileMinor / 4 >> > (
 			p_epsilon_xy, // 
 			p_epsilon_iz,
@@ -9620,7 +9647,7 @@ void RunBackwardR8LSForViscosity(v4 * p_vie_k, v4 * p_vie, f64 const hsub, cuSys
 			p_eps_against_d_eps,  // 1x8 for each tile
 			p_sum_product_matrix // this is 8x8 for each tile
 			);
-		Call(cudaThreadSynchronize(), "cudaTS AccumulateSummands neutvisc2");
+		Call(cudaThreadSynchronize(), "cudaTS AccumulateSummands visc2");
 
 		cudaMemcpy(p_eps_against_d_eps_host, p_eps_against_d_eps, sizeof(f64) * REGRESSORS * numTilesMinor, cudaMemcpyDeviceToHost);
 		cudaMemcpy(p_sum_product_matrix_host, p_sum_product_matrix, sizeof(f64) * REGRESSORS*REGRESSORS * numTilesMinor, cudaMemcpyDeviceToHost);
@@ -9639,7 +9666,22 @@ void RunBackwardR8LSForViscosity(v4 * p_vie_k, v4 * p_vie, f64 const hsub, cuSys
 			for (i = 0; i < REGRESSORS*REGRESSORS; i++)
 				sum_product_matrix[i] += p_sum_product_matrix_host[iTile *REGRESSORS*REGRESSORS + i];
 		};
+		// Try this:
+		if ((sum_product_matrix[REGRESSORS*REGRESSORS - 1] == 0.0) && (eps_deps[REGRESSORS - 1] == 0.0))
+			sum_product_matrix[REGRESSORS*REGRESSORS - 1] = 1.0;
+		if ((sum_product_matrix[REGRESSORS*(REGRESSORS - 1) - 1] == 0.0) && (eps_deps[REGRESSORS - 2] == 0.0))
+			sum_product_matrix[REGRESSORS*(REGRESSORS - 1) - 1] = 1.0;
 
+		if (!GlobalSuppressSuccessVerbosity)
+		{
+			printf("\n");
+			for (i = 0; i < REGRESSORS; i++) {
+				for (int j = 0; j < REGRESSORS; j++)
+					printf("ei %1.9E ", sum_product_matrix[i*REGRESSORS + j]);
+				printf(" |  %1.9E \n", eps_deps[i]);
+			}
+			printf("\n");
+		}
 		// Note that file 1041-Krylov.pdf claims that simple factorization for LS is an
 		// unstable method and that is why the complications of GMRES are needed.
 
@@ -9815,7 +9857,7 @@ void RunBackwardR8LSForViscosity(v4 * p_vie_k, v4 * p_vie, f64 const hsub, cuSys
 
 
 		iIteration++;
-	} while (bContinue);		
+	};
 
 labelBudgerigar:
 
