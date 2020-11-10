@@ -3124,14 +3124,23 @@ __global__ void kernelResetFrillsAz(
 		if (info.flag == INNER_FRILL)
 		{
 			p_Az[index] = p_Az[izNeigh.i1]; 
+	//		printf("hello I'm a frill. Tri %d equal to tri %d : %1.10E \n",
+	//			index, izNeigh.i1, p_Az[index]);
+
 		} else {			
 				
-//#define RADIAL_DECLINE
-#ifdef RADIAL_DECLINE
+#if RADIALDECLINE
 			f64 r = p_info[izNeigh.i1].pos.modulus();
 		 	p_Az[index] = (r/ FRILL_CENTROID_OUTER_RADIUS_d)*p_Az[izNeigh.i1]; // should be something like 0.99*p_Az[izNeigh.i1]
 			// Better if we store a constant called Outer_Frill_Factor to save a load and a division.
-
+#else
+			if (DIRICHLET == false)
+			{
+				p_Az[index] = p_Az[izNeigh.i1];
+			}
+			else {
+				p_Az[index] = 0.0;
+			}
 #endif
 #ifdef LOG_INCLINE
 			// Alternative to try: put A = C ln r ...
@@ -3149,14 +3158,7 @@ __global__ void kernelResetFrillsAz(
 			// Let's just try it.
 			p_Az[index] = (ln_ours / lnr)*p_Az[izNeigh.i1]; // GREATER
 			
-#endif
-			if (DIRICHLET == false)
-			{
-				p_Az[index] = p_Az[izNeigh.i1];
-			} else {
-				p_Az[index] = 0.0;
-			}
-
+#endif		
 		};
 	};
 }
@@ -3326,6 +3328,11 @@ __global__ void kernelResetFrillsAz_II(
 		LONG3 izNeigh = trineighbourindex[index];
 		p_Az[index].Az = p_Az[izNeigh.i1].Az;
 	}
+
+//	need to change this if we want to use it for RADIALDECLINE.
+
+
+
 }
 
 
@@ -3382,6 +3389,24 @@ __global__ void kernelAccumulateMatrix(
 	sum_eps_deps[threadIdx.x][1] = eps*d_eps_by_d_beta2;
 	sum_eps_deps[threadIdx.x][2] = eps*d_eps_by_d_beta3;
 
+	if (sum_eps_deps[threadIdx.x][0] != sum_eps_deps[threadIdx.x][0])
+		printf("index %d sum_eps_deps[threadIdx.x][0] == NAN\n"
+			"p_regressor1[index] %1.8E gamma %1.8E LapReg %1.8E \n",
+			index, p_regressor1[index],
+			p_gamma[index], p_LapReg1[index]);
+
+	if (sum_eps_deps[threadIdx.x][1] != sum_eps_deps[threadIdx.x][1])
+		printf("index %d sum_eps_deps[threadIdx.x][1] == NAN\n"
+			"p_regressor2[index] %1.8E gamma %1.8E LapReg %1.8E \n",
+			index, p_regressor2[index],
+			p_gamma[index], p_LapReg2[index]);
+
+	if (sum_eps_deps[threadIdx.x][2] != sum_eps_deps[threadIdx.x][2])
+		printf("index %d sum_eps_deps[threadIdx.x][2] == NAN eps %1.10E d_eps_by_dbeta3 %1.10E\n"
+			"p_regressor3[index] %1.8E gamma %1.8E LapReg %1.8E \n",
+			index, eps, d_eps_by_d_beta3,
+			p_regressor3[index],
+			p_gamma[index], p_LapReg3[index]);
 
 	__syncthreads();
 
@@ -4181,6 +4206,15 @@ __global__ void VectorAddMultiple1(
 {
 	long const iVertex = blockDim.x*blockIdx.x + threadIdx.x;
 	p_T1[iVertex] += alpha1*p_x1[iVertex];
+}
+
+__global__ void CreateConjugateRegressor(
+	f64 * __restrict__ p_regr, f64 const betarat, f64 * __restrict__ p_eps)
+{
+	long const index = blockDim.x*blockIdx.x + threadIdx.x;
+	f64 x = p_regr[index];
+	x = betarat*x + p_eps[index];
+	p_regr[index] = x;
 }
 
 __global__ void VectorAddMultiple(

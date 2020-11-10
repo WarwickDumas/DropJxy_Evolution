@@ -39,6 +39,7 @@
 #define TESTACCEL2 (0) // iMinor - BEGINNING_OF_CENTRAL == VERTCHOSEN)
 #define TESTACCEL_X (0) // PopOhms output
 #define TESTLAP (0)
+#define TESTLAP2 (0) //(iMinor == CHOSEN1) || (iMinor == CHOSEN2))
 #define TESTVEZ (0) //iMinor == VERTCHOSEN + BEGINNING_OF_CENTRAL)
 #define TEST_VS_MATRIX (0) //iMinor == VERTCHOSEN + BEGINNING_OF_CENTRAL)
 #define TEST_VS_MATRIX2 (0) // iVertex == VERTCHOSEN
@@ -14020,6 +14021,9 @@ __global__ void kernelPopulateBackwardOhmsLaw_noadvect(
 		gradTe[threadIdx.x] = p_GradTe[iMinor];
 		LapAz = p_LapAz[iMinor];
 		
+		// debug:
+		if (LapAz != LapAz) printf("----------\n%d LapAz NaN\n---------\n", iMinor);
+				
 		if (((TESTTRI))) printf("GPU %d: LapAz %1.14E\n", CHOSEN, LapAz);
 
 		v0.vxy +=
@@ -16066,8 +16070,7 @@ __global__ void kernelCreateEpsilonAndJacobi(
 		eps = p_Az_array_next[iMinor] - p_Az_array[iMinor] 
 			- h_use * p_gamma[iMinor] * p_Lap_Aznext[iMinor]
 			- h_use * p_Azdot0[iMinor];
-
-
+		
 		p_Jacobi_x[iMinor] = -eps / (1.0 - h_use * p_gamma[iMinor] * p_LapCoeffSelf[iMinor]);
 #else
 		f64 Aznext = p_Az_array_next[iMinor];
@@ -16081,6 +16084,9 @@ __global__ void kernelCreateEpsilonAndJacobi(
 
 		p_Jacobi_x[iMinor] = -eps / (1.0 - h_use * gamma * p_LapCoeffSelf[iMinor]);
 		
+		if (p_Jacobi_x[iMinor] != p_Jacobi_x[iMinor]) printf("p_Jacobi_x[%d] was NaN : eps %1.9E gamma %1.9E LCS %1.9E LapAznext %1.9E Azdot0 %1.9E Aznext %1.9E\n",
+			iMinor, eps, gamma, p_LapCoeffSelf[iMinor], p_Lap_Aznext[iMinor], p_Azdot0[iMinor], Aznext);
+
 //		if (iMinor == 32641) printf("32641: eps %1.9E Az %1.12E Azk %1.12E h %1.10E gamma %1.10E LapAz %1.12E "
 //			"h Azdot0 %1.10E\n",
 //			eps, p_Az_array_next[iMinor], p_Az_array[iMinor],
@@ -16294,6 +16300,8 @@ __global__ void kernelGetLap_minor(
 		if (szPBC[i] == ROTATE_ME_CLOCKWISE) opppos = Clockwise_d*opppos;
 		if (szPBC[i] == ROTATE_ME_ANTICLOCKWISE) opppos = Anticlockwise_d*opppos;
 
+		f64_vec2 store_centroid = opppos;
+
 		endpt0 = THIRD * (info.pos + opppos + prevpos);
 		f64_vec2 store_first_point = endpt0;
 		short inext, iend = tri_len;
@@ -16307,6 +16315,12 @@ __global__ void kernelGetLap_minor(
 			edge_normal.x = endpt0.y - projendpt0.y;
 			edge_normal.y = projendpt0.x - endpt0.x;
 			AreaMinor += (0.5*projendpt0.x + 0.5*endpt0.x)*edge_normal.x;
+			if (TESTLAP) printf("vertex %d endpt0 %1.9E %1.9E projendpt0 %1.9E %1.9E \n",
+				iVertex, endpt0.x, endpt0.y, projendpt0.x, projendpt0.y);
+
+			if (TESTLAP) printf("%d Innermost: AreaMinor += %1.10E AreaMinor %1.10E \n",
+				iVertex, (0.5*projendpt0.x + 0.5*endpt0.x)*edge_normal.x, AreaMinor);
+
 		};
 		
 		//	if (info.flag == OUTERMOST) {
@@ -16351,6 +16365,9 @@ __global__ void kernelGetLap_minor(
 			if (szPBC[inext] == ROTATE_ME_CLOCKWISE) nextpos = Clockwise_d*nextpos;
 			if (szPBC[inext] == ROTATE_ME_ANTICLOCKWISE) nextpos = Anticlockwise_d*nextpos;
 
+			// We should always call ResetFrillsAz first on the argument, so that if next is a frill then
+			// we got the correct value as nextAz.
+			
 			endpt1 = THIRD * (nextpos + info.pos + opppos);					
 			f64_vec2 edge_normal;
 			edge_normal.x = endpt1.y - endpt0.y;
@@ -16388,14 +16405,18 @@ __global__ void kernelGetLap_minor(
 
 			Our_integral_Lap_Az += integ_grad_Az.dot(edge_normal) / area_quadrilateral;
 			AreaMinor += (0.5*endpt0.x + 0.5*endpt1.x)*edge_normal.x;
+			//if (TESTLAP) printf("vertex %d endpt0 %1.9E %1.9E endpt1 %1.9E %1.9E Area += %1.10E edge_normal.x %1.9E\n",
+			//	iVertex, endpt0.x, endpt0.y, endpt1.x, endpt1.y,
+			//	(0.5*endpt0.x + 0.5*endpt1.x)*edge_normal.x, edge_normal.x);
 
-			if (TESTLAP) printf("iVertex %d izTri[%d] %d ourAz %1.8E oppAz %1.8E contrib %1.14E "
-				"grad Az %1.9E %1.9E \n",
+			if (TESTLAP) printf("iVertex %d izTri[%d] %d ourAz %1.8E oppAz %1.8E prevAz %1.8E nextAz %1.8E contrib %1.14E "
+				"grad Az %1.9E %1.9E Area_quad %1.8E\n",
 				iVertex, i, izTri[i],
-				ourAz, oppAz,
+				ourAz, oppAz, prevAz, nextAz,
 				integ_grad_Az.dot(edge_normal) / area_quadrilateral,
 				integ_grad_Az.x / area_quadrilateral,
-				integ_grad_Az.y / area_quadrilateral);
+				integ_grad_Az.y / area_quadrilateral,
+				area_quadrilateral);
 
 			endpt0 = endpt1;
 			prevpos = opppos;
@@ -16411,13 +16432,25 @@ __global__ void kernelGetLap_minor(
 
 			f64_vec2 projendpt1;
 			endpt1.project_to_radius(projendpt1, FRILL_CENTROID_INNER_RADIUS_d);
+			if (TESTLAP) printf("vertex %d endpt1 %1.9E %1.9E projendpt1 %1.9E %1.9E \n",
+				iVertex, endpt1.x, endpt1.y, projendpt1.x, projendpt1.y);
+
 			edge_normal.x = projendpt1.y - endpt1.y;
 			edge_normal.y = endpt1.x - projendpt1.x;
 			AreaMinor += (0.5*projendpt1.x + 0.5*endpt1.x)*edge_normal.x;
+
+			if (TESTLAP) printf("vertex %d Innermost: AreaMinor += %1.10E \n",
+				iVertex, (0.5*projendpt1.x + 0.5*endpt1.x)*edge_normal.x);
+
 			edge_normal.x = projendpt0.y - projendpt1.y;
 			edge_normal.y = projendpt1.x - projendpt0.x;
 			AreaMinor += (0.5*projendpt1.x + 0.5*projendpt0.x)*edge_normal.x;
 			// unchanged... check later
+
+			if (TESTLAP) printf(" vertex %d Innermost: AreaMinor += %1.10E AreaMinor %1.10E \n",
+				iVertex, (0.5*projendpt1.x + 0.5*projendpt0.x)*edge_normal.x,
+				AreaMinor);
+
 		}
 
 		if (info.flag == OUTERMOST)
@@ -16432,12 +16465,22 @@ __global__ void kernelGetLap_minor(
 			
 			oppAz = 0.0;
 			nextAz = 0.0;
-			info.pos.project_to_radius(nextpos, FRILL_CENTROID_OUTER_RADIUS_d); 
-			endpt1 = THIRD*(opppos + info.pos + nextpos);
 
-			// map radially inwards so that radius is halfway out to the zero arc:
-			f64 radiusnow = endpt1.modulus();
-			endpt1 *= ((0.5*(info.pos.modulus() + FRILL_CENTROID_OUTER_RADIUS_d))/ radiusnow);
+			if (RADIALDECLINE) {
+				info.pos.project_to_radius(nextpos, info.pos.modulus() + (FRILL_CENTROID_OUTER_RADIUS_d - info.pos.modulus())*1.16);
+				endpt1 = THIRD*(opppos + info.pos + nextpos);
+				
+				oppAz = prevAz*(prevpos.modulus() / opppos.modulus());
+				nextAz = ourAz*(info.pos.modulus() / nextpos.modulus());		
+			};
+
+			if (!RADIALDECLINE) {
+				info.pos.project_to_radius(nextpos, FRILL_CENTROID_OUTER_RADIUS_d);
+				endpt1 = THIRD*(opppos + info.pos + nextpos);
+				// map radially inwards so that radius is halfway out to the zero arc:
+				f64 radiusnow = endpt1.modulus();
+				endpt1 *= ((0.5*(info.pos.modulus() + FRILL_CENTROID_OUTER_RADIUS_d)) / radiusnow);
+			};
 
 			edge_normal.x = endpt1.y - endpt0.y;
 			edge_normal.y = endpt0.x - endpt1.x;
@@ -16460,7 +16503,7 @@ __global__ void kernelGetLap_minor(
 				+ (opppos.x + prevpos.x)*(opppos.y - prevpos.y)
 				+ (nextpos.x + opppos.x)*(nextpos.y - opppos.y)
 				);
-			if (DIRICHLET) {
+			if (DIRICHLET || RADIALDECLINE) {
 				Our_integral_Lap_Az += integ_grad_Az.dot(edge_normal) / area_quadrilateral;
 
 				if (TESTLAP) printf("iVertex %d ourAz %1.8E oppAz %1.8E prev %1.8E next %1.8E contrib %1.14E "
@@ -16477,6 +16520,7 @@ __global__ void kernelGetLap_minor(
 			opppos = nextpos;
 			prevAz = oppAz;
 			oppAz = nextAz;
+			// NOW WE ARE GOING TO LOOK OUTWARDS
 			
 			inext = tri_len - 1;
 			if ((izTri[inext] >= StartMinor) && (izTri[inext] < EndMinor))
@@ -16488,11 +16532,18 @@ __global__ void kernelGetLap_minor(
 			if (szPBC[inext] == ROTATE_ME_CLOCKWISE) nextpos = Clockwise_d*nextpos;
 			if (szPBC[inext] == ROTATE_ME_ANTICLOCKWISE) nextpos = Anticlockwise_d*nextpos;
 			nextAz = 0.0;
-			endpt1 = THIRD*(opppos + info.pos + nextpos);
 
-			// map radially inwards so that radius is halfway out to the zero arc.
-			radiusnow = endpt1.modulus();
-			endpt1 *= ((0.5*(info.pos.modulus() + FRILL_CENTROID_OUTER_RADIUS_d)) / radiusnow);
+			endpt1 = THIRD*(opppos + info.pos + nextpos);
+			if (RADIALDECLINE) {
+				//This was incorrect
+				nextAz = p_Az[izTri[0]]*(store_centroid.modulus()/nextpos.modulus());
+			}
+			
+			if (!RADIALDECLINE) {
+				// map radially inwards so that radius is halfway out to the zero arc.
+				f64 radiusnow = endpt1.modulus();
+				endpt1 *= ((0.5*(info.pos.modulus() + FRILL_CENTROID_OUTER_RADIUS_d)) / radiusnow);
+			};
 
 			edge_normal.x = endpt1.y - endpt0.y;
 			edge_normal.y = endpt0.x - endpt1.x;
@@ -16515,7 +16566,7 @@ __global__ void kernelGetLap_minor(
 				+ (opppos.x + prevpos.x)*(opppos.y - prevpos.y)
 				+ (nextpos.x + opppos.x)*(nextpos.y - opppos.y)
 				);
-			if (DIRICHLET) {
+			if (DIRICHLET || RADIALDECLINE) {
 				Our_integral_Lap_Az += integ_grad_Az.dot(edge_normal) / area_quadrilateral;
 
 				if (TESTLAP) printf("iVertex %d ourAz %1.8E oppAz %1.8E prev %1.8E next %1.8E contrib %1.14E "
@@ -16535,6 +16586,8 @@ __global__ void kernelGetLap_minor(
 			prevAz = oppAz;
 			oppAz = nextAz;
 			
+			// WE ARE GOING TO LOOK NORTHEAST
+
 			endpt1 = store_first_point;
 			nextAz = p_Az[izTri[0]];
 			nextpos = p_info[izTri[0]].pos;
@@ -16560,7 +16613,7 @@ __global__ void kernelGetLap_minor(
 				+ (opppos.x + prevpos.x)*(opppos.y - prevpos.y)
 				+ (nextpos.x + opppos.x)*(nextpos.y - opppos.y)
 				);
-			if (DIRICHLET) {
+			if (DIRICHLET || RADIALDECLINE) {
 				Our_integral_Lap_Az += integ_grad_Az.dot(edge_normal) / area_quadrilateral;
 
 				if (TESTLAP) printf("iVertex %d ourAz %1.8E oppAz %1.8E prev %1.8E next %1.8E contrib %1.14E "
@@ -16572,11 +16625,13 @@ __global__ void kernelGetLap_minor(
 			};
 
 			AreaMinor += (0.5*endpt0.x + 0.5*endpt1.x)*edge_normal.x;
-
 		};
 		
-			// But this points up why CG doesn't roll properly. The presence of the AreaMinor factor makes
-			// the equations not symmetric.
+		// But this points up why CG doesn't roll properly. The presence of the AreaMinor factor makes
+		// the equations not symmetric.
+
+		if (TESTLAP) printf("LapAz_integ %1.10E AreaMinor %1.10E LapAz %1.10E \n", Our_integral_Lap_Az, AreaMinor,
+			Our_integral_Lap_Az / AreaMinor);
 
 		p_LapAz[iVertex + BEGINNING_OF_CENTRAL] = Our_integral_Lap_Az / AreaMinor;
 //		p_AreaMinor[iVertex + BEGINNING_OF_CENTRAL] = AreaMinor; // reset just because otherwise we're inconsistent about area/position in a subcycle
@@ -16625,7 +16680,12 @@ __global__ void kernelGetLap_minor(
 		};
 		if (szPBC[iprev] == ROTATE_ME_CLOCKWISE) prevpos = Clockwise_d*prevpos;
 		if (szPBC[iprev] == ROTATE_ME_ANTICLOCKWISE) prevpos = Anticlockwise_d*prevpos;
-
+		if (prevpos.dot(prevpos) > 0.99999*0.99999*FRILL_CENTROID_OUTER_RADIUS_d*FRILL_CENTROID_OUTER_RADIUS_d)
+		{
+			// outer frill
+			if (RADIALDECLINE)
+				prevAz = ourAz*(info.pos.modulus() / prevpos.modulus());
+		}
 		i = 0;
 		if ((izNeighMinor[i] >= StartMinor) && (izNeighMinor[i] < EndMinor))
 		{
@@ -16646,7 +16706,12 @@ __global__ void kernelGetLap_minor(
 		};
 		if (szPBC[i] == ROTATE_ME_CLOCKWISE) opppos = Clockwise_d*opppos;
 		if (szPBC[i] == ROTATE_ME_ANTICLOCKWISE) opppos = Anticlockwise_d*opppos;
-
+		if (opppos.dot(opppos) > 0.99999*0.99999*FRILL_CENTROID_OUTER_RADIUS_d*FRILL_CENTROID_OUTER_RADIUS_d)
+		{
+			// outer frill
+			if (RADIALDECLINE)
+				oppAz = ourAz*(info.pos.modulus() / opppos.modulus());
+		}
 #pragma unroll 
 
 		for (i = 0; i < 6; i++)
@@ -16672,6 +16737,12 @@ __global__ void kernelGetLap_minor(
 			};
 			if (szPBC[inext] == ROTATE_ME_CLOCKWISE) nextpos = Clockwise_d*nextpos;
 			if (szPBC[inext] == ROTATE_ME_ANTICLOCKWISE) nextpos = Anticlockwise_d*nextpos;
+			if (nextpos.dot(nextpos) > 0.999999*0.999999*FRILL_CENTROID_OUTER_RADIUS_d*FRILL_CENTROID_OUTER_RADIUS_d)
+			{
+				// outer frill
+				if (RADIALDECLINE)
+					nextAz = ourAz*(info.pos.modulus() / nextpos.modulus());
+			}
 
 			// ______________________________________________________-
 
@@ -16709,16 +16780,19 @@ __global__ void kernelGetLap_minor(
 			// This shouldn't be necessary anyway but is especially no good if it's not meant to be flat
 
 			if (  
-				((opppos.dot(opppos) < 0.99999*0.99999*FRILL_CENTROID_OUTER_RADIUS_d*FRILL_CENTROID_OUTER_RADIUS_d) || (DIRICHLET)) &&
+				((opppos.dot(opppos) < 0.99999*0.99999*FRILL_CENTROID_OUTER_RADIUS_d*FRILL_CENTROID_OUTER_RADIUS_d) || (DIRICHLET) ||
+					(RADIALDECLINE)) &&
 				(opppos.dot(opppos) > 1.00001*1.00001*FRILL_CENTROID_INNER_RADIUS_d*FRILL_CENTROID_INNER_RADIUS_d)
 				)
 			{
-				// neighbour's not a frill, or it's Dirichlet looking outwards.
+				// neighbour's not a frill, or it's Dirichlet or radial decline looking outwards.
 				Our_integral_Lap_Az += integ_grad_Az.dot(edge_normal) / area_quadrilateral;
-				if (TESTTRI3) {
-					printf("iMinor %d izNeighMinor[i] %d ourAz %1.9E theirs %1.9E contrib %1.12E \n",
-						iMinor, izNeighMinor[i], ourAz, oppAz,
-						integ_grad_Az.dot(edge_normal) / area_quadrilateral);
+				if ((TESTLAP2) || (Our_integral_Lap_Az != Our_integral_Lap_Az)) {
+					printf("iMinor %d [i] %d ourAz %1.9E theirs %1.9E prev %1.9E next %1.9E numer %1.9E contrib %1.10E areaquad %1.8E\n",
+						iMinor, izNeighMinor[i], ourAz, oppAz, prevAz, nextAz,
+						integ_grad_Az.dot(edge_normal),
+						integ_grad_Az.dot(edge_normal) / area_quadrilateral,
+						area_quadrilateral);					
 				};
 			}
 			AreaMinor += SIXTH*((prevpos.x + info.pos.x + opppos.x) +
@@ -16745,7 +16819,8 @@ __global__ void kernelGetLap_minor_SYMMETRIC(
 	char * __restrict__ p_szPBCtri_vertex,
 	char * __restrict__ p_szPBCtriminor,
 	f64 * __restrict__ p_LapAz,
-	f64 * __restrict__ p_AreaMinor // need to save off to multiply back for symmetry
+	f64 * __restrict__ p_AreaMinor, // need to save off to multiply back for symmetry
+	bool const bDivideByArea
 )
 {
 	// Symmetric version with circumcenters to define corners of minor cells
@@ -16821,6 +16896,7 @@ __global__ void kernelGetLap_minor_SYMMETRIC(
 		if (szPBC[i] == ROTATE_ME_CLOCKWISE) opppos = Clockwise_d*opppos;
 		if (szPBC[i] == ROTATE_ME_ANTICLOCKWISE) opppos = Anticlockwise_d*opppos;
 
+		f64_vec2 store_centroid = opppos;
 		// endpt0 = THIRD * (info.pos + opppos + prevpos);
 
 		CalculateCircumcenter(&endpt0, info.pos, opppos, prevpos);
@@ -16939,15 +17015,24 @@ __global__ void kernelGetLap_minor_SYMMETRIC(
 			// endpt0=endpt1 is now the point north of edge facing 2.
 			// opppos is centre of tri (3).
 
-			oppAz = 0.0;
-			nextAz = 0.0;
-			info.pos.project_to_radius(nextpos, FRILL_CENTROID_OUTER_RADIUS_d);
-			CalculateCircumcenter(&endpt1, info.pos, opppos, nextpos); // THIRD*(opppos + info.pos + nextpos);
+			if (!RADIALDECLINE) {
+				oppAz = 0.0;
+				nextAz = 0.0;
+				info.pos.project_to_radius(nextpos, FRILL_CENTROID_OUTER_RADIUS_d);
+				CalculateCircumcenter(&endpt1, info.pos, opppos, nextpos); // THIRD*(opppos + info.pos + nextpos);
+			}
+			if (RADIALDECLINE) {
+				info.pos.project_to_radius(nextpos, info.pos.modulus() + (FRILL_CENTROID_OUTER_RADIUS_d-info.pos.modulus())*1.16 );
+				CalculateCircumcenter(&endpt1, info.pos, opppos, nextpos); // THIRD*(opppos + info.pos + nextpos);
+				oppAz = prevAz*(prevpos.modulus() / opppos.modulus());
+				nextAz = ourAz*(info.pos.modulus() / nextpos.modulus());
+			}
+				// nextpos directly above our own but only on a level with the other frill centroids
 
 			edge_normal.x = endpt1.y - endpt0.y;
 			edge_normal.y = endpt0.x - endpt1.x;
 
-			if (DIRICHLET)
+			if (DIRICHLET || RADIALDECLINE)
 				Our_integral_Lap_Az += (oppAz - ourAz)*sqrt((edge_normal.dot(edge_normal)) / ((opppos - info.pos).dot(opppos - info.pos)));
 			
 			// "map radially inwards so that radius is halfway out to the zero arc:"
@@ -16975,11 +17060,14 @@ __global__ void kernelGetLap_minor_SYMMETRIC(
 
 			CalculateCircumcenter(&endpt1, info.pos, opppos, nextpos); // THIRD*(opppos + info.pos + nextpos);
 
+			if (RADIALDECLINE)
+				nextAz = p_Az[izTri[0]] * (store_centroid.modulus() / nextpos.modulus());
+
 			edge_normal.x = endpt1.y - endpt0.y;
 			edge_normal.y = endpt0.x - endpt1.x;
 			// As with our other points, edge_normal points inwards because 1 is clockwise of 0.
 
-			if (DIRICHLET)
+			if (DIRICHLET || (RADIALDECLINE))
 				Our_integral_Lap_Az += (oppAz - ourAz)*sqrt((edge_normal.dot(edge_normal)) / ((opppos - info.pos).dot(opppos - info.pos)));
 
 			AreaMinor += (0.5*endpt0.x + 0.5*endpt1.x)*edge_normal.x;
@@ -16992,15 +17080,17 @@ __global__ void kernelGetLap_minor_SYMMETRIC(
 			prevAz = oppAz;
 			oppAz = nextAz;
 
+			// WE ARE GOING TO LOOK NORTHEAST
+
 			endpt1 = store_first_point;
-			//xtAz = p_Az[izTri[0]];
+			// nextAz = p_Az[izTri[0]]; // cancelled because nextAz is not used
 			nextpos = p_info[izTri[0]].pos;
 
 			edge_normal.x = endpt1.y - endpt0.y;
 			edge_normal.y = endpt0.x - endpt1.x;
 			// As with our other points, edge_normal points inwards because 1 is clockwise of 0.
 
-			if (DIRICHLET)
+			if (DIRICHLET || (RADIALDECLINE))
 				Our_integral_Lap_Az += (oppAz - ourAz)*sqrt((edge_normal.dot(edge_normal)) / ((opppos - info.pos).dot(opppos - info.pos)));
 
 			if (Our_integral_Lap_Az != Our_integral_Lap_Az) printf(" at dirichlet oppAz %1.8E ourAz %1.8E edge_normal.dot(en) %1.8E opposdot %1.8E \n",
@@ -17012,8 +17102,10 @@ __global__ void kernelGetLap_minor_SYMMETRIC(
 		// But this points up why CG doesn't roll properly. The presence of the AreaMinor factor makes
 		// the equations not symmetric.
 		// MULTIPLY!!
+		if (bDivideByArea) Our_integral_Lap_Az /= AreaMinor;
+		p_LapAz[iVertex + BEGINNING_OF_CENTRAL] = Our_integral_Lap_Az;// / AreaMinor;
+		// WE NO LONGER DIVIDE BY AreaMinor
 
-		p_LapAz[iVertex + BEGINNING_OF_CENTRAL] = Our_integral_Lap_Az / AreaMinor;	
 		p_AreaMinor[iVertex + BEGINNING_OF_CENTRAL] = AreaMinor;
 
 		if (AreaMinor < 0.0) printf("iVertex %d : AreaMinor %1.10E \n", iVertex, AreaMinor);
@@ -17079,6 +17171,12 @@ __global__ void kernelGetLap_minor_SYMMETRIC(
 		};
 		if (szPBC[i] == ROTATE_ME_CLOCKWISE) opppos = Clockwise_d*opppos;
 		if (szPBC[i] == ROTATE_ME_ANTICLOCKWISE) opppos = Anticlockwise_d*opppos;
+		if (opppos.dot(opppos) > 0.99999*0.99999*FRILL_CENTROID_OUTER_RADIUS_d*FRILL_CENTROID_OUTER_RADIUS_d)
+		{
+			// outer frill
+			if (RADIALDECLINE)
+				oppAz = ourAz*(info.pos.modulus() / opppos.modulus());
+		}
 
 		CalculateCircumcenter(&endpt0, info.pos, opppos, prevpos);
 #pragma unroll 
@@ -17105,6 +17203,12 @@ __global__ void kernelGetLap_minor_SYMMETRIC(
 			};
 			if (szPBC[inext] == ROTATE_ME_CLOCKWISE) nextpos = Clockwise_d*nextpos;
 			if (szPBC[inext] == ROTATE_ME_ANTICLOCKWISE) nextpos = Anticlockwise_d*nextpos;
+			if (nextpos.dot(nextpos) > 0.99999*0.99999*FRILL_CENTROID_OUTER_RADIUS_d*FRILL_CENTROID_OUTER_RADIUS_d)
+			{
+				// outer frill
+				if (RADIALDECLINE)
+					nextAz = ourAz*(info.pos.modulus() / nextpos.modulus());
+			}
 
 			CalculateCircumcenter(&endpt1, info.pos, opppos, nextpos);
 
@@ -17140,18 +17244,18 @@ __global__ void kernelGetLap_minor_SYMMETRIC(
 			edge_normal.y = endpt0.x - endpt1.x;
 
 			if (
-				((opppos.dot(opppos) < 0.99999*0.99999*FRILL_CENTROID_OUTER_RADIUS_d*FRILL_CENTROID_OUTER_RADIUS_d) || (DIRICHLET)) &&
+				((opppos.dot(opppos) < 0.99999*0.99999*FRILL_CENTROID_OUTER_RADIUS_d*FRILL_CENTROID_OUTER_RADIUS_d) || (DIRICHLET) || (RADIALDECLINE)) &&
 				(opppos.dot(opppos) > 1.00001*1.00001*FRILL_CENTROID_INNER_RADIUS_d*FRILL_CENTROID_INNER_RADIUS_d)
 				)
 			{
-				// neighbour's not a frill, or it's Dirichlet looking outwards.
+				// neighbour's not a frill, or it's Dirichlet looking outwards. Or radial decline.
 				
 				// Symmetric, with circumcenters:
 				//		normal_gradient = (oppAz - ourAz) / ((opppos - info.pos).modulus());
 				//		Our_integral_Lap_Az += normal_gradient*edge_normal.modulus();
 				// Reduce number of square roots:
 				Our_integral_Lap_Az += (oppAz - ourAz)*sqrt((edge_normal.dot(edge_normal)) / ((opppos - info.pos).dot(opppos - info.pos)));
-
+				
 				if (Our_integral_Lap_Az != Our_integral_Lap_Az) 
 					printf("oppAz %1.8E ourAz %1.8E edge_normal.dot(en) %1.8E opposdot %1.8E \n",
 						oppAz, ourAz, edge_normal.dot(edge_normal), ((opppos - info.pos).dot(opppos - info.pos)));
@@ -17172,8 +17276,8 @@ __global__ void kernelGetLap_minor_SYMMETRIC(
 			prevpos = opppos;
 			opppos = nextpos;
 		};
-
-		p_LapAz[iMinor] = Our_integral_Lap_Az / AreaMinor;
+		if (bDivideByArea) Our_integral_Lap_Az /= AreaMinor;
+		p_LapAz[iMinor] = Our_integral_Lap_Az;// / AreaMinor;
 		p_AreaMinor[iMinor] = AreaMinor; // reset for each substep	 // careful what we pass it
 
 		if (AreaMinor < 0.0) printf("%d : AreaMinor %1.10E \n", iMinor, AreaMinor);
@@ -18683,8 +18787,10 @@ __global__ void kernelComputeJacobianValues(
 	
 	f64_vec2 opppos, prevpos, nextpos;
 	int iWhich, j;
+	int iWhichPrev, iWhichSelf, iWhichNext, iWhichOpp;
 
 	if (threadIdx.x < threadsPerTileMajor) {
+		iWhichSelf = p_indic[iVertex + BEGINNING_OF_CENTRAL];
 
 		memset(d_eps_by_dbeta_j, 0, sizeof(f64)*SQUASH_POINTS);
 
@@ -18709,6 +18815,7 @@ __global__ void kernelComputeJacobianValues(
 		}
 		if (szPBC[iprev] == ROTATE_ME_CLOCKWISE) prevpos = Clockwise_d*prevpos;
 		if (szPBC[iprev] == ROTATE_ME_ANTICLOCKWISE) prevpos = Anticlockwise_d*prevpos;
+		iWhichPrev = p_indic[izTri[iprev]];
 
 		short i = 0;
 		if ((izTri[i] >= StartMinor) && (izTri[i] < EndMinor))
@@ -18719,13 +18826,34 @@ __global__ void kernelComputeJacobianValues(
 		}
 		if (szPBC[i] == ROTATE_ME_CLOCKWISE) opppos = Clockwise_d*opppos;
 		if (szPBC[i] == ROTATE_ME_ANTICLOCKWISE) opppos = Anticlockwise_d*opppos;
+		iWhichOpp = p_indic[izTri[i]];
+
+		// Handle case that prev is a frill. What to do then?
+		// Not sure which way numbers go.But either way if prev is a frill then it's our 0th tri that is the governor.
+		f64 prevfactor = 1.0;
+		f64 nextfactor;
+		if ((info.flag == INNERMOST) &&
+			(prevpos.dot(prevpos) < 1.0000001*1.0000001*FRILL_CENTROID_INNER_RADIUS_d*FRILL_CENTROID_INNER_RADIUS_d))
+		{
+			iWhichPrev = iWhichOpp;
+		};
+		if ((info.flag == OUTERMOST) && (prevpos.dot(prevpos) > 0.99999*0.99999*FRILL_CENTROID_OUTER_RADIUS_d*FRILL_CENTROID_OUTER_RADIUS_d)
+			&& (RADIALDECLINE))
+		{
+			iWhichPrev = iWhichOpp;
+			prevfactor = (opppos.modulus() / prevpos.modulus());
+		};
+
+
+		f64_vec2 store_centroid = opppos;
 
 		endpt0 = THIRD * (info.pos + opppos + prevpos);
 
 		f64_vec2 store_first_point = endpt0;
 
 		short inext, iend = tri_len;
-		if ((info.flag == INNERMOST) || (info.flag == OUTERMOST)) iend = tri_len - 2;
+		if ((info.flag == INNERMOST) || (info.flag == OUTERMOST)) 
+			iend = tri_len - 2;
 		
 		f64_vec2 projendpt0, edge_normal;
 		if ((info.flag == INNERMOST)) {
@@ -18750,6 +18878,21 @@ __global__ void kernelComputeJacobianValues(
 			}
 			if (szPBC[inext] == ROTATE_ME_CLOCKWISE) nextpos = Clockwise_d*nextpos;
 			if (szPBC[inext] == ROTATE_ME_ANTICLOCKWISE) nextpos = Anticlockwise_d*nextpos;
+			iWhichNext = p_indic[izTri[inext]];
+
+			nextfactor = 1.0;
+			if ((info.flag == INNERMOST) &&
+				(nextpos.dot(nextpos) < 1.0000001*1.0000001*FRILL_CENTROID_INNER_RADIUS_d*FRILL_CENTROID_INNER_RADIUS_d))
+			{
+				iWhichNext = iWhichOpp;
+			};
+			if ((info.flag == OUTERMOST) && 
+				(nextpos.dot(nextpos) > 0.99999*0.99999*FRILL_CENTROID_OUTER_RADIUS_d*FRILL_CENTROID_OUTER_RADIUS_d)
+				&& (RADIALDECLINE))
+			{
+				iWhichNext = iWhichOpp;
+				nextfactor = (opppos.modulus() / nextpos.modulus());
+			};
 
 			endpt1 = THIRD * (nextpos + info.pos + opppos);
 			f64_vec2 edge_normal;
@@ -18782,27 +18925,23 @@ __global__ void kernelComputeJacobianValues(
 			//f64_vec2 grad_Az = integ_grad_Az / area_quadrilateral;
 	//		Our_integral_Lap_Az += integ_grad_Az.dot(edge_normal) / area_quadrilateral;
 
-			iWhich = p_indic[izTri[iprev]];
-			if (iWhich > 0) {
-				d_eps_by_dbeta_j[iWhich-1] += 0.5*((opppos.y - info.pos.y)*edge_normal.x
+			if (iWhichPrev > 0) {
+				d_eps_by_dbeta_j[iWhichPrev-1] += prevfactor*0.5*((opppos.y - info.pos.y)*edge_normal.x
 					- (opppos.x - info.pos.x)*edge_normal.y) / area_quadrilateral;
-				// Just add unnomralized here
+				// Just add unnomralized here				
 			}
-			iWhich = p_indic[izTri[i]];
-			if (iWhich > 0) {
-				d_eps_by_dbeta_j[iWhich-1] += 0.5*((nextpos.y-prevpos.y)*edge_normal.x
+			if (iWhichOpp > 0) {
+				d_eps_by_dbeta_j[iWhichOpp-1] += 0.5*((nextpos.y-prevpos.y)*edge_normal.x
 					- (nextpos.x-prevpos.x)*edge_normal.y) / area_quadrilateral;
 				// Just add unnomralized here
 			}
-			iWhich = p_indic[izTri[inext]];
-			if (iWhich > 0) {
-				d_eps_by_dbeta_j[iWhich-1] += 0.5*((info.pos.y-opppos.y)*edge_normal.x
+			if (iWhichNext > 0) {
+				d_eps_by_dbeta_j[iWhichNext-1] += nextfactor*0.5*((info.pos.y-opppos.y)*edge_normal.x
 					+ (opppos.x-info.pos.x)*edge_normal.y) / area_quadrilateral;
 				// Just add unnomralized here
 			}
-			iWhich = p_indic[iVertex + BEGINNING_OF_CENTRAL];
-			if (iWhich > 0) {
-				d_eps_by_dbeta_j[iWhich - 1] += 0.5*((prevpos.y-nextpos.y)*edge_normal.x
+			if (iWhichSelf > 0) {
+				d_eps_by_dbeta_j[iWhichSelf - 1] += 0.5*((prevpos.y-nextpos.y)*edge_normal.x
 					- (prevpos.x-nextpos.x)*edge_normal.y) / area_quadrilateral;
 				// Just add unnomralized here
 			}
@@ -18812,6 +18951,8 @@ __global__ void kernelComputeJacobianValues(
 			endpt0 = endpt1;
 			prevpos = opppos;
 			opppos = nextpos;
+			iWhichPrev = iWhichOpp;
+			iWhichOpp = iWhichNext;
 		}; // next i
 
 		if (info.flag == INNERMOST) {
@@ -18828,9 +18969,9 @@ __global__ void kernelComputeJacobianValues(
 			// unchanged... check later
 		}
 
+
 		if (info.flag == OUTERMOST)
 		{
-			iWhich = p_indic[iVertex + BEGINNING_OF_CENTRAL];
 			// 3 sides to add.
 
 			//       3   4
@@ -18839,13 +18980,22 @@ __global__ void kernelComputeJacobianValues(
 			// endpt0=endpt1 is now the point north of edge facing 2.
 			// opppos is centre of tri (3).
 
-			info.pos.project_to_radius(nextpos, FRILL_CENTROID_OUTER_RADIUS_d);
-			endpt1 = THIRD*(opppos + info.pos + nextpos);
+			f64 opp_prev = 0.0, next_ours = 0.0;
+			if (RADIALDECLINE) {
+				info.pos.project_to_radius(nextpos, info.pos.modulus() + (FRILL_CENTROID_OUTER_RADIUS_d - info.pos.modulus())*1.16);
+				endpt1 = THIRD*(opppos + info.pos + nextpos);
+				opp_prev = (prevpos.modulus() / opppos.modulus());
+				next_ours = (info.pos.modulus() / nextpos.modulus());
+			};
 
-			// map radially inwards so that radius is halfway out to the zero arc:
-			f64 radiusnow = endpt1.modulus();
-			endpt1 *= ((0.5*(info.pos.modulus() + FRILL_CENTROID_OUTER_RADIUS_d)) / radiusnow);
-
+			if (!RADIALDECLINE) {
+				info.pos.project_to_radius(nextpos, FRILL_CENTROID_OUTER_RADIUS_d);
+				endpt1 = THIRD*(opppos + info.pos + nextpos);
+				// map radially inwards so that radius is halfway out to the zero arc:
+				f64 radiusnow = endpt1.modulus();
+				endpt1 *= ((0.5*(info.pos.modulus() + FRILL_CENTROID_OUTER_RADIUS_d)) / radiusnow);
+			};
+			
 			edge_normal.x = endpt1.y - endpt0.y;
 			edge_normal.y = endpt0.x - endpt1.x;
 			// As with our other points, edge_normal points inwards because 1 is clockwise of 0.
@@ -18856,29 +19006,42 @@ __global__ void kernelComputeJacobianValues(
 				+ (opppos.x + prevpos.x)*(opppos.y - prevpos.y)
 				+ (nextpos.x + opppos.x)*(nextpos.y - opppos.y)
 				);
-			if (DIRICHLET) {
-				iWhich = p_indic[izTri[iprev]];
-				if (iWhich > 0) {
-					d_eps_by_dbeta_j[iWhich - 1] += 0.5*((opppos.y - info.pos.y)*edge_normal.x
-						- (opppos.x - info.pos.x)*edge_normal.y) / area_quadrilateral;
+			
+			if (DIRICHLET || RADIALDECLINE) {
+				// iWhichPrev is already set to previous iWhichOpp.
+				// hold on to it
+				if (iWhichPrev > 0) {
+					d_eps_by_dbeta_j[iWhichPrev - 1]
+						+= (0.5*((opppos.y - info.pos.y)*edge_normal.x
+						- (opppos.x - info.pos.x)*edge_normal.y)
+						+ 0.5*opp_prev*(
+							(nextpos.y-prevpos.y)*edge_normal.x
+							-(nextpos.x-prevpos.x)*edge_normal.y
+								)
+							)/ area_quadrilateral;
 				}
-				iWhich = p_indic[izTri[i]]; // frill!
-				if (iWhich > 0) {
-					d_eps_by_dbeta_j[iWhich - 1] += 0.5*((nextpos.y - prevpos.y)*edge_normal.x
-						- (nextpos.x - prevpos.x)*edge_normal.y) / area_quadrilateral;
-				}				
-				iWhich = p_indic[iVertex + BEGINNING_OF_CENTRAL];
-				if (iWhich > 0) {
-					d_eps_by_dbeta_j[iWhich - 1] += 0.5*((prevpos.y - nextpos.y)*edge_normal.x
-						- (prevpos.x - nextpos.x)*edge_normal.y) / area_quadrilateral;
+
+				//iWhichSelf = p_indic[iVertex + BEGINNING_OF_CENTRAL]; // already set.
+				if (iWhichSelf > 0) {
+					d_eps_by_dbeta_j[iWhichSelf - 1] += (0.5*((prevpos.y - nextpos.y)*edge_normal.x
+						- (prevpos.x - nextpos.x)*edge_normal.y)
+						+ 0.5*next_ours*(
+							(info.pos.y-opppos.y)*edge_normal.x
+							- (info.pos.x-opppos.x)*edge_normal.y
+							)						
+						)/ area_quadrilateral;
 				}
-			}
+			};
+
 			AreaMinor += (0.5*endpt0.x + 0.5*endpt1.x)*edge_normal.x;
 
 			endpt0 = endpt1;
 			prevpos = opppos;
 			opppos = nextpos;
 
+			// NOW WE ARE GOING TO LOOK OUTWARDS
+			// iprev IS NOT UPDATED
+			
 			inext = tri_len - 1;
 			if ((izTri[inext] >= StartMinor) && (izTri[inext] < EndMinor))
 			{
@@ -18888,12 +19051,28 @@ __global__ void kernelComputeJacobianValues(
 			}
 			if (szPBC[inext] == ROTATE_ME_CLOCKWISE) nextpos = Clockwise_d*nextpos;
 			if (szPBC[inext] == ROTATE_ME_ANTICLOCKWISE) nextpos = Anticlockwise_d*nextpos;
+			
+			f64 next_0 = 0.0;
 			endpt1 = THIRD*(opppos + info.pos + nextpos);
+			if (RADIALDECLINE) {
+				next_0 = (store_centroid.modulus() / nextpos.modulus());
+			}
+			if (!RADIALDECLINE) {
+				// map radially inwards so that radius is halfway out to the zero arc:
+				f64 radiusnow = endpt1.modulus();
+				endpt1 *= ((0.5*(info.pos.modulus() + FRILL_CENTROID_OUTER_RADIUS_d)) / radiusnow);
+			};
+//
+//			 So now ... opp_prev is still there and must attribute the prev coefficient
+//			 to the prev-1 index
+//			
+//			 next_ours is now opp, and must attribute the opp coefficient to ourselves
+//			
+//			 and the next coefficient now applies for index 0 with coeff next_0
 
-			// map radially inwards so that radius is halfway out to the zero arc.
-			radiusnow = endpt1.modulus();
-			endpt1 *= ((0.5*(info.pos.modulus() + FRILL_CENTROID_OUTER_RADIUS_d)) / radiusnow);
 
+			// We have not updated iprev.
+			
 			edge_normal.x = endpt1.y - endpt0.y;
 			edge_normal.y = endpt0.x - endpt1.x;
 			// As with our other points, edge_normal points inwards because 1 is clockwise of 0.
@@ -18904,7 +19083,33 @@ __global__ void kernelComputeJacobianValues(
 				+ (opppos.x + prevpos.x)*(opppos.y - prevpos.y)
 				+ (nextpos.x + opppos.x)*(nextpos.y - opppos.y)
 				);
+			// WE ARE NOW LOOKING DIRECTLY OUTWARDS.
+			// "iprev" is now the previous one to prev and still relevant in case of radial decline
+			// next_ours is now for the opposite one
+			// next_0 relates the next position to the effect of the 0th value.
+
+			if (RADIALDECLINE) {
+				if (iWhichPrev > 0) {
+					d_eps_by_dbeta_j[iWhichPrev - 1] += 
+						0.5*opp_prev*((opppos.y - info.pos.y)*edge_normal.x
+						- (opppos.x - info.pos.x)*edge_normal.y) / area_quadrilateral;
+				};
+				if (iWhichSelf > 0) {
+					d_eps_by_dbeta_j[iWhichSelf - 1] += 
+						0.5*(1.0-next_ours)*((prevpos.y - nextpos.y)*edge_normal.x
+						- (prevpos.x - nextpos.x)*edge_normal.y) / area_quadrilateral;
+				};
+				iWhichNext = p_indic[izTri[0]];
+				if (iWhichNext > 0) {
+					d_eps_by_dbeta_j[iWhichNext - 1] +=
+						0.5*next_0*((info.pos.y - opppos.y)*edge_normal.x
+							- (opppos.x - info.pos.x)*edge_normal.y) / area_quadrilateral;
+				};
+			};
+
 			if (DIRICHLET) {
+				// May be nonsense.
+
 				iWhich = p_indic[izTri[iprev]]; //frill!
 				if (iWhich > 0) {
 					d_eps_by_dbeta_j[iWhich - 1] += 0.5*((opppos.y - info.pos.y)*edge_normal.x
@@ -18928,6 +19133,7 @@ __global__ void kernelComputeJacobianValues(
 			endpt0 = endpt1;
 			prevpos = opppos;
 			opppos = nextpos;
+			// WE ARE GOING TO LOOK NORTHEAST
 
 			endpt1 = store_first_point;
 			nextpos = p_info[izTri[0]].pos;
@@ -18941,6 +19147,26 @@ __global__ void kernelComputeJacobianValues(
 				+ (opppos.x + prevpos.x)*(opppos.y - prevpos.y)
 				+ (nextpos.x + opppos.x)*(nextpos.y - opppos.y)
 				);
+			if (RADIALDECLINE) {
+				// prevAz = next_ours* self [iWhichSelf]
+				// oppAz = next_0 * 0th value [iWhichNext]
+				// nextAz = 0th value [iWhichNext]
+				if (iWhichSelf > 0) {
+					d_eps_by_dbeta_j[iWhichSelf - 1] += 
+						0.5*next_ours*((opppos.y - info.pos.y)*edge_normal.x
+						- (opppos.x - info.pos.x)*edge_normal.y) / area_quadrilateral;
+				}
+				if (iWhichNext > 0) {
+					d_eps_by_dbeta_j[iWhichNext - 1] +=
+						0.5*(next_0*((nextpos.y - prevpos.y)*edge_normal.x
+							- (nextpos.x - prevpos.x)*edge_normal.y)
+									+
+						     (info.pos.y-opppos.y)*edge_normal.x
+							- (opppos.y-info.pos.y)*edge_normal.y
+							) / area_quadrilateral;
+				}
+
+			}
 			if (DIRICHLET) {
 				iWhich = p_indic[izTri[i]]; // frill!
 				if (iWhich > 0) {
@@ -18984,13 +19210,16 @@ __global__ void kernelComputeJacobianValues(
 	
 	memset(d_eps_by_dbeta_j, 0, sizeof(f64)*SQUASH_POINTS);
 
+	f64 prevfactor, oppfactor, nextfactor;
+	
 	info = p_info[iMinor];
 	long izNeighMinor[6];
 	char szPBC[6];
 	memcpy(izNeighMinor, p_izNeighMinor + iMinor * 6, sizeof(long) * 6);
 	memcpy(szPBC, p_szPBCtriminor + iMinor * 6, sizeof(char) * 6);
 	if ((info.flag == OUTER_FRILL) || (info.flag == INNER_FRILL)) return;
-
+	
+	iWhichSelf = p_indic[iMinor];
 	//	p_LapAz[iMinor] = 0.0;
 	// } else {
 		f64 AreaMinor = 0.0;
@@ -19009,6 +19238,20 @@ __global__ void kernelComputeJacobianValues(
 		};
 		if (szPBC[iprev] == ROTATE_ME_CLOCKWISE) prevpos = Clockwise_d*prevpos;
 		if (szPBC[iprev] == ROTATE_ME_ANTICLOCKWISE) prevpos = Anticlockwise_d*prevpos;
+		
+		if ((prevpos.dot(prevpos) > 0.99999*0.99999*FRILL_CENTROID_OUTER_RADIUS_d*FRILL_CENTROID_OUTER_RADIUS_d)
+			&& (RADIALDECLINE))
+		{
+			// outer frill under radial decline:
+			//prevAz = ourAz*(info.pos.modulus() / nextpos.modulus());
+
+			// do this by resetting iWhichPrev and a factor. !!
+			iWhichPrev = iWhichSelf;
+			prevfactor = (info.pos.modulus() / nextpos.modulus());
+		} else {
+			iWhichPrev = p_indic[izNeighMinor[iprev]];
+			prevfactor = 1.0;
+		}
 
 		i = 0;
 		if ((izNeighMinor[i] >= StartMinor) && (izNeighMinor[i] < EndMinor))
@@ -19025,7 +19268,17 @@ __global__ void kernelComputeJacobianValues(
 		};
 		if (szPBC[i] == ROTATE_ME_CLOCKWISE) opppos = Clockwise_d*opppos;
 		if (szPBC[i] == ROTATE_ME_ANTICLOCKWISE) opppos = Anticlockwise_d*opppos;
-
+		if ((opppos.dot(opppos) > 0.99999*0.99999*FRILL_CENTROID_OUTER_RADIUS_d*FRILL_CENTROID_OUTER_RADIUS_d)
+			&& (RADIALDECLINE))
+		{
+			// outer frill			
+			//oppAz = ourAz*(info.pos.modulus() / nextpos.modulus());
+			iWhichOpp = iWhichSelf;
+			oppfactor = (info.pos.modulus() / nextpos.modulus());
+		} else {
+			iWhichOpp = p_indic[izNeighMinor[i]];
+			oppfactor = 1.0;
+		}
 #pragma unroll 
 		for (i = 0; i < 6; i++)
 		{
@@ -19047,7 +19300,17 @@ __global__ void kernelComputeJacobianValues(
 			};
 			if (szPBC[inext] == ROTATE_ME_CLOCKWISE) nextpos = Clockwise_d*nextpos;
 			if (szPBC[inext] == ROTATE_ME_ANTICLOCKWISE) nextpos = Anticlockwise_d*nextpos;
-			
+			if ((nextpos.dot(nextpos) > 0.99999*0.99999*FRILL_CENTROID_OUTER_RADIUS_d*FRILL_CENTROID_OUTER_RADIUS_d)
+				&& (RADIALDECLINE))
+			{
+				// outer frill
+				//nextAz = ourAz*(info.pos.modulus() / nextpos.modulus());
+				iWhichNext = iWhichSelf;
+				nextfactor = (info.pos.modulus() / nextpos.modulus());
+			} else {
+				iWhichNext = p_indic[izNeighMinor[inext]];
+				nextfactor = 1.0;
+			};
 			// ______________________________________________________-
 
 			//f64_vec2 integ_grad_Az;
@@ -19057,7 +19320,6 @@ __global__ void kernelComputeJacobianValues(
 			//	+ (oppAz + prevAz)*(opppos.y - prevpos.y)
 			//	+ (nextAz + oppAz)*(nextpos.y - opppos.y)
 			//	);
-
 			//integ_grad_Az.y = -0.5*( // notice minus
 			//	(ourAz + nextAz)*(info.pos.x - nextpos.x)
 			//	+ (prevAz + ourAz)*(prevpos.x - info.pos.x)
@@ -19076,35 +19338,27 @@ __global__ void kernelComputeJacobianValues(
 			edge_normal.x = THIRD*(nextpos.y - prevpos.y);
 			edge_normal.y = THIRD*(prevpos.x - nextpos.x);
 			
-			if ((opppos.dot(opppos) < 0.9999*0.9999*FRILL_CENTROID_OUTER_RADIUS_d*FRILL_CENTROID_OUTER_RADIUS_d) &&
+			if (((opppos.dot(opppos) < 0.9999*0.9999*FRILL_CENTROID_OUTER_RADIUS_d*FRILL_CENTROID_OUTER_RADIUS_d) 
+				|| (DIRICHLET) || (RADIALDECLINE))
+				&&
 				(opppos.dot(opppos) > 1.0001*1.0001*FRILL_CENTROID_INNER_RADIUS_d*FRILL_CENTROID_INNER_RADIUS_d))
 			{
 			//	Our_integral_Lap_Az += integ_grad_Az.dot(edge_normal) / area_quadrilateral;
 		
-				iWhich = p_indic[izNeighMinor[iprev]];
-				if (iWhich > 0) {
-					d_eps_by_dbeta_j[iWhich - 1] += 0.5*((opppos.y - info.pos.y)*edge_normal.x
+				if (iWhichPrev > 0) {
+					d_eps_by_dbeta_j[iWhichPrev - 1] += 0.5*((opppos.y - info.pos.y)*edge_normal.x
 						- (opppos.x - info.pos.x)*edge_normal.y) / area_quadrilateral;
 				}
-				iWhich = p_indic[izNeighMinor[i]];
-				if (iWhich > 0) {
-					d_eps_by_dbeta_j[iWhich - 1] += 0.5*((nextpos.y - prevpos.y)*edge_normal.x
+				if (iWhichOpp > 0) {
+					d_eps_by_dbeta_j[iWhichOpp - 1] += 0.5*((nextpos.y - prevpos.y)*edge_normal.x
 						- (nextpos.x - prevpos.x)*edge_normal.y) / area_quadrilateral;
 				}
-				
-			//	if (izNeighMinor[inext] >= NMINOR) {
-			//		printf("%d  izNeighMinor[inext] %d \n", iMinor, izNeighMinor[inext]);
-			//	} else {
-				iWhich = p_indic[izNeighMinor[inext]];
-				if (iWhich > 0) {
-					d_eps_by_dbeta_j[iWhich - 1] += 0.5*((info.pos.y - opppos.y)*edge_normal.x
+				if (iWhichNext > 0) {
+					d_eps_by_dbeta_j[iWhichNext - 1] += 0.5*((info.pos.y - opppos.y)*edge_normal.x
 								+ (opppos.x - info.pos.x)*edge_normal.y) / area_quadrilateral;
-					};
-					
-			//	};
-				iWhich = p_indic[iMinor];
-				if (iWhich > 0) {
-					d_eps_by_dbeta_j[iWhich - 1] += 0.5*((prevpos.y - nextpos.y)*edge_normal.x
+					};									
+				if (iWhichSelf > 0) {
+					d_eps_by_dbeta_j[iWhichSelf - 1] += 0.5*((prevpos.y - nextpos.y)*edge_normal.x
 						- (prevpos.x - nextpos.x)*edge_normal.y) / area_quadrilateral;
 				}
 			};
@@ -19112,7 +19366,10 @@ __global__ void kernelComputeJacobianValues(
 				(nextpos.x + info.pos.x + opppos.x))*edge_normal.x;			
 			prevpos = opppos;
 			opppos = nextpos;
-			
+			iWhichPrev = iWhichOpp;
+			prevfactor = oppfactor;
+			iWhichOpp = iWhichNext;
+			oppfactor = nextfactor;
 		};
 
 		f64 gamma = pgamma[iMinor];
@@ -19126,7 +19383,7 @@ __global__ void kernelComputeJacobianValues(
 		//	//    DEBUG
 		//	// $$$$$$$$$$$
 		//} else {
-			if (p_indic[iMinor] > 0) d_eps_by_dbeta_j[p_indic[iMinor] - 1] += 1.0;
+		if (iWhichSelf > 0) d_eps_by_dbeta_j[iWhichSelf - 1] += 1.0;
 		//}
 		// p_indic[iMinor]-1 is the number of its volley. Stupid system.
 		// For simplicity let's say we save off into global memory.
@@ -19330,24 +19587,31 @@ __global__ void kernelGetLapCoeffs_and_min(
 			//         1
 			// endpt0=endpt1 is now the point north of edge facing 2.
 			// opppos is centre of tri (3).
+			f64 facc = 0.0;
+			if (RADIALDECLINE) {
+				info.pos.project_to_radius(nextpos, info.pos.modulus() + (FRILL_CENTROID_OUTER_RADIUS_d - info.pos.modulus())*1.16);
+				endpt1 = THIRD*(opppos + info.pos + nextpos);
+				facc = (info.pos.modulus() / nextpos.modulus());
+			}
+			if (!RADIALDECLINE) {
+				info.pos.project_to_radius(nextpos, FRILL_CENTROID_OUTER_RADIUS_d);
+				endpt1 = THIRD*(opppos + info.pos + nextpos);
 
-			info.pos.project_to_radius(nextpos, FRILL_CENTROID_OUTER_RADIUS_d);
-			endpt1 = THIRD*(opppos + info.pos + nextpos);
-
-			// map radially inwards so that radius is halfway out to the zero arc:
-			f64 radiusnow = endpt1.modulus();
-			endpt1 *= ((0.5*(info.pos.modulus() + FRILL_CENTROID_OUTER_RADIUS_d)) / radiusnow);
-
+				// map radially inwards so that radius is halfway out to the zero arc:
+				f64 radiusnow = endpt1.modulus();
+				endpt1 *= ((0.5*(info.pos.modulus() + FRILL_CENTROID_OUTER_RADIUS_d)) / radiusnow);
+			};
+			
 			edge_normal.x = endpt1.y - endpt0.y;
 			edge_normal.y = endpt0.x - endpt1.x;
 			// As with our other points, edge_normal points inwards because 1 is clockwise of 0.
 			integ_grad_Az.x = 0.5*(
-				(1.0)*(info.pos.y - nextpos.y)
-				+ (1.0)*(prevpos.y - info.pos.y)
+				+ (1.0)*(prevpos.y - nextpos.y)
+				+ facc*(info.pos.y-opppos.y)
 				);
 			integ_grad_Az.y = -0.5*( // notice minus
-				(1.0)*(info.pos.x - nextpos.x)
-				+ (1.0)*(prevpos.x - info.pos.x)
+				+(1.0)*(prevpos.x - nextpos.x)
+				+ facc*(info.pos.x - opppos.x)
 				);
 			f64 area_quadrilateral = 0.5*(
 				(info.pos.x + nextpos.x)*(info.pos.y - nextpos.y)
@@ -19355,7 +19619,7 @@ __global__ void kernelGetLapCoeffs_and_min(
 				+ (opppos.x + prevpos.x)*(opppos.y - prevpos.y)
 				+ (nextpos.x + opppos.x)*(nextpos.y - opppos.y)
 				);
-			if (DIRICHLET) Our_integral_Lap_Az_contrib_from_own_Az += integ_grad_Az.dot(edge_normal) / area_quadrilateral;
+			if (DIRICHLET || RADIALDECLINE) Our_integral_Lap_Az_contrib_from_own_Az += integ_grad_Az.dot(edge_normal) / area_quadrilateral;
 
 			AreaMinor += (0.5*endpt0.x + 0.5*endpt1.x)*edge_normal.x;
 
@@ -19373,22 +19637,24 @@ __global__ void kernelGetLapCoeffs_and_min(
 			}
 			if (szPBC[inext] == ROTATE_ME_CLOCKWISE) nextpos = Clockwise_d*nextpos;
 			if (szPBC[inext] == ROTATE_ME_ANTICLOCKWISE) nextpos = Anticlockwise_d*nextpos;
+			
 			endpt1 = THIRD*(opppos + info.pos + nextpos);
 
-			// map radially inwards so that radius is halfway out to the zero arc.
-			radiusnow = endpt1.modulus();
-			endpt1 *= ((0.5*(info.pos.modulus() + FRILL_CENTROID_OUTER_RADIUS_d)) / radiusnow);
-
+			if (!RADIALDECLINE) {
+				// map radially inwards so that radius is halfway out to the zero arc.
+				f64 radiusnow = endpt1.modulus();
+				endpt1 *= ((0.5*(info.pos.modulus() + FRILL_CENTROID_OUTER_RADIUS_d)) / radiusnow);
+			};
 			edge_normal.x = endpt1.y - endpt0.y;
 			edge_normal.y = endpt0.x - endpt1.x;
 			// As with our other points, edge_normal points inwards because 1 is clockwise of 0.
 			integ_grad_Az.x = 0.5*(
-				(1.0)*(info.pos.y - nextpos.y)
-				+ (1.0)*(prevpos.y - info.pos.y)
+				 (1.0)*(prevpos.y - nextpos.y)
+				+ facc*(nextpos.y-prevpos.y)
 				);
 			integ_grad_Az.y = -0.5*( // notice minus
-				(1.0)*(info.pos.x - nextpos.x)
-				+ (1.0)*(prevpos.x - info.pos.x)
+				 (1.0)*(prevpos.x - nextpos.x)
+				+ facc*(nextpos.x-prevpos.x)
 				);
 			area_quadrilateral = 0.5*(
 				(info.pos.x + nextpos.x)*(info.pos.y - nextpos.y)
@@ -19396,7 +19662,7 @@ __global__ void kernelGetLapCoeffs_and_min(
 				+ (opppos.x + prevpos.x)*(opppos.y - prevpos.y)
 				+ (nextpos.x + opppos.x)*(nextpos.y - opppos.y)
 				);
-			if (DIRICHLET) Our_integral_Lap_Az_contrib_from_own_Az += integ_grad_Az.dot(edge_normal) / area_quadrilateral;
+			if (DIRICHLET || RADIALDECLINE) Our_integral_Lap_Az_contrib_from_own_Az += integ_grad_Az.dot(edge_normal) / area_quadrilateral;
 
 			AreaMinor += (0.5*endpt0.x + 0.5*endpt1.x)*edge_normal.x;
 
@@ -19413,12 +19679,12 @@ __global__ void kernelGetLapCoeffs_and_min(
 			edge_normal.y = endpt0.x - endpt1.x;
 			// As with our other points, edge_normal points inwards because 1 is clockwise of 0.
 			integ_grad_Az.x = 0.5*(
-				(1.0)*(info.pos.y - nextpos.y)
-				+ (1.0)*(prevpos.y - info.pos.y)
+				(1.0)*(prevpos.y - nextpos.y)
+				+ facc*(opppos.y - info.pos.y)
 				);
 			integ_grad_Az.y = -0.5*( // notice minus
-				(1.0)*(info.pos.x - nextpos.x)
-				+ (1.0)*(prevpos.x - info.pos.x)
+				(1.0)*(prevpos.x - nextpos.x)
+				+ facc*(opppos.x - info.pos.x)
 				);
 			area_quadrilateral = 0.5*(
 				(info.pos.x + nextpos.x)*(info.pos.y - nextpos.y)
@@ -19426,7 +19692,7 @@ __global__ void kernelGetLapCoeffs_and_min(
 				+ (opppos.x + prevpos.x)*(opppos.y - prevpos.y)
 				+ (nextpos.x + opppos.x)*(nextpos.y - opppos.y)
 				);
-			if (DIRICHLET) Our_integral_Lap_Az_contrib_from_own_Az += integ_grad_Az.dot(edge_normal) / area_quadrilateral;
+			if (DIRICHLET || RADIALDECLINE) Our_integral_Lap_Az_contrib_from_own_Az += integ_grad_Az.dot(edge_normal) / area_quadrilateral;
 
 			AreaMinor += (0.5*endpt0.x + 0.5*endpt1.x)*edge_normal.x;
 
@@ -19458,6 +19724,7 @@ __global__ void kernelGetLapCoeffs_and_min(
 
 		f64 Our_integral_Lap_Az_contrib_from_own_Az = 0.0;
 		f64 AreaMinor = 0.0;
+		f64 prevfac = 0.0, nextfac = 0.0, oppfac = 0.0;
 
 		short iprev = 5; short inext, i = 0;
 		if ((izNeighMinor[iprev] >= StartMinor) && (izNeighMinor[iprev] < EndMinor))
@@ -19477,6 +19744,13 @@ __global__ void kernelGetLapCoeffs_and_min(
 		if (szPBC[iprev] == ROTATE_ME_CLOCKWISE) prevpos = Clockwise_d*prevpos;
 		if (szPBC[iprev] == ROTATE_ME_ANTICLOCKWISE) prevpos = Anticlockwise_d*prevpos;
 
+		if (prevpos.dot(prevpos) > 0.99999*0.99999*FRILL_CENTROID_OUTER_RADIUS_d*FRILL_CENTROID_OUTER_RADIUS_d)
+		{
+			// outer frill
+			if (RADIALDECLINE)
+				prevfac = (info.pos.modulus() / prevpos.modulus());
+		}
+		
 		i = 0;
 		if ((izNeighMinor[i] >= StartMinor) && (izNeighMinor[i] < EndMinor))
 		{
@@ -19494,6 +19768,12 @@ __global__ void kernelGetLapCoeffs_and_min(
 		};
 		if (szPBC[i] == ROTATE_ME_CLOCKWISE) opppos = Clockwise_d*opppos;
 		if (szPBC[i] == ROTATE_ME_ANTICLOCKWISE) opppos = Anticlockwise_d*opppos;
+		if (opppos.dot(opppos) > 0.99999*0.99999*FRILL_CENTROID_OUTER_RADIUS_d*FRILL_CENTROID_OUTER_RADIUS_d)
+		{
+			// outer frill
+			if (RADIALDECLINE)
+				oppfac = (info.pos.modulus() / opppos.modulus());
+		}
 
 #pragma unroll 
 		for (i = 0; i < 6; i++)
@@ -19516,7 +19796,12 @@ __global__ void kernelGetLapCoeffs_and_min(
 			};
 			if (szPBC[inext] == ROTATE_ME_CLOCKWISE) nextpos = Clockwise_d*nextpos;
 			if (szPBC[inext] == ROTATE_ME_ANTICLOCKWISE) nextpos = Anticlockwise_d*nextpos;
-
+			if (nextpos.dot(nextpos) > 0.99999*0.99999*FRILL_CENTROID_OUTER_RADIUS_d*FRILL_CENTROID_OUTER_RADIUS_d)
+			{
+				// outer frill
+				if (RADIALDECLINE)
+					nextfac = (info.pos.modulus() / nextpos.modulus());
+			}
 			// New definition of endpoint of minor edge:
 			f64_vec2 endpt0, endpt1, edge_normal, integ_grad_Az;
 			endpt0 = THIRD * (prevpos + info.pos + opppos);
@@ -19546,6 +19831,20 @@ __global__ void kernelGetLapCoeffs_and_min(
 
 			integ_grad_Az.y = -0.5*(prevpos.x - nextpos.x);
 
+			integ_grad_Az.x = 0.5*(
+				(1.0 + nextfac)*(info.pos.y - nextpos.y)
+				+ (prevfac + 1.0)*(prevpos.y - info.pos.y)
+				+ (oppfac + prevfac)*(opppos.y - prevpos.y)
+				+ (nextfac + oppfac)*(nextpos.y - opppos.y)
+				);
+
+			integ_grad_Az.y = -0.5*( // notice minus
+				(1.0 + nextfac)*(info.pos.x - nextpos.x)
+				+ (prevfac + 1.0)*(prevpos.x - info.pos.x)
+				+ (oppfac + prevfac)*(opppos.x - prevpos.x)
+				+ (nextfac + oppfac)*(nextpos.x - opppos.x)
+				);
+
 			f64 area_quadrilateral = 0.5*(
 				(info.pos.x + nextpos.x)*(info.pos.y - nextpos.y)
 				+ (prevpos.x + info.pos.x)*(prevpos.y - info.pos.y)
@@ -19554,7 +19853,8 @@ __global__ void kernelGetLapCoeffs_and_min(
 				);
 			
 			if (
-				((opppos.dot(opppos) < 0.99999*0.99999*FRILL_CENTROID_OUTER_RADIUS_d*FRILL_CENTROID_OUTER_RADIUS_d) || (DIRICHLET)) &&
+				((opppos.dot(opppos) < 0.99999*0.99999*FRILL_CENTROID_OUTER_RADIUS_d*FRILL_CENTROID_OUTER_RADIUS_d) || (DIRICHLET)
+					|| (RADIALDECLINE)) &&
 				(opppos.dot(opppos) > 1.00001*1.00001*FRILL_CENTROID_INNER_RADIUS_d*FRILL_CENTROID_INNER_RADIUS_d)
 				)
 			//f64_vec2 grad_Az = integ_grad_Az / area_quadrilateral;
@@ -19565,6 +19865,8 @@ __global__ void kernelGetLapCoeffs_and_min(
 			endpt0 = endpt1;
 			prevpos = opppos;
 			opppos = nextpos;
+			prevfac = oppfac;
+			oppfac = nextfac;
 			iprev = i;
 			// There is an even quicker way which is to rotate pointers. No memcpy needed.
 		};

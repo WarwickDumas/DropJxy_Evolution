@@ -15,7 +15,9 @@
   
 bool const bScrewPinch = false;
 
-#define DIRICHLET true
+#define DIRICHLET false
+#define RADIALDECLINE true
+
 //#define FLATAZBC
  
 #define FOLDER "C:/outputs/"

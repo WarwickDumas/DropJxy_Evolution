@@ -2086,6 +2086,9 @@ __global__ void kernelAccumulateSumOfSquares1(
 __global__ void kernelAccumulateDotProduct(
 	f64 * __restrict__ p_x1, f64 * __restrict__ p_y1,
 	f64 * __restrict__ p_dot1);
+__global__ void CreateConjugateRegressor(
+	f64 * __restrict__ p_regr, f64 const betarat, f64 * __restrict__ p_eps);
+
 
 __global__ void VectorAddMultiple1(
 	f64 * __restrict__ p_T1, f64 const alpha1, f64 * __restrict__ p_x1);
@@ -2202,7 +2205,8 @@ __global__ void kernelGetLap_minor_SYMMETRIC(
 	char * __restrict__ p_szPBCtri_vertex,
 	char * __restrict__ p_szPBCtriminor,
 	f64 * __restrict__ p_LapAz,
-	f64 * __restrict__ p_AreaMinor 
+	f64 * __restrict__ p_AreaMinor ,
+	bool const bDivideByArea
 );
 
 

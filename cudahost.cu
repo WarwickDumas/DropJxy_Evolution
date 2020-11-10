@@ -7,7 +7,9 @@
 
 #define PRECISE_VISCOSITY 
 #define DEBUGTE               0
-      
+
+#define AZCG               
+
 #include <stdlib.h>
 #include <stdio.h>
 #include <math.h>
@@ -36,11 +38,11 @@ extern TriMesh X4;
               
 // This will be slow but see if it solves it.
                        
-#define CHOSEN  105169
-#define CHOSEN1 59805
-#define CHOSEN2 59806
-#define VERTCHOSEN 19168
-#define VERTCHOSEN2 19180
+#define CHOSEN  7163
+#define CHOSEN1 14332
+#define CHOSEN2 14334 
+#define VERTCHOSEN 4
+#define VERTCHOSEN2 50
    
 #define ITERATIONS_BEFORE_SWITCH  18
 #define REQUIRED_IMPROVEMENT_RATE  0.98
@@ -293,7 +295,7 @@ f64 * f64address;
 size_t uFree, uTotal;
 extern real evaltime;
 extern cuSyst cuSyst_host;
-//
+
 //
 //kernelAccumulateSumOfSquares << < numTilesMajorClever, threadsPerTileMajorClever >> >
 //(p_epsilon_n, p_epsilon_i, p_epsilon_e,
@@ -495,11 +497,12 @@ void RunBackwardForHeat_BiCGstab(T3 * p_T_k, T3 * p_T, f64 hsub, cuSyst * pX_use
 void SolveBackwardAzAdvanceCG(f64 hsub,
 	f64 * pAz_k,
 	f64 * pAzdot0, f64 * pgamma,
-	f64 * p_Solution, f64 * p_LapCoeff_self, 
+	f64 * p_Solution, 
+	
 	cuSyst * pX_use)// AreaMinor will be set in pX_use when we call GetLapMinor
 {
 	// The principal reason this routine stutters and doesn't work is that we would have to multiply by AreaMinor
-	// to get equation symmetry.
+	// to get equation symmetry. ?
 	
 	// I don't suppose we can use last move as a guess from which to generate epsilon and start off AzCG?
 	// Running a regression with it is almost as cheap anyway.
@@ -519,15 +522,15 @@ void SolveBackwardAzAdvanceCG(f64 hsub,
 
 	cudaMemset(p_temp4, 0, sizeof(f64)*NMINOR);
 	cudaMemset(p_temp5, 0, sizeof(f64)*NMINOR);
-	
-	// Do this just in case what we were sent was deficient:
-	kernelResetFrillsAz << < numTilesMinor, threadsPerTileMinor >> > (
-		pX_use->p_info,
-		pX_use->p_tri_neigh_index,
-		p_Solution);
-	Call(cudaThreadSynchronize(), "cudaTS kernelResetFrillsAz"); // can leave this here but
-	// NEVER LOOK INTO FRILL -- can it be done? yep
- 
+	//
+	//// Do this just in case what we were sent was deficient:
+	//kernelResetFrillsAz << < numTilesMinor, threadsPerTileMinor >> > (
+	//	pX_use->p_info,
+	//	pX_use->p_tri_neigh_index,
+	//	p_Solution);
+	//Call(cudaThreadSynchronize(), "cudaTS kernelResetFrillsAz"); // can leave this here but
+	//// NEVER LOOK INTO FRILL -- can it be done? yep
+ //
 	// Get Area and Lap:
 	kernelGetLap_minor_SYMMETRIC << < numTriTiles, threadsPerTileMinor >> >
 		(pX_use->p_info,
@@ -537,23 +540,24 @@ void SolveBackwardAzAdvanceCG(f64 hsub,
 			pX_use->p_szPBCtri_vert,
 			pX_use->p_szPBC_triminor,
 			p_LapAz, // INTEGRATED
-			p_AreaMinor_cc);
+			p_AreaMinor_cc,
+			false);
 	Call(cudaThreadSynchronize(), "cudaTS GetLapminor");
 	
-
 	kernelDividebyroothgamma << < numTilesMinor, threadsPerTileMinor >> >
 		(p_sqrthgamma_Az,
 			p_sqrtfactor, // sqrt(h gamma / area) -- surely needed!			
-			p_Solution, hsub, pgamma, p_AreaMinor_cc); // p_Solution is the seed for Az
-	// divide by sqrt h gamma over area !!
-		
+			p_Solution, 
+			hsub, pgamma, p_AreaMinor_cc); 
+	// divide by sqrt h gamma over area !!		
 	Call(cudaThreadSynchronize(), "cudaTS Divideroothgamma");
-	kernelResetFrillsAz << < numTilesMinor, threadsPerTileMinor >> > (
-		pX_use->p_info,
-		pX_use->p_tri_neigh_index,
-		p_sqrthgamma_Az);
-	Call(cudaThreadSynchronize(), "cudaTS kernelResetFrillsAz");
-	// reset frills because we will not have been able to divide by gamma in frills. But the value is understood.
+
+	//kernelResetFrillsAz << < numTilesMinor, threadsPerTileMinor >> > (
+	//	pX_use->p_info,
+	//	pX_use->p_tri_neigh_index,
+	//	p_sqrthgamma_Az);
+	//Call(cudaThreadSynchronize(), "cudaTS kernelResetFrillsAz");
+	//// reset frills because we will not have been able to divide by gamma in frills. But the value is understood.
 
 	// 1. Compute epsilon:
 	
@@ -567,11 +571,12 @@ void SolveBackwardAzAdvanceCG(f64 hsub,
 			p_bFailed, false
 			); // must include multiply epsilon by h gamma
 	Call(cudaThreadSynchronize(), "cudaTS CreateEpsilonAz");
-	kernelResetFrillsAz << < numTilesMinor, threadsPerTileMinor >> > (
-		pX_use->p_info,
-		pX_use->p_tri_neigh_index,
-		p_epsilon);
-	Call(cudaThreadSynchronize(), "cudaTS kernelResetFrillsAz");
+
+//	kernelResetFrillsAz << < numTilesMinor, threadsPerTileMinor >> > (
+//		pX_use->p_info,
+//		pX_use->p_tri_neigh_index,
+//		p_epsilon);
+//	Call(cudaThreadSynchronize(), "cudaTS kernelResetFrillsAz");
 
 	// Does ResetFrills performed on epsilon make it symmetric or not? :
 	// Frill values should be never used.
@@ -602,12 +607,12 @@ void SolveBackwardAzAdvanceCG(f64 hsub,
 			(p_Solution, p_regressor, p_sqrtfactor);
 		Call(cudaThreadSynchronize(), "cudaTS CreateAzbymultiplying");
 		// multiply by sqrt(h gamma / area) to give Az
-
-		kernelResetFrillsAz << < numTilesMinor, threadsPerTileMinor >> > (
-			pX_use->p_info,
-			pX_use->p_tri_neigh_index,
-			p_Solution);
-		Call(cudaThreadSynchronize(), "cudaTS kernelResetFrillsAz");
+//
+//		kernelResetFrillsAz << < numTilesMinor, threadsPerTileMinor >> > (
+//			pX_use->p_info,
+//			pX_use->p_tri_neigh_index,
+//			p_Solution);
+//		Call(cudaThreadSynchronize(), "cudaTS kernelResetFrillsAz");
 
 		// now careful : pass Azdot0 = 0, Az_k = 0 and we can get -sqrt(h gamma) Lap (h gamma (regressor))
 		kernelGetLap_minor_SYMMETRIC << < numTriTiles, threadsPerTileMinor >> >
@@ -618,7 +623,8 @@ void SolveBackwardAzAdvanceCG(f64 hsub,
 				pX_use->p_szPBCtri_vert,
 				pX_use->p_szPBC_triminor,
 				p_LapAz,
-				p_AreaMinor_cc);
+				p_AreaMinor_cc,
+				false);
 		Call(cudaThreadSynchronize(), "cudaTS GetLapminor");
 		kernelCreateEpsilon_Az_CG << < numTilesMinor, threadsPerTileMinor >> >
 			(hsub, pX_use->p_info,
@@ -631,11 +637,11 @@ void SolveBackwardAzAdvanceCG(f64 hsub,
 				p_bFailed, false
 				); // must include multiply epsilon by h gamma
 		Call(cudaThreadSynchronize(), "cudaTS CreateEpsilon Regressor");
-		kernelResetFrillsAz << < numTilesMinor, threadsPerTileMinor >> > (
-			pX_use->p_info,
-			pX_use->p_tri_neigh_index,
-			p_Ax);
-		Call(cudaThreadSynchronize(), "cudaTS kernelResetFrillsAz");
+		//kernelResetFrillsAz << < numTilesMinor, threadsPerTileMinor >> > (
+		//	pX_use->p_info,
+		//	pX_use->p_tri_neigh_index,
+		//	p_Ax);
+		//Call(cudaThreadSynchronize(), "cudaTS kernelResetFrillsAz");
 
 		// epsilon = b-Ax so even though our own A includes a minus, we now negate
 		NegateVector << <numTilesMinor, threadsPerTileMinor >> > (p_Ax);
@@ -660,11 +666,11 @@ void SolveBackwardAzAdvanceCG(f64 hsub,
 		kernelCreateAzbymultiplying << < numTilesMinor, threadsPerTileMinor >> >
 			(p_Solution, p_sqrthgamma_Az, p_sqrtfactor);
 		Call(cudaThreadSynchronize(), "cudaTS CreateAzbymultiplying");
-		kernelResetFrillsAz << < numTilesMinor, threadsPerTileMinor >> > (
-			pX_use->p_info,
-			pX_use->p_tri_neigh_index,
-			p_Solution);
-		Call(cudaThreadSynchronize(), "cudaTS kernelResetFrillsAz");
+		//kernelResetFrillsAz << < numTilesMinor, threadsPerTileMinor >> > (
+		//	pX_use->p_info,
+		//	pX_use->p_tri_neigh_index,
+		//	p_Solution);
+		//Call(cudaThreadSynchronize(), "cudaTS kernelResetFrillsAz");
 		// should be doing nothing...
 
 		// Update Epsilon: or can simply recalculate eps = b - A newx
@@ -679,7 +685,8 @@ void SolveBackwardAzAdvanceCG(f64 hsub,
 					pX_use->p_szPBCtri_vert,
 					pX_use->p_szPBC_triminor,
 					p_LapAz,
-					p_AreaMinor_cc);
+					p_AreaMinor_cc,
+					false);
 			Call(cudaThreadSynchronize(), "cudaTS GetLapminor");
 
 			cudaMemset(p_bFailed, 0, sizeof(bool)*numTilesMinor);
@@ -695,11 +702,11 @@ void SolveBackwardAzAdvanceCG(f64 hsub,
 					); // must include multiply epsilon by rt h gamma
 			// but do test by dividing epsilon by rt h gamma; compare to Solution
 			Call(cudaThreadSynchronize(), "cudaTS CreateEpsilon eps");
-			kernelResetFrillsAz << < numTilesMinor, threadsPerTileMinor >> > (
-				pX_use->p_info,
-				pX_use->p_tri_neigh_index,
-				p_epsilon);
-			Call(cudaThreadSynchronize(), "cudaTS kernelResetFrillsAz");
+			//kernelResetFrillsAz << < numTilesMinor, threadsPerTileMinor >> > (
+			//	pX_use->p_info,
+			//	pX_use->p_tri_neigh_index,
+			//	p_epsilon);
+			//Call(cudaThreadSynchronize(), "cudaTS kernelResetFrillsAz");
 
 			// Now test for convergence:
 			cudaMemcpy(p_boolhost, p_bFailed, sizeof(bool)*numTilesMinor, cudaMemcpyDeviceToHost);
@@ -729,14 +736,22 @@ void SolveBackwardAzAdvanceCG(f64 hsub,
 		}
 		f64 ratio = RSS / oldRSS;
 		oldRSS = RSS;
-		VectorAddMultiple1 << <numTilesMinor, threadsPerTileMinor >> >
+		
+
+		//VectorAddMultiple1 << <numTilesMinor, threadsPerTileMinor >> >
+		//	(p_regressor, ratio, p_epsilon);
+
+		//Whereas wikipedia thinks  it's x_k+1 = eps_k+1 + beta x_k.
+
+		CreateConjugateRegressor << <numTilesMinor, threadsPerTileMinor >> >
 			(p_regressor, ratio, p_epsilon);
-		Call(cudaThreadSynchronize(), "cudaTS kernel_AddMultiple");
-		kernelResetFrillsAz << < numTilesMinor, threadsPerTileMinor >> > (
-			pX_use->p_info,
-			pX_use->p_tri_neigh_index,
-		 	p_regressor); // should be unneeded now since epsilon is frilled
-		Call(cudaThreadSynchronize(), "cudaTS kernelResetFrillsAz");
+		Call(cudaThreadSynchronize(), "cudaTS CreateConjugateRegressor");
+
+		//kernelResetFrillsAz << < numTilesMinor, threadsPerTileMinor >> > (
+		//	pX_use->p_info,
+		//	pX_use->p_tri_neigh_index,
+		// 	p_regressor); // should be unneeded now since epsilon is frilled
+		//Call(cudaThreadSynchronize(), "cudaTS kernelResetFrillsAz");
 		// we affect the frills as well --- in case eps is not frilled, regressor frilled
 		
 		printf("iIteration %d L2eps[sqrt[h gamma] units] %1.10E \n", iIteration, sqrt(RSS / (real)NMINOR));
@@ -744,16 +759,15 @@ void SolveBackwardAzAdvanceCG(f64 hsub,
 		 
 		if (bContinue == false) printf("all tests ok\n");
 		 
-	} while ((iIteration < 1000) && (bContinue));
+	} while ((iIteration < 4000) && (bContinue));
 	 
-	if (iIteration == 1000) { while (1) getch(); };
+	if (iIteration == 4000) { while (1) getch(); };
 		
 	// MAKE SURE WE REPOPULATE LapAz after calling this routine.
 	// It is the integrated Lap here.
 	// We could proceed just to divide it here, for luck.
 	// AND in fact WE MUST USE SYMMETRIC WHEN WE DO THE ADVANCE !.
 
-	while (1) getch();
 
 #undef p_regressor
 #undef p_sqrthgamma_Az
@@ -785,14 +799,13 @@ void SolveBackwardAzAdvanceJ3LS(f64 hsub,
 	// 1. Create regressor:
 	// Careful with major vs minor + BEGINNING_OF_CENTRAL:
 
-	GlobalSuppressSuccessVerbosity = true;
+	//GlobalSuppressSuccessVerbosity = true;
 
 	kernelResetFrillsAz << <numTilesMinor, threadsPerTileMinor >> > (
 			pX_use->p_info, pX_use->p_tri_neigh_index,
 			p_AzNext);
 	Call(cudaThreadSynchronize(), "cudaTS ResetFrills Az");
-	// if DIRICHLET, set outer ones to 0 just for sake of it.
-	 
+	// if DIRICHLET, set outer ones to 0 just for sake of it.	 
 	kernelGetLap_minor << <numTriTiles, threadsPerTileMinor >> > (
 		pX_use->p_info,
 		p_AzNext,
@@ -921,19 +934,7 @@ void SolveBackwardAzAdvanceJ3LS(f64 hsub,
 				p_Jacobian_list // needs to be NMINOR * SQUASH_POINTS
 				);
 			Call(cudaThreadSynchronize(), "cudaTS CollectJacobian");
-			// Make sure we do not piss it up at the back.
-
-			// *****************************************************************************************
-
-			// Thing is:
-			// The thing is of course, if you are at the back, then you just pissed it up because
-			// you did not anticipate the change in frill values when you change an individual next
-			// to the frill.
-
-			// *****************************************************************************************
-			// !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-
-
+			
 			AggregateSmashMatrix << <numTilesMinor * 2, threadsPerTileMajor >> > (
 				p_Jacobian_list,
 				p_epsilon,
@@ -1022,7 +1023,8 @@ void SolveBackwardAzAdvanceJ3LS(f64 hsub,
 
 			}
 
-		} else {
+		}
+		else {
 
 			kernelGetLap_minor << <numTriTiles, threadsPerTileMinor >> > (
 				pX_use->p_info,
@@ -1045,12 +1047,12 @@ void SolveBackwardAzAdvanceJ3LS(f64 hsub,
 				p_regressor_n);
 			Call(cudaThreadSynchronize(), "cudaTS Create further regressor");
 			// Look over it just to be sure what applies.
-			
+
 			kernelResetFrillsAz << <numTilesMinor, threadsPerTileMinor >> > (
 				pX_use->p_info, pX_use->p_tri_neigh_index,
 				p_regressor_n);
 			Call(cudaThreadSynchronize(), "cudaTS ResetFrills further regressor");
-			
+
 			kernelGetLap_minor << <numTriTiles, threadsPerTileMinor >> > (
 				pX_use->p_info,
 				p_regressor_n,
@@ -1061,17 +1063,31 @@ void SolveBackwardAzAdvanceJ3LS(f64 hsub,
 				p_temp4
 				);
 			Call(cudaThreadSynchronize(), "cudaTS Get Lap Jacobi 2");
-//
-//			kernelCreate_further_regressor << <numTilesMinor, threadsPerTileMinor >> > (
-//				pX_use->p_info,
-//				hsub,
-//				p_regressor_n,
-//				p_temp4,
-//				p_LapCoeffself,
-//				p_gamma,
-//				p_regressor_i);
-//			Call(cudaThreadSynchronize(), "cudaTS Create further regressor");
-//
+
+			//FILE * fpdbg = fopen("LapAz3.txt", "w");
+			//cudaMemcpy(p_temphost1, p_LapAzNext, sizeof(f64)*NMINOR, cudaMemcpyDeviceToHost);
+			//cudaMemcpy(p_temphost2, p_LapJacobi, sizeof(f64)*NMINOR, cudaMemcpyDeviceToHost);
+			//cudaMemcpy(p_temphost3, p_temp4, sizeof(f64)*NMINOR, cudaMemcpyDeviceToHost);
+			//cudaMemcpy(p_temphost4, p_epsilon, sizeof(f64)*NMINOR, cudaMemcpyDeviceToHost);
+			//cudaMemcpy(p_temphost5, p_AzNext, sizeof(f64)*NMINOR, cudaMemcpyDeviceToHost);
+			//for (long iRow = 0; iRow < NMINOR; iRow++)
+			//{
+			//	fprintf(fpdbg, "%d LapAz %1.14E LapJacobi %1.14E temp4 %1.14E epsilon %1.14E Az %1.14E\n", iRow, p_temphost1[iRow], p_temphost2[iRow], p_temphost3[iRow], p_temphost4[iRow],
+			//		p_temphost5[iRow]);
+			//};
+			//fclose(fpdbg);
+
+
+			//			kernelCreate_further_regressor << <numTilesMinor, threadsPerTileMinor >> > (
+			//				pX_use->p_info,
+			//				hsub,
+			//				p_regressor_n,
+			//				p_temp4,
+			//				p_LapCoeffself,
+			//				p_gamma,
+			//				p_regressor_i);
+			//			Call(cudaThreadSynchronize(), "cudaTS Create further regressor");
+			//
 
 			MultiplyVector << <numTilesMinor, threadsPerTileMinor >> >
 				(p_Jacobi_x, p_epsilon, p_regressor_i);
@@ -1094,12 +1110,12 @@ void SolveBackwardAzAdvanceJ3LS(f64 hsub,
 				pX_use->p_szPBCtri_vert,
 				pX_use->p_szPBC_triminor,
 				p_temp5
-				);
+				); 
 			Call(cudaThreadSynchronize(), "cudaTS Get Lap Jacobi 1");
 
 			// Okay ... now we need to do the routine that creates the matrix deps/dbeta_i deps/dbeta_j
 			// and the vector against epsilon
-
+			  
 			kernelAccumulateMatrix << <numTilesMinor, threadsPerTileMinor >> > (
 				pX_use->p_info,
 				hsub,
@@ -1132,7 +1148,25 @@ void SolveBackwardAzAdvanceJ3LS(f64 hsub,
 				sum_mat[4] += p_temphost1[iTile * 6 + 4];
 				sum_mat[5] += p_temphost1[iTile * 6 + 5];
 				sumvec += p_sum_vec_host[iTile];
+				 
+				//printf("iTile %d sum_mat +=  %1.9E %1.9E %1.9E %1.9E %1.9E %1.9E sum_vec %1.9E \n",
+				//	iTile, p_temphost1[iTile * 6 + 0],
+				//	p_temphost1[iTile * 6 + 1],
+				//	p_temphost1[iTile * 6 + 2],
+				//	p_temphost1[iTile * 6 + 3],
+				//	p_temphost1[iTile * 6 + 4],
+				//	p_temphost1[iTile * 6 + 5],
+				//	p_sum_vec_host[iTile]);
 			};
+
+		//	printf("sum_mat %1.9E %1.9E %1.9E %1.9E %1.9E %1.9E sum_vec %1.9E \n",
+		//		sum_mat[0], sum_mat[1], sum_mat[2], sum_mat[3], sum_mat[4], sum_mat[5], sumvec);
+
+			if (sumvec != sumvec){
+				printf("sum_mat %1.9E %1.9E %1.9E %1.9E %1.9E %1.9E sum_vec %1.9E \n",
+						sum_mat[0], sum_mat[1], sum_mat[2], sum_mat[3], sum_mat[4], sum_mat[5], sumvec);
+					while (1) getch();
+			}
 
 			// Now populate symmetric matrix
 			f64_tens3 mat, mat2;
@@ -1165,7 +1199,7 @@ void SolveBackwardAzAdvanceJ3LS(f64 hsub,
 
 			beta[0] = -product.x; beta[1] = -product.y; beta[2] = -product.z;
 
-			if (iIteration % 10 == 0) 
+			if (iIteration % 1 == 0) 
 				printf("iIteration = %d L2eps %1.9E beta %1.8E %1.8E %1.8E \n", iIteration, L2eps, beta[0], beta[1], beta[2]);
 
 			//	printf("Verify: \n");
@@ -1213,7 +1247,11 @@ void SolveBackwardAzAdvanceJ3LS(f64 hsub,
 
 		// 1. Create regressor:
 		// Careful with major vs minor + BEGINNING_OF_CENTRAL:
-		 
+
+		kernelResetFrillsAz << <numTilesMinor, threadsPerTileMinor >> > (
+			pX_use->p_info, pX_use->p_tri_neigh_index,
+			p_AzNext);
+		Call(cudaThreadSynchronize(), "cudaTS ResetFrills Jacobi");
 		kernelGetLap_minor << <numTriTiles, threadsPerTileMinor >> > (
 			pX_use->p_info,
 			p_AzNext,
@@ -1271,7 +1309,7 @@ void SolveBackwardAzAdvanceJ3LS(f64 hsub,
 		RSS = 0.0; 
 		for (iTile = 0; iTile < numTilesMinor; iTile++) RSS += p_temphost3[iTile];
 		L2eps = sqrt(RSS / (f64)NMINOR);
-		if (iIteration %10 == 0) printf("L2eps: %1.9E .. ", L2eps);
+		if (iIteration % 1 == 0) printf("L2eps: %1.9E .. ", L2eps);
 
 		kernelAccumulateSumOfQuarts << <numTilesMinor, threadsPerTileMinor >> >
 			(p_epsilon, p_temp1);
@@ -1442,6 +1480,11 @@ void RegressionSeedAz(f64 const hsub,
 
 	// We don't really want to use Jacobi for epsilon here.
 
+	kernelResetFrillsAz << <numTilesMinor, threadsPerTileMinor >> > (
+		pX_use->p_info, pX_use->p_tri_neigh_index,
+		p_x2);
+	Call(cudaThreadSynchronize(), "cudaTS ResetFrills 2");
+
 	kernelGetLap_minor << <numTriTiles, threadsPerTileMinor >> > (
 		pX_use->p_info,
 		p_x2,
@@ -1452,6 +1495,11 @@ void RegressionSeedAz(f64 const hsub,
 		p_temp5
 		);
 	Call(cudaThreadSynchronize(), "cudaTS Get Lap 1");
+
+	kernelResetFrillsAz << <numTilesMinor, threadsPerTileMinor >> > (
+		pX_use->p_info, pX_use->p_tri_neigh_index,
+		p_x1);
+	Call(cudaThreadSynchronize(), "cudaTS ResetFrills 2");
 
 	kernelGetLap_minor << <numTriTiles, threadsPerTileMinor >> > (
 		pX_use->p_info,
@@ -1473,6 +1521,7 @@ void RegressionSeedAz(f64 const hsub,
 		p_gamma,
 		p_Jacobi_x);
 	Call(cudaThreadSynchronize(), "cudaTS Create further regressor");
+
 	kernelResetFrillsAz << <numTilesMinor, threadsPerTileMinor >> > (
 		pX_use->p_info, pX_use->p_tri_neigh_index,
 		p_Jacobi_x);
@@ -1556,7 +1605,12 @@ void RegressionSeedAz(f64 const hsub,
 		p_Jacobi_x
 		);
 	Call(cudaThreadSynchronize(), "cudaTS kernelAddRegressors");
-	
+
+	kernelResetFrillsAz << <numTilesMinor, threadsPerTileMinor >> > (
+		pX_use->p_info, pX_use->p_tri_neigh_index,
+		p_AzNext);
+	Call(cudaThreadSynchronize(), "cudaTS ResetFrills AzNext");
+
 	// TESTING:
 
 	//kernelAccumulateSumOfSquares1 << <numTilesMinor, threadsPerTileMinor >> >
@@ -7225,7 +7279,7 @@ void RegressionSeedT_1species(f64 hsub, f64 * p_move1,
 		sum_eps_eps;
 
 	long iVertex;
-	f64 L2eps_n, L2eps_e, L2eps_i;
+	f64 L2eps;
 
 	f64 tempf64;
 	cudaMemcpy(&tempf64, &(p_T_k[VERTCHOSEN]), sizeof(f64), cudaMemcpyDeviceToHost);
@@ -7266,177 +7320,185 @@ void RegressionSeedT_1species(f64 hsub, f64 * p_move1,
 	cudaMemcpy(&tempf64, &(p_T_k[VERTCHOSEN]), sizeof(f64), cudaMemcpyDeviceToHost);
 	printf("p_T_k[%d] = %1.10E \n", VERTCHOSEN, tempf64);
 
-	// . Create epsilon for p_Tn etc
-	cudaMemset(NT_addition_rates_d_temp, 0, sizeof(NTrates)*NUMVERTICES);
-	kernelAccumulateDiffusiveHeatRate_1species_Geometric << < numTilesMajorClever, threadsPerTileMajorClever >> > (
-		pX_use->p_info,
-		pX_use->p_izNeigh_vert,
-		pX_use->p_szPBCneigh_vert,
-		pX_use->p_izTri_vert,
-		pX_use->p_szPBCtri_vert,
-		pX_use->p_cc,
-		pX_use->p_n_major,
-		p_T,
-		pX_use->p_B + BEGINNING_OF_CENTRAL, // NEED POPULATED
-		p_kappa,
-		p_nu,
-		NT_addition_rates_d_temp,
-		pX_use->p_AreaMajor,
-		p_boolarray2,
-		p_boolarray_block,
-		bUseMask,
-		iSpecies);
-	Call(cudaThreadSynchronize(), "cudaTS AccumulateDiffusiveHeatRate neut");
-	cudaMemcpy(&tempf64, &(p_T_k[VERTCHOSEN]), sizeof(f64), cudaMemcpyDeviceToHost);
-	printf("p_T_k[%d] = %1.10E \n", VERTCHOSEN, tempf64);
+	for (int iPass = 0; iPass < 2; iPass++) {
+		// . Create epsilon for p_Tn etc
+		cudaMemset(NT_addition_rates_d_temp, 0, sizeof(NTrates)*NUMVERTICES);
+		kernelAccumulateDiffusiveHeatRate_1species_Geometric << < numTilesMajorClever, threadsPerTileMajorClever >> > (
+			pX_use->p_info,
+			pX_use->p_izNeigh_vert,
+			pX_use->p_szPBCneigh_vert,
+			pX_use->p_izTri_vert,
+			pX_use->p_szPBCtri_vert,
+			pX_use->p_cc,
+			pX_use->p_n_major,
+			p_T,
+			pX_use->p_B + BEGINNING_OF_CENTRAL, // NEED POPULATED
+			p_kappa,
+			p_nu,
+			NT_addition_rates_d_temp,
+			pX_use->p_AreaMajor,
+			p_boolarray2,
+			p_boolarray_block,
+			bUseMask,
+			iSpecies);
+		Call(cudaThreadSynchronize(), "cudaTS AccumulateDiffusiveHeatRate neut");
+		cudaMemcpy(&tempf64, &(p_T_k[VERTCHOSEN]), sizeof(f64), cudaMemcpyDeviceToHost);
+		printf("p_T_k[%d] = %1.10E \n", VERTCHOSEN, tempf64);
 
-	cudaMemset(p_epsilon, 0, sizeof(f64)*NUMVERTICES);
-	cudaMemset(p_slot2i, 0, sizeof(f64)*NUMVERTICES);
-	// because we are about to overwrite it
-	cudaMemcpy(&tempf64, &(p_T_k[VERTCHOSEN]), sizeof(f64), cudaMemcpyDeviceToHost);
-	printf("p_T_k[%d] = %1.10E \n", VERTCHOSEN, tempf64);
 
-	kernelCreateEpsilonAndJacobi_Heat_1species << < numTilesMajorClever, threadsPerTileMajorClever >> > (
-		// eps = T - (T_k +- h sum kappa dot grad T)
-		hsub,
-		pX_use->p_info + BEGINNING_OF_CENTRAL,
-		p_T,
-		p_T_k,
-		NT_addition_rates_d_temp,
-		pX_use->p_n_major, // got this
-		pX_use->p_AreaMajor, // got this -> N, Nn
-		p_coeffself_i,
-		p_epsilon,
-		p_slot2i, // Jacobi regressor
-		0,
-		p_boolarray2,
-		p_boolarray_block,
-		bUseMask,
-		iSpecies,
-		true
-		);
-	Call(cudaThreadSynchronize(), "cudaTS Create epsilon heat 1 and Jacobi");
+		cudaMemset(p_epsilon, 0, sizeof(f64)*NUMVERTICES);
+		cudaMemset(p_slot2i, 0, sizeof(f64)*NUMVERTICES);
+		// because we are about to overwrite it
+		cudaMemcpy(&tempf64, &(p_T_k[VERTCHOSEN]), sizeof(f64), cudaMemcpyDeviceToHost);
+		printf("p_T_k[%d] = %1.10E \n", VERTCHOSEN, tempf64);
 
-	cudaMemset(p_d_eps_by_dbeta_n, 0, sizeof(f64)*NUMVERTICES);
-	cudaMemset(p_d_eps_by_dbetaR_n, 0, sizeof(f64)*NUMVERTICES);
+		kernelCreateEpsilonAndJacobi_Heat_1species << < numTilesMajorClever, threadsPerTileMajorClever >> > (
+			// eps = T - (T_k +- h sum kappa dot grad T)
+			hsub,
+			pX_use->p_info + BEGINNING_OF_CENTRAL,
+			p_T,
+			p_T_k,
+			NT_addition_rates_d_temp,
+			pX_use->p_n_major, // got this
+			pX_use->p_AreaMajor, // got this -> N, Nn
+			p_coeffself_i,
+			p_epsilon,
+			p_slot2i, // Jacobi regressor
+			0,
+			p_boolarray2,
+			p_boolarray_block,
+			bUseMask,
+			iSpecies,
+			true
+			);
+		Call(cudaThreadSynchronize(), "cudaTS Create epsilon heat 1 and Jacobi");
 
-	kernelAccumulateDiffusiveHeatRateROC_wrt_regressor_1species_Geometric << < numTilesMajorClever, threadsPerTileMajorClever >> > (
-		pX_use->p_info,
-		pX_use->p_izNeigh_vert,
-		pX_use->p_szPBCneigh_vert,
-		pX_use->p_izTri_vert,
-		pX_use->p_szPBCtri_vert,
-		pX_use->p_cc,
-		pX_use->p_n_major,
-		p_T, 
-		hsub,
-		p_slot1i,
-		pX_use->p_B + BEGINNING_OF_CENTRAL, 
-		p_kappa,
-		p_nu,
+		cudaMemset(p_d_eps_by_dbeta_n, 0, sizeof(f64)*NUMVERTICES);
+		cudaMemset(p_d_eps_by_dbetaR_n, 0, sizeof(f64)*NUMVERTICES);
 
-		p_d_eps_by_dbetaR_n,  // for move1
+		kernelAccumulateDiffusiveHeatRateROC_wrt_regressor_1species_Geometric << < numTilesMajorClever, threadsPerTileMajorClever >> > (
+			pX_use->p_info,
+			pX_use->p_izNeigh_vert,
+			pX_use->p_szPBCneigh_vert,
+			pX_use->p_izTri_vert,
+			pX_use->p_szPBCtri_vert,
+			pX_use->p_cc,
+			pX_use->p_n_major,
+			p_T,
+			hsub,
+			p_slot1i,
+			pX_use->p_B + BEGINNING_OF_CENTRAL,
+			p_kappa,
+			p_nu,
 
-		pX_use->p_AreaMajor,
-		p_boolarray2,
-		p_boolarray_block,
-		bUseMask,
-		iSpecies);
-	Call(cudaThreadSynchronize(), "cudaTS Create d/dbeta for p_slot1i");
-	
-	kernelAccumulateDiffusiveHeatRateROC_wrt_regressor_1species_Geometric << < numTilesMajorClever, threadsPerTileMajorClever >> > (
-		pX_use->p_info,
-		pX_use->p_izNeigh_vert,
-		pX_use->p_szPBCneigh_vert,
-		pX_use->p_izTri_vert,
-		pX_use->p_szPBCtri_vert,
-		pX_use->p_cc,
-		pX_use->p_n_major,
-		p_T,
-		hsub,
-		p_slot2i,
-		pX_use->p_B + BEGINNING_OF_CENTRAL,
-		p_kappa,
-		p_nu,
+			p_d_eps_by_dbetaR_n,  // for move1
 
-		p_d_eps_by_dbeta_n,  // for Jacobi
+			pX_use->p_AreaMajor,
+			p_boolarray2,
+			p_boolarray_block,
+			bUseMask,
+			iSpecies);
+		Call(cudaThreadSynchronize(), "cudaTS Create d/dbeta for p_slot1i");
 
-		pX_use->p_AreaMajor,
-		p_boolarray2,
-		p_boolarray_block,
-		bUseMask,
-		iSpecies);
-	Call(cudaThreadSynchronize(), "cudaTS Create d/dbeta for p_slot2i");
+		kernelAccumulateDiffusiveHeatRateROC_wrt_regressor_1species_Geometric << < numTilesMajorClever, threadsPerTileMajorClever >> > (
+			pX_use->p_info,
+			pX_use->p_izNeigh_vert,
+			pX_use->p_szPBCneigh_vert,
+			pX_use->p_izTri_vert,
+			pX_use->p_szPBCtri_vert,
+			pX_use->p_cc,
+			pX_use->p_n_major,
+			p_T,
+			hsub,
+			p_slot2i,
+			pX_use->p_B + BEGINNING_OF_CENTRAL,
+			p_kappa,
+			p_nu,
 
-	// We have a 2-regression programmed. Should we have a 3-regression programmed also?
-	// Do each species in turn:
+			p_d_eps_by_dbeta_n,  // for Jacobi
 
-	kernelAccumulateSummands4 << <numTilesMajor, threadsPerTileMajor >> > (
-		// We don't need to test for domain, we need to make sure the summands are zero otherwise.
-		p_epsilon,
-		p_d_eps_by_dbeta_n,
-		p_d_eps_by_dbetaR_n,
-		// 6 outputs:
-		p_sum_eps_deps_by_dbeta_J,
-		p_sum_eps_deps_by_dbeta_R,
-		p_sum_depsbydbeta_J_times_J,
-		p_sum_depsbydbeta_R_times_R,
-		p_sum_depsbydbeta_J_times_R,
-		p_sum_eps_eps);
-	Call(cudaThreadSynchronize(), "cudaTS AccumulateSummands neut");
+			pX_use->p_AreaMajor,
+			p_boolarray2,
+			p_boolarray_block,
+			bUseMask,
+			iSpecies);
+		Call(cudaThreadSynchronize(), "cudaTS Create d/dbeta for p_slot2i");
 
-	cudaMemcpy(p_sum_eps_deps_by_dbeta_J_host, p_sum_eps_deps_by_dbeta_J, sizeof(f64)*numTilesMajor, cudaMemcpyDeviceToHost);
-	cudaMemcpy(p_sum_eps_deps_by_dbeta_R_host, p_sum_eps_deps_by_dbeta_R, sizeof(f64)*numTilesMajor, cudaMemcpyDeviceToHost);
-	cudaMemcpy(p_sum_depsbydbeta_J_times_J_host, p_sum_depsbydbeta_J_times_J, sizeof(f64)*numTilesMajor, cudaMemcpyDeviceToHost);
-	cudaMemcpy(p_sum_depsbydbeta_R_times_R_host, p_sum_depsbydbeta_R_times_R, sizeof(f64)*numTilesMajor, cudaMemcpyDeviceToHost);
-	cudaMemcpy(p_sum_depsbydbeta_J_times_R_host, p_sum_depsbydbeta_J_times_R, sizeof(f64)*numTilesMajor, cudaMemcpyDeviceToHost);
-	cudaMemcpy(p_sum_eps_eps_host, p_sum_eps_eps, sizeof(f64)*numTilesMajor, cudaMemcpyDeviceToHost);
+		// We have a 2-regression programmed. Should we have a 3-regression programmed also?
+		// Do each species in turn:
 
-	sum_eps_deps_by_dbeta_J = 0.0;
-	sum_eps_deps_by_dbeta_R = 0.0;
-	sum_depsbydbeta_J_times_J = 0.0;
-	sum_depsbydbeta_R_times_R = 0.0;
-	sum_depsbydbeta_J_times_R = 0.0;
-	sum_eps_eps = 0.0;
-	for (iTile = 0; iTile < numTilesMajor; iTile++)
-	{
-		sum_eps_deps_by_dbeta_J += p_sum_eps_deps_by_dbeta_J_host[iTile];
-		sum_eps_deps_by_dbeta_R += p_sum_eps_deps_by_dbeta_R_host[iTile];
-		sum_depsbydbeta_J_times_J += p_sum_depsbydbeta_J_times_J_host[iTile];
-		sum_depsbydbeta_R_times_R += p_sum_depsbydbeta_R_times_R_host[iTile];
-		sum_depsbydbeta_J_times_R += p_sum_depsbydbeta_J_times_R_host[iTile];
-		sum_eps_eps += p_sum_eps_eps_host[iTile];
-	}
+		kernelAccumulateSummands4 << <numTilesMajor, threadsPerTileMajor >> > (
+			// We don't need to test for domain, we need to make sure the summands are zero otherwise.
+			p_epsilon,
+			p_d_eps_by_dbeta_n,
+			p_d_eps_by_dbetaR_n,
+			// 6 outputs:
+			p_sum_eps_deps_by_dbeta_J,
+			p_sum_eps_deps_by_dbeta_R,
+			p_sum_depsbydbeta_J_times_J,
+			p_sum_depsbydbeta_R_times_R,
+			p_sum_depsbydbeta_J_times_R,
+			p_sum_eps_eps);
+		Call(cudaThreadSynchronize(), "cudaTS AccumulateSummands neut");
 
-	if ((sum_depsbydbeta_J_times_J*sum_depsbydbeta_R_times_R - sum_depsbydbeta_J_times_R*sum_depsbydbeta_J_times_R == 0.0)
-		|| (sum_depsbydbeta_R_times_R*sum_depsbydbeta_J_times_J - sum_depsbydbeta_J_times_R*sum_depsbydbeta_J_times_R == 0.0))
-	{
-		printf("Could not define coefficient.");
-		beta_nJ = 0.0;
-		beta_nR = 0.0;
-	}
-	else {
-		beta_nJ = -(sum_eps_deps_by_dbeta_J*sum_depsbydbeta_R_times_R - sum_eps_deps_by_dbeta_R*sum_depsbydbeta_J_times_R) /
-			(sum_depsbydbeta_J_times_J*sum_depsbydbeta_R_times_R - sum_depsbydbeta_J_times_R*sum_depsbydbeta_J_times_R);
-		beta_nR = -(sum_eps_deps_by_dbeta_R*sum_depsbydbeta_J_times_J - sum_eps_deps_by_dbeta_J*sum_depsbydbeta_J_times_R) /
-			(sum_depsbydbeta_R_times_R*sum_depsbydbeta_J_times_J - sum_depsbydbeta_J_times_R*sum_depsbydbeta_J_times_R);
-	}
-	f64 L2eps;
-	if (bUseMask) {
-		long over_iEquations;
-		if (iSpecies == 0) over_iEquations = over_iEquations_n;
-		if (iSpecies == 1) over_iEquations = over_iEquations_i;
-		if (iSpecies == 2) over_iEquations = over_iEquations_e;
-		L2eps = sqrt(sum_eps_eps * over_iEquations);
-	}
-	else {
-		L2eps = sqrt(sum_eps_eps / (real)NUMVERTICES);
+		cudaMemcpy(p_sum_eps_deps_by_dbeta_J_host, p_sum_eps_deps_by_dbeta_J, sizeof(f64)*numTilesMajor, cudaMemcpyDeviceToHost);
+		cudaMemcpy(p_sum_eps_deps_by_dbeta_R_host, p_sum_eps_deps_by_dbeta_R, sizeof(f64)*numTilesMajor, cudaMemcpyDeviceToHost);
+		cudaMemcpy(p_sum_depsbydbeta_J_times_J_host, p_sum_depsbydbeta_J_times_J, sizeof(f64)*numTilesMajor, cudaMemcpyDeviceToHost);
+		cudaMemcpy(p_sum_depsbydbeta_R_times_R_host, p_sum_depsbydbeta_R_times_R, sizeof(f64)*numTilesMajor, cudaMemcpyDeviceToHost);
+		cudaMemcpy(p_sum_depsbydbeta_J_times_R_host, p_sum_depsbydbeta_J_times_R, sizeof(f64)*numTilesMajor, cudaMemcpyDeviceToHost);
+		cudaMemcpy(p_sum_eps_eps_host, p_sum_eps_eps, sizeof(f64)*numTilesMajor, cudaMemcpyDeviceToHost);
+
+		sum_eps_deps_by_dbeta_J = 0.0;
+		sum_eps_deps_by_dbeta_R = 0.0;
+		sum_depsbydbeta_J_times_J = 0.0;
+		sum_depsbydbeta_R_times_R = 0.0;
+		sum_depsbydbeta_J_times_R = 0.0;
+		sum_eps_eps = 0.0;
+		for (iTile = 0; iTile < numTilesMajor; iTile++)
+		{
+			sum_eps_deps_by_dbeta_J += p_sum_eps_deps_by_dbeta_J_host[iTile];
+			sum_eps_deps_by_dbeta_R += p_sum_eps_deps_by_dbeta_R_host[iTile];
+			sum_depsbydbeta_J_times_J += p_sum_depsbydbeta_J_times_J_host[iTile];
+			sum_depsbydbeta_R_times_R += p_sum_depsbydbeta_R_times_R_host[iTile];
+			sum_depsbydbeta_J_times_R += p_sum_depsbydbeta_J_times_R_host[iTile];
+			sum_eps_eps += p_sum_eps_eps_host[iTile];
+		}
+
+		if ((sum_depsbydbeta_J_times_J*sum_depsbydbeta_R_times_R - sum_depsbydbeta_J_times_R*sum_depsbydbeta_J_times_R == 0.0)
+			|| (sum_depsbydbeta_R_times_R*sum_depsbydbeta_J_times_J - sum_depsbydbeta_J_times_R*sum_depsbydbeta_J_times_R == 0.0))
+		{
+			printf("Could not define coefficient.");
+			beta_nJ = 0.0;
+			beta_nR = 0.0;
+		}
+		else {
+			beta_nJ = -(sum_eps_deps_by_dbeta_J*sum_depsbydbeta_R_times_R - sum_eps_deps_by_dbeta_R*sum_depsbydbeta_J_times_R) /
+				(sum_depsbydbeta_J_times_J*sum_depsbydbeta_R_times_R - sum_depsbydbeta_J_times_R*sum_depsbydbeta_J_times_R);
+			beta_nR = -(sum_eps_deps_by_dbeta_R*sum_depsbydbeta_J_times_J - sum_eps_deps_by_dbeta_J*sum_depsbydbeta_J_times_R) /
+				(sum_depsbydbeta_R_times_R*sum_depsbydbeta_J_times_J - sum_depsbydbeta_J_times_R*sum_depsbydbeta_J_times_R);
+		}
+		f64 L2eps;
+		if (bUseMask) {
+			long over_iEquations;
+			if (iSpecies == 0) over_iEquations = over_iEquations_n;
+			if (iSpecies == 1) over_iEquations = over_iEquations_i;
+			if (iSpecies == 2) over_iEquations = over_iEquations_e;
+			L2eps = sqrt(sum_eps_eps * over_iEquations);
+		}
+		else {
+			L2eps = sqrt(sum_eps_eps / (real)NUMVERTICES);
+		};
+		printf("\n [ Beta_Jacobi %1.10E Beta_Move %1.10E L2eps(old) %1.10E ] ", beta_nJ, beta_nR, L2eps);
+
+		kernelAdd_to_T_lc << < numTilesMajorClever, threadsPerTileMajorClever >> > (
+			p_T, beta_nR, p_slot1i, beta_nJ, p_slot2i);
+		Call(cudaThreadSynchronize(), "cudaTS AddtoT ___1");
+
+
 	};
-	printf("\n [ Beta1 %1.10E Beta2 %1.10E L2eps(old) %1.10E ] ", beta_nJ, beta_nR, L2eps);
 
-	kernelAdd_to_T_lc << < numTilesMajorClever, threadsPerTileMajorClever >> > (
-		p_T, beta_nR, p_slot1i, beta_nJ, p_slot2i);
-	Call(cudaThreadSynchronize(), "cudaTS AddtoT ___1");
+	// It was surprisingly ineffective and chooses a low coefficient on Jacobi
+	// Therefore let's go again with Jacobi reprised.
 
 
 	// Test effect of additions:
@@ -7481,7 +7543,7 @@ void RegressionSeedT_1species(f64 hsub, f64 * p_move1,
 		bUseMask,
 		iSpecies
 		);
-	Call(cudaThreadSynchronize(), "cudaTS 	kernelCreateEpsilonHeat_1species");
+	Call(cudaThreadSynchronize(), "cudaTS Create epsilon heat 1 and Jacobi");
 
 	kernelAccumulateSumOfSquares1 << < numTilesMajorClever, threadsPerTileMajorClever >> >
 		(p_epsilon, p_temp1);
@@ -7504,10 +7566,10 @@ void RegressionSeedT_1species(f64 hsub, f64 * p_move1,
 		L2eps = sqrt(SS_n / (real)NUMVERTICES);
 	};
 
-	printf("L2eps %1.10E \n\n", L2eps);
-		
-	// Next stop: be careful what we are adding to what.
-	// TO produce seed regressors.
+	printf("L2eps %1.12E \n\n", L2eps);
+
+	// It was surprisingly ineffective and chooses a low coefficient on Jacobi
+	// Let's go again with Jacobi reprised.
 }
 
 
@@ -8969,6 +9031,8 @@ void RunBackwardR8LSForNeutralViscosity(f64_vec3 * p_v_n_k, f64_vec3 * p_v_n, f6
 
 	printf("L2eps %1.8E %1.8E %1.8E\n", L2eps.x, L2eps.y, L2eps.z);
 
+	if (L2eps.x + L2eps.y + L2eps.z == 0.0) goto labelNeutralBudgie;
+
 	do {
 
 		// 2. Create set of 7 or 8 regressors, starting with epsilon3 normalized,
@@ -9158,7 +9222,7 @@ void RunBackwardR8LSForNeutralViscosity(f64_vec3 * p_v_n_k, f64_vec3 * p_v_n, f6
 			if (info > 0) {
 				//	printf("The diagonal element of the triangular factor of A,\n");
 				//	printf("U(%i,%i) is zero, so that A is singular;\n", info, info);
-				printf("the solution could not be computed.\n");
+				printf("the solution could not be computed Neutral visc.\n");
 				printf("press c\n");
 				while (getch() != 'c');
 			} else {
@@ -9273,6 +9337,7 @@ void RunBackwardR8LSForNeutralViscosity(f64_vec3 * p_v_n_k, f64_vec3 * p_v_n, f6
 	} while (bContinue);
 		
 	GlobalSuppressSuccessVerbosity = DEFAULTSUPPRESSVERBOSITY;
+labelNeutralBudgie:
 
 	// Save move for next time:
 	bHistory = true;
@@ -9292,7 +9357,7 @@ void RunBackwardR8LSForViscosity(v4 * p_vie_k, v4 * p_vie, f64 const hsub, cuSys
 
 	f64 beta[REGRESSORS];
 	
-	GlobalSuppressSuccessVerbosity = true;
+	GlobalSuppressSuccessVerbosity = false;
 
 	f64 beta_e, beta_i, beta_n;
 	long iTile;		
@@ -9369,6 +9434,8 @@ void RunBackwardR8LSForViscosity(v4 * p_vie_k, v4 * p_vie, f64 const hsub, cuSys
 		RSS_xy += p_SS_host[iTile];
 	f64 L2eps_xy = sqrt(RSS_xy / (real)NMINOR);
 	printf("L2eps xy %1.8E ", L2eps_xy);
+
+	if (L2eps_xy == 0.0) goto labelBudgerigar;
 
 	kernelAccumulateSumOfSquares1 << <numTilesMinor, threadsPerTileMinor >> >(
 		p_epsilon_iz, p_SS);
@@ -9730,6 +9797,7 @@ void RunBackwardR8LSForViscosity(v4 * p_vie_k, v4 * p_vie, f64 const hsub, cuSys
 
 		Rsquared_xy *= 100.0; Rsquared_iz *= 100.0; Rsquared_ez *= 100.0;
 
+		if (L2eps_xy == 0.0) bContinue = false;
 		printf("L2eps xy %1.8E iz %1.8E ez %1.8E R^2 %2.3f%% %2.3f%% %2.3f%% bCont: %d\n",
 			L2eps_xy, L2eps_iz, L2eps_ez, Rsquared_xy, Rsquared_iz, Rsquared_ez, (bContinue ? 1 : 0));
 
@@ -9748,6 +9816,8 @@ void RunBackwardR8LSForViscosity(v4 * p_vie_k, v4 * p_vie, f64 const hsub, cuSys
 
 		iIteration++;
 	} while (bContinue);		
+
+labelBudgerigar:
 
 	// Save move for next time:
 	bHistory = true;
@@ -13043,7 +13113,6 @@ void cuSyst::PerformCUDA_Advance_noadvect(//const
 		2);
 	Call(cudaThreadSynchronize(), "cudaTS AccumulateDiffusiveHeatRate neut");
 	
-	getch();
 
 	// This isn't ideal ---- for this one we might like the old half move and the old
 	// full move stored
@@ -14030,9 +14099,6 @@ void cuSyst::PerformCUDA_Advance_noadvect(//const
 	Call(cudaThreadSynchronize(), "cudaTS AccumulateDiffusiveHeatRate neut");
 
 	iHistory++;
-
-	getch();
-
 	/*
 	//kernelCalculate_kappa_nu << <numTriTiles, threadsPerTileMinor >> > (
 	//	pX_half->p_info,
@@ -15099,7 +15165,7 @@ void cuSyst::PerformCUDA_Advance_noadvect(//const
 			p_LapAz + BEGINNING_OF_CENTRAL,
 			 
 			pX_target->p_n_minor + BEGINNING_OF_CENTRAL,
-
+			 
 			pX_target->p_T_minor + BEGINNING_OF_CENTRAL,
 			pX_half->p_B + BEGINNING_OF_CENTRAL, // ...
 			p_MAR_ion + BEGINNING_OF_CENTRAL,
@@ -15251,10 +15317,16 @@ void GosubAccelerate(long iSubcycles, f64 hsub, cuSyst * pX_use, cuSyst * pX_int
 			p_Az
 			);
 		Call(cudaThreadSynchronize(), "cudaTS PullAz");
-
 		evaltime += hsub; // t_k+1
+
 		f64 Iz_prescribed_endtime = GetIzPrescribed(evaltime); // APPLIED AT END TIME: we are determining
-		  
+#ifndef AZCG
+
+		kernelResetFrillsAz << <numTilesMinor, threadsPerTileMinor >> > (
+			pX_use->p_info, pX_use->p_tri_neigh_index,
+			p_Az);
+		Call(cudaThreadSynchronize(), "cudaTS ResetFrills Az");
+			
 		kernelGetLap_minor << <numTriTiles, threadsPerTileMinor >> > (
 			pX_use->p_info, 
 			p_Az,
@@ -15265,7 +15337,20 @@ void GosubAccelerate(long iSubcycles, f64 hsub, cuSyst * pX_use, cuSyst * pX_int
 			p_LapAz
 			);
 		Call(cudaThreadSynchronize(), "cudaTS GetLapMinor aaa2");
-
+#else
+		kernelGetLap_minor_SYMMETRIC << <numTriTiles, threadsPerTileMinor >> > (
+			pX_use->p_info,
+			p_Az,
+			pX_use->p_izTri_vert,
+			pX_use->p_izNeigh_TriMinor,
+			pX_use->p_szPBCtri_vert,
+			pX_use->p_szPBC_triminor,
+			p_LapAz,
+			p_AreaMinor_cc,
+			true // divide by Area
+			);
+		Call(cudaThreadSynchronize(), "cudaTS GetLapMinor aaa2");
+#endif
 		kernelPopulateBackwardOhmsLaw_noadvect << <numTilesMinor, threadsPerTileMinor >> > (
 			hsub,
 			pX_use->p_info,
@@ -15306,7 +15391,15 @@ void GosubAccelerate(long iSubcycles, f64 hsub, cuSyst * pX_use, cuSyst * pX_int
 			Iz_k += p_temphost1[iBlock];
 		}
 		EzStrength_ = (Iz_prescribed_endtime - Iz0) / Sigma_Izz;
-		if (EzStrength_ != EzStrength_) { printf("end\n"); while (1) getch(); }
+		if (EzStrength_ != EzStrength_) {
+			printf("EzStrength_ != EzStrength_endIzpresc %1.10E Iz0 %1.10E Sigma_Izz %1.10E\n",
+				Iz_prescribed_endtime, Iz0, Sigma_Izz); 
+			printf("press z");
+			while (getch() != 'z');
+			PerformCUDA_Revoke();
+			while (1) getch();
+		};
+
 		Set_f64_constant(Ez_strength, EzStrength_);
 
 		f64 neg_Iz_per_triangle = -(Iz_prescribed_endtime) / (f64)numReverseJzTriangles;
@@ -15378,7 +15471,7 @@ void GosubAccelerate(long iSubcycles, f64 hsub, cuSyst * pX_use, cuSyst * pX_int
 #ifdef AZCG
 		
 		SolveBackwardAzAdvanceCG(hsub, p_Az, p_Azdot0, p_gamma,
-			p_AzNext, p_LapCoeffself, pX_intermediate); // pX_target);		
+			p_AzNext, pX_intermediate); // pX_target);		
 		GlobalSuppressSuccessVerbosity = true;
 		SubtractVector << <numTilesMinor, threadsPerTileMinor >> >
 			(stored_Az_move, p_Az, p_AzNext);
@@ -15393,9 +15486,11 @@ void GosubAccelerate(long iSubcycles, f64 hsub, cuSyst * pX_use, cuSyst * pX_int
 			pX_use->p_szPBCtri_vert,
 			pX_use->p_szPBC_triminor,
 			p_LapAz,// it doesn't really make any difference which syst -- no vertices moving
-			p_AreaMinor_cc
+			p_AreaMinor_cc,
+			true
 		);
-		Call(cudaThreadSynchronize(), "cudaTS GetLap Az JLS 2");
+		Call(cudaThreadSynchronize(), "cudaTS GetLap AzSYMMETRIC");
+
 #else
 
 		SolveBackwardAzAdvanceJ3LS(hsub, p_Az, p_Azdot0, p_gamma,
