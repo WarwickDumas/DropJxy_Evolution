@@ -539,10 +539,6 @@ void cuSyst::PopulateFromTriMesh(TriMesh * pX)
 	memcpy(p_izNeigh_TriMinor, pX->TriMinorNeighLists, Ntris * 6 * sizeof(long)); // pointless that we duplicate it but nvm
 	memcpy(p_szPBC_triminor, pX->TriMinorPBCLists, Ntris * 6 * sizeof(char));
 
-	//printf("Value sent for [92250][1] = %d",
-	//	pX->TriMinorPBCLists[92250][1]);
-	//getch();
-
 	// AsSUMES THIS cuSyst has been allocated on the host.
 	if ((Nverts != pX->numVertices) ||
 		(Ntris != pX->numTriangles))
@@ -577,7 +573,7 @@ void cuSyst::PopulateFromTriMesh(TriMesh * pX)
 
 		if (iMinor == 25964 - BEGINNING_OF_CENTRAL) {
 			printf("iMinor %d p_vie[iMinor].vez %1.10E viz %1.10E\n", iMinor, p_vie[iMinor].vez, p_vie[iMinor].viz);
-			getch();
+		//	getch();
 		}
 
 		p_B[iMinor] = data.B;
@@ -728,8 +724,8 @@ void cuSyst::CopyStructuralDetailsFrom(cuSyst & src) // this assume both live on
 	cudaMemcpy(p_who_am_I_to_corner, src.p_who_am_I_to_corner, sizeof(LONG3) * Ntris, cudaMemcpyDeviceToDevice);
 	cudaMemcpy(p_iVolley, src.p_iVolley, sizeof(char)*Nverts, cudaMemcpyDeviceToDevice);
 	// find another way would be better. Just a waste of memory and processing having duplicate info, creates unnecessary risks.
-
 }
+
 void cuSyst::PopulateTriMesh(TriMesh * pX)
 {
 	// AsSUMES THIS cuSyst has been allocated on the host.
@@ -775,6 +771,7 @@ void cuSyst::PopulateTriMesh(TriMesh * pX)
 	{
 		info = p_info[iVertex + BEGINNING_OF_CENTRAL];
 		pVertex->pos = info.pos;
+		pVertex->flags = info.flag;
 
 		//tri_len = pVertex->GetTriIndexArray(izTri);
 		//info.neigh_len = tri_len;

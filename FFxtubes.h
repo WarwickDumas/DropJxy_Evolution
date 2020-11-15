@@ -19,16 +19,20 @@ bool const bScrewPinch = false;
 #define RADIALDECLINE true
 
 //#define FLATAZBC
- 
-#define FOLDER "C:/outputs/"
-#define INITIALAVI "scrap.avi"		
+
+int const NUMAVI = 9;
+#define FOLDER L"C:/outputs/"
+#define FOLDER2 "C:/outputs/"
+#define INITIALAVI "scraposc.avi"		
+#define INITIALMP4 L"scraposc.mp4"
 #define STORYFILE "temp.txt"
 #define STORYFILE2 "temp2.txt"
   
-#define FUNCTIONALFILE_START FOLDER "functionals"
-#define DATAFILENAME FOLDER "Data_"
-#define AUTOSAVE_FILENAME FOLDER "autosave.dat"
-#define RUNTIME_FILENAME FOLDER "runtime.dat"
+#define FUNCTIONALFILE_START FOLDER2 "functionalsosc"
+#define DATAFILENAME FOLDER2 "Dataosc_"
+#define AUTOSAVE_FILENAME FOLDER2 "autosaveosc.dat"
+#define RUNTIME_FILENAME FOLDER2 "runtimeosc.dat"
+#define AUTOSAVENAME "oauto"
 
 #define DELAY_MILLISECS      100 // pause
 
@@ -38,7 +42,7 @@ bool const bScrewPinch = false;
 
 #define STEPS_PER_LOOP               1    // soon change to 500
 // frames between file pinch-offs:
-#define AVI_FILE_PINCHOFF_FREQUENCY     200
+#define AVI_FILE_PINCHOFF_FREQUENCY     1200 // 50 = 1 ns
 
 // 1 frame = 0.01 so 100 frames == 1 ns
 
@@ -326,8 +330,8 @@ extern float xzscale;
 //long const VIDEO_WIDTH = 1440;
 //long const VIDEO_HEIGHT = 900;  // the client area size; used for 4 graphs(at present)
 
-long const VIDEO_WIDTH = 1440;
-long const VIDEO_HEIGHT = 1050;  // the client area size; used for 4 graphs(at present)
+unsigned long const VIDEO_WIDTH = 1440;
+unsigned long const VIDEO_HEIGHT = 1050;  // the client area size; used for 4 graphs(at present)
 
 								 // CHANGE THIS TO MAX DIMS ---- *** ??? *** ???
 

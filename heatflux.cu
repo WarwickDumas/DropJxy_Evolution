@@ -1516,6 +1516,11 @@ __global__ void kernelAccumulateDiffusiveHeatRateROC_wrt_regressor_1species_Geom
 		};
 
 		result = -d_by_dbeta*(h_use / N) + our_x;
+
+		if (result != result) printf("iVertex %d NaN result. d/dbeta %1.10E N %1.8E our_x %1.8E \n",
+			iVertex, d_by_dbeta, N, our_x);
+
+
 	} else { // was it DOMAIN vertex active in mask
 		result = 0.0;
 	};

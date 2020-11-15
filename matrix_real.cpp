@@ -179,13 +179,12 @@ using std::cout;
 					LU[i][j] -= temp1*LU[k][j];
 			};
 		};
-		printf("LUsolve done\n");
+		printf("LUdecomp done\n");
 
 		return 0; // successful?
 	}
 
 	long Matrix_real::LUSolve (real b[], real x[])
-
 		// Make x solve A x = b, where A was the matrix originally defined by assignments before decomposition
 	{
 		long i, ii, ip, j;

@@ -1001,8 +1001,10 @@ __global__ void kernelAccumulateSummands7(
 	int i;
 	for (i = 0; i < REGRESSORS; i++) {
 		d_eps_by_d_beta[i] = p_d_eps_by_dbeta[iVertex + i*NUMVERTICES];
+		if (d_eps_by_d_beta[i] != d_eps_by_d_beta[i]) printf("Alert : iVertex %d d/dbeta %d NaN\n", iVertex, i);
 	};
 
+	
 #pragma unroll 
 	for (i = 0; i < REGRESSORS; i++)
 		sumdata[threadIdx.x][i] = eps*d_eps_by_d_beta[i];
@@ -1012,6 +1014,7 @@ __global__ void kernelAccumulateSummands7(
 #pragma unroll 
 	for (i = 0; i < REGRESSORS; i++)
 		sumdata[threadIdx.x][2 * REGRESSORS + i] = d_eps_by_d_beta[1] * d_eps_by_d_beta[i];
+
 
 	// That was 24.
 

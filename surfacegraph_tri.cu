@@ -1478,7 +1478,7 @@ VOID surfacegraph::Render(const char * szTitle, bool RenderTriLabels,
 
 	long tri_len, izTri[128];
 
-	static DWORD time = timeGetTime();
+	//static DWORD time = timeGetTime();
 	//DWORD oldtime;
 	//float timestep, temporary;
 	//int i;
