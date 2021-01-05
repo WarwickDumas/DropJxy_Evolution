@@ -113,8 +113,7 @@ using std::cout;
 		};
 		for (k = 0; k < LUSIZE; k++) // the outermost kij loop
 		{
-			printf("k %d\n", k);
-
+		
 			if (k < LUSIZE - 1) // if it == LUSIZE-1 then we don't need to run this, and it's dangerous too.
 			{
 				imax = -1;
@@ -179,7 +178,7 @@ using std::cout;
 					LU[i][j] -= temp1*LU[k][j];
 			};
 		};
-		printf("LUdecomp done\n");
+	//	printf("LUdecomp done\n");
 
 		return 0; // successful?
 	}

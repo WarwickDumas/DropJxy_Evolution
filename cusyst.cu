@@ -7,6 +7,13 @@
 extern real evaltime;
 extern long GlobalStepsCounter;
 extern bool GlobalSuppressSuccessVerbosity;
+extern f64 * p_graphdata1_host, *p_graphdata2_host, *p_graphdata3_host, *p_graphdata4_host, *p_graphdata5_host, *p_graphdata6_host;
+extern f64 * p_Tgraph_host[9];
+extern f64 * p_accelgraph_host[12];
+extern f64 * p_Ohmsgraph_host[20];
+extern f64 * p_arelz_graph_host[12];
+extern f64 * p_temphost5;
+
 __host__ bool Call(cudaError_t cudaStatus, char str[])
 {
 	if (cudaStatus == cudaSuccess) {
@@ -207,6 +214,79 @@ free(p_iVolley);
 	};
 }
 
+void cuSyst::SaveGraphs(const char filename[])
+{
+	FILE * fp = fopen(filename, "wb");
+	if (fp == 0) { printf("open %s failed\n\n", filename); getch();  return; }
+	else { printf("opened file %s ..", filename); }
+
+	long filevers = 1;
+	fwrite(&filevers, sizeof(long), 1, fp);
+	fwrite(&Nverts, sizeof(long), 1, fp);
+	fwrite(&Ntris, sizeof(long), 1, fp);
+
+	fwrite(&GlobalStepsCounter, sizeof(long), 1, fp);
+	fwrite(&evaltime, sizeof(f64), 1, fp);
+
+	fwrite(p_info, sizeof(structural), NMINOR, fp);
+
+	fwrite(p_izTri_vert, sizeof(long), Nverts*MAXNEIGH_d, fp);
+
+	fwrite(p_izNeigh_vert, sizeof(long), Nverts*MAXNEIGH_d, fp);
+	fwrite(p_szPBCtri_vert, sizeof(char), Nverts*MAXNEIGH_d, fp);
+	fwrite(p_szPBCneigh_vert, sizeof(char), Nverts*MAXNEIGH_d, fp);
+
+	fwrite(p_izNeigh_TriMinor, sizeof(long), Ntris * 6, fp);
+	fwrite(p_szPBC_triminor, sizeof(char), Ntris * 6, fp);
+	fwrite(p_tri_corner_index, sizeof(LONG3), Ntris, fp);
+	fwrite(p_tri_periodic_corner_flags, sizeof(CHAR4), Ntris, fp);
+	fwrite(p_tri_neigh_index, sizeof(LONG3), Ntris, fp);
+	fwrite(p_tri_periodic_neigh_flags, sizeof(CHAR4), Ntris, fp);
+	fwrite(p_who_am_I_to_corner, sizeof(LONG3), Ntris, fp);
+
+	fwrite(p_iVolley, sizeof(char), Nverts, fp); // Not changed yet in load.
+
+	fwrite(p_n_major, sizeof(nvals), Nverts, fp);
+	fwrite(p_T_minor + BEGINNING_OF_CENTRAL, sizeof(T3), Nverts, fp);
+	fwrite(p_AAdot + BEGINNING_OF_CENTRAL, sizeof(AAdot), Nverts, fp);
+	fwrite(p_v_n + BEGINNING_OF_CENTRAL, sizeof(f64_vec3), Nverts, fp);
+	fwrite(p_vie + BEGINNING_OF_CENTRAL, sizeof(v4), Nverts, fp);
+	fwrite(p_B + BEGINNING_OF_CENTRAL, sizeof(f64_vec3), Nverts, fp);
+	fwrite(p_AreaMajor, sizeof(f64), Nverts, fp);
+	// Now save the graphing data that we use ...
+	fwrite(p_graphdata1_host + BEGINNING_OF_CENTRAL, sizeof(f64),Nverts, fp);
+	fwrite(p_graphdata2_host + BEGINNING_OF_CENTRAL, sizeof(f64),Nverts, fp);
+	fwrite(p_graphdata3_host + BEGINNING_OF_CENTRAL, sizeof(f64),Nverts, fp);
+	fwrite(p_graphdata4_host + BEGINNING_OF_CENTRAL, sizeof(f64),Nverts, fp);
+	fwrite(p_graphdata5_host + BEGINNING_OF_CENTRAL, sizeof(f64),Nverts, fp);
+	fwrite(p_graphdata6_host + BEGINNING_OF_CENTRAL, sizeof(f64),Nverts, fp);
+	int i;
+	for (i = 0; i < 9; i++)
+		fwrite(p_Tgraph_host[i], sizeof(f64),NUMVERTICES, fp);
+	for (i = 0; i < 12; i++)
+		fwrite(p_accelgraph_host[i], sizeof(f64),NUMVERTICES, fp);
+	//for (i = 0; i < 20; i++)
+	//	fwrite(p_Ohmsgraph_host[i] = (f64 *)malloc(NUMVERTICES * sizeof(f64));
+	// skip ohmsgraph...
+	for (i = 0; i < 12; i++)
+		fwrite(p_arelz_graph_host[i], sizeof(f64),NUMVERTICES, fp);
+
+	// We only really wanted to save 1D graphs of these, so maybe we should have stuck to that!
+
+	fwrite(p_temphost5 + BEGINNING_OF_CENTRAL, sizeof(f64),NUMVERTICES, fp); // Lap Az
+
+	// so that makes 33 extra doubles per vertex so far. We have to expect the total size will be the same.
+
+
+	//	fwrite(p_Lap_Az, Nminor * sizeof(f64));
+	//	fwrite(p_v_overall_minor, Nminor * sizeof(f64_vec2));
+	//	fwrite(p_n_upwind_minor, Nminor * sizeof(nvals));
+
+	
+
+	fclose(fp);
+	printf("File save done.\n");
+}
 void cuSyst::Save(const char filename[])
 {
 	FILE * fp = fopen(filename, "wb");

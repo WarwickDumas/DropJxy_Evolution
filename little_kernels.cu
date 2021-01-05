@@ -56,6 +56,10 @@ __device__ void Augment_JacobeanNeutral(
 					// Pi_zy
 					-ita_par*grad_vjdy_coeff_on_vj_self
 					)*edge_normal.y);	
+
+
+	// We are storing a whole matrix when it's just a scalar. !!!
+
 }
 
 __device__ void Augment_Jacobean(
@@ -542,6 +546,110 @@ __global__ void kernelAccumulateSummands3(
 	};
 }
 
+
+__global__ void AccumulateSummandsScalars3(
+	structural * __restrict__ p_info_minor,
+	f64 * __restrict__ p__eps,
+	f64 * __restrict__ p__deps_1,
+	f64 * __restrict__ p__deps_2, 
+	f64 * __restrict__ p__deps_3,
+	f64_vec3 * __restrict__ p_sum_eps_deps_,
+	Symmetric3 * __restrict__ p_sum_product_matrix_,
+	f64 * __restrict__ p_sum_eps_sq
+) {
+	__shared__ f64 sumdata_eps_depsx[threadsPerTileMinor];
+	__shared__ f64 sumdata_eps_depsy[threadsPerTileMinor];
+	__shared__ f64 sumdata_eps_depsz[threadsPerTileMinor];
+	__shared__ Symmetric3 sum_product[threadsPerTileMinor];
+	__shared__ f64 sumdata_ss[threadsPerTileMinor];
+
+	long const iMinor = threadIdx.x + blockIdx.x * blockDim.x;
+
+	sumdata_eps_depsx[threadIdx.x] = 0.0;
+	sumdata_eps_depsy[threadIdx.x] = 0.0;
+	sumdata_eps_depsz[threadIdx.x] = 0.0;
+	memset(&(sum_product[threadIdx.x]), 0, sizeof(Symmetric3));
+	sumdata_ss[threadIdx.x] = 0.0;
+
+	structural info = p_info_minor[iMinor];
+	if ((info.flag == DOMAIN_VERTEX) || (info.flag == DOMAIN_TRIANGLE) || (info.flag == CROSSING_INS))
+	{
+		f64 eps = p__eps[iMinor];
+		f64 depsbydbeta_x = p__deps_1[iMinor];
+		f64 depsbydbeta_y = p__deps_2[iMinor];
+		f64 depsbydbeta_z = p__deps_3[iMinor];
+		
+		// sum over all values, of deps_i/dbetax deps_i/dbetay
+
+		sumdata_eps_depsx[threadIdx.x] = depsbydbeta_x * eps;
+		sumdata_eps_depsy[threadIdx.x] = depsbydbeta_y * eps;
+		sumdata_eps_depsz[threadIdx.x] = depsbydbeta_z * eps;
+
+		sum_product[threadIdx.x].xx = depsbydbeta_x *depsbydbeta_x;
+		sum_product[threadIdx.x].xy = depsbydbeta_x *depsbydbeta_y;
+		sum_product[threadIdx.x].xz = depsbydbeta_x *depsbydbeta_z;
+		sum_product[threadIdx.x].yy = depsbydbeta_y *depsbydbeta_y;
+		sum_product[threadIdx.x].yz = depsbydbeta_y *depsbydbeta_z;
+		sum_product[threadIdx.x].zz = depsbydbeta_z *depsbydbeta_z;
+
+		sumdata_ss[threadIdx.x] = eps*eps;
+	}
+
+	__syncthreads();
+
+	int s = blockDim.x;
+	int k = s / 2;
+
+	while (s != 1) {
+		if (threadIdx.x < k)
+		{
+			sumdata_eps_depsx[threadIdx.x] += sumdata_eps_depsx[threadIdx.x + k];
+			sumdata_eps_depsy[threadIdx.x] += sumdata_eps_depsy[threadIdx.x + k];
+			sumdata_eps_depsz[threadIdx.x] += sumdata_eps_depsz[threadIdx.x + k];
+
+			sum_product[threadIdx.x].xx += sum_product[threadIdx.x + k].xx;
+			sum_product[threadIdx.x].xy += sum_product[threadIdx.x + k].xy;
+			sum_product[threadIdx.x].xz += sum_product[threadIdx.x + k].xz;
+			sum_product[threadIdx.x].yz += sum_product[threadIdx.x + k].yz;
+			sum_product[threadIdx.x].yy += sum_product[threadIdx.x + k].yy;
+			sum_product[threadIdx.x].zz += sum_product[threadIdx.x + k].zz;
+
+			sumdata_ss[threadIdx.x] += sumdata_ss[threadIdx.x + k];
+		};
+		__syncthreads();
+
+		// Modify for case blockdim not 2^n:
+		if ((s % 2 == 1) && (threadIdx.x == k - 1)) {
+			sumdata_eps_depsx[threadIdx.x] += sumdata_eps_depsx[threadIdx.x + s - 1];
+			sumdata_eps_depsy[threadIdx.x] += sumdata_eps_depsy[threadIdx.x + s - 1];
+			sumdata_eps_depsz[threadIdx.x] += sumdata_eps_depsz[threadIdx.x + s - 1];
+			sum_product[threadIdx.x].xx += sum_product[threadIdx.x + s - 1].xx;
+			sum_product[threadIdx.x].xy += sum_product[threadIdx.x + s - 1].xy;
+			sum_product[threadIdx.x].xz += sum_product[threadIdx.x + s - 1].xz;
+			sum_product[threadIdx.x].yz += sum_product[threadIdx.x + s - 1].yz;
+			sum_product[threadIdx.x].yy += sum_product[threadIdx.x + s - 1].yy;
+			sum_product[threadIdx.x].zz += sum_product[threadIdx.x + s - 1].zz;
+		};
+		// In case k == 81, add [39] += [80]
+		// Otherwise we only get to 39+40=79.
+		s = k;
+		k = s / 2;
+		__syncthreads();
+	};
+
+	if (threadIdx.x == 0)
+	{
+		f64_vec3 sum_eps_deps;
+		sum_eps_deps.x = sumdata_eps_depsx[0];
+		sum_eps_deps.y = sumdata_eps_depsy[0];
+		sum_eps_deps.z = sumdata_eps_depsz[0];
+
+		p_sum_eps_deps_[blockIdx.x] = sum_eps_deps;
+		memcpy(&(p_sum_product_matrix_[blockIdx.x]), &(sum_product[0]), sizeof(Symmetric3));
+		p_sum_eps_sq[blockIdx.x] = sumdata_ss[0];
+	};
+}
+
 __global__ void kernelAccumulateSummandsNeutVisc(
 		structural * __restrict__ p_info_minor,
 		f64_vec3 * __restrict__ p_eps3,
@@ -659,6 +767,9 @@ __global__ void kernelAccumulateSummandsNeutVisc(
 			p_sum_eps_sq[blockIdx.x] = sumdata_ss[0]; 			
 		};
 	}
+
+
+
 
 __global__ void kernelAccumulateSummandsNeutVisc2(
 		f64 * __restrict__ p_eps,  // 
@@ -885,6 +996,64 @@ __global__ void kernelAddLC_vec3
 	v.z += coeff.z*add.z;
 	p_vec[index] = v;
 }
+
+__global__ void ResettoGeomAverage(
+	f64_vec3 * __restrict__ p_result,
+	f64_vec3 * __restrict__ p_mult1)
+{
+	long const index = threadIdx.x + blockIdx.x * blockDim.x;
+	f64_vec3 m1 = p_mult1[index];
+	f64_vec3 result = p_result[index];
+	result.x = m1.x*result.x;
+	if (result.x > 0.0) result.x = sqrt(result.x);
+	if (result.x < 0.0) result.x = -sqrt(-result.x);
+
+	result.y = (m1.y*result.y);
+	if (result.y > 0.0) result.y = sqrt(result.y);
+	if (result.y < 0.0) result.y = -sqrt(-result.y);
+
+	result.z = m1.z*result.z;
+	if (result.z > 0.0) result.z = sqrt(result.z);
+	if (result.z < 0.0) result.z = -sqrt(-result.z);
+
+	p_result[index] = result;
+}
+__global__ void SetProduct3(
+	f64_vec3 * __restrict__ p_result,
+	f64_vec3 * __restrict__ p_mult1,
+	f64_vec3 * __restrict__ p_mult2)
+{
+	long const index = threadIdx.x + blockIdx.x * blockDim.x;
+	f64_vec3 m1 = p_mult1[index];
+	f64_vec3 m2 = p_mult2[index];
+	f64_vec3 result;
+	result.x = m1.x*m2.x;
+	result.y = m1.y*m2.y;
+	result.z = m1.z*m2.z;
+	p_result[index] = result;
+}
+
+__global__ void kernelAddLC_3vec3
+(f64_vec3 * __restrict__ p_vec,
+	f64_vec3 coeffs_x, 
+	f64_vec3 coeffs_y, 
+	f64_vec3 coeffs_z,
+	f64_vec3 * __restrict__ p_addition1,
+	f64_vec3 * __restrict__ p_addition2,
+	f64_vec3 * __restrict__ p_addition3
+	)
+{
+	long const index = threadIdx.x + blockIdx.x * blockDim.x;
+	f64_vec3 v = p_vec[index];
+	f64_vec3 add1 = p_addition1[index];
+	f64_vec3 add2 = p_addition2[index];
+	f64_vec3 add3 = p_addition3[index];
+	v.x += coeffs_x.x*add1.x + coeffs_x.y*add2.x + coeffs_x.z*add3.x;
+	v.y += coeffs_y.x*add1.y + coeffs_y.y*add2.y + coeffs_y.z*add3.y;
+	v.z += coeffs_z.x*add1.z + coeffs_z.y*add2.z + coeffs_z.z*add3.z;
+	p_vec[index] = v;
+}
+
 __global__ void kernelAccumulateSummands4(
 
 	// We don't need to test for domain, we need to make sure the summands are zero otherwise.
@@ -2374,7 +2543,10 @@ __global__ void kernelCalculateNu_eHeartNu_iHeart_nu_nn_visc(
 		Estimate_Ion_Neutral_Cross_sections_d(TeV, &sigma_MT, &sigma_visc);
 		sqrt_T = sqrt(T.Te);
 		nu_en_visc = our_n.n_n * sigma_visc * sqrt_T * over_sqrt_m_e;
-		f64 nu_eiBar = nu_eiBarconst * kB_to_3halves * our_n.n *
+
+		sigma_visc *= ArtificialUpliftFactor(our_n.n, our_n.n_n);
+
+		f64 nu_eiBar = nu_eiBarconst * kB_to_3halves * max(MINIMUM_NU_EI_DENSITY, our_n.n) *
 			Get_lnLambda_d(our_n.n, T.Te) / (T.Te*sqrt_T);
 		//nu_eHeart:
 		nu.e = nu_en_visc + 1.87*nu_eiBar;
@@ -2522,13 +2694,18 @@ __global__ void kernelCalculate_kappa_nu_vertices(
 	species3 nu;
 	
 	structural info = p_info_major[iVertex];
-	if ((info.flag == DOMAIN_TRIANGLE) || (info.flag == CROSSING_INS))
+	if ((info.flag == DOMAIN_VERTEX))
 	{
 		our_n = p_n_major[iVertex];
 		T = p_T_major[iVertex];
 
 		TeV = T.Ti*one_over_kB;
 		Estimate_Ion_Neutral_Cross_sections_d(TeV, &sigma_MT, &sigma_visc); // could easily save one call
+		
+	//	sigma_visc *= ArtificialUpliftFactor(our_n.n, our_n.n_n);
+	//	sigma_MT *= ArtificialUpliftFactor(our_n.n, our_n.n_n);
+
+		
 		sqrt_T = sqrt(T.Ti); // again not that hard to save one call
 		nu_in_visc = our_n.n_n * sigma_visc * sqrt(T.Ti / m_ion + T.Tn / m_n);
 		nu_ni_visc = nu_in_visc * (our_n.n / our_n.n_n);
@@ -2556,11 +2733,13 @@ __global__ void kernelCalculate_kappa_nu_vertices(
 		Estimate_Ion_Neutral_Cross_sections_d(TeV, &sigma_MT, &sigma_visc);
 		sqrt_T = sqrt(T.Te);
 		nu_en_visc = our_n.n_n * sigma_visc * sqrt_T * over_sqrt_m_e;
-		f64 nu_eiBar = nu_eiBarconst * kB_to_3halves * our_n.n *
+		f64 nu_eiBar = nu_eiBarconst * kB_to_3halves * 
+			//max(MINIMUM_NU_EI_DENSITY,our_n.n) *
+			our_n.n *
 			Get_lnLambda_d(our_n.n, T.Te) / (T.Te*sqrt_T);
 		//nu_eHeart:
 		nu.e = nu_en_visc + 1.87*nu_eiBar;
-
+		
 		// Comparison with Zhdanov's denominator for ita looks like this one overestimated
 		// by a factor of something like 1.6?
 
@@ -3456,6 +3635,65 @@ __global__ void kernelAccumulateMatrix(
 	}
 }
 
+__global__ void GetMax(
+		f64 * __restrict__ p_comp1,
+		long * __restrict__ p_iWhich,
+		f64 * __restrict__ p_max
+	)
+	{
+		__shared__ f64 comp[threadsPerTileMinor];
+		__shared__ long longarray[threadsPerTileMinor];
+
+		long const iMinor = threadIdx.x + blockDim.x*blockIdx.x;
+		comp[threadIdx.x] = fabs(p_comp1[iMinor]);
+		longarray[threadIdx.x] = iMinor;
+		__syncthreads();
+
+		int s = blockDim.x;
+		int k = s / 2;
+
+		while (s != 1) {
+			if (threadIdx.x < k)
+			{
+#pragma unroll
+
+				if (comp[threadIdx.x] > comp[threadIdx.x + k])
+				{
+					// do nothing	
+				}
+				else {
+					comp[threadIdx.x] = comp[threadIdx.x + k];
+					longarray[threadIdx.x] = longarray[threadIdx.x + k];
+				};
+
+			};
+			__syncthreads();
+
+			// Modify for case blockdim not 2^n:
+			if ((s % 2 == 1) && (threadIdx.x == k - 1)) {
+
+				if (comp[threadIdx.x] > comp[threadIdx.x + s - 1])
+				{
+					// do nothing	
+				}
+				else {
+					comp[threadIdx.x] = comp[threadIdx.x + s - 1];
+					longarray[threadIdx.x] = longarray[threadIdx.x + s - 1];
+				};
+			};
+			// In case k == 81, add [39] += [80]
+			// Otherwise we only get to 39+40=79.
+			s = k;
+			k = s / 2;
+			__syncthreads();
+		};
+
+		if (threadIdx.x == 0)
+		{
+			p_iWhich[blockIdx.x] = longarray[0];
+			p_max[blockIdx.x] = comp[0];
+		}
+	}
 
 __global__ void VectorCompareMax(
 	f64 * __restrict__ p_comp1,

@@ -23,16 +23,29 @@ bool const bScrewPinch = false;
 int const NUMAVI = 9;
 #define FOLDER L"C:/outputs/"
 #define FOLDER2 "C:/outputs/"
-#define INITIALAVI "scraposc.avi"		
-#define INITIALMP4 L"scraposc.mp4"
+#define INITIALAVI "restac11.avi"		
+#define INITIALMP4 L"restac11.mp4"
 #define STORYFILE "temp.txt"
 #define STORYFILE2 "temp2.txt"
-  
-#define FUNCTIONALFILE_START FOLDER2 "functionalsosc"
-#define DATAFILENAME FOLDER2 "Dataosc_"
-#define AUTOSAVE_FILENAME FOLDER2 "autosaveosc.dat"
-#define RUNTIME_FILENAME FOLDER2 "runtimeosc.dat"
+
+#ifdef OSCILLATE_IZ
+#define FUNCTIONALFILE_START FOLDER2 "ofunctionals"
+#define DATAFILENAME FOLDER2 "oData_"
+#define AUTOSAVE_FILENAME FOLDER2 "oautosave.dat"
+#define RUNTIME_FILENAME FOLDER2 "oruntime.dat"
 #define AUTOSAVENAME "oauto"
+#define VERTAUTOSAVENAME "ograph"
+#else
+#define FUNCTIONALFILE_START FOLDER2 "bfunctionals"
+#define DATAFILENAME FOLDER2 "Data_"
+#define AUTOSAVE_FILENAME FOLDER2 "bautosave.dat"
+#define RUNTIME_FILENAME FOLDER2 "bruntime.dat"
+#define AUTOSAVENAME "cauto"
+#define VERTAUTOSAVENAME "graph"
+ 
+#endif
+
+// the struggle is going to be, to store graphing data
 
 #define DELAY_MILLISECS      100 // pause
 
@@ -42,14 +55,15 @@ int const NUMAVI = 9;
 
 #define STEPS_PER_LOOP               1    // soon change to 500
 // frames between file pinch-offs:
-#define AVI_FILE_PINCHOFF_FREQUENCY     1200 // 50 = 1 ns
+#define AVI_FILE_PINCHOFF_FREQUENCY     200 // 50 = 1 ns
 
 // 1 frame = 0.01 so 100 frames == 1 ns
 
 // milliseconds between frames:
 #define AVIFRAMEPERIOD         15  // milliseconds; 20 ms => 50 fps.
 
-#define DATA_SAVE_FREQUENCY					 5
+#define VERTDATA_SAVE_FREQUENCY              5
+#define DATA_SAVE_FREQUENCY					 25
 // For debug. For production change it to 25
 
 // Program Mechanics:

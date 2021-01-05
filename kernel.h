@@ -512,6 +512,99 @@ __global__ void kernelSety(f64_vec3 * __restrict__ p_v1,
 __global__ void kernelSetz(f64_vec3 * __restrict__ p_v1,
 	f64_vec3 * __restrict__ p_src);
 
+__global__ void GetMax(
+	f64 * __restrict__ p_comp1,
+	long * __restrict__ p_iWhich,
+	f64 * __restrict__ p_max
+);
+
+__global__ void kernelCreatePredictionsDebug(
+	f64 const hsub,
+	structural * __restrict__ p_info_minor,
+	f64_vec2 * __restrict__ p_epsxyold,
+	f64 * __restrict__ p_epsizold,
+	f64 * __restrict__ p_epsezold,
+	f64_vec2 * __restrict__ p_d_epsxy_by_d,
+	f64 * __restrict__ p_d_epsiz_by_d,
+	f64 * __restrict__ p_d_epsez_by_d,
+	f64_vec2 * __restrict__ p_predictxy,
+	f64 * __restrict__ p_predictiz,
+	f64 * __restrict__ p_predictez
+);
+
+__global__ void kernelCreate_neutral_viscous_contrib_to_MAR_and_NT_SYMM(
+	structural * __restrict__ p_info_minor,
+	f64_vec3 * __restrict__ p_v_n_minor,
+
+	long * __restrict__ p_izTri,
+	char * __restrict__ p_szPBC,
+	long * __restrict__ p_izNeighMinor,
+	char * __restrict__ p_szPBCtriminor,
+
+	f64 * __restrict__ p_ita_neut_minor,   //
+	f64 * __restrict__ p_nu_neut_minor,   // 
+
+	f64_vec3 * __restrict__ p_MAR_neut,
+	NTrates * __restrict__ p_NT_addition_rate,
+	NTrates * __restrict__ p_NT_addition_tri);
+
+
+__global__ void kernelCalc_Matrices_for_Jacobi_NeutralViscosity_SYMM(
+	f64 const hsub,
+	structural * __restrict__ p_info_minor,
+	f64_vec3 * __restrict__ p_v_n_minor,
+
+	long * __restrict__ p_izTri,
+	char * __restrict__ p_szPBC,
+	long * __restrict__ p_izNeighMinor,
+	char * __restrict__ p_szPBCtriminor,
+
+	f64 * __restrict__ p_ita_minor,   // nT / nu ready to look up
+	f64 * __restrict__ p_nu_minor,   // nT / nu ready to look up
+
+	nvals * __restrict__ p_n_minor,
+	f64 * __restrict__ p_AreaMinor,
+
+	f64_tens3 * __restrict__ p_matrix_n
+);
+
+
+__global__ void kernelCompare(
+	f64_vec2 * __restrict__ p_epsxy,
+	f64 * __restrict__ p_epsiz,
+	f64 * __restrict__ p_epsez,
+	f64_vec2 * __restrict__ p_epsxyp,
+	f64 * __restrict__ p_epsizp,
+	f64 * __restrict__ p_epsezp);
+
+__global__ void SetProduct3(
+	f64_vec3 * __restrict__p_result,
+	f64_vec3 * __restrict__ p_mult1,
+	f64_vec3 * __restrict__ p_mult2);
+
+
+__global__ void kernelAddLC_3vec3
+(f64_vec3 * __restrict__ p_vec,
+	f64_vec3 coeffs_x, f64_vec3 coeffs_y, f64_vec3 coeffs_z,
+	f64_vec3 * __restrict__ p_addition1,
+	f64_vec3 * __restrict__ p_addition2,
+	f64_vec3 * __restrict__ p_addition3
+);
+
+__global__ void ResettoGeomAverage(
+	f64_vec3 * __restrict__ p_result,
+	f64_vec3 * __restrict__ p_mult1);
+
+__global__ void AccumulateSummandsScalars3(
+	structural * __restrict__ p_info_minor,
+	f64 * __restrict__ p__eps,
+	f64 * __restrict__ p__deps_1,
+	f64 * __restrict__ p__deps_2,
+	f64 * __restrict__ p__deps_3,
+	f64_vec3 * __restrict__ p_sum_eps_deps_,
+	Symmetric3 * __restrict__ p_sum_product_matrix_,
+	f64 * __restrict__ p_sum_eps_sq
+);
 
 __global__ void kernelMultiply_Get_Jacobi_NeutralVisc(
 	structural * __restrict__ p_info,
@@ -534,6 +627,7 @@ __global__ void kernelAddLC_vec3
 __global__ void kernelCalc_Matrices_for_Jacobi_NeutralViscosity(
 	f64 const hsub,
 	structural * __restrict__ p_info_minor,
+	f64_vec3 * __restrict__ p_v_n_minor,
 
 	long * __restrict__ p_izTri,
 	char * __restrict__ p_szPBC,

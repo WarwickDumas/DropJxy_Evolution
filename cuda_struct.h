@@ -284,6 +284,8 @@ public:
 	void cuSyst::Load(const char filename[]);
 	void cuSyst::Save(const char filename[]);
 
+	void cuSyst::SaveGraphs(const char filename[]);
+
 	void ZeroData();
 	~cuSyst();
 };

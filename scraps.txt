@@ -1,0 +1,37 @@
+if (GetOpenFileName(&ofn) == TRUE)
+			{
+				if (bInvoked_cuSyst == false) {
+					bInvoked_cuSyst = true;
+
+					pX->EnsureAnticlockwiseTriangleCornerSequences_SetupTriMinorNeighboursLists();
+					pX->Average_n_T_to_tris_and_calc_centroids_and_minorpos();
+
+					pX->Create4Volleys(); // THIS SHOULD NOT ALWAYS BE HERE !!
+					printf("Called Create4Volleys! This should be removed in favour of loaded iVolley.\n");
+
+					cuSyst_host.InvokeHost();
+					cuSyst_host.PopulateFromTriMesh(pX);
+					cuSyst_host2.InvokeHost();
+					cuSyst_host2.PopulateFromTriMesh(pX);
+					// transfer information.
+
+					PerformCUDA_Invoke_Populate(
+						&cuSyst_host,
+						NUMVERTICES,
+						pX->InnermostFrillCentroidRadius,
+						pX->OutermostFrillCentroidRadius,
+						pX->numStartZCurrentTriangles,
+						pX->numEndZCurrentTriangles);
+				};
+
+				cuSyst_host.Load(ofn.lpstrFile);
+			};
+			printf("Populate *pX\n");
+			cuSyst_host.PopulateTriMesh(pX);
+			
+			
+			
+			
+			
+			
+			

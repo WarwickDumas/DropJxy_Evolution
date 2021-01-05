@@ -2,6 +2,8 @@
 #define VECTOR_TENSOR_H
 
 #include "FFxtubes.h"
+#include <conio.h>
+#include <stdio.h>
 
 // will want to do #include type.h
 // for #define real, qd_or_d
@@ -380,15 +382,27 @@ struct Tensor3
 		result.yz = yx*xz-xx*yz;
 		result.zz = xx*yy-yx*xy;
 
-		result = result / det;
+		if (det != 0.0) {
+			result = result / det;
+		} else {
+			printf("\n\nMATRIX INVERSE FAILED. Det==0\n\n\n");
+			memset(&result, 0, sizeof(Tensor3));
+			result.xx = 1.0; result.yy = 1.0; result.zz = 1.0;
+		}
 		return result; // inline so return object doesn't matter
 	};
 
 	QUALIFIERS void Inverse(Tensor3 & result)
 	{
-		real over =	1.0/(  xx*(yy*zz-yz*zy)
-					+ xy*(zx*yz-yx*zz)
-					+ xz*(yx*zy-yy*zx) );
+		real det = (xx*(yy*zz - yz*zy)
+			+ xy*(zx*yz - yx*zz)
+			+ xz*(yx*zy - yy*zx));
+
+		if (det == 0.0) {
+			printf("\n\nMATRIX INVERSE FAILED II. Det == 0\n\n\n");
+			return;
+		}
+		real over =	1.0/det;
 		
 		// Fill in matrix of minor determinants; 
 		// transposed with applied cofactors (signs)
@@ -636,7 +650,7 @@ struct Symmetric2
 #define f64_vec3 Vector3
 #define f64_tens2 Tensor2
 #define f64_tens3 Tensor3
-#define u32 unsigned long
+//#define u32 unsigned long
 
 
 //struct vertinfo
