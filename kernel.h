@@ -518,6 +518,8 @@ __global__ void GetMax(
 	f64 * __restrict__ p_max
 );
 
+__global__ void Test_Asinh();
+
 __global__ void kernelCreatePredictionsDebug(
 	f64 const hsub,
 	structural * __restrict__ p_info_minor,
