@@ -75,6 +75,26 @@ __device__ __forceinline__ f64_vec2 GetGradient(
 	return gradv;
 }
 
+__device__ __forceinline__ f64_vec2 GetSelfCoeffForGradient(
+	f64_vec2 prevpos, f64_vec2 ourpos, f64_vec2 nextpos, f64_vec2 opppos) 
+	// .x is coeff for dvx/dx on vx , .y is coeff for dvx/dy on vx
+{
+	// I think we should neglect the effect of self on transverse deriv.
+	// Both for simplicity, efficiency and because it should generally end up small. 
+
+	// Get longi derivative first :
+	f64_vec2 gradv_coeff_vq;
+	gradv_coeff_vq.x = (-1.0) / (opppos - ourpos).dot(opppos - ourpos);
+	gradv_coeff_vq.y = gradv_coeff_vq.x * (opppos.y - ourpos.y);
+	gradv_coeff_vq.x *= (opppos.x - ourpos.x);
+
+	// here
+	// d grad_x v_by_dself = (-1)*(opppos.x - ourpos.x)/(opppos - ourpos).dot(opppos - ourpos);
+	// d grad_y v_by_dself = (-1)*(opppos.y - ourpos.y)/(opppos - ourpos).dot(opppos - ourpos);
+
+	return gradv_coeff_vq;
+}
+   // Is it dependent on more than just position?
 
 __global__ void Test_Asinh()
 {
@@ -2919,6 +2939,8 @@ kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species(
 
 	structural * __restrict__ p_info_minor,
 	v4 * __restrict__ p_vie_minor,
+	// For neutral it needs a different pointer.
+	f64_vec3 * __restrict__ p_v_n,
 
 	long * __restrict__ p_izTri,
 	char * __restrict__ p_szPBC,
@@ -2933,15 +2955,16 @@ kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species(
 	NTrates * __restrict__ p_NT_addition_rate,
 	NTrates * __restrict__ p_NT_addition_tri,
 	int const iSpecies,
+	f64 const m_s,
 	f64 const over_m_s) // easy way to put it in constant memory
 {
-	__shared__ v4 shared_vie[threadsPerTileMinor]; // sort of thing we want as input
+	__shared__ f64_vec3 shared_v[threadsPerTileMinor]; // sort of thing we want as input
 	__shared__ f64_vec2 shared_pos[threadsPerTileMinor];
 	__shared__ f64_vec2 shared_B[threadsPerTileMinor];
 	__shared__ f64 shared_ita_par[threadsPerTileMinor]; // reuse for i,e ; or make 2 vars to combine the routines.
 	__shared__ f64 shared_nu[threadsPerTileMinor];
 
-	__shared__ v4 shared_vie_verts[threadsPerTileMajor];
+	__shared__ f64_vec3 shared_v_verts[threadsPerTileMajor];
 	__shared__ f64_vec2 shared_pos_verts[threadsPerTileMajor];
 	__shared__ f64_vec2 shared_B_verts[threadsPerTileMajor];
 	__shared__ f64 shared_ita_par_verts[threadsPerTileMajor];
@@ -2963,7 +2986,16 @@ kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species(
 	f64 visc_htg;
 
 	shared_pos[threadIdx.x] = p_info_minor[iMinor].pos;
-	shared_vie[threadIdx.x] = p_vie_minor[iMinor];
+	{
+		v4 temp = p_vie_minor[iMinor];
+		shared_v[threadIdx.x].x = temp.vxy.x;
+		shared_v[threadIdx.x].y = temp.vxy.y;
+		if (iSpecies == 1) {
+			shared_v[threadIdx.x].z = temp.viz;
+		} else {
+			shared_v[threadIdx.x].z = temp.vez;
+		};
+	}
 	shared_B[threadIdx.x] = p_B_minor[iMinor].xypart();
 	shared_ita_par[threadIdx.x] = p_ita_parallel_minor[iMinor];
 	shared_nu[threadIdx.x] = p_nu_minor[iMinor];
@@ -2980,7 +3012,11 @@ kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species(
 		shared_B_verts[threadIdx.x] = p_B_minor[iVertex + BEGINNING_OF_CENTRAL].xypart();
 		if ((info.flag == DOMAIN_VERTEX) || (info.flag == OUTERMOST))
 		{
-			memcpy(&(shared_vie_verts[threadIdx.x]), &(p_vie_minor[iVertex + BEGINNING_OF_CENTRAL]), sizeof(v4));
+			v4 temp;
+			memcpy(&temp, &(p_vie_minor[iVertex + BEGINNING_OF_CENTRAL]), sizeof(v4));
+			shared_v_verts[threadIdx.x].x = temp.vxy.x;
+			shared_v_verts[threadIdx.x].y = temp.vxy.y;
+			shared_v_verts[threadIdx.x].z = (iSpecies == 1) ? temp.viz : temp.vez;
 			shared_ita_par_verts[threadIdx.x] = p_ita_parallel_minor[iVertex + BEGINNING_OF_CENTRAL];
 			shared_nu_verts[threadIdx.x] = p_nu_minor[iVertex + BEGINNING_OF_CENTRAL];
 			// But now I am going to set ita == 0 in OUTERMOST and agree never to look there because that's fairer than one-way traffic and I don't wanna handle OUTERMOST?
@@ -2989,7 +3025,7 @@ kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species(
 		}
 		else {
 			// it still manages to coalesce, let's hope, because ShardModel is 13 doubles not 12.
-			memset(&(shared_vie_verts[threadIdx.x]), 0, sizeof(v4));
+			memset(&(shared_v_verts[threadIdx.x]), 0, sizeof(f64_vec3));
 			shared_ita_par_verts[threadIdx.x] = 0.0;
 			shared_nu_verts[threadIdx.x] = 0.0;
 		};
@@ -3012,7 +3048,7 @@ kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species(
 			memcpy(izTri, p_izTri + iVertex*MAXNEIGH_d, MAXNEIGH_d * sizeof(long));
 			memcpy(szPBC, p_szPBC + iVertex*MAXNEIGH_d, MAXNEIGH_d * sizeof(char));
 			
-			v4 opp_v, prev_v, next_v;
+			f64_vec3 opp_v, prev_v, next_v;
 			f64_vec2 opppos, prevpos, nextpos;
 			// ideally we might want to leave position out of the loop so that we can avoid reloading it.
 
@@ -3022,38 +3058,44 @@ kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species(
 
 			if ((izTri[iprev] >= StartMinor) && (izTri[iprev] < EndMinor))
 			{
-				prev_v = shared_vie[izTri[iprev] - StartMinor];
+				prev_v = shared_v[izTri[iprev] - StartMinor];
 				prevpos = shared_pos[izTri[iprev] - StartMinor];
 			}
 			else {
-				prev_v = p_vie_minor[izTri[iprev]];
+				v4 temp = p_vie_minor[izTri[iprev]];
+				prev_v.x = temp.vxy.x; prev_v.y = temp.vxy.y;
+				if (iSpecies == 1) { prev_v.z = temp.viz; }
+				else { prev_v.z = temp.vez; };
 				prevpos = p_info_minor[izTri[iprev]].pos;
 			}
 			if (szPBC[iprev] == ROTATE_ME_CLOCKWISE) {
 				prevpos = Clockwise_d*prevpos;
-				prev_v.vxy = Clockwise_d*prev_v.vxy;
+				RotateClockwise(prev_v);// = Clockwise3_d*prev_v;
 			}
 			if (szPBC[iprev] == ROTATE_ME_ANTICLOCKWISE) {
 				prevpos = Anticlockwise_d*prevpos;
-				prev_v.vxy = Anticlockwise_d*prev_v.vxy;
+				RotateAnticlockwise(prev_v);
 			}
 
 			if ((izTri[i] >= StartMinor) && (izTri[i] < EndMinor))
 			{
-				opp_v = shared_vie[izTri[i] - StartMinor];
+				opp_v = shared_v[izTri[i] - StartMinor];
 				opppos = shared_pos[izTri[i] - StartMinor];
 			}
 			else {
-				opp_v = p_vie_minor[izTri[i]];
+				v4 temp = p_vie_minor[izTri[i]];
+				opp_v.x = temp.vxy.x; opp_v.y = temp.vxy.y;
+				if (iSpecies == 1) { opp_v.z = temp.viz; }
+				else { opp_v.z = temp.vez; };
 				opppos = p_info_minor[izTri[i]].pos;
 			}
 			if (szPBC[i] == ROTATE_ME_CLOCKWISE) {
 				opppos = Clockwise_d*opppos;
-				opp_v.vxy = Clockwise_d*opp_v.vxy;
+				RotateClockwise(opp_v);
 			}
 			if (szPBC[i] == ROTATE_ME_ANTICLOCKWISE) {
 				opppos = Anticlockwise_d*opppos;
-				opp_v.vxy = Anticlockwise_d*opp_v.vxy;
+				RotateAnticlockwise(opp_v);
 			}
 			
 
@@ -3077,20 +3119,23 @@ kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species(
 
 				if ((izTri[inext] >= StartMinor) && (izTri[inext] < EndMinor))
 				{
-					next_v = shared_vie[izTri[inext] - StartMinor];
+					next_v = shared_v[izTri[inext] - StartMinor];
 					nextpos = shared_pos[izTri[inext] - StartMinor];
 				}
 				else {
-					next_v = p_vie_minor[izTri[inext]];
+					v4 temp = p_vie_minor[izTri[inext]];
+					next_v.x = temp.vxy.x; next_v.y = temp.vxy.y;
+					if (iSpecies == 1) { next_v.z = temp.viz; }
+					else { next_v.z = temp.vez; };
 					nextpos = p_info_minor[izTri[inext]].pos;
 				}
 				if (szPBC[inext] == ROTATE_ME_CLOCKWISE) {
 					nextpos = Clockwise_d*nextpos;
-					next_v.vxy = Clockwise_d*next_v.vxy;
+					RotateClockwise(next_v);
 				}
 				if (szPBC[inext] == ROTATE_ME_ANTICLOCKWISE) {
 					nextpos = Anticlockwise_d*nextpos;
-					next_v.vxy = Anticlockwise_d*next_v.vxy;
+					RotateAnticlockwise(next_v);
 				}
 
 				f64_vec3 omega_c;
@@ -3137,75 +3182,54 @@ kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species(
 						// One of the sides is dipped under the insulator -- set transverse deriv to 0.
 						// Bear in mind we are looking from a vertex into a tri, it can be ins tri.
 
-						gradvx = (opp_v.vxy.x - shared_vie_verts[threadIdx.x].vxy.x)*(opppos - info.pos) /
+						gradvx = (opp_v.x - shared_v_verts[threadIdx.x].x)*(opppos - info.pos) /
 							(opppos - info.pos).dot(opppos - info.pos);
-						gradvy = (opp_v.vxy.y - shared_vie_verts[threadIdx.x].vxy.y)*(opppos - info.pos) /
+						gradvy = (opp_v.y - shared_v_verts[threadIdx.x].y)*(opppos - info.pos) /
+							(opppos - info.pos).dot(opppos - info.pos);
+						gradvz = (opp_v.z - shared_v_verts[threadIdx.x].z)*(opppos - info.pos) /
 							(opppos - info.pos).dot(opppos - info.pos);
 
-						if (iSpecies == 1) {
-
-							gradvz = (opp_v.viz - shared_vie_verts[threadIdx.x].viz)*(opppos - info.pos) /
-								(opppos - info.pos).dot(opppos - info.pos);
-						} else {
-
-							gradvz = (opp_v.vez - shared_vie_verts[threadIdx.x].vez)*(opppos - info.pos) /
-								(opppos - info.pos).dot(opppos - info.pos);
-						};
 					} else {
 						gradvx = GetGradient(
 							//f64_vec2 prevpos, f64_vec2 ourpos, f64_vec2 nextpos, f64_vec2 opppos,
 							prevpos, info.pos, nextpos, opppos,
 							//f64 prev_v, f64 our_v, f64 next_v, f64 opp_v
-							prev_v.vxy.x, shared_vie_verts[threadIdx.x].vxy.x, next_v.vxy.x, opp_v.vxy.x
+							prev_v.x, shared_v_verts[threadIdx.x].x, next_v.x, opp_v.x
 						);
 						gradvy = GetGradient(
 							//f64_vec2 prevpos, f64_vec2 ourpos, f64_vec2 nextpos, f64_vec2 opppos,
 							prevpos, info.pos, nextpos, opppos,
 							//f64 prev_v, f64 our_v, f64 next_v, f64 opp_v
-							prev_v.vxy.y, shared_vie_verts[threadIdx.x].vxy.y, next_v.vxy.y, opp_v.vxy.y
+							prev_v.y, shared_v_verts[threadIdx.x].y, next_v.y, opp_v.y
 						);
+						gradvz = GetGradient(
+							//f64_vec2 prevpos, f64_vec2 ourpos, f64_vec2 nextpos, f64_vec2 opppos,
+							prevpos, info.pos, nextpos, opppos,
+							//f64 prev_v, f64 our_v, f64 next_v, f64 opp_v
+							prev_v.z, shared_v_verts[threadIdx.x].z, next_v.z, opp_v.z
+						);
+						
+						// Could switch to the 3 in one function that handles all 3. in one.
 
-						if (iSpecies == 1) {
-							gradvz = GetGradient(
-								//f64_vec2 prevpos, f64_vec2 ourpos, f64_vec2 nextpos, f64_vec2 opppos,
-								prevpos, info.pos, nextpos, opppos,
-								//f64 prev_v, f64 our_v, f64 next_v, f64 opp_v
-								prev_v.viz, shared_vie_verts[threadIdx.x].viz, next_v.viz, opp_v.viz
-							);
-						} else {
-							gradvz = GetGradient(
-								//f64_vec2 prevpos, f64_vec2 ourpos, f64_vec2 nextpos, f64_vec2 opppos,
-								prevpos, info.pos, nextpos, opppos,
-								//f64 prev_v, f64 our_v, f64 next_v, f64 opp_v
-								prev_v.vez, shared_vie_verts[threadIdx.x].vez, next_v.vez, opp_v.vez
-							);
-						};
 					}
 					// No Area_hex gathered for us.
 
-					if (TESTIONVERTVISC) printf(
-						"iVertex %d  \n"
-						"our_v.x next prev opp %1.8E %1.8E %1.8E %1.8E gradvx %1.8E %1.8E\n"
-						"our_v.y next prev opp %1.8E %1.8E %1.8E %1.8E gradvy %1.8E %1.8E\n"
-						"our_v.z next prev opp %1.8E %1.8E %1.8E %1.8E gradvz %1.8E %1.8E\n"
-						"info.pos %1.8E %1.8E opppos %1.8E %1.8E prev %1.8E %1.8E next %1.8E %1.8E\n",
-						iVertex,
-						shared_vie_verts[threadIdx.x].vxy.x, next_v.vxy.x, prev_v.vxy.x, opp_v.vxy.x,
-						gradvx.x, gradvx.y,
-						shared_vie_verts[threadIdx.x].vxy.y, next_v.vxy.y, prev_v.vxy.y, opp_v.vxy.y,
-						gradvy.x, gradvy.y,
-						shared_vie_verts[threadIdx.x].viz, next_v.viz, prev_v.viz, opp_v.viz,
-						gradvz.x, gradvz.y,
-						info.pos.x, info.pos.y, opppos.x, opppos.y, prevpos.x, prevpos.y, nextpos.x, nextpos.y);
+//					if (TESTIONVERTVISC) printf(
+//						"iVertex %d  \n"
+//						"our_v.x next prev opp %1.8E %1.8E %1.8E %1.8E gradvx %1.8E %1.8E\n"
+//						"our_v.y next prev opp %1.8E %1.8E %1.8E %1.8E gradvy %1.8E %1.8E\n"
+//						"our_v.z next prev opp %1.8E %1.8E %1.8E %1.8E gradvz %1.8E %1.8E\n"
+//						"info.pos %1.8E %1.8E opppos %1.8E %1.8E prev %1.8E %1.8E next %1.8E %1.8E\n",
+//						iVertex,
+//						shared_vie_verts[threadIdx.x].vxy.x, next_v.vxy.x, prev_v.vxy.x, opp_v.vxy.x,
+//						gradvx.x, gradvx.y,
+//						shared_vie_verts[threadIdx.x].vxy.y, next_v.vxy.y, prev_v.vxy.y, opp_v.vxy.y,
+//						gradvy.x, gradvy.y,
+//						shared_vie_verts[threadIdx.x].viz, next_v.viz, prev_v.viz, opp_v.viz,
+//						gradvz.x, gradvz.y,
+//						info.pos.x, info.pos.y, opppos.x, opppos.y, prevpos.x, prevpos.y, nextpos.x, nextpos.y);
 
-					htg_diff.x = shared_vie_verts[threadIdx.x].vxy.x - opp_v.vxy.x;
-					htg_diff.y = shared_vie_verts[threadIdx.x].vxy.y - opp_v.vxy.y;
-
-					if (iSpecies == 1) {
-						htg_diff.z = shared_vie_verts[threadIdx.x].viz - opp_v.viz;
-					} else {
-						htg_diff.z = shared_vie_verts[threadIdx.x].vez - opp_v.vez;
-					};
+					htg_diff = shared_v_verts[threadIdx.x] - opp_v;
 				}
 
 				if (ita_par > 0.0) {
@@ -3231,7 +3255,7 @@ kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species(
 						visc_contrib.z = -over_m_s*(Pi_zx*edge_normal.x + Pi_zy*edge_normal.y);
 
 						ownrates_visc += visc_contrib;
-						visc_htg += -THIRD*((iSpecies == 1) ? m_ion : m_e)*(htg_diff.dot(visc_contrib));
+						visc_htg += -THIRD*(m_s)*(htg_diff.dot(visc_contrib));
 
 						// So we are saying if edge_normal.x > 0 and gradviz.x > 0
 						// then Pi_zx < 0 then ownrates += a positive amount. That is correct.
@@ -3409,7 +3433,7 @@ kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species(
 												
 						ownrates_visc += visc_contrib;
 
-						visc_htg += -TWOTHIRDS*((iSpecies == 1)?m_ion:m_e)*(htg_diff.dot(visc_contrib));
+						visc_htg += -TWOTHIRDS*(m_s)*(htg_diff.dot(visc_contrib));
 						
 						
 						if (TESTIONVERTVISC) {
@@ -3468,7 +3492,6 @@ kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species(
 				printf("iVertex %d NaN ownrates.z\n", iVertex);
 			if (visc_htg != visc_htg) printf("iVertex %d NAN VISC HTG\n", iVertex);
 #endif
-
 		} else {
 			// NOT domain vertex: Do nothing			
 		};
@@ -3492,59 +3515,60 @@ kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species(
 			short i = 0;
 			short inext = i + 1; if (inext > 5) inext = 0;
 			short iprev = i - 1; if (iprev < 0) iprev = 5;
-			v4 prev_v, opp_v, next_v;
+			f64_vec3 prev_v, opp_v, next_v;
 			f64_vec2 prevpos, nextpos, opppos;
 
 			if ((izNeighMinor[iprev] >= StartMinor) && (izNeighMinor[iprev] < EndMinor))
 			{
-				memcpy(&prev_v, &(shared_vie[izNeighMinor[iprev] - StartMinor]), sizeof(v4));
+				memcpy(&prev_v, &(shared_v[izNeighMinor[iprev] - StartMinor]), sizeof(f64_vec3));
 				prevpos = shared_pos[izNeighMinor[iprev] - StartMinor];
 			}
 			else {
 				if ((izNeighMinor[iprev] >= StartMajor + BEGINNING_OF_CENTRAL) &&
 					(izNeighMinor[iprev] < EndMajor + BEGINNING_OF_CENTRAL))
 				{
-					memcpy(&prev_v, &(shared_vie_verts[izNeighMinor[iprev] - BEGINNING_OF_CENTRAL - StartMajor]), sizeof(v4));
+					memcpy(&prev_v, &(shared_v_verts[izNeighMinor[iprev] - BEGINNING_OF_CENTRAL - StartMajor]), sizeof(f64_vec3));
 					prevpos = shared_pos_verts[izNeighMinor[iprev] - BEGINNING_OF_CENTRAL - StartMajor];
-				}
-				else {
+				} else {
 					prevpos = p_info_minor[izNeighMinor[iprev]].pos;
-					memcpy(&prev_v, &(p_vie_minor[izNeighMinor[iprev]]), sizeof(v4));
+					v4 temp = p_vie_minor[izNeighMinor[iprev]];
+					prev_v.x = temp.vxy.x; prev_v.y = temp.vxy.y; prev_v.z = (iSpecies == 1) ? temp.viz : temp.vez;
 				};
 			};
 			if (szPBC[iprev] == ROTATE_ME_CLOCKWISE) {
 				prevpos = Clockwise_d*prevpos;
-				prev_v.vxy = Clockwise_d*prev_v.vxy;
+				RotateClockwise(prev_v);
 			}
 			if (szPBC[iprev] == ROTATE_ME_ANTICLOCKWISE) {
 				prevpos = Anticlockwise_d*prevpos;
-				prev_v.vxy = Anticlockwise_d*prev_v.vxy;
+				RotateAnticlockwise(prev_v);
 			}
 
 			if ((izNeighMinor[i] >= StartMinor) && (izNeighMinor[i] < EndMinor))
 			{
-				memcpy(&opp_v, &(shared_vie[izNeighMinor[i] - StartMinor]), sizeof(v4));
+				memcpy(&opp_v, &(shared_v[izNeighMinor[i] - StartMinor]), sizeof(f64_vec3));
 				opppos = shared_pos[izNeighMinor[i] - StartMinor];
 			}
 			else {
 				if ((izNeighMinor[i] >= StartMajor + BEGINNING_OF_CENTRAL) &&
 					(izNeighMinor[i] < EndMajor + BEGINNING_OF_CENTRAL))
 				{
-					memcpy(&opp_v, &(shared_vie_verts[izNeighMinor[i] - BEGINNING_OF_CENTRAL - StartMajor]), sizeof(v4));
+					memcpy(&opp_v, &(shared_v_verts[izNeighMinor[i] - BEGINNING_OF_CENTRAL - StartMajor]), sizeof(f64_vec3));
 					opppos = shared_pos_verts[izNeighMinor[i] - BEGINNING_OF_CENTRAL - StartMajor];
 				}
 				else {
 					opppos = p_info_minor[izNeighMinor[i]].pos;
-					memcpy(&opp_v, &(p_vie_minor[izNeighMinor[i]]), sizeof(v4));
+					v4 temp = p_vie_minor[izNeighMinor[i]];
+					opp_v.x = temp.vxy.x; opp_v.y = temp.vxy.y; opp_v.z = (iSpecies == 1) ? temp.viz : temp.vez;
 				};
 			};
 			if (szPBC[i] == ROTATE_ME_CLOCKWISE) {
 				opppos = Clockwise_d*opppos;
-				opp_v.vxy = Clockwise_d*opp_v.vxy;
+				RotateClockwise(opp_v);
 			}
 			if (szPBC[i] == ROTATE_ME_ANTICLOCKWISE) {
 				opppos = Anticlockwise_d*opppos;
-				opp_v.vxy = Anticlockwise_d*opp_v.vxy;
+				RotateAnticlockwise(opp_v);
 			}
 			f64_vec3 omega_c;
 			// Let's make life easier and load up an array of 6 n's beforehand.
@@ -3557,28 +3581,28 @@ kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species(
 
 				if ((izNeighMinor[inext] >= StartMinor) && (izNeighMinor[inext] < EndMinor))
 				{
-					memcpy(&next_v, &(shared_vie[izNeighMinor[inext] - StartMinor]), sizeof(v4));
+					memcpy(&next_v, &(shared_v[izNeighMinor[inext] - StartMinor]), sizeof(f64_vec3));
 					nextpos = shared_pos[izNeighMinor[inext] - StartMinor];
-				}
-				else {
+				} else {
 					if ((izNeighMinor[inext] >= StartMajor + BEGINNING_OF_CENTRAL) &&
 						(izNeighMinor[inext] < EndMajor + BEGINNING_OF_CENTRAL))
 					{
-						memcpy(&next_v, &(shared_vie_verts[izNeighMinor[inext] - BEGINNING_OF_CENTRAL - StartMajor]), sizeof(v4));
+						memcpy(&next_v, &(shared_v_verts[izNeighMinor[inext] - BEGINNING_OF_CENTRAL - StartMajor]), sizeof(f64_vec3));
 						nextpos = shared_pos_verts[izNeighMinor[inext] - BEGINNING_OF_CENTRAL - StartMajor];
 					}
 					else {
 						nextpos = p_info_minor[izNeighMinor[inext]].pos;
-						memcpy(&next_v, &(p_vie_minor[izNeighMinor[inext]]), sizeof(v4));
+						v4 temp = p_vie_minor[izNeighMinor[inext]];
+						next_v.x = temp.vxy.x; next_v.y = temp.vxy.y; next_v.z = (iSpecies == 1) ? temp.viz : temp.vez;
 					};
 				};
 				if (szPBC[inext] == ROTATE_ME_CLOCKWISE) {
 					nextpos = Clockwise_d*nextpos;
-					next_v.vxy = Clockwise_d*next_v.vxy;
+					RotateClockwise(next_v);
 				}
 				if (szPBC[inext] == ROTATE_ME_ANTICLOCKWISE) {
 					nextpos = Anticlockwise_d*nextpos;
-					next_v.vxy = Anticlockwise_d*next_v.vxy;
+					RotateAnticlockwise(next_v);
 				}
 
 				bool bUsableSide = true;
@@ -3625,8 +3649,7 @@ kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species(
 							if (shared_ita_par[threadIdx.x] < ita_par_opp) {
 								ita_par = shared_ita_par[threadIdx.x];
 								nu = shared_nu[threadIdx.x]; // why do I deliberately use the corresponding nu? nvm
-							}
-							else {
+							} else {
 								ita_par = ita_par_opp;
 								nu = nu_theirs;
 							}
@@ -3658,54 +3681,37 @@ kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species(
 
 				if (bUsableSide)
 				{
-					
 					if ((TestDomainPos(prevpos) == false) || (TestDomainPos(nextpos) == false))
 					{
 						// One of the sides is dipped under the insulator -- set transverse deriv to 0.
 						// Bear in mind we are looking from a vertex into a tri, it can be ins tri.
 
-						gradvx = (opp_v.vxy.x - shared_vie_verts[threadIdx.x].vxy.x)*(opppos - info.pos) /
+						gradvx = (opp_v.x - shared_v[threadIdx.x].x)*(opppos - info.pos) /
 							(opppos - info.pos).dot(opppos - info.pos);
-						gradvy = (opp_v.vxy.y - shared_vie_verts[threadIdx.x].vxy.y)*(opppos - info.pos) /
+						gradvy = (opp_v.y - shared_v[threadIdx.x].y)*(opppos - info.pos) /
 							(opppos - info.pos).dot(opppos - info.pos);
+						gradvz = (opp_v.z - shared_v[threadIdx.x].z)*(opppos - info.pos) /
+								(opppos - info.pos).dot(opppos - info.pos);
 
-						if (iSpecies == SPECIES_ION)
-						{
-							gradvz = (opp_v.viz - shared_vie_verts[threadIdx.x].viz)*(opppos - info.pos) /
-								(opppos - info.pos).dot(opppos - info.pos);
-						} else {
-							gradvz = (opp_v.vez - shared_vie_verts[threadIdx.x].vez)*(opppos - info.pos) /
-								(opppos - info.pos).dot(opppos - info.pos);
-						};
 					} else {
 						gradvx = GetGradient(
 							//f64_vec2 prevpos, f64_vec2 ourpos, f64_vec2 nextpos, f64_vec2 opppos,
 							prevpos, info.pos, nextpos, opppos,
 							//f64 prev_v, f64 our_v, f64 next_v, f64 opp_v
-							prev_v.vxy.x, shared_vie_verts[threadIdx.x].vxy.x, next_v.vxy.x, opp_v.vxy.x
+							prev_v.x, shared_v[threadIdx.x].x, next_v.x, opp_v.x
 						);
 						gradvy = GetGradient(
 							//f64_vec2 prevpos, f64_vec2 ourpos, f64_vec2 nextpos, f64_vec2 opppos,
 							prevpos, info.pos, nextpos, opppos,
 							//f64 prev_v, f64 our_v, f64 next_v, f64 opp_v
-							prev_v.vxy.y, shared_vie_verts[threadIdx.x].vxy.y, next_v.vxy.y, opp_v.vxy.y
+							prev_v.y, shared_v[threadIdx.x].y, next_v.y, opp_v.y
 						);
-						if (iSpecies == SPECIES_ION) {
-							gradvz = GetGradient(
-								//f64_vec2 prevpos, f64_vec2 ourpos, f64_vec2 nextpos, f64_vec2 opppos,
-								prevpos, info.pos, nextpos, opppos,
-								//f64 prev_v, f64 our_v, f64 next_v, f64 opp_v
-								prev_v.viz, shared_vie_verts[threadIdx.x].viz, next_v.viz, opp_v.viz
-							);
-						} else {
-
-							gradvz = GetGradient(
-								//f64_vec2 prevpos, f64_vec2 ourpos, f64_vec2 nextpos, f64_vec2 opppos,
-								prevpos, info.pos, nextpos, opppos,
-								//f64 prev_v, f64 our_v, f64 next_v, f64 opp_v
-								prev_v.vez, shared_vie_verts[threadIdx.x].vez, next_v.vez, opp_v.vez
-							);
-						};
+						gradvz = GetGradient(
+							//f64_vec2 prevpos, f64_vec2 ourpos, f64_vec2 nextpos, f64_vec2 opppos,
+							prevpos, info.pos, nextpos, opppos,
+							//f64 prev_v, f64 our_v, f64 next_v, f64 opp_v
+							prev_v.z, shared_v[threadIdx.x].z, next_v.z, opp_v.z
+						);
 					}
 					if (info.flag == CROSSING_INS) {
 						char flag = p_info_minor[izNeighMinor[i]].flag;
@@ -3721,18 +3727,8 @@ kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species(
 						};
 					};
 
-					if (TESTIONVISC) printf("--------------\n%d %d our v: %1.8E %1.8E %1.8E  "
-						"opp v: %1.8E %1.8E %1.8E \n",
-						iMinor, i, shared_vie[threadIdx.x].vxy.x, shared_vie[threadIdx.x].vxy.y, shared_vie[threadIdx.x].viz,
-						opp_v.vxy.x, opp_v.vxy.y, opp_v.viz);
-
-					htg_diff.x = shared_vie[threadIdx.x].vxy.x - opp_v.vxy.x;
-					htg_diff.y = shared_vie[threadIdx.x].vxy.y - opp_v.vxy.y;
-					if (iSpecies == 1) {
-						htg_diff.z = shared_vie[threadIdx.x].viz - opp_v.viz;
-					} else {
-						htg_diff.z = shared_vie[threadIdx.x].vez - opp_v.vez;
-					}
+					htg_diff = shared_v[threadIdx.x] - opp_v;
+					
 				} else {
 					if (TESTIONVISC) printf("side not usable: %d", i);
 				};
@@ -3763,9 +3759,8 @@ kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species(
 
 						if (i % 2 == 0) {
 							// vertex : heat collected by vertex
-						}
-						else {
-							visc_htg += -THIRD*((iSpecies == 1) ? m_ion : m_e)*(htg_diff.dot(visc_contrib));
+						} else {
+							visc_htg += -THIRD*(m_s)*(htg_diff.dot(visc_contrib));
 						}
 
 						// So we are saying if edge_normal.x > 0 and gradviz.x > 0
@@ -3975,6 +3970,7 @@ kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species_dbydbeta_xy(
 
 	structural * __restrict__ p_info_minor,
 	v4 * __restrict__ p_vie_minor,
+	f64_vec3 * __restrict__ p_v_n,
 	f64_vec2 * __restrict__ p__x, // regressor
 
 	long * __restrict__ p_izTri,
@@ -3988,17 +3984,18 @@ kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species_dbydbeta_xy(
 
 	f64_vec3 * __restrict__ p_ROCMAR,
 	int const iSpecies,
+	f64 const m_s,
 	f64 const over_m_s
 ) // easy way to put it in constant memory
 {
-	__shared__ v4 shared_vie[threadsPerTileMinor]; // sort of thing we want as input
+	__shared__ f64_vec3 shared_v[threadsPerTileMinor]; // sort of thing we want as input
 	__shared__ f64_vec2 shared_pos[threadsPerTileMinor];
 	__shared__ f64_vec2 shared_B[threadsPerTileMinor];
 	__shared__ f64 shared_ita_par[threadsPerTileMinor]; // reuse for i,e ; or make 2 vars to combine the routines.
 	__shared__ f64 shared_nu[threadsPerTileMinor];
 	__shared__ f64_vec2 shared_regr[threadsPerTileMinor];
 
-	__shared__ v4 shared_vie_verts[threadsPerTileMajor];
+	__shared__ f64_vec3 shared_v_verts[threadsPerTileMajor];
 	__shared__ f64_vec2 shared_regr_verts[threadsPerTileMajor];
 	__shared__ f64_vec2 shared_pos_verts[threadsPerTileMajor];
 	__shared__ f64_vec2 shared_B_verts[threadsPerTileMajor];
@@ -4021,16 +4018,18 @@ kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species_dbydbeta_xy(
 	f64 visc_htg;
 
 	shared_pos[threadIdx.x] = p_info_minor[iMinor].pos;
-	shared_vie[threadIdx.x] = p_vie_minor[iMinor];
+	if (iSpecies > 0) {
+		v4 temp = p_vie_minor[iMinor];
+		shared_v[threadIdx.x].x = temp.vxy.x; 
+		shared_v[threadIdx.x].y = temp.vxy.y;
+		shared_v[threadIdx.x].z = (iSpecies == 1) ? temp.viz : temp.vez;
+	} else {
+		shared_v[threadIdx.x] = p_v_n[iMinor];
+	}
 	shared_regr[threadIdx.x] = p__x[iMinor];
 	shared_B[threadIdx.x] = p_B_minor[iMinor].xypart();
 	shared_ita_par[threadIdx.x] = p_ita_parallel_minor[iMinor];
 	shared_nu[threadIdx.x] = p_nu_minor[iMinor];
-
-	// Perhaps the real answer is this. Advection and therefore advective momflux
-	// do not need to be recalculated very often at all. At 1e6 cm/s, we aim for 1 micron,
-	// get 1e-10s to actually do the advection !!
-	// So an outer cycle. Still limiting the number of total things in a minor tile. We might like 384 = 192*2.
 
 	structural info;
 	if (threadIdx.x < threadsPerTileMajor) {
@@ -4039,7 +4038,16 @@ kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species_dbydbeta_xy(
 		shared_B_verts[threadIdx.x] = p_B_minor[iVertex + BEGINNING_OF_CENTRAL].xypart();
 		if ((info.flag == DOMAIN_VERTEX) || (info.flag == OUTERMOST))
 		{
-			memcpy(&(shared_vie_verts[threadIdx.x]), &(p_vie_minor[iVertex + BEGINNING_OF_CENTRAL]), sizeof(v4));
+			if (iSpecies > 0) {
+				v4 temp;
+				memcpy(&(temp), &(p_vie_minor[iVertex + BEGINNING_OF_CENTRAL]), sizeof(v4));
+				shared_v_verts[threadIdx.x].x = temp.vxy.x;
+				shared_v_verts[threadIdx.x].y = temp.vxy.y;
+				shared_v_verts[threadIdx.x].z = (iSpecies == 1) ? temp.viz : temp.vez;
+			} else {
+				shared_v_verts[threadIdx.x] = p_v_n[iVertex + BEGINNING_OF_CENTRAL];
+			}
+						
 			shared_ita_par_verts[threadIdx.x] = p_ita_parallel_minor[iVertex + BEGINNING_OF_CENTRAL];
 			shared_nu_verts[threadIdx.x] = p_nu_minor[iVertex + BEGINNING_OF_CENTRAL];
 			shared_regr_verts[threadIdx.x] = p__x[iVertex + BEGINNING_OF_CENTRAL];
@@ -4049,7 +4057,7 @@ kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species_dbydbeta_xy(
 		}
 		else {
 			// it still manages to coalesce, let's hope, because ShardModel is 13 doubles not 12.
-			memset(&(shared_vie_verts[threadIdx.x]), 0, sizeof(v4));
+			memset(&(shared_v_verts[threadIdx.x]), 0, sizeof(f64_vec3));
 			memset(&(shared_regr_verts[threadIdx.x]), 0, sizeof(f64_vec2));
 			shared_ita_par_verts[threadIdx.x] = 0.0;
 			shared_nu_verts[threadIdx.x] = 0.0;
@@ -4073,7 +4081,7 @@ kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species_dbydbeta_xy(
 			memcpy(izTri, p_izTri + iVertex*MAXNEIGH_d, MAXNEIGH_d * sizeof(long));
 			memcpy(szPBC, p_szPBC + iVertex*MAXNEIGH_d, MAXNEIGH_d * sizeof(char));
 
-			v4 opp_v, prev_v, next_v;
+			f64_vec3 opp_v, prev_v, next_v;
 			f64_vec2 opp_x, prev_x, next_x;
 			f64_vec2 opppos, prevpos, nextpos;
 			// ideally we might want to leave position out of the loop so that we can avoid reloading it.
@@ -4084,44 +4092,61 @@ kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species_dbydbeta_xy(
 
 			if ((izTri[iprev] >= StartMinor) && (izTri[iprev] < EndMinor))
 			{
-				prev_v = shared_vie[izTri[iprev] - StartMinor];
+				prev_v = shared_v[izTri[iprev] - StartMinor];
 				prev_x = shared_regr[izTri[iprev] - StartMinor];
 				prevpos = shared_pos[izTri[iprev] - StartMinor];
 			}
 			else {
-				prev_v = p_vie_minor[izTri[iprev]];
+				if (iSpecies > 0) {
+					v4 temp = p_vie_minor[izTri[iprev]];
+					prev_v.x = temp.vxy.x;
+					prev_v.y = temp.vxy.y;
+					prev_v.z = (iSpecies == 1) ? temp.viz : temp.vez;
+
+					// we'd have done better with 2 separate v vectors as it turns out.
+				} else {
+					prev_v = p_v_n[izTri[iprev]];
+				}
 				prev_x = p__x[izTri[iprev]];
 				prevpos = p_info_minor[izTri[iprev]].pos;
 			}
 			if (szPBC[iprev] == ROTATE_ME_CLOCKWISE) {
 				prevpos = Clockwise_d*prevpos;
-				prev_v.vxy = Clockwise_d*prev_v.vxy;
+				RotateClockwise(prev_v);
 				prev_x = Clockwise_d*prev_x;
 			}
 			if (szPBC[iprev] == ROTATE_ME_ANTICLOCKWISE) {
 				prevpos = Anticlockwise_d*prevpos;
-				prev_v.vxy = Anticlockwise_d*prev_v.vxy;
+				RotateAnticlockwise(prev_v);
 				prev_x = Anticlockwise_d*prev_x;
 			}
 			
 			if ((izTri[i] >= StartMinor) && (izTri[i] < EndMinor))
 			{
-				opp_v = shared_vie[izTri[i] - StartMinor];
+				opp_v = shared_v[izTri[i] - StartMinor];
+				
 				opppos = shared_pos[izTri[i] - StartMinor];
 				opp_x = shared_regr[izTri[i] - StartMinor];
 			} else {
-				opp_v = p_vie_minor[izTri[i]];
+				if (iSpecies > 0) {
+					v4 temp = p_vie_minor[izTri[i]];
+					opp_v.x = temp.vxy.x;
+					opp_v.y = temp.vxy.y;
+					opp_v.z = (iSpecies == 1) ? temp.viz : temp.vez;
+				} else {
+					opp_v = p_v_n[izTri[i]];
+				}
 				opppos = p_info_minor[izTri[i]].pos;
 				opp_x = p__x[izTri[i]];
 			}
 			if (szPBC[i] == ROTATE_ME_CLOCKWISE) {
 				opppos = Clockwise_d*opppos;
-				opp_v.vxy = Clockwise_d*opp_v.vxy;
+				RotateClockwise(opp_v);
 				opp_x = Clockwise_d*opp_x;
 			}
 			if (szPBC[i] == ROTATE_ME_ANTICLOCKWISE) {
 				opppos = Anticlockwise_d*opppos;
-				opp_v.vxy = Anticlockwise_d*opp_v.vxy;
+				RotateAnticlockwise(opp_v);
 				opp_x = Anticlockwise_d*opp_x;
 			}
 
@@ -4144,23 +4169,30 @@ kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species_dbydbeta_xy(
 
 				if ((izTri[inext] >= StartMinor) && (izTri[inext] < EndMinor))
 				{
-					next_v = shared_vie[izTri[inext] - StartMinor];
+					next_v = shared_v[izTri[inext] - StartMinor];
 					nextpos = shared_pos[izTri[inext] - StartMinor];
 					next_x = shared_regr[izTri[inext] - StartMinor];
 				}
 				else {
-					next_v = p_vie_minor[izTri[inext]];
+					if (iSpecies > 0) {
+						v4 temp = p_vie_minor[izTri[inext]];
+						next_v.x = temp.vxy.x;
+						next_v.y = temp.vxy.y;
+						next_v.z = (iSpecies == 1) ? temp.viz : temp.vez;
+					} else {
+						next_v = p_v_n[izTri[inext]];
+					}
 					nextpos = p_info_minor[izTri[inext]].pos;
 					next_x = p__x[izTri[inext]];
 				}
 				if (szPBC[inext] == ROTATE_ME_CLOCKWISE) {
 					nextpos = Clockwise_d*nextpos;
-					next_v.vxy = Clockwise_d*next_v.vxy;
+					RotateClockwise(next_v);
 					next_x = Clockwise_d*next_x;
 				}
 				if (szPBC[inext] == ROTATE_ME_ANTICLOCKWISE) {
 					nextpos = Anticlockwise_d*nextpos;
-					next_v.vxy = Anticlockwise_d*next_v.vxy;
+					RotateAnticlockwise(next_v);
 					next_x = Anticlockwise_d*next_x;
 				}
 
@@ -4217,190 +4249,203 @@ kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species_dbydbeta_xy(
 						ROCgradvx =
 							GetGradientDBydBeta(
 								prevpos, info.pos, nextpos, opppos,
-								prev_v.vxy.x, shared_vie_verts[threadIdx.x].vxy.x, next_v.vxy.x,
-								opp_v.vxy.x,
+								prev_v.x, shared_v_verts[threadIdx.x].x, next_v.x,	opp_v.x,
 								prev_x.x, shared_regr_verts[threadIdx.x].x, next_x.x, opp_x.x
 							);
 						ROCgradvy = 
 							GetGradientDBydBeta(
 								prevpos, info.pos, nextpos, opppos,
-								prev_v.vxy.y, shared_vie_verts[threadIdx.x].vxy.y, next_v.vxy.y,
-								opp_v.vxy.y,
+								prev_v.y, shared_v_verts[threadIdx.x].y, next_v.y,	opp_v.y,
 								prev_x.y, shared_regr_verts[threadIdx.x].y, next_x.y, opp_x.y
 							);
 					}
 				}
 
 				if (ita_par > 0.0) {
-					if ((VISCMAG == 0) || (omega_c.dot(omega_c) < 0.01*0.1*nu*nu))
-					{
-						// run unmagnetised case
-						f64 Pi_xx, Pi_xy, Pi_yx, Pi_yy;// , Pi_zx, Pi_zy;
 
-						Pi_xx = -ita_par*THIRD*(4.0*ROCgradvx.x - 2.0*ROCgradvy.y);
-						Pi_xy = -ita_par*(ROCgradvx.y + ROCgradvy.x);
-						Pi_yx = Pi_xy;
-						Pi_yy = -ita_par*THIRD*(4.0*ROCgradvy.y - 2.0*ROCgradvx.x);
-						//Pi_zx = 0.0; // -ita_par*(gradvz.x);
-						//Pi_zy = 0.0; // -ita_par*(gradvz.y);
-
+					if (iSpecies == 0) {
 						f64_vec3 visc_contrib;
 						f64_vec2 edge_normal;
 						edge_normal.x = THIRD * (nextpos.y - prevpos.y);
 						edge_normal.y = THIRD * (prevpos.x - nextpos.x);
+						visc_contrib.x = over_m_n*(ita_par*ROCgradvx.dot(edge_normal)); // if we are looking at higher vz looking out, go up.
+						visc_contrib.y = over_m_n*(ita_par*ROCgradvy.dot(edge_normal));
+						visc_contrib.z = 0.0;
 
-						visc_contrib.x = -over_m_s*(Pi_xx*edge_normal.x + Pi_xy*edge_normal.y);
-						visc_contrib.y = -over_m_s*(Pi_yx*edge_normal.x + Pi_yy*edge_normal.y);
-						visc_contrib.z = 0.0;// -over_m_s*(Pi_zx*edge_normal.x + Pi_zy*edge_normal.y);
-
-						ownrates_visc += visc_contrib;						
+						ownrates_visc += visc_contrib;
 					} else {
 
-						f64_vec3 unit_b, unit_perp, unit_Hall;
-						f64 Pi_b_b = 0.0, Pi_P_b = 0.0, Pi_P_P = 0.0, Pi_H_b = 0.0, Pi_H_P = 0.0, Pi_H_H = 0.0;
+						if ((VISCMAG == 0) || (omega_c.dot(omega_c) < 0.01*0.1*nu*nu))
 						{
-							f64 W_bb = 0.0, W_bP = 0.0, W_bH = 0.0, W_PP = 0.0, W_PH = 0.0, W_HH = 0.0;
-							// these have to be alive at same time as 9 x partials
-							// but we can make do with 3x partials
-							// 2. Now get partials in magnetic coordinates 
-							f64 omegamod;
-							{
-								f64_vec2 edge_normal;
-								edge_normal.x = THIRD * (nextpos.y - prevpos.y);
-								edge_normal.y = THIRD * (prevpos.x - nextpos.x);
+							// run unmagnetised case
+							f64 Pi_xx, Pi_xy, Pi_yx, Pi_yy;// , Pi_zx, Pi_zy;
 
-								f64 omegasq = omega_c.dot(omega_c);
-								omegamod = sqrt(omegasq);
-								unit_b = omega_c / omegamod;
-								unit_perp = Make3(edge_normal, 0.0) - unit_b*(unit_b.dotxy(edge_normal));
-								unit_perp = unit_perp / unit_perp.modulus();
-								unit_Hall = unit_b.cross(unit_perp); // Note sign.
+							Pi_xx = -ita_par*THIRD*(4.0*ROCgradvx.x - 2.0*ROCgradvy.y);
+							Pi_xy = -ita_par*(ROCgradvx.y + ROCgradvy.x);
+							Pi_yx = Pi_xy;
+							Pi_yy = -ita_par*THIRD*(4.0*ROCgradvy.y - 2.0*ROCgradvx.x);
+							//Pi_zx = 0.0; // -ita_par*(gradvz.x);
+							//Pi_zy = 0.0; // -ita_par*(gradvz.y);
 
-																	 // Since B is in the plane, it's saying we picked perp in the plane, H = z.
-																	 // CHECK THAT
-																	 // It probably doesn't matter what direction perp is. As long as it is in the plane normal to b.
-																	 // Formulary tells us if b is z then perp is x, H is y. So we can freely rotate x,y in the normal plane
-																	 // and this will still hold.
-																	 // Let's verify if we got it : 
-																	 // z cross x = (0, 1, 0) --- tick.
-
-																	 // From the perspective of the +- ita3 and ita4, all that matter is the relative orientation of P and H.
-							}
-							{
-								f64_vec2 intermed;
-
-								// use: d vb / da = b transpose [ dvi/dxj ] a
-								// Prototypical element: a.x b.y dvy/dx
-								// b.x a.y dvx/dy
-								intermed.x = unit_b.dotxy(ROCgradvx);
-								intermed.y = unit_b.dotxy(ROCgradvy);
-								//intermed.z = unit_b.dotxy(gradvz);
-								{
-									f64 dvb_by_db, dvperp_by_db, dvHall_by_db;
-
-									dvb_by_db = unit_b.dotxy(intermed);
-									dvperp_by_db = unit_perp.dotxy(intermed);
-									dvHall_by_db = unit_Hall.dotxy(intermed); // 0
-									// This actually is always 0 because vHall isn't changing.
-
-									W_bb += 4.0*THIRD*dvb_by_db;
-									W_bP += dvperp_by_db;
-									W_bH += dvHall_by_db;
-									W_PP -= 2.0*THIRD*dvb_by_db;
-									W_HH -= 2.0*THIRD*dvb_by_db;
-								}
-								{
-									f64 dvb_by_dperp, dvperp_by_dperp,
-										dvHall_by_dperp;
-									// Optimize by getting rid of different labels.
-
-									intermed.x = unit_perp.dotxy(ROCgradvx);
-									intermed.y = unit_perp.dotxy(ROCgradvy);
-									//intermed.z = unit_perp.dotxy(gradvz);
-
-									dvb_by_dperp = unit_b.dotxy(intermed);
-									dvperp_by_dperp = unit_perp.dotxy(intermed);
-									dvHall_by_dperp = unit_Hall.dotxy(intermed); // 0
-
-									W_bb -= 2.0*THIRD*dvperp_by_dperp;
-									W_PP += 4.0*THIRD*dvperp_by_dperp;
-									W_HH -= 2.0*THIRD*dvperp_by_dperp;
-									W_bP += dvb_by_dperp;
-									W_PH += dvHall_by_dperp;
-								}
-								{
-									f64 dvb_by_dHall, dvperp_by_dHall, dvHall_by_dHall;
-
-									intermed.x = unit_Hall.dotxy(ROCgradvx);  // 0
-									intermed.y = unit_Hall.dotxy(ROCgradvy);  // 0
-
-									dvb_by_dHall = unit_b.dotxy(intermed);
-									dvperp_by_dHall = unit_perp.dotxy(intermed);
-									dvHall_by_dHall = unit_Hall.dotxy(intermed);
-
-									// all 0
-
-									W_bb -= 2.0*THIRD*dvHall_by_dHall;
-									W_PP -= 2.0*THIRD*dvHall_by_dHall;
-									W_HH += 4.0*THIRD*dvHall_by_dHall;
-									W_bH += dvb_by_dHall;
-									W_PH += dvperp_by_dHall;									
-								}
-							}
-							{
-								f64 ita_1 = ita_par*(nu*nu / (nu*nu + omegamod*omegamod));
-
-								Pi_b_b += -ita_par*W_bb;
-								Pi_P_P += -0.5*(ita_par + ita_1)*W_PP - 0.5*(ita_par - ita_1)*W_HH;
-								Pi_H_H += -0.5*(ita_par + ita_1)*W_HH - 0.5*(ita_par - ita_1)*W_PP;
-								Pi_H_P += -ita_1*W_PH;
-							}
-							{
-								f64 ita_2 = ita_par*(nu*nu / (nu*nu + 0.25*omegamod*omegamod));
-								Pi_P_b += -ita_2*W_bP;
-								Pi_H_b += -ita_2*W_bH;
-							}
-							{
-								f64 ita_3 = ita_par*(nu*omegamod / (nu*nu + omegamod*omegamod));
-								Pi_P_P -= ita_3*W_PH;
-								Pi_H_H += ita_3*W_PH;
-								Pi_H_P += 0.5*ita_3*(W_PP - W_HH);
-							}
-							{
-								f64 ita_4 = 0.5*ita_par*(nu*omegamod / (nu*nu + 0.25*omegamod*omegamod));
-								Pi_P_b += -ita_4*W_bH;
-								Pi_H_b += ita_4*W_bP;
-							}							
-						} // scope W
-
-						f64 momflux_b, momflux_perp, momflux_Hall;
-						{
-							// Most efficient way: compute mom flux in magnetic coords
-							f64_vec3 mag_edge;
+							f64_vec3 visc_contrib;
 							f64_vec2 edge_normal;
 							edge_normal.x = THIRD * (nextpos.y - prevpos.y);
 							edge_normal.y = THIRD * (prevpos.x - nextpos.x);
 
-							mag_edge.x = unit_b.x*edge_normal.x + unit_b.y*edge_normal.y;
-							mag_edge.y = unit_perp.x*edge_normal.x + unit_perp.y*edge_normal.y;
-							mag_edge.z = unit_Hall.x*edge_normal.x + unit_Hall.y*edge_normal.y; // 0
+							visc_contrib.x = -over_m_s*(Pi_xx*edge_normal.x + Pi_xy*edge_normal.y);
+							visc_contrib.y = -over_m_s*(Pi_yx*edge_normal.x + Pi_yy*edge_normal.y);
+							visc_contrib.z = 0.0;// -over_m_s*(Pi_zx*edge_normal.x + Pi_zy*edge_normal.y);
 
-							// So basically, Pi_H_H is not only 0, it is never used.
-
-							momflux_b = -(Pi_b_b*mag_edge.x + Pi_P_b*mag_edge.y + Pi_H_b*mag_edge.z);
-							momflux_perp = -(Pi_P_b*mag_edge.x + Pi_P_P*mag_edge.y + Pi_H_P*mag_edge.z);
-							momflux_Hall = -(Pi_H_b*mag_edge.x + Pi_H_P*mag_edge.y + Pi_H_H*mag_edge.z);
+							ownrates_visc += visc_contrib;
 						}
+						else {
 
-						// ROC :
-						f64_vec3 visc_contrib;
-						visc_contrib.x = over_m_s*(unit_b.x*momflux_b + unit_perp.x*momflux_perp + unit_Hall.x*momflux_Hall);
-						visc_contrib.y = over_m_s*(unit_b.y*momflux_b + unit_perp.y*momflux_perp + unit_Hall.y*momflux_Hall);
-						visc_contrib.z = over_m_s*(unit_b.z*momflux_b + unit_perp.z*momflux_perp + unit_Hall.z*momflux_Hall);
+							f64_vec3 unit_b, unit_perp, unit_Hall;
+							f64 Pi_b_b = 0.0, Pi_P_b = 0.0, Pi_P_P = 0.0, Pi_H_b = 0.0, Pi_H_P = 0.0, Pi_H_H = 0.0;
+							{
+								f64 W_bb = 0.0, W_bP = 0.0, W_bH = 0.0, W_PP = 0.0, W_PH = 0.0, W_HH = 0.0;
+								// these have to be alive at same time as 9 x partials
+								// but we can make do with 3x partials
+								// 2. Now get partials in magnetic coordinates 
+								f64 omegamod;
+								{
+									f64_vec2 edge_normal;
+									edge_normal.x = THIRD * (nextpos.y - prevpos.y);
+									edge_normal.y = THIRD * (prevpos.x - nextpos.x);
 
-						ownrates_visc += visc_contrib;
+									f64 omegasq = omega_c.dot(omega_c);
+									omegamod = sqrt(omegasq);
+									unit_b = omega_c / omegamod;
+									unit_perp = Make3(edge_normal, 0.0) - unit_b*(unit_b.dotxy(edge_normal));
+									unit_perp = unit_perp / unit_perp.modulus();
+									unit_Hall = unit_b.cross(unit_perp); // Note sign.
 
-					}
+										// Since B is in the plane, it's saying we picked perp in the plane, H = z.
+										// CHECK THAT
+										// It probably doesn't matter what direction perp is. As long as it is in the plane normal to b.
+										// Formulary tells us if b is z then perp is x, H is y. So we can freely rotate x,y in the normal plane
+										// and this will still hold.
+										// Let's verify if we got it : 
+										// z cross x = (0, 1, 0) --- tick.
+
+										// From the perspective of the +- ita3 and ita4, all that matter is the relative orientation of P and H.
+								}
+								{
+									f64_vec2 intermed;
+
+									// use: d vb / da = b transpose [ dvi/dxj ] a
+									// Prototypical element: a.x b.y dvy/dx
+									// b.x a.y dvx/dy
+									intermed.x = unit_b.dotxy(ROCgradvx);
+									intermed.y = unit_b.dotxy(ROCgradvy);
+									//intermed.z = unit_b.dotxy(gradvz);
+									{
+										f64 dvb_by_db, dvperp_by_db, dvHall_by_db;
+
+										dvb_by_db = unit_b.dotxy(intermed);
+										dvperp_by_db = unit_perp.dotxy(intermed);
+										dvHall_by_db = unit_Hall.dotxy(intermed); // 0
+										// This actually is always 0 because vHall isn't changing.
+
+										W_bb += 4.0*THIRD*dvb_by_db;
+										W_bP += dvperp_by_db;
+										W_bH += dvHall_by_db;
+										W_PP -= 2.0*THIRD*dvb_by_db;
+										W_HH -= 2.0*THIRD*dvb_by_db;
+									}
+									{
+										f64 dvb_by_dperp, dvperp_by_dperp,
+											dvHall_by_dperp;
+										// Optimize by getting rid of different labels.
+
+										intermed.x = unit_perp.dotxy(ROCgradvx);
+										intermed.y = unit_perp.dotxy(ROCgradvy);
+										//intermed.z = unit_perp.dotxy(gradvz);
+
+										dvb_by_dperp = unit_b.dotxy(intermed);
+										dvperp_by_dperp = unit_perp.dotxy(intermed);
+										dvHall_by_dperp = unit_Hall.dotxy(intermed); // 0
+
+										W_bb -= 2.0*THIRD*dvperp_by_dperp;
+										W_PP += 4.0*THIRD*dvperp_by_dperp;
+										W_HH -= 2.0*THIRD*dvperp_by_dperp;
+										W_bP += dvb_by_dperp;
+										W_PH += dvHall_by_dperp;
+									}
+									{
+										f64 dvb_by_dHall, dvperp_by_dHall, dvHall_by_dHall;
+
+										intermed.x = unit_Hall.dotxy(ROCgradvx);  // 0
+										intermed.y = unit_Hall.dotxy(ROCgradvy);  // 0
+
+										dvb_by_dHall = unit_b.dotxy(intermed);
+										dvperp_by_dHall = unit_perp.dotxy(intermed);
+										dvHall_by_dHall = unit_Hall.dotxy(intermed);
+
+										// all 0
+
+										W_bb -= 2.0*THIRD*dvHall_by_dHall;
+										W_PP -= 2.0*THIRD*dvHall_by_dHall;
+										W_HH += 4.0*THIRD*dvHall_by_dHall;
+										W_bH += dvb_by_dHall;
+										W_PH += dvperp_by_dHall;
+									}
+								}
+								{
+									f64 ita_1 = ita_par*(nu*nu / (nu*nu + omegamod*omegamod));
+
+									Pi_b_b += -ita_par*W_bb;
+									Pi_P_P += -0.5*(ita_par + ita_1)*W_PP - 0.5*(ita_par - ita_1)*W_HH;
+									Pi_H_H += -0.5*(ita_par + ita_1)*W_HH - 0.5*(ita_par - ita_1)*W_PP;
+									Pi_H_P += -ita_1*W_PH;
+								}
+								{
+									f64 ita_2 = ita_par*(nu*nu / (nu*nu + 0.25*omegamod*omegamod));
+									Pi_P_b += -ita_2*W_bP;
+									Pi_H_b += -ita_2*W_bH;
+								}
+								{
+									f64 ita_3 = ita_par*(nu*omegamod / (nu*nu + omegamod*omegamod));
+									Pi_P_P -= ita_3*W_PH;
+									Pi_H_H += ita_3*W_PH;
+									Pi_H_P += 0.5*ita_3*(W_PP - W_HH);
+								}
+								{
+									f64 ita_4 = 0.5*ita_par*(nu*omegamod / (nu*nu + 0.25*omegamod*omegamod));
+									Pi_P_b += -ita_4*W_bH;
+									Pi_H_b += ita_4*W_bP;
+								}
+							} // scope W
+
+							f64 momflux_b, momflux_perp, momflux_Hall;
+							{
+								// Most efficient way: compute mom flux in magnetic coords
+								f64_vec3 mag_edge;
+								f64_vec2 edge_normal;
+								edge_normal.x = THIRD * (nextpos.y - prevpos.y);
+								edge_normal.y = THIRD * (prevpos.x - nextpos.x);
+
+								mag_edge.x = unit_b.x*edge_normal.x + unit_b.y*edge_normal.y;
+								mag_edge.y = unit_perp.x*edge_normal.x + unit_perp.y*edge_normal.y;
+								mag_edge.z = unit_Hall.x*edge_normal.x + unit_Hall.y*edge_normal.y; // 0
+
+								// So basically, Pi_H_H is not only 0, it is never used.
+
+								momflux_b = -(Pi_b_b*mag_edge.x + Pi_P_b*mag_edge.y + Pi_H_b*mag_edge.z);
+								momflux_perp = -(Pi_P_b*mag_edge.x + Pi_P_P*mag_edge.y + Pi_H_P*mag_edge.z);
+								momflux_Hall = -(Pi_H_b*mag_edge.x + Pi_H_P*mag_edge.y + Pi_H_H*mag_edge.z);
+							}
+
+							// ROC :
+							f64_vec3 visc_contrib;
+							visc_contrib.x = over_m_s*(unit_b.x*momflux_b + unit_perp.x*momflux_perp + unit_Hall.x*momflux_Hall);
+							visc_contrib.y = over_m_s*(unit_b.y*momflux_b + unit_perp.y*momflux_perp + unit_Hall.y*momflux_Hall);
+							visc_contrib.z = over_m_s*(unit_b.z*momflux_b + unit_perp.z*momflux_perp + unit_Hall.z*momflux_Hall);
+
+							ownrates_visc += visc_contrib;
+
+						}
+					};
 				}; // was ita_par == 0
 				// v0.vez = vie_k.vez + h_use * MAR.z / (n_use.n*AreaMinor);
 
@@ -4437,13 +4482,13 @@ kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species_dbydbeta_xy(
 			short i = 0;
 			short inext = i + 1; if (inext > 5) inext = 0;
 			short iprev = i - 1; if (iprev < 0) iprev = 5;
-			v4 prev_v, opp_v, next_v;
+			f64_vec3 prev_v, opp_v, next_v;
 			f64_vec2 prev_x, opp_x, next_x;
 			f64_vec2 prevpos, nextpos, opppos;
 
 			if ((izNeighMinor[iprev] >= StartMinor) && (izNeighMinor[iprev] < EndMinor))
-			{
-				memcpy(&prev_v, &(shared_vie[izNeighMinor[iprev] - StartMinor]), sizeof(v4));
+			{				
+				prev_v = shared_v[izNeighMinor[iprev] - StartMinor];
 				prevpos = shared_pos[izNeighMinor[iprev] - StartMinor];
 				prev_x = shared_regr[izNeighMinor[iprev] - StartMinor];
 			}
@@ -4451,30 +4496,36 @@ kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species_dbydbeta_xy(
 				if ((izNeighMinor[iprev] >= StartMajor + BEGINNING_OF_CENTRAL) &&
 					(izNeighMinor[iprev] < EndMajor + BEGINNING_OF_CENTRAL))
 				{
-					memcpy(&prev_v, &(shared_vie_verts[izNeighMinor[iprev] - BEGINNING_OF_CENTRAL - StartMajor]), sizeof(v4));
+					prev_v = shared_v_verts[izNeighMinor[iprev] - BEGINNING_OF_CENTRAL - StartMajor];
 					prevpos = shared_pos_verts[izNeighMinor[iprev] - BEGINNING_OF_CENTRAL - StartMajor];
 					prev_x = shared_regr_verts[izNeighMinor[iprev] - BEGINNING_OF_CENTRAL - StartMajor];
-				}
-				else {
+				} else {
 					prevpos = p_info_minor[izNeighMinor[iprev]].pos;
-					memcpy(&prev_v, &(p_vie_minor[izNeighMinor[iprev]]), sizeof(v4));
+					if (iSpecies > 0) {
+						v4 temp = p_vie_minor[izNeighMinor[iprev]];
+						prev_v.x = temp.vxy.x;
+						prev_v.y = temp.vxy.y;
+						prev_v.z = (iSpecies == 1) ? temp.viz : temp.vez;
+					} else {
+						prev_v = p_v_n[izNeighMinor[iprev]];
+					}
 					prev_x = p__x[izNeighMinor[iprev]];
 				};
 			};
 			if (szPBC[iprev] == ROTATE_ME_CLOCKWISE) {
 				prevpos = Clockwise_d*prevpos;
-				prev_v.vxy = Clockwise_d*prev_v.vxy;
+				RotateClockwise(prev_v);
 				prev_x = Clockwise_d*prev_x;
 			}
 			if (szPBC[iprev] == ROTATE_ME_ANTICLOCKWISE) {
 				prevpos = Anticlockwise_d*prevpos;
-				prev_v.vxy = Anticlockwise_d*prev_v.vxy;
+				RotateAnticlockwise(prev_v);
 				prev_x = Anticlockwise_d*prev_x;
 			}
 
 			if ((izNeighMinor[i] >= StartMinor) && (izNeighMinor[i] < EndMinor))
 			{
-				memcpy(&opp_v, &(shared_vie[izNeighMinor[i] - StartMinor]), sizeof(v4));
+				opp_v = shared_v[izNeighMinor[i] - StartMinor];
 				opppos = shared_pos[izNeighMinor[i] - StartMinor];
 				opp_x = shared_regr[izNeighMinor[i] - StartMinor];
 			}
@@ -4482,26 +4533,34 @@ kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species_dbydbeta_xy(
 				if ((izNeighMinor[i] >= StartMajor + BEGINNING_OF_CENTRAL) &&
 					(izNeighMinor[i] < EndMajor + BEGINNING_OF_CENTRAL))
 				{
-					memcpy(&opp_v, &(shared_vie_verts[izNeighMinor[i] - BEGINNING_OF_CENTRAL - StartMajor]), sizeof(v4));
+					opp_v = shared_v_verts[izNeighMinor[i] - BEGINNING_OF_CENTRAL - StartMajor];
 					opppos = shared_pos_verts[izNeighMinor[i] - BEGINNING_OF_CENTRAL - StartMajor];
 					opp_x = shared_regr_verts[izNeighMinor[i] - BEGINNING_OF_CENTRAL - StartMajor];
 				}
 				else {
 					opppos = p_info_minor[izNeighMinor[i]].pos;
-					memcpy(&opp_v, &(p_vie_minor[izNeighMinor[i]]), sizeof(v4));
+					if (iSpecies > 0) {
+						v4 temp = p_vie_minor[izNeighMinor[i]];
+						opp_v.x = temp.vxy.x;
+						opp_v.y = temp.vxy.y;
+						opp_v.z = (iSpecies == 1) ? temp.viz : temp.vez;
+					} else {
+						opp_v = p_v_n[izNeighMinor[i]];
+					}
 					opp_x = p__x[izNeighMinor[i]];
 				};
 			};
 			if (szPBC[i] == ROTATE_ME_CLOCKWISE) {
 				opppos = Clockwise_d*opppos;
-				opp_v.vxy = Clockwise_d*opp_v.vxy;
+				RotateClockwise(opp_v);
 				opp_x = Clockwise_d*opp_x;
 			}
 			if (szPBC[i] == ROTATE_ME_ANTICLOCKWISE) {
 				opppos = Anticlockwise_d*opppos;
-				opp_v.vxy = Anticlockwise_d*opp_v.vxy;
+				RotateAnticlockwise(opp_v);
 				opp_x = Anticlockwise_d*opp_x;
 			}
+
 			f64_vec3 omega_c;
 			// Let's make life easier and load up an array of 6 n's beforehand.
 #pragma unroll 
@@ -4512,7 +4571,7 @@ kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species_dbydbeta_xy(
 
 				if ((izNeighMinor[inext] >= StartMinor) && (izNeighMinor[inext] < EndMinor))
 				{
-					memcpy(&next_v, &(shared_vie[izNeighMinor[inext] - StartMinor]), sizeof(v4));
+					next_v = shared_v[izNeighMinor[inext] - StartMinor];
 					nextpos = shared_pos[izNeighMinor[inext] - StartMinor];
 					next_x = shared_regr[izNeighMinor[inext] - StartMinor];
 				}
@@ -4520,24 +4579,31 @@ kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species_dbydbeta_xy(
 					if ((izNeighMinor[inext] >= StartMajor + BEGINNING_OF_CENTRAL) &&
 						(izNeighMinor[inext] < EndMajor + BEGINNING_OF_CENTRAL))
 					{
-						memcpy(&next_v, &(shared_vie_verts[izNeighMinor[inext] - BEGINNING_OF_CENTRAL - StartMajor]), sizeof(v4));
+						next_v = shared_v_verts[izNeighMinor[inext] - BEGINNING_OF_CENTRAL - StartMajor];
 						nextpos = shared_pos_verts[izNeighMinor[inext] - BEGINNING_OF_CENTRAL - StartMajor];
 						next_x = shared_regr_verts[izNeighMinor[inext] - BEGINNING_OF_CENTRAL - StartMajor];
 					}
 					else {
 						nextpos = p_info_minor[izNeighMinor[inext]].pos;
-						memcpy(&next_v, &(p_vie_minor[izNeighMinor[inext]]), sizeof(v4));
+						if (iSpecies > 0) {
+							v4 temp = p_vie_minor[izNeighMinor[inext]];
+							next_v.x = temp.vxy.x;
+							next_v.y = temp.vxy.y;
+							next_v.z = (iSpecies == 1) ? temp.viz : temp.vez;
+						} else {
+							next_v = p_v_n[izNeighMinor[inext]];
+						}
 						next_x = p__x[izNeighMinor[inext]];
 					};
 				};
 				if (szPBC[inext] == ROTATE_ME_CLOCKWISE) {
 					nextpos = Clockwise_d*nextpos;
-					next_v.vxy = Clockwise_d*next_v.vxy;
+					RotateClockwise(next_v);
 					next_x = Clockwise_d*next_x;
 				}
 				if (szPBC[inext] == ROTATE_ME_ANTICLOCKWISE) {
 					nextpos = Anticlockwise_d*nextpos;
-					next_v.vxy = Anticlockwise_d*next_v.vxy;
+					RotateAnticlockwise(next_v);
 					next_x = Anticlockwise_d*next_x;
 				}
 
@@ -4560,8 +4626,7 @@ kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species_dbydbeta_xy(
 
 						// USEFUL:
 						if (shared_ita_par[izNeighMinor[i] - StartMinor] == 0.0) bUsableSide = false;
-					}
-					else {
+					} else {
 						if ((izNeighMinor[i] >= StartMajor + BEGINNING_OF_CENTRAL) &&
 							(izNeighMinor[i] < EndMajor + BEGINNING_OF_CENTRAL))
 						{
@@ -4621,26 +4686,22 @@ kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species_dbydbeta_xy(
 						// One of the sides is dipped under the insulator -- set transverse deriv to 0.
 						// Bear in mind we are looking from a vertex into a tri, it can be ins tri.
 
-						ROCgradvx = (opp_x.x - shared_regr_verts[threadIdx.x].x)*(opppos - info.pos) /
+						ROCgradvx = (opp_x.x - shared_regr[threadIdx.x].x)*(opppos - info.pos) /
 							(opppos - info.pos).dot(opppos - info.pos);
-						ROCgradvy = (opp_x.y - shared_regr_verts[threadIdx.x].y)*(opppos - info.pos) /
+						ROCgradvy = (opp_x.y - shared_regr[threadIdx.x].y)*(opppos - info.pos) /
 							(opppos - info.pos).dot(opppos - info.pos);
-					}
-					else {
-
+					} else {
 						
 						ROCgradvx = GetGradientDBydBeta(							
 							prevpos, info.pos, nextpos, opppos,
-							prev_v.vxy.x, shared_vie_verts[threadIdx.x].vxy.x, next_v.vxy.x, opp_v.vxy.x,
-							prev_x.x, shared_regr_verts[threadIdx.x].x, next_x.x, opp_x.x
+							prev_v.x, shared_v[threadIdx.x].x, next_v.x, opp_v.x,
+							prev_x.x, shared_regr[threadIdx.x].x, next_x.x, opp_x.x
 						);
-
 						ROCgradvy = GetGradientDBydBeta(
 							prevpos, info.pos, nextpos, opppos,
-							prev_v.vxy.y, shared_vie_verts[threadIdx.x].vxy.y, next_v.vxy.y, opp_v.vxy.y,
-							prev_x.y, shared_regr_verts[threadIdx.x].y, next_x.y, opp_x.y
-						);
-						
+							prev_v.y, shared_v[threadIdx.x].y, next_v.y, opp_v.y,
+							prev_x.y, shared_regr[threadIdx.x].y, next_x.y, opp_x.y
+						);						
 					}
 					if (info.flag == CROSSING_INS) {
 						char flag = p_info_minor[izNeighMinor[i]].flag;
@@ -4656,166 +4717,179 @@ kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species_dbydbeta_xy(
 				};
 
 				if (bUsableSide) {
-					if ((VISCMAG == 0) || (omega_c.dot(omega_c) < 0.01*0.1*nu*nu))
-					{
-						// run unmagnetised case
-						f64 Pi_xx, Pi_xy, Pi_yx, Pi_yy;// Pi_zx, Pi_zy == 0;
-
-						Pi_xx = -ita_par*THIRD*(4.0*ROCgradvx.x - 2.0*ROCgradvy.y);
-						Pi_xy = -ita_par*(ROCgradvx.y + ROCgradvy.x);
-						Pi_yx = Pi_xy;
-						Pi_yy = -ita_par*THIRD*(4.0*ROCgradvy.y - 2.0*ROCgradvx.x);
-						
+					if (iSpecies == 0) {
+						f64_vec3 visc_contrib;
 						f64_vec2 edge_normal;
 						edge_normal.x = THIRD * (nextpos.y - prevpos.y);
 						edge_normal.y = THIRD * (prevpos.x - nextpos.x);
-
-						f64_vec3 visc_contrib;
-						visc_contrib.x = -over_m_s*(Pi_xx*edge_normal.x + Pi_xy*edge_normal.y);
-						visc_contrib.y = -over_m_s*(Pi_yx*edge_normal.x + Pi_yy*edge_normal.y);
-						visc_contrib.z = 0.0;// -over_m_s*(Pi_zx*edge_normal.x + Pi_zy*edge_normal.y);
+						visc_contrib.x = over_m_n*(ita_par*ROCgradvx.dot(edge_normal)); // if we are looking at higher vz looking out, go up.
+						visc_contrib.y = over_m_n*(ita_par*ROCgradvy.dot(edge_normal));
+						visc_contrib.z = 0.0;
 
 						ownrates_visc += visc_contrib;
-
-						// So we are saying if edge_normal.x > 0 and gradviz.x > 0
-						// then Pi_zx < 0 then ownrates += a positive amount. That is correct.
-					} else {
-						f64_vec3 unit_b, unit_perp, unit_Hall;					
-						f64 Pi_b_b = 0.0, Pi_P_b = 0.0, Pi_P_P = 0.0, Pi_H_b = 0.0, Pi_H_P = 0.0, Pi_H_H = 0.0;
+					}
+					else {
+						if ((VISCMAG == 0) || (omega_c.dot(omega_c) < 0.01*0.1*nu*nu))
 						{
-							f64 W_bb = 0.0, W_bP = 0.0, W_bH = 0.0, W_PP = 0.0, W_PH = 0.0, W_HH = 0.0;
-							// these have to be alive at same time as 9 x partials
-							// but we can make do with 3x partials
-							// 2. Now get partials in magnetic coordinates 
-							f64 omegamod;
-							{
-								f64_vec2 edge_normal;
-								edge_normal.x = THIRD * (nextpos.y - prevpos.y);
-								edge_normal.y = THIRD * (prevpos.x - nextpos.x);
+							// run unmagnetised case
+							f64 Pi_xx, Pi_xy, Pi_yx, Pi_yy;// Pi_zx, Pi_zy == 0;
 
-								f64 omegasq = omega_c.dot(omega_c);
-								omegamod = sqrt(omegasq);
-								unit_b = omega_c / omegamod;
-								unit_perp = Make3(edge_normal, 0.0) - unit_b*(unit_b.dotxy(edge_normal));
-								unit_perp = unit_perp / unit_perp.modulus();
-								unit_Hall = unit_b.cross(unit_perp); // Note sign.
-							}
-							{
-								f64_vec2 intermed;
+							Pi_xx = -ita_par*THIRD*(4.0*ROCgradvx.x - 2.0*ROCgradvy.y);
+							Pi_xy = -ita_par*(ROCgradvx.y + ROCgradvy.x);
+							Pi_yx = Pi_xy;
+							Pi_yy = -ita_par*THIRD*(4.0*ROCgradvy.y - 2.0*ROCgradvx.x);
 
-								// use: d vb / da = b transpose [ dvi/dxj ] a
-								// Prototypical element: a.x b.y dvy/dx
-								// b.x a.y dvx/dy
-								intermed.x = unit_b.dotxy(ROCgradvx);
-								intermed.y = unit_b.dotxy(ROCgradvy);
-								//intermed.z = unit_b.dotxy(gradvz);
-								{
-									f64 dvb_by_db, dvperp_by_db, dvHall_by_db;
-
-									dvb_by_db = unit_b.dotxy(intermed);
-									dvperp_by_db = unit_perp.dotxy(intermed);
-									dvHall_by_db = unit_Hall.dotxy(intermed); // 0
-																			  // This actually is always 0 because vHall isn't changing.
-
-									W_bb += 4.0*THIRD*dvb_by_db;
-									W_bP += dvperp_by_db;
-									W_bH += dvHall_by_db;
-									W_PP -= 2.0*THIRD*dvb_by_db;
-									W_HH -= 2.0*THIRD*dvb_by_db;
-								}
-								{
-									f64 dvb_by_dperp, dvperp_by_dperp,
-										dvHall_by_dperp;
-									// Optimize by getting rid of different labels.
-
-									intermed.x = unit_perp.dotxy(ROCgradvx);
-									intermed.y = unit_perp.dotxy(ROCgradvy);
-									//intermed.z = unit_perp.dotxy(gradvz);
-
-									dvb_by_dperp = unit_b.dotxy(intermed);
-									dvperp_by_dperp = unit_perp.dotxy(intermed);
-									dvHall_by_dperp = unit_Hall.dotxy(intermed); // 0
-
-									W_bb -= 2.0*THIRD*dvperp_by_dperp;
-									W_PP += 4.0*THIRD*dvperp_by_dperp;
-									W_HH -= 2.0*THIRD*dvperp_by_dperp;
-									W_bP += dvb_by_dperp;
-									W_PH += dvHall_by_dperp;
-								}
-								{
-									f64 dvb_by_dHall, dvperp_by_dHall, dvHall_by_dHall;
-
-									intermed.x = unit_Hall.dotxy(ROCgradvx);  // 0
-									intermed.y = unit_Hall.dotxy(ROCgradvy);  // 0
-
-									dvb_by_dHall = unit_b.dotxy(intermed);
-									dvperp_by_dHall = unit_perp.dotxy(intermed);
-									dvHall_by_dHall = unit_Hall.dotxy(intermed);
-
-									// all 0
-
-									W_bb -= 2.0*THIRD*dvHall_by_dHall;
-									W_PP -= 2.0*THIRD*dvHall_by_dHall;
-									W_HH += 4.0*THIRD*dvHall_by_dHall;
-									W_bH += dvb_by_dHall;
-									W_PH += dvperp_by_dHall;
-								}
-							}
-							{
-								f64 ita_1 = ita_par*(nu*nu / (nu*nu + omegamod*omegamod));
-
-								Pi_b_b += -ita_par*W_bb;
-								Pi_P_P += -0.5*(ita_par + ita_1)*W_PP - 0.5*(ita_par - ita_1)*W_HH;
-								Pi_H_H += -0.5*(ita_par + ita_1)*W_HH - 0.5*(ita_par - ita_1)*W_PP;
-								Pi_H_P += -ita_1*W_PH;
-							}
-							{
-								f64 ita_2 = ita_par*(nu*nu / (nu*nu + 0.25*omegamod*omegamod));
-								Pi_P_b += -ita_2*W_bP;
-								Pi_H_b += -ita_2*W_bH;
-							}
-							{
-								f64 ita_3 = ita_par*(nu*omegamod / (nu*nu + omegamod*omegamod));
-								Pi_P_P -= ita_3*W_PH;
-								Pi_H_H += ita_3*W_PH;
-								Pi_H_P += 0.5*ita_3*(W_PP - W_HH);
-							}
-							{
-								f64 ita_4 = 0.5*ita_par*(nu*omegamod / (nu*nu + 0.25*omegamod*omegamod));
-								Pi_P_b += -ita_4*W_bH;
-								Pi_H_b += ita_4*W_bP;
-							}
-						} // scope W
-
-						f64 momflux_b, momflux_perp, momflux_Hall;
-						{
-							// Most efficient way: compute mom flux in magnetic coords
-							f64_vec3 mag_edge;
 							f64_vec2 edge_normal;
 							edge_normal.x = THIRD * (nextpos.y - prevpos.y);
 							edge_normal.y = THIRD * (prevpos.x - nextpos.x);
 
-							mag_edge.x = unit_b.x*edge_normal.x + unit_b.y*edge_normal.y;
-							mag_edge.y = unit_perp.x*edge_normal.x + unit_perp.y*edge_normal.y;
-							mag_edge.z = unit_Hall.x*edge_normal.x + unit_Hall.y*edge_normal.y; // 0
+							f64_vec3 visc_contrib;
+							visc_contrib.x = -over_m_s*(Pi_xx*edge_normal.x + Pi_xy*edge_normal.y);
+							visc_contrib.y = -over_m_s*(Pi_yx*edge_normal.x + Pi_yy*edge_normal.y);
+							visc_contrib.z = 0.0;// -over_m_s*(Pi_zx*edge_normal.x + Pi_zy*edge_normal.y);
 
-																								// So basically, Pi_H_H is not only 0, it is never used.
+							ownrates_visc += visc_contrib;
 
-							momflux_b = -(Pi_b_b*mag_edge.x + Pi_P_b*mag_edge.y + Pi_H_b*mag_edge.z);
-							momflux_perp = -(Pi_P_b*mag_edge.x + Pi_P_P*mag_edge.y + Pi_H_P*mag_edge.z);
-							momflux_Hall = -(Pi_H_b*mag_edge.x + Pi_H_P*mag_edge.y + Pi_H_H*mag_edge.z);
+							// So we are saying if edge_normal.x > 0 and gradviz.x > 0
+							// then Pi_zx < 0 then ownrates += a positive amount. That is correct.
 						}
+						else {
+							f64_vec3 unit_b, unit_perp, unit_Hall;
+							f64 Pi_b_b = 0.0, Pi_P_b = 0.0, Pi_P_P = 0.0, Pi_H_b = 0.0, Pi_H_P = 0.0, Pi_H_H = 0.0;
+							{
+								f64 W_bb = 0.0, W_bP = 0.0, W_bH = 0.0, W_PP = 0.0, W_PH = 0.0, W_HH = 0.0;
+								// these have to be alive at same time as 9 x partials
+								// but we can make do with 3x partials
+								// 2. Now get partials in magnetic coordinates 
+								f64 omegamod;
+								{
+									f64_vec2 edge_normal;
+									edge_normal.x = THIRD * (nextpos.y - prevpos.y);
+									edge_normal.y = THIRD * (prevpos.x - nextpos.x);
 
-						// ROC :
-						f64_vec3 visc_contrib;
-						visc_contrib.x = over_m_s*(unit_b.x*momflux_b + unit_perp.x*momflux_perp + unit_Hall.x*momflux_Hall);
-						visc_contrib.y = over_m_s*(unit_b.y*momflux_b + unit_perp.y*momflux_perp + unit_Hall.y*momflux_Hall);
-						visc_contrib.z = over_m_s*(unit_b.z*momflux_b + unit_perp.z*momflux_perp + unit_Hall.z*momflux_Hall);
+									f64 omegasq = omega_c.dot(omega_c);
+									omegamod = sqrt(omegasq);
+									unit_b = omega_c / omegamod;
+									unit_perp = Make3(edge_normal, 0.0) - unit_b*(unit_b.dotxy(edge_normal));
+									unit_perp = unit_perp / unit_perp.modulus();
+									unit_Hall = unit_b.cross(unit_perp); // Note sign.
+								}
+								{
+									f64_vec2 intermed;
 
-						ownrates_visc += visc_contrib;
+									// use: d vb / da = b transpose [ dvi/dxj ] a
+									// Prototypical element: a.x b.y dvy/dx
+									// b.x a.y dvx/dy
+									intermed.x = unit_b.dotxy(ROCgradvx);
+									intermed.y = unit_b.dotxy(ROCgradvy);
+									//intermed.z = unit_b.dotxy(gradvz);
+									{
+										f64 dvb_by_db, dvperp_by_db, dvHall_by_db;
 
+										dvb_by_db = unit_b.dotxy(intermed);
+										dvperp_by_db = unit_perp.dotxy(intermed);
+										dvHall_by_db = unit_Hall.dotxy(intermed); // 0
+																				  // This actually is always 0 because vHall isn't changing.
+
+										W_bb += 4.0*THIRD*dvb_by_db;
+										W_bP += dvperp_by_db;
+										W_bH += dvHall_by_db;
+										W_PP -= 2.0*THIRD*dvb_by_db;
+										W_HH -= 2.0*THIRD*dvb_by_db;
+									}
+									{
+										f64 dvb_by_dperp, dvperp_by_dperp,
+											dvHall_by_dperp;
+										// Optimize by getting rid of different labels.
+
+										intermed.x = unit_perp.dotxy(ROCgradvx);
+										intermed.y = unit_perp.dotxy(ROCgradvy);
+										//intermed.z = unit_perp.dotxy(gradvz);
+
+										dvb_by_dperp = unit_b.dotxy(intermed);
+										dvperp_by_dperp = unit_perp.dotxy(intermed);
+										dvHall_by_dperp = unit_Hall.dotxy(intermed); // 0
+
+										W_bb -= 2.0*THIRD*dvperp_by_dperp;
+										W_PP += 4.0*THIRD*dvperp_by_dperp;
+										W_HH -= 2.0*THIRD*dvperp_by_dperp;
+										W_bP += dvb_by_dperp;
+										W_PH += dvHall_by_dperp;
+									}
+									{
+										f64 dvb_by_dHall, dvperp_by_dHall, dvHall_by_dHall;
+
+										intermed.x = unit_Hall.dotxy(ROCgradvx);  // 0
+										intermed.y = unit_Hall.dotxy(ROCgradvy);  // 0
+
+										dvb_by_dHall = unit_b.dotxy(intermed);
+										dvperp_by_dHall = unit_perp.dotxy(intermed);
+										dvHall_by_dHall = unit_Hall.dotxy(intermed);
+
+										// all 0
+
+										W_bb -= 2.0*THIRD*dvHall_by_dHall;
+										W_PP -= 2.0*THIRD*dvHall_by_dHall;
+										W_HH += 4.0*THIRD*dvHall_by_dHall;
+										W_bH += dvb_by_dHall;
+										W_PH += dvperp_by_dHall;
+									}
+								}
+								{
+									f64 ita_1 = ita_par*(nu*nu / (nu*nu + omegamod*omegamod));
+
+									Pi_b_b += -ita_par*W_bb;
+									Pi_P_P += -0.5*(ita_par + ita_1)*W_PP - 0.5*(ita_par - ita_1)*W_HH;
+									Pi_H_H += -0.5*(ita_par + ita_1)*W_HH - 0.5*(ita_par - ita_1)*W_PP;
+									Pi_H_P += -ita_1*W_PH;
+								}
+								{
+									f64 ita_2 = ita_par*(nu*nu / (nu*nu + 0.25*omegamod*omegamod));
+									Pi_P_b += -ita_2*W_bP;
+									Pi_H_b += -ita_2*W_bH;
+								}
+								{
+									f64 ita_3 = ita_par*(nu*omegamod / (nu*nu + omegamod*omegamod));
+									Pi_P_P -= ita_3*W_PH;
+									Pi_H_H += ita_3*W_PH;
+									Pi_H_P += 0.5*ita_3*(W_PP - W_HH);
+								}
+								{
+									f64 ita_4 = 0.5*ita_par*(nu*omegamod / (nu*nu + 0.25*omegamod*omegamod));
+									Pi_P_b += -ita_4*W_bH;
+									Pi_H_b += ita_4*W_bP;
+								}
+							} // scope W
+
+							f64 momflux_b, momflux_perp, momflux_Hall;
+							{
+								// Most efficient way: compute mom flux in magnetic coords
+								f64_vec3 mag_edge;
+								f64_vec2 edge_normal;
+								edge_normal.x = THIRD * (nextpos.y - prevpos.y);
+								edge_normal.y = THIRD * (prevpos.x - nextpos.x);
+
+								mag_edge.x = unit_b.x*edge_normal.x + unit_b.y*edge_normal.y;
+								mag_edge.y = unit_perp.x*edge_normal.x + unit_perp.y*edge_normal.y;
+								mag_edge.z = unit_Hall.x*edge_normal.x + unit_Hall.y*edge_normal.y; // 0
+
+																									// So basically, Pi_H_H is not only 0, it is never used.
+
+								momflux_b = -(Pi_b_b*mag_edge.x + Pi_P_b*mag_edge.y + Pi_H_b*mag_edge.z);
+								momflux_perp = -(Pi_P_b*mag_edge.x + Pi_P_P*mag_edge.y + Pi_H_P*mag_edge.z);
+								momflux_Hall = -(Pi_H_b*mag_edge.x + Pi_H_P*mag_edge.y + Pi_H_H*mag_edge.z);
+							}
+
+							// ROC :
+							f64_vec3 visc_contrib;
+							visc_contrib.x = over_m_s*(unit_b.x*momflux_b + unit_perp.x*momflux_perp + unit_Hall.x*momflux_Hall);
+							visc_contrib.y = over_m_s*(unit_b.y*momflux_b + unit_perp.y*momflux_perp + unit_Hall.y*momflux_Hall);
+							visc_contrib.z = over_m_s*(unit_b.z*momflux_b + unit_perp.z*momflux_perp + unit_Hall.z*momflux_Hall);
+
+							ownrates_visc += visc_contrib;
+
+						};
 					};
-
 				}; // bUsableSide
 
 				prevpos = opppos;
@@ -4832,7 +4906,8 @@ kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species_dbydbeta_xy(
 		} else {
 			// Not domain tri or crossing_ins
 			// Did we fairly model the insulator as a reflection of v?
-		}
+			memset(&(p_ROCMAR[iMinor]), 0, sizeof(f64_vec3));
+		};
 	} // scope
 }
 
@@ -4843,6 +4918,7 @@ kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species_dbydbeta_z(
 
 	structural * __restrict__ p_info_minor,
 	v4 * __restrict__ p_vie_minor,
+	f64_vec3 * __restrict__ p_v_n,
 	f64 * __restrict__ p__x, // regressor vz
 
 	long * __restrict__ p_izTri,
@@ -4856,6 +4932,7 @@ kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species_dbydbeta_z(
 
 	f64_vec3 * __restrict__ p_ROCMAR,
 	int const iSpecies,
+	f64 const m_s,
 	f64 const over_m_s
 ) // easy way to put it in constant memory
 {
@@ -4892,7 +4969,7 @@ kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species_dbydbeta_z(
 	f64 visc_htg;
 
 	shared_pos[threadIdx.x] = p_info_minor[iMinor].pos;
-	{
+	if (iSpecies > 0){
 		v4 v = p_vie_minor[iMinor];
 
 		if (iSpecies == 1) {
@@ -4900,6 +4977,8 @@ kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species_dbydbeta_z(
 		} else {
 			shared_vz[threadIdx.x] = v.vez;
 		}
+	} else {
+		shared_vz[threadIdx.x] = p_v_n[iMinor].z;
 	}
 
 	shared_regr[threadIdx.x] = p__x[iMinor];
@@ -4919,13 +4998,17 @@ kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species_dbydbeta_z(
 		shared_B_verts[threadIdx.x] = p_B_minor[iVertex + BEGINNING_OF_CENTRAL].xypart();
 		if ((info.flag == DOMAIN_VERTEX) || (info.flag == OUTERMOST))
 		{
-			v4 v;
-			memcpy(&(v), &(p_vie_minor[iVertex + BEGINNING_OF_CENTRAL]), sizeof(v4));
-			if (iSpecies == 1) {
-				shared_vz_verts[threadIdx.x] = v.viz;
+			if (iSpecies > 0) {
+				v4 v;
+				memcpy(&(v), &(p_vie_minor[iVertex + BEGINNING_OF_CENTRAL]), sizeof(v4));
+				if (iSpecies == 1) {
+					shared_vz_verts[threadIdx.x] = v.viz;
+				} else {
+					shared_vz_verts[threadIdx.x] = v.vez;
+				}
 			} else {
-				shared_vz_verts[threadIdx.x] = v.vez;
-			}
+				shared_vz_verts[threadIdx.x] = p_v_n[iVertex + BEGINNING_OF_CENTRAL].z;
+			};
 
 			shared_ita_par_verts[threadIdx.x] = p_ita_parallel_minor[iVertex + BEGINNING_OF_CENTRAL];
 			shared_nu_verts[threadIdx.x] = p_nu_minor[iVertex + BEGINNING_OF_CENTRAL];
@@ -4934,8 +5017,7 @@ kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species_dbydbeta_z(
 			// I mean, I could handle it, and do flows only if the flag does not come up OUTER_FRILL.
 			// OK just do that.
 
-		}
-		else {
+		} else {
 			// it still manages to coalesce, let's hope, because ShardModel is 13 doubles not 12.
 			memset(&(shared_vz_verts[threadIdx.x]), 0, sizeof(f64));
 			memset(&(shared_regr_verts[threadIdx.x]), 0, sizeof(f64));
@@ -4977,11 +5059,16 @@ kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species_dbydbeta_z(
 				prevpos = shared_pos[izTri[iprev] - StartMinor];
 			}
 			else {
-				if (iSpecies == 1) {
-					prev_v = p_vie_minor[izTri[iprev]].viz;
+				if (iSpecies == 0) {
+					prev_v = p_v_n[izTri[iprev]].z;
 				} else {
-					prev_v = p_vie_minor[izTri[iprev]].vez;
-				}
+					if (iSpecies == 1) {
+						prev_v = p_vie_minor[izTri[iprev]].viz;
+					}
+					else {
+						prev_v = p_vie_minor[izTri[iprev]].vez;
+					}
+				};
 				prev_x = p__x[izTri[iprev]];
 				prevpos = p_info_minor[izTri[iprev]].pos;
 			}
@@ -4999,11 +5086,16 @@ kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species_dbydbeta_z(
 				opp_x = shared_regr[izTri[i] - StartMinor];
 			}
 			else {
-				if (iSpecies == 1) {
-					opp_v = p_vie_minor[izTri[i]].viz;
+				if (iSpecies == 0) {
+					opp_v = p_v_n[izTri[i]].z;
 				} else {
-					opp_v = p_vie_minor[izTri[i]].vez;
-				}
+					if (iSpecies == 1) {
+						opp_v = p_vie_minor[izTri[i]].viz;
+					}
+					else {
+						opp_v = p_vie_minor[izTri[i]].vez;
+					}
+				};
 				opppos = p_info_minor[izTri[i]].pos;
 				opp_x = p__x[izTri[i]];
 			}
@@ -5037,11 +5129,16 @@ kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species_dbydbeta_z(
 					nextpos = shared_pos[izTri[inext] - StartMinor];
 					next_x = shared_regr[izTri[inext] - StartMinor];
 				} else {
-					if (iSpecies == 1) {
-						next_v = p_vie_minor[izTri[inext]].viz;
+					if (iSpecies == 0) {
+						next_v = p_v_n[izTri[inext]].z;
 					} else {
-						next_v = p_vie_minor[izTri[inext]].vez;
-					}
+						if (iSpecies == 1) {
+							next_v = p_vie_minor[izTri[inext]].viz;
+						}
+						else {
+							next_v = p_vie_minor[izTri[inext]].vez;
+						}
+					};
 					nextpos = p_info_minor[izTri[inext]].pos;
 					next_x = p__x[izTri[inext]];
 				}
@@ -5100,177 +5197,190 @@ kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species_dbydbeta_z(
 							(opppos - info.pos).dot(opppos - info.pos);
 						
 					} else {
+
 						ROCgradvz =
 							GetGradientDBydBeta(
 								prevpos, info.pos, nextpos, opppos,
 								prev_v, shared_vz_verts[threadIdx.x], next_v, opp_v,
 								prev_x, shared_regr_verts[threadIdx.x], next_x, opp_x
 							);
-					}
-				}
+					};
+				};
 
 				if (ita_par > 0.0) {
-					if ((VISCMAG == 0) || (omega_c.dot(omega_c) < 0.01*0.1*nu*nu))
-					{
-						// run unmagnetised case
-						f64 Pi_zx, Pi_zy;
 
-						//Pi_xx = -ita_par*THIRD*(4.0*ROCgradvx.x - 2.0*ROCgradvy.y);
-						//Pi_xy = -ita_par*(ROCgradvx.y + ROCgradvy.x);
-						//Pi_yx = Pi_xy;
-						//Pi_yy = -ita_par*THIRD*(4.0*ROCgradvy.y - 2.0*ROCgradvx.x);
-						Pi_zx = -ita_par*(ROCgradvz.x);
-						Pi_zy = -ita_par*(ROCgradvz.y);
-
+					if (iSpecies == 0) {
 						f64 visc_contrib;
 						f64_vec2 edge_normal;
 						edge_normal.x = THIRD * (nextpos.y - prevpos.y);
 						edge_normal.y = THIRD * (prevpos.x - nextpos.x);
-
-						//visc_contrib.x = 0.0;
-						//visc_contrib.y = 0.0;
-						visc_contrib = -over_m_s*(Pi_zx*edge_normal.x + Pi_zy*edge_normal.y);
+						visc_contrib = over_m_n*(ita_par*ROCgradvz.dot(edge_normal));
 
 						ownrates_visc.z += visc_contrib;
 					}
 					else {
-
-						f64_vec3 unit_b, unit_perp, unit_Hall;
-						f64 Pi_b_b = 0.0, Pi_P_b = 0.0, Pi_P_P = 0.0, Pi_H_b = 0.0, Pi_H_P = 0.0, Pi_H_H = 0.0;
+						if ((VISCMAG == 0) || (omega_c.dot(omega_c) < 0.01*0.1*nu*nu))
 						{
-							f64 W_bb = 0.0, W_bP = 0.0, W_bH = 0.0, W_PP = 0.0, W_PH = 0.0, W_HH = 0.0;
-							// these have to be alive at same time as 9 x partials
-							// but we can make do with 3x partials
-							// 2. Now get partials in magnetic coordinates 
-							f64 omegamod;
-							{
-								f64_vec2 edge_normal;
-								edge_normal.x = THIRD * (nextpos.y - prevpos.y);
-								edge_normal.y = THIRD * (prevpos.x - nextpos.x);
+							// run unmagnetised case (actually same as neutral ... )
+							f64 Pi_zx, Pi_zy;
 
-								f64 omegasq = omega_c.dot(omega_c);
-								omegamod = sqrt(omegasq);
-								unit_b = omega_c / omegamod;
-								unit_perp = Make3(edge_normal, 0.0) - unit_b*(unit_b.dotxy(edge_normal));
-								unit_perp = unit_perp / unit_perp.modulus();
-								unit_Hall = unit_b.cross(unit_perp); // Note sign.
-							}
-							{
-								f64 intermedz;
+							//Pi_xx = -ita_par*THIRD*(4.0*ROCgradvx.x - 2.0*ROCgradvy.y);
+							//Pi_xy = -ita_par*(ROCgradvx.y + ROCgradvy.x);
+							//Pi_yx = Pi_xy;
+							//Pi_yy = -ita_par*THIRD*(4.0*ROCgradvy.y - 2.0*ROCgradvx.x);
+							Pi_zx = -ita_par*(ROCgradvz.x);
+							Pi_zy = -ita_par*(ROCgradvz.y);
 
-								// use: d vb / da = b transpose [ dvi/dxj ] a
-								// Prototypical element: a.x b.y dvy/dx
-								// b.x a.y dvx/dy
-								intermedz = unit_b.dotxy(ROCgradvz);
-								{
-									f64 dvb_by_db, dvperp_by_db, dvHall_by_db;
-
-									dvb_by_db = unit_b.z*(intermedz);       // 0
-									dvperp_by_db = unit_perp.z*(intermedz); // 0
-									dvHall_by_db = unit_Hall.z*(intermedz); 
-																		
-									W_bb += 4.0*THIRD*dvb_by_db;
-									W_bP += dvperp_by_db;
-									W_bH += dvHall_by_db;     // nonzero
-									W_PP -= 2.0*THIRD*dvb_by_db;
-									W_HH -= 2.0*THIRD*dvb_by_db;
-								}
-								{
-									f64 dvb_by_dperp, dvperp_by_dperp,
-										dvHall_by_dperp;
-									// Optimize by getting rid of different labels.
-
-									intermedz = unit_perp.dotxy(ROCgradvz);
-									//intermed.z = unit_perp.dotxy(gradvz);
-
-									dvb_by_dperp = unit_b.z*(intermedz);
-									dvperp_by_dperp = unit_perp.z*(intermedz);
-									dvHall_by_dperp = unit_Hall.z*(intermedz); // 0
-
-									W_bb -= 2.0*THIRD*dvperp_by_dperp;
-									W_PP += 4.0*THIRD*dvperp_by_dperp;
-									W_HH -= 2.0*THIRD*dvperp_by_dperp;
-									W_bP += dvb_by_dperp;
-									W_PH += dvHall_by_dperp;
-								}
-								{
-									f64 dvb_by_dHall, dvperp_by_dHall, dvHall_by_dHall;
-
-									intermedz = unit_Hall.dotxy(ROCgradvz);  // 0
-									
-									// These are all always 0 ! Because nothing changes in z direction.
-
-									dvb_by_dHall = unit_b.z*(intermedz);
-									dvperp_by_dHall = unit_perp.z*(intermedz);
-									dvHall_by_dHall = unit_Hall.z*(intermedz);
-
-									// all 0
-
-									W_bb -= 2.0*THIRD*dvHall_by_dHall;
-									W_PP -= 2.0*THIRD*dvHall_by_dHall;
-									W_HH += 4.0*THIRD*dvHall_by_dHall;
-									W_bH += dvb_by_dHall;
-									W_PH += dvperp_by_dHall;
-								}
-							}
-							{
-								f64 ita_1 = ita_par*(nu*nu / (nu*nu + omegamod*omegamod));
-
-								Pi_b_b += -ita_par*W_bb;
-								Pi_P_P += -0.5*(ita_par + ita_1)*W_PP - 0.5*(ita_par - ita_1)*W_HH;
-								Pi_H_H += -0.5*(ita_par + ita_1)*W_HH - 0.5*(ita_par - ita_1)*W_PP;
-								Pi_H_P += -ita_1*W_PH;
-							}
-							{
-								f64 ita_2 = ita_par*(nu*nu / (nu*nu + 0.25*omegamod*omegamod));
-								Pi_P_b += -ita_2*W_bP;
-								Pi_H_b += -ita_2*W_bH;
-							}
-							{
-								f64 ita_3 = ita_par*(nu*omegamod / (nu*nu + omegamod*omegamod));
-								Pi_P_P -= ita_3*W_PH;
-								Pi_H_H += ita_3*W_PH;
-								Pi_H_P += 0.5*ita_3*(W_PP - W_HH);
-							}
-							{
-								f64 ita_4 = 0.5*ita_par*(nu*omegamod / (nu*nu + 0.25*omegamod*omegamod));
-								Pi_P_b += -ita_4*W_bH;
-								Pi_H_b += ita_4*W_bP;
-							}
-						} // scope W
-
-						f64 momflux_b, momflux_perp, momflux_Hall;
-						{
-							// Most efficient way: compute mom flux in magnetic coords
-							f64_vec3 mag_edge;
+							f64 visc_contrib;
 							f64_vec2 edge_normal;
 							edge_normal.x = THIRD * (nextpos.y - prevpos.y);
 							edge_normal.y = THIRD * (prevpos.x - nextpos.x);
 
-							mag_edge.x = unit_b.x*edge_normal.x + unit_b.y*edge_normal.y;
-							mag_edge.y = unit_perp.x*edge_normal.x + unit_perp.y*edge_normal.y;
-							mag_edge.z = unit_Hall.x*edge_normal.x + unit_Hall.y*edge_normal.y; // 0
+							//visc_contrib.x = 0.0;
+							//visc_contrib.y = 0.0;
+							visc_contrib = -over_m_s*(Pi_zx*edge_normal.x + Pi_zy*edge_normal.y);
 
-							// So basically, Pi_H_H is not only 0, it is never used.
-
-							momflux_b = -(Pi_b_b*mag_edge.x + Pi_P_b*mag_edge.y + Pi_H_b*mag_edge.z);
-							momflux_perp = -(Pi_P_b*mag_edge.x + Pi_P_P*mag_edge.y + Pi_H_P*mag_edge.z);
-							momflux_Hall = -(Pi_H_b*mag_edge.x + Pi_H_P*mag_edge.y + Pi_H_H*mag_edge.z);
+							ownrates_visc.z += visc_contrib;
 						}
+						else {
 
-						// ROC :
-						f64_vec3 visc_contrib;
-						visc_contrib.x = over_m_s*(unit_b.x*momflux_b + unit_perp.x*momflux_perp + unit_Hall.x*momflux_Hall);
-						visc_contrib.y = over_m_s*(unit_b.y*momflux_b + unit_perp.y*momflux_perp + unit_Hall.y*momflux_Hall);
-						visc_contrib.z = over_m_s*(unit_b.z*momflux_b + unit_perp.z*momflux_perp + unit_Hall.z*momflux_Hall);
+							f64_vec3 unit_b, unit_perp, unit_Hall;
+							f64 Pi_b_b = 0.0, Pi_P_b = 0.0, Pi_P_P = 0.0, Pi_H_b = 0.0, Pi_H_P = 0.0, Pi_H_H = 0.0;
+							{
+								f64 W_bb = 0.0, W_bP = 0.0, W_bH = 0.0, W_PP = 0.0, W_PH = 0.0, W_HH = 0.0;
+								// these have to be alive at same time as 9 x partials
+								// but we can make do with 3x partials
+								// 2. Now get partials in magnetic coordinates 
+								f64 omegamod;
+								{
+									f64_vec2 edge_normal;
+									edge_normal.x = THIRD * (nextpos.y - prevpos.y);
+									edge_normal.y = THIRD * (prevpos.x - nextpos.x);
 
-						ownrates_visc += visc_contrib;
+									f64 omegasq = omega_c.dot(omega_c);
+									omegamod = sqrt(omegasq);
+									unit_b = omega_c / omegamod;
+									unit_perp = Make3(edge_normal, 0.0) - unit_b*(unit_b.dotxy(edge_normal));
+									unit_perp = unit_perp / unit_perp.modulus();
+									unit_Hall = unit_b.cross(unit_perp); // Note sign.
+								}
+								{
+									f64 intermedz;
 
-					}
+									// use: d vb / da = b transpose [ dvi/dxj ] a
+									// Prototypical element: a.x b.y dvy/dx
+									// b.x a.y dvx/dy
+									intermedz = unit_b.dotxy(ROCgradvz);
+									{
+										f64 dvb_by_db, dvperp_by_db, dvHall_by_db;
+
+										dvb_by_db = unit_b.z*(intermedz);       // 0
+										dvperp_by_db = unit_perp.z*(intermedz); // 0
+										dvHall_by_db = unit_Hall.z*(intermedz);
+
+										W_bb += 4.0*THIRD*dvb_by_db;
+										W_bP += dvperp_by_db;
+										W_bH += dvHall_by_db;     // nonzero
+										W_PP -= 2.0*THIRD*dvb_by_db;
+										W_HH -= 2.0*THIRD*dvb_by_db;
+									}
+									{
+										f64 dvb_by_dperp, dvperp_by_dperp,
+											dvHall_by_dperp;
+										// Optimize by getting rid of different labels.
+
+										intermedz = unit_perp.dotxy(ROCgradvz);
+										//intermed.z = unit_perp.dotxy(gradvz);
+
+										dvb_by_dperp = unit_b.z*(intermedz);
+										dvperp_by_dperp = unit_perp.z*(intermedz);
+										dvHall_by_dperp = unit_Hall.z*(intermedz); // 0
+
+										W_bb -= 2.0*THIRD*dvperp_by_dperp;
+										W_PP += 4.0*THIRD*dvperp_by_dperp;
+										W_HH -= 2.0*THIRD*dvperp_by_dperp;
+										W_bP += dvb_by_dperp;
+										W_PH += dvHall_by_dperp;
+									}
+									{
+										f64 dvb_by_dHall, dvperp_by_dHall, dvHall_by_dHall;
+
+										intermedz = unit_Hall.dotxy(ROCgradvz);  // 0
+
+										// These are all always 0 ! Because nothing changes in z direction.
+
+										dvb_by_dHall = unit_b.z*(intermedz);
+										dvperp_by_dHall = unit_perp.z*(intermedz);
+										dvHall_by_dHall = unit_Hall.z*(intermedz);
+
+										// all 0
+
+										W_bb -= 2.0*THIRD*dvHall_by_dHall;
+										W_PP -= 2.0*THIRD*dvHall_by_dHall;
+										W_HH += 4.0*THIRD*dvHall_by_dHall;
+										W_bH += dvb_by_dHall;
+										W_PH += dvperp_by_dHall;
+									}
+								}
+								{
+									f64 ita_1 = ita_par*(nu*nu / (nu*nu + omegamod*omegamod));
+
+									Pi_b_b += -ita_par*W_bb;
+									Pi_P_P += -0.5*(ita_par + ita_1)*W_PP - 0.5*(ita_par - ita_1)*W_HH;
+									Pi_H_H += -0.5*(ita_par + ita_1)*W_HH - 0.5*(ita_par - ita_1)*W_PP;
+									Pi_H_P += -ita_1*W_PH;
+								}
+								{
+									f64 ita_2 = ita_par*(nu*nu / (nu*nu + 0.25*omegamod*omegamod));
+									Pi_P_b += -ita_2*W_bP;
+									Pi_H_b += -ita_2*W_bH;
+								}
+								{
+									f64 ita_3 = ita_par*(nu*omegamod / (nu*nu + omegamod*omegamod));
+									Pi_P_P -= ita_3*W_PH;
+									Pi_H_H += ita_3*W_PH;
+									Pi_H_P += 0.5*ita_3*(W_PP - W_HH);
+								}
+								{
+									f64 ita_4 = 0.5*ita_par*(nu*omegamod / (nu*nu + 0.25*omegamod*omegamod));
+									Pi_P_b += -ita_4*W_bH;
+									Pi_H_b += ita_4*W_bP;
+								}
+							} // scope W
+
+							f64 momflux_b, momflux_perp, momflux_Hall;
+							{
+								// Most efficient way: compute mom flux in magnetic coords
+								f64_vec3 mag_edge;
+								f64_vec2 edge_normal;
+								edge_normal.x = THIRD * (nextpos.y - prevpos.y);
+								edge_normal.y = THIRD * (prevpos.x - nextpos.x);
+
+								mag_edge.x = unit_b.x*edge_normal.x + unit_b.y*edge_normal.y;
+								mag_edge.y = unit_perp.x*edge_normal.x + unit_perp.y*edge_normal.y;
+								mag_edge.z = unit_Hall.x*edge_normal.x + unit_Hall.y*edge_normal.y; // 0
+
+								// So basically, Pi_H_H is not only 0, it is never used.
+
+								momflux_b = -(Pi_b_b*mag_edge.x + Pi_P_b*mag_edge.y + Pi_H_b*mag_edge.z);
+								momflux_perp = -(Pi_P_b*mag_edge.x + Pi_P_P*mag_edge.y + Pi_H_P*mag_edge.z);
+								momflux_Hall = -(Pi_H_b*mag_edge.x + Pi_H_P*mag_edge.y + Pi_H_H*mag_edge.z);
+							}
+
+							// ROC :
+							f64_vec3 visc_contrib;
+							visc_contrib.x = over_m_s*(unit_b.x*momflux_b + unit_perp.x*momflux_perp + unit_Hall.x*momflux_Hall);
+							visc_contrib.y = over_m_s*(unit_b.y*momflux_b + unit_perp.y*momflux_perp + unit_Hall.y*momflux_Hall);
+							visc_contrib.z = over_m_s*(unit_b.z*momflux_b + unit_perp.z*momflux_perp + unit_Hall.z*momflux_Hall);
+
+							ownrates_visc += visc_contrib;
+
+						};
+					};
 				}; // was ita_par == 0
-				   // v0.vez = vie_k.vez + h_use * MAR.z / (n_use.n*AreaMinor);
+				// v0.vez = vie_k.vez + h_use * MAR.z / (n_use.n*AreaMinor);
 
-				   // Just leaving these but they won't do anything :
+				// Just leaving these but they won't do anything :
 				prevpos = opppos;
 				prev_v = opp_v;
 				prev_x = opp_x;
@@ -5281,9 +5391,8 @@ kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species_dbydbeta_z(
 
 			   // Overwrite instead of update:
 			memcpy(p_ROCMAR + iVertex + BEGINNING_OF_CENTRAL, &ownrates_visc, sizeof(f64_vec3));
-		}
-		else {
-			// NOT domain vertex: Do nothing			
+		} else {			
+			memset(p_ROCMAR + iVertex + BEGINNING_OF_CENTRAL, 0, sizeof(f64_vec3));
 		};
 	};
 	// __syncthreads(); // end of first vertex part
@@ -5321,13 +5430,17 @@ kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species_dbydbeta_z(
 					prev_v = shared_vz_verts[izNeighMinor[iprev] - BEGINNING_OF_CENTRAL - StartMajor];
 					prevpos = shared_pos_verts[izNeighMinor[iprev] - BEGINNING_OF_CENTRAL - StartMajor];
 					prev_x = shared_regr_verts[izNeighMinor[iprev] - BEGINNING_OF_CENTRAL - StartMajor];
-				}
-				else {
+				} else {
 					prevpos = p_info_minor[izNeighMinor[iprev]].pos;
-					if (iSpecies == 1) {
-						prev_v = p_vie_minor[izNeighMinor[iprev]].viz;
+
+					if (iSpecies == 0) {
+						prev_v = p_v_n[izNeighMinor[iprev]].z;
 					} else {
-						prev_v = p_vie_minor[izNeighMinor[iprev]].vez;
+						if (iSpecies == 1) {
+							prev_v = p_vie_minor[izNeighMinor[iprev]].viz;
+						} else {
+							prev_v = p_vie_minor[izNeighMinor[iprev]].vez;
+						};
 					};
 					prev_x = p__x[izNeighMinor[iprev]];
 				};
@@ -5355,11 +5468,15 @@ kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species_dbydbeta_z(
 				}
 				else {
 					opppos = p_info_minor[izNeighMinor[i]].pos;
-					if (iSpecies == 1) {
-						opp_v = p_vie_minor[izNeighMinor[i]].viz;
+					if (iSpecies == 0) {
+						opp_v = p_v_n[izNeighMinor[i]].z;
 					} else {
-						opp_v = p_vie_minor[izNeighMinor[i]].vez;
-					}
+						if (iSpecies == 1) {
+							opp_v = p_vie_minor[izNeighMinor[i]].viz;
+						} else {
+							opp_v = p_vie_minor[izNeighMinor[i]].vez;
+						};
+					};
 					opp_x = p__x[izNeighMinor[i]];
 				};
 			};
@@ -5393,12 +5510,901 @@ kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species_dbydbeta_z(
 					}
 					else {
 						nextpos = p_info_minor[izNeighMinor[inext]].pos;
-						if (iSpecies == 1) {
-							next_v = p_vie_minor[izNeighMinor[inext]].viz;
+						if (iSpecies == 0) {
+							next_v = p_v_n[izNeighMinor[inext]].z;
 						} else {
-							next_v = p_vie_minor[izNeighMinor[inext]].vez;
-						}
+							if (iSpecies == 1) {
+								next_v = p_vie_minor[izNeighMinor[inext]].viz;
+							}
+							else {
+								next_v = p_vie_minor[izNeighMinor[inext]].vez;
+							}
+						};
 						next_x = p__x[izNeighMinor[inext]];
+					};
+				};
+				if (szPBC[inext] == ROTATE_ME_CLOCKWISE) {
+					nextpos = Clockwise_d*nextpos;
+				}
+				if (szPBC[inext] == ROTATE_ME_ANTICLOCKWISE) {
+					nextpos = Anticlockwise_d*nextpos;
+				}
+
+				bool bUsableSide = true;
+				{
+					f64_vec2 opp_B(0.0, 0.0);
+					// newly uncommented:
+					if ((izNeighMinor[i] >= StartMinor) && (izNeighMinor[i] < EndMinor))
+					{
+						opp_B = shared_B[izNeighMinor[i] - StartMinor];
+						if (shared_ita_par[threadIdx.x] < shared_ita_par[izNeighMinor[i] - StartMinor])
+						{
+							ita_par = shared_ita_par[threadIdx.x];
+							nu = shared_nu[threadIdx.x];
+						}
+						else {
+							ita_par = shared_ita_par[izNeighMinor[i] - StartMinor];
+							nu = shared_nu[izNeighMinor[i] - StartMinor];
+						};
+
+						// USEFUL:
+						if (shared_ita_par[izNeighMinor[i] - StartMinor] == 0.0) bUsableSide = false;
+					} else {
+						if ((izNeighMinor[i] >= StartMajor + BEGINNING_OF_CENTRAL) &&
+							(izNeighMinor[i] < EndMajor + BEGINNING_OF_CENTRAL))
+						{
+							opp_B = shared_B_verts[izNeighMinor[i] - StartMajor - BEGINNING_OF_CENTRAL];
+							if (shared_ita_par[threadIdx.x] < shared_ita_par_verts[izNeighMinor[i] - StartMajor - BEGINNING_OF_CENTRAL])
+							{
+								ita_par = shared_ita_par[threadIdx.x];
+								nu = shared_nu[threadIdx.x];
+							}
+							else {
+								ita_par = shared_ita_par_verts[izNeighMinor[i] - StartMajor - BEGINNING_OF_CENTRAL];
+								nu = shared_nu_verts[izNeighMinor[i] - StartMajor - BEGINNING_OF_CENTRAL];
+							};
+
+							if (shared_ita_par_verts[izNeighMinor[i] - StartMajor - BEGINNING_OF_CENTRAL] == 0.0) bUsableSide = false;
+						}
+						else {
+							opp_B = p_B_minor[izNeighMinor[i]].xypart();
+							f64 ita_par_opp = p_ita_parallel_minor[izNeighMinor[i]];
+							f64 nu_theirs = p_nu_minor[izNeighMinor[i]];
+							if (shared_ita_par[threadIdx.x] < ita_par_opp) {
+								ita_par = shared_ita_par[threadIdx.x];
+								nu = shared_nu[threadIdx.x]; // why do I deliberately use the corresponding nu? nvm
+							}
+							else {
+								ita_par = ita_par_opp;
+								nu = nu_theirs;
+							}
+
+							if (ita_par_opp == 0.0) bUsableSide = false;
+						}
+					}
+					if (szPBC[i] == ROTATE_ME_CLOCKWISE) {
+						opp_B = Clockwise_d*opp_B;
+					}
+					if (szPBC[i] == ROTATE_ME_ANTICLOCKWISE) {
+						opp_B = Anticlockwise_d*opp_B;
+					}
+					omega_c = 0.5*(Make3(opp_B + shared_B[threadIdx.x], BZ_CONSTANT)); // NOTE BENE qoverMc
+					if (iSpecies == 1) omega_c *= qoverMc;
+					if (iSpecies == 2) omega_c *= qovermc;
+				}
+
+				// Get rid of ins-ins triangle traffic:
+
+				if (info.flag == CROSSING_INS) {
+					char flag = p_info_minor[izNeighMinor[i]].flag;
+					if (flag == CROSSING_INS)
+						bUsableSide = 0;
+				}
+
+				f64_vec2 ROCgradvz;
+				if (bUsableSide)
+				{
+					if ((TestDomainPos(prevpos) == false) || (TestDomainPos(nextpos) == false))
+					{
+						// One of the sides is dipped under the insulator -- set transverse deriv to 0.
+						// Bear in mind we are looking from a vertex into a tri, it can be ins tri.
+
+						ROCgradvz = (opp_x - shared_regr[threadIdx.x])*(opppos - info.pos) /
+							(opppos - info.pos).dot(opppos - info.pos);
+					} else {
+
+						ROCgradvz = GetGradientDBydBeta(
+								prevpos, info.pos, nextpos, opppos,
+								prev_v, shared_vz[threadIdx.x], next_v, opp_v,
+								prev_x, shared_regr[threadIdx.x], next_x, opp_x
+							);						
+					};
+					if (info.flag == CROSSING_INS) {
+						char flag = p_info_minor[izNeighMinor[i]].flag;
+						if (flag == CROSSING_INS) {
+							// just set it to 0.
+							bUsableSide = false;
+							ROCgradvz.x = 0.0;
+							ROCgradvz.y = 0.0;
+						};
+					};
+				};
+
+				if (bUsableSide) {
+					if (iSpecies == 0) {
+						f64 visc_contrib;
+						f64_vec2 edge_normal;
+						edge_normal.x = THIRD * (nextpos.y - prevpos.y);
+						edge_normal.y = THIRD * (prevpos.x - nextpos.x);
+						visc_contrib = over_m_n*(ita_par*ROCgradvz.dot(edge_normal));
+
+						ownrates_visc.z += visc_contrib;
+					} else {
+						if ((VISCMAG == 0) || (omega_c.dot(omega_c) < 0.01*0.1*nu*nu))
+						{
+							// run unmagnetised case
+							f64 Pi_zx, Pi_zy;
+							Pi_zx = -ita_par*(ROCgradvz.x);
+							Pi_zy = -ita_par*(ROCgradvz.y);
+
+							f64 visc_contrib;
+							f64_vec2 edge_normal;
+							edge_normal.x = THIRD * (nextpos.y - prevpos.y);
+							edge_normal.y = THIRD * (prevpos.x - nextpos.x);
+
+							//visc_contrib.x = 0.0;
+							//visc_contrib.y = 0.0;
+							visc_contrib = -over_m_s*(Pi_zx*edge_normal.x + Pi_zy*edge_normal.y);
+
+							ownrates_visc.z += visc_contrib;
+
+							// So we are saying if edge_normal.x > 0 and gradviz.x > 0
+							// then Pi_zx < 0 then ownrates += a positive amount. That is correct.
+						}
+						else {
+							f64_vec3 unit_b, unit_perp, unit_Hall;
+							f64 Pi_b_b = 0.0, Pi_P_b = 0.0, Pi_P_P = 0.0, Pi_H_b = 0.0, Pi_H_P = 0.0, Pi_H_H = 0.0;
+							{
+								f64 W_bb = 0.0, W_bP = 0.0, W_bH = 0.0, W_PP = 0.0, W_PH = 0.0, W_HH = 0.0;
+								// these have to be alive at same time as 9 x partials
+								// but we can make do with 3x partials
+								// 2. Now get partials in magnetic coordinates 
+								f64 omegamod;
+								{
+									f64_vec2 edge_normal;
+									edge_normal.x = THIRD * (nextpos.y - prevpos.y);
+									edge_normal.y = THIRD * (prevpos.x - nextpos.x);
+
+									f64 omegasq = omega_c.dot(omega_c);
+									omegamod = sqrt(omegasq);
+									unit_b = omega_c / omegamod;
+									unit_perp = Make3(edge_normal, 0.0) - unit_b*(unit_b.dotxy(edge_normal));
+									unit_perp = unit_perp / unit_perp.modulus();
+									unit_Hall = unit_b.cross(unit_perp); // Note sign.
+								}
+								{
+									f64 intermedz;
+
+									// use: d vb / da = b transpose [ dvi/dxj ] a
+									// Prototypical element: a.x b.y dvy/dx
+									// b.x a.y dvx/dy
+									intermedz = unit_b.dotxy(ROCgradvz);
+									{
+										f64 dvb_by_db, dvperp_by_db, dvHall_by_db;
+
+										dvb_by_db = unit_b.z*(intermedz);
+										dvperp_by_db = unit_perp.z*(intermedz);
+										dvHall_by_db = unit_Hall.z*(intermedz); // 0
+																				  // This actually is always 0 because vHall isn't changing.
+										W_bb += 4.0*THIRD*dvb_by_db;
+										W_bP += dvperp_by_db;
+										W_bH += dvHall_by_db;
+										W_PP -= 2.0*THIRD*dvb_by_db;
+										W_HH -= 2.0*THIRD*dvb_by_db;
+									}
+									{
+										f64 dvb_by_dperp, dvperp_by_dperp,
+											dvHall_by_dperp;
+										// Optimize by getting rid of different labels.
+
+										intermedz = unit_perp.dotxy(ROCgradvz);
+
+										dvb_by_dperp = unit_b.z*(intermedz);
+										dvperp_by_dperp = unit_perp.z*(intermedz);
+										dvHall_by_dperp = unit_Hall.z*(intermedz); // 0
+
+										W_bb -= 2.0*THIRD*dvperp_by_dperp;
+										W_PP += 4.0*THIRD*dvperp_by_dperp;
+										W_HH -= 2.0*THIRD*dvperp_by_dperp;
+										W_bP += dvb_by_dperp;
+										W_PH += dvHall_by_dperp;
+									}
+									{
+										f64 dvb_by_dHall, dvperp_by_dHall, dvHall_by_dHall;
+
+										intermedz = unit_Hall.dotxy(ROCgradvz); // 0
+
+										dvb_by_dHall = unit_b.z*(intermedz);
+										dvperp_by_dHall = unit_perp.z*(intermedz);
+										dvHall_by_dHall = unit_Hall.z*(intermedz);
+
+										W_bb -= 2.0*THIRD*dvHall_by_dHall;
+										W_PP -= 2.0*THIRD*dvHall_by_dHall;
+										W_HH += 4.0*THIRD*dvHall_by_dHall;
+										W_bH += dvb_by_dHall;
+										W_PH += dvperp_by_dHall;
+									}
+								}
+								{
+									f64 ita_1 = ita_par*(nu*nu / (nu*nu + omegamod*omegamod));
+
+									Pi_b_b += -ita_par*W_bb;
+									Pi_P_P += -0.5*(ita_par + ita_1)*W_PP - 0.5*(ita_par - ita_1)*W_HH;
+									Pi_H_H += -0.5*(ita_par + ita_1)*W_HH - 0.5*(ita_par - ita_1)*W_PP;
+									Pi_H_P += -ita_1*W_PH;
+								}
+								{
+									f64 ita_2 = ita_par*(nu*nu / (nu*nu + 0.25*omegamod*omegamod));
+									Pi_P_b += -ita_2*W_bP;
+									Pi_H_b += -ita_2*W_bH;
+								}
+								{
+									f64 ita_3 = ita_par*(nu*omegamod / (nu*nu + omegamod*omegamod));
+									Pi_P_P -= ita_3*W_PH;
+									Pi_H_H += ita_3*W_PH;
+									Pi_H_P += 0.5*ita_3*(W_PP - W_HH);
+								}
+								{
+									f64 ita_4 = 0.5*ita_par*(nu*omegamod / (nu*nu + 0.25*omegamod*omegamod));
+									Pi_P_b += -ita_4*W_bH;
+									Pi_H_b += ita_4*W_bP;
+								}
+							} // scope W
+
+							f64 momflux_b, momflux_perp, momflux_Hall;
+							{
+								// Most efficient way: compute mom flux in magnetic coords
+								f64_vec3 mag_edge;
+								f64_vec2 edge_normal;
+								edge_normal.x = THIRD * (nextpos.y - prevpos.y);
+								edge_normal.y = THIRD * (prevpos.x - nextpos.x);
+
+								mag_edge.x = unit_b.x*edge_normal.x + unit_b.y*edge_normal.y;
+								mag_edge.y = unit_perp.x*edge_normal.x + unit_perp.y*edge_normal.y;
+								mag_edge.z = unit_Hall.x*edge_normal.x + unit_Hall.y*edge_normal.y; // 0
+
+								momflux_b = -(Pi_b_b*mag_edge.x + Pi_P_b*mag_edge.y + Pi_H_b*mag_edge.z);
+								momflux_perp = -(Pi_P_b*mag_edge.x + Pi_P_P*mag_edge.y + Pi_H_P*mag_edge.z);
+								momflux_Hall = -(Pi_H_b*mag_edge.x + Pi_H_P*mag_edge.y + Pi_H_H*mag_edge.z);
+							}
+
+							// ROC :
+							f64_vec3 visc_contrib;
+							visc_contrib.x = over_m_s*(unit_b.x*momflux_b + unit_perp.x*momflux_perp + unit_Hall.x*momflux_Hall);
+							visc_contrib.y = over_m_s*(unit_b.y*momflux_b + unit_perp.y*momflux_perp + unit_Hall.y*momflux_Hall);
+							visc_contrib.z = over_m_s*(unit_b.z*momflux_b + unit_perp.z*momflux_perp + unit_Hall.z*momflux_Hall);
+
+							ownrates_visc += visc_contrib;
+						};
+					};
+				}; // bUsableSide
+
+				prevpos = opppos;
+				prev_v = opp_v;
+				prev_x = opp_x;
+				opppos = nextpos;
+				opp_v = next_v;
+				opp_x = next_x;
+			};
+
+			// OVERWRITE:
+			memcpy(&(p_ROCMAR[iMinor]), &(ownrates_visc), sizeof(f64_vec3));
+
+		} else {
+			memset(&(p_ROCMAR[iMinor]), 0, sizeof(f64_vec3));
+			// Not domain tri or crossing_ins
+			// Did we fairly model the insulator as a reflection of v?
+		}
+	} // scope
+}
+
+__global__ void CalculateCoeffself(
+	structural * __restrict__ p_info_minor,
+
+	long * __restrict__ p_izTri,
+	char * __restrict__ p_szPBC,
+	long * __restrict__ p_izNeighMinor,
+	char * __restrict__ p_szPBCtriminor,
+
+	f64 * __restrict__ p_ita_parallel_minor,   // nT / nu ready to look up
+	f64 * __restrict__ p_nu_minor,   // nT / nu ready to look up
+	f64_vec3 * __restrict__ p_B_minor,
+
+	Tensor2 * __restrict__ p__coeffself_xy, // matrix ... 
+	f64 * __restrict__ p__coeffself_z,
+
+	// Note that we then need to add matrices and invert somehow, for xy.
+	// For z we just take 1/x .
+
+	int const iSpecies,
+	f64 const m_s,
+	f64 const over_m_s
+
+	// we want to know coeffself 
+
+
+) // easy way to put it in constant memory
+{
+	__shared__ f64_vec2 shared_pos[threadsPerTileMinor];
+	__shared__ f64_vec2 shared_B[threadsPerTileMinor];
+	__shared__ f64 shared_ita_par[threadsPerTileMinor]; // reuse for i,e ; or make 2 vars to combine the routines.
+	__shared__ f64 shared_nu[threadsPerTileMinor];
+
+	__shared__ f64_vec2 shared_pos_verts[threadsPerTileMajor];
+	__shared__ f64_vec2 shared_B_verts[threadsPerTileMajor];
+	__shared__ f64 shared_ita_par_verts[threadsPerTileMajor];
+	__shared__ f64 shared_nu_verts[threadsPerTileMajor]; // used for creating ita_perp, ita_cross
+
+														 // 4+2+2+1+1 *1.5 = 15 per thread. That is possibly as slow as having 24 per thread. 
+														 // Might as well add to shared then, if there are spills (surely there are?)
+
+	long const iMinor = blockDim.x*blockIdx.x + threadIdx.x;
+	long const iVertex = threadsPerTileMajor*blockIdx.x + threadIdx.x; // only meaningful threadIdx.x < threadsPerTileMajor
+
+	long const StartMinor = threadsPerTileMinor*blockIdx.x;
+	long const StartMajor = threadsPerTileMajor*blockIdx.x;
+	long const EndMinor = StartMinor + threadsPerTileMinor;
+	long const EndMajor = StartMajor + threadsPerTileMajor;
+
+	f64 nu, ita_par;  // optimization: we always each loop want to get rid of omega, nu once we have calc'd these, if possible!!
+	f64_tens2 deriv_xy;
+	f64 deriv_z;
+
+	shared_pos[threadIdx.x] = p_info_minor[iMinor].pos;
+	shared_B[threadIdx.x] = p_B_minor[iMinor].xypart();
+	shared_ita_par[threadIdx.x] = p_ita_parallel_minor[iMinor];
+	shared_nu[threadIdx.x] = p_nu_minor[iMinor];
+
+	// Perhaps the real answer is this. Advection and therefore advective momflux
+	// do not need to be recalculated very often at all. At 1e6 cm/s, we aim for 1 micron,
+	// get 1e-10s to actually do the advection !!
+	// So an outer cycle. Still limiting the number of total things in a minor tile. We might like 384 = 192*2.
+
+	structural info;
+	if (threadIdx.x < threadsPerTileMajor) {
+		info = p_info_minor[iVertex + BEGINNING_OF_CENTRAL];
+		shared_pos_verts[threadIdx.x] = info.pos;
+		shared_B_verts[threadIdx.x] = p_B_minor[iVertex + BEGINNING_OF_CENTRAL].xypart();
+		if ((info.flag == DOMAIN_VERTEX) || (info.flag == OUTERMOST))
+		{
+			shared_ita_par_verts[threadIdx.x] = p_ita_parallel_minor[iVertex + BEGINNING_OF_CENTRAL];
+			shared_nu_verts[threadIdx.x] = p_nu_minor[iVertex + BEGINNING_OF_CENTRAL];
+			// But now I am going to set ita == 0 in OUTERMOST and agree never to look there because that's fairer than one-way traffic and I don't wanna handle OUTERMOST?
+			// I mean, I could handle it, and do flows only if the flag does not come up OUTER_FRILL.
+			// OK just do that.
+		}
+		else {
+			// it still manages to coalesce, let's hope, because ShardModel is 13 doubles not 12.
+			shared_ita_par_verts[threadIdx.x] = 0.0;
+			shared_nu_verts[threadIdx.x] = 0.0;
+		};
+	};
+
+	__syncthreads();
+
+	if (threadIdx.x < threadsPerTileMajor) {
+		memset(&deriv_xy, 0, sizeof(f64_tens2));
+		deriv_z = 0.0;
+
+		long izTri[MAXNEIGH_d];
+		char szPBC[MAXNEIGH_d];
+		short tri_len = info.neigh_len; // ?!
+
+		if ((info.flag == DOMAIN_VERTEX) && (shared_ita_par_verts[threadIdx.x] > 0.0))
+		{
+			// We are losing energy if there is viscosity into OUTERMOST.
+
+			memcpy(izTri, p_izTri + iVertex*MAXNEIGH_d, MAXNEIGH_d * sizeof(long));
+			memcpy(szPBC, p_szPBC + iVertex*MAXNEIGH_d, MAXNEIGH_d * sizeof(char));
+
+			f64_vec2 opppos, prevpos, nextpos;
+			// ideally we might want to leave position out of the loop so that we can avoid reloading it.
+
+			short i = 0;
+			short iprev = i - 1; if (iprev < 0) iprev = tri_len - 1;
+			short inext = i + 1; if (inext >= tri_len) inext = 0;
+
+			if ((izTri[iprev] >= StartMinor) && (izTri[iprev] < EndMinor))
+			{
+				prevpos = shared_pos[izTri[iprev] - StartMinor];
+			}
+			else {
+				prevpos = p_info_minor[izTri[iprev]].pos;
+			}
+			if (szPBC[iprev] == ROTATE_ME_CLOCKWISE) {
+				prevpos = Clockwise_d*prevpos;
+			}
+			if (szPBC[iprev] == ROTATE_ME_ANTICLOCKWISE) {
+				prevpos = Anticlockwise_d*prevpos;
+			}
+
+			if ((izTri[i] >= StartMinor) && (izTri[i] < EndMinor))
+			{
+				opppos = shared_pos[izTri[i] - StartMinor];
+			}
+			else {
+				opppos = p_info_minor[izTri[i]].pos;
+			}
+			if (szPBC[i] == ROTATE_ME_CLOCKWISE) {
+				opppos = Clockwise_d*opppos;
+			}
+			if (szPBC[i] == ROTATE_ME_ANTICLOCKWISE) {
+				opppos = Anticlockwise_d*opppos;
+			}
+
+
+#pragma unroll 
+			for (i = 0; i < tri_len; i++)
+			{
+				// Tri 0 is anticlockwise of neighbour 0, we think
+				inext = i + 1; if (inext > 5) inext = 0;
+				iprev = i - 1; if (iprev < 0) iprev = 5;
+
+
+				// Order of calculations may help things to go out/into scope at the right times so careful with that.
+				//f64_vec2 endpt1 = THIRD * (nextpos + info.pos + opppos);
+				// we also want to get nu from somewhere. So precompute nu at the time we precompute ita_e = n Te / nu_e, ita_i = n Ti / nu_i. 
+
+				// It seems that I think it's worth having the velocities as 3 x v4 objects limited scope even if we keep reloading from global
+				// That seems counter-intuitive??
+				// Oh and the positions too!
+
+				if ((izTri[inext] >= StartMinor) && (izTri[inext] < EndMinor))
+				{
+					nextpos = shared_pos[izTri[inext] - StartMinor];
+				}
+				else {
+					nextpos = p_info_minor[izTri[inext]].pos;
+				}
+				if (szPBC[inext] == ROTATE_ME_CLOCKWISE) {
+					nextpos = Clockwise_d*nextpos;
+				}
+				if (szPBC[inext] == ROTATE_ME_ANTICLOCKWISE) {
+					nextpos = Anticlockwise_d*nextpos;
+				}
+
+				f64_vec3 omega_c;
+				{
+					f64_vec2 opp_B;
+					f64 ita_theirs, nu_theirs;
+					if ((izTri[i] >= StartMinor) && (izTri[i] < EndMinor))
+					{
+						opp_B = shared_B[izTri[i] - StartMinor];
+						ita_theirs = shared_ita_par[izTri[i] - StartMinor];
+						nu_theirs = shared_nu[izTri[i] - StartMinor];
+					}
+					else {
+						opp_B = p_B_minor[izTri[i]].xypart();
+						ita_theirs = p_ita_parallel_minor[izTri[i]];
+						nu_theirs = p_nu_minor[izTri[i]];
+					};
+
+					if (shared_ita_par_verts[threadIdx.x] < ita_theirs) {
+						ita_par = shared_ita_par_verts[threadIdx.x];
+						nu = shared_nu_verts[threadIdx.x];
+					}
+					else {
+						ita_par = ita_theirs;
+						nu = nu_theirs;
+					};
+
+					if (szPBC[i] == ROTATE_ME_CLOCKWISE) {
+						opp_B = Clockwise_d*opp_B;
+					}
+					if (szPBC[i] == ROTATE_ME_ANTICLOCKWISE) {
+						opp_B = Anticlockwise_d*opp_B;
+					}
+					omega_c = 0.5*(Make3(opp_B + shared_B_verts[threadIdx.x], BZ_CONSTANT)); // NOTE BENE qoverMc
+					if (iSpecies == 1) omega_c *= qoverMc;
+					if (iSpecies == 2) omega_c *= qovermc;
+				} // Guaranteed DOMAIN_VERTEX never needs to skip an edge; we include CROSSING_INS in viscosity.
+
+
+				f64_vec2 coeffgradvq_by_vq; // component j = rate of change of dvq/dj wrt change in vq_self
+
+				if (ita_par > 0.0) {
+
+					// We take the derivative considering only the longitudinal component.
+					// The effect of self v on the transverse component should be small.
+					coeffgradvq_by_vq = (-1.0)*(opppos - info.pos) /
+						(opppos - info.pos).dot(opppos - info.pos);
+
+					if (iSpecies == 0) {
+
+						f64_vec2 edge_normal;
+						edge_normal.x = THIRD * (nextpos.y - prevpos.y);
+						edge_normal.y = THIRD * (prevpos.x - nextpos.x);
+						
+						f64 visc_contrib_z = over_m_n*ita_par*(coeffgradvq_by_vq.dot(edge_normal));
+						// same for all dimensions
+
+						deriv_xy.xx += visc_contrib_z;
+						deriv_xy.yy += visc_contrib_z;
+						deriv_z += visc_contrib_z;
+						
+					} else {
+						if ((VISCMAG == 0) || (omega_c.dot(omega_c) < 0.01*0.1*nu*nu))
+						{
+							// run unmagnetised case
+							//f64 Pi_xx, Pi_xy, Pi_yx, Pi_yy, Pi_zx, Pi_zy;
+	//
+	//						Pi_xx = -ita_par*THIRD*(4.0*gradvx.x - 2.0*gradvy.y);
+	//						Pi_xy = -ita_par*(gradvx.y + gradvy.x);
+	//						Pi_yx = Pi_xy;
+	//						Pi_yy = -ita_par*THIRD*(4.0*gradvy.y - 2.0*gradvx.x);
+	//						Pi_zx = -ita_par*(gradvz.x);
+	//						Pi_zy = -ita_par*(gradvz.y);
+
+							// We now want to make Pi = dPi/d v_self ... 
+							// Only vx affects gradvx and only vy affects gradvy
+
+							f64 dPixx_bydvx = -ita_par*THIRD*4.0*coeffgradvq_by_vq.x;
+							f64 dPixx_bydvy = ita_par*THIRD*2.0*coeffgradvq_by_vq.y;
+							f64 dPixy_bydvx = -ita_par*coeffgradvq_by_vq.y;
+							f64 dPixy_bydvy = -ita_par*coeffgradvq_by_vq.y;
+							f64 dPiyy_bydvx = ita_par*THIRD*2.0*coeffgradvq_by_vq.x;
+							f64 dPiyy_bydvy = -ita_par*THIRD*4.0*coeffgradvq_by_vq.y;
+
+							f64 dPizx_bydvz = -ita_par*coeffgradvq_by_vq.x;
+							f64 dPizy_bydvz = -ita_par*coeffgradvq_by_vq.y;
+
+							// We are going to want d [ ROC x y ] / d v xy
+							// we discard any effect of vz on ROCxy
+							// In this unmagnetized version we can say that Pi_zx, Pi_zy is what contributes to visc_contrib.z.
+
+							f64_tens2 visc_contrib;
+							f64_vec2 edge_normal;
+							edge_normal.x = THIRD * (nextpos.y - prevpos.y);
+							edge_normal.y = THIRD * (prevpos.x - nextpos.x);
+
+							//						visc_contrib.x = -over_m_s*(Pi_xx*edge_normal.x + Pi_xy*edge_normal.y);
+												//	visc_contrib.y = -over_m_s*(Pi_yx*edge_normal.x + Pi_yy*edge_normal.y);
+
+							visc_contrib.xx = -over_m_s*(dPixx_bydvx*edge_normal.x + dPixy_bydvx*edge_normal.y);
+							visc_contrib.xy = -over_m_s*(dPixx_bydvy*edge_normal.x + dPixy_bydvy*edge_normal.y);
+							visc_contrib.yx = -over_m_s*(dPixy_bydvx*edge_normal.x + dPiyy_bydvx*edge_normal.y);
+							visc_contrib.yy = -over_m_s*(dPixy_bydvy*edge_normal.x + dPiyy_bydvy*edge_normal.y);
+
+							f64 visc_contrib_z = -over_m_s*(dPizx_bydvz*edge_normal.x + dPizy_bydvz*edge_normal.y);
+
+							deriv_xy += visc_contrib;
+							deriv_z += visc_contrib_z;
+
+						}
+						else {
+
+							f64_vec3 unit_b, unit_perp, unit_Hall;
+							f64_vec3 dPibb_by_dv(0.0, 0.0, 0.0),
+								dPiPb_by_dv(0.0, 0.0, 0.0),
+								dPiPP_by_dv(0.0, 0.0, 0.0),
+								dPiHb_by_dv(0.0, 0.0, 0.0),
+								dPiHP_by_dv(0.0, 0.0, 0.0),
+								dPiHH_by_dv(0.0, 0.0, 0.0);
+							{
+								f64_vec3 dW_bb_by_dv(0.0, 0.0, 0.0),
+									dW_bP_by_dv(0.0, 0.0, 0.0),
+									dW_bH_by_dv(0.0, 0.0, 0.0),
+									dW_PP_by_dv(0.0, 0.0, 0.0),
+									dW_PH_by_dv(0.0, 0.0, 0.0),
+									dW_HH_by_dv(0.0, 0.0, 0.0);
+								// these have to be alive at same time as 9 x partials
+								// but we can make do with 3x partials
+								// 2. Now get partials in magnetic coordinates 
+								f64 omegamod, d_intermed_j_by_dvj;
+								{
+									f64_vec2 edge_normal;
+									edge_normal.x = THIRD * (nextpos.y - prevpos.y);
+									edge_normal.y = THIRD * (prevpos.x - nextpos.x);
+
+									f64 omegasq = omega_c.dot(omega_c);
+									omegamod = sqrt(omegasq);
+									unit_b = omega_c / omegamod;
+									unit_perp = Make3(edge_normal, 0.0) - unit_b*(unit_b.dotxy(edge_normal));
+									unit_perp = unit_perp / unit_perp.modulus();
+									unit_Hall = unit_b.cross(unit_perp); // Note sign.
+
+								}
+								{
+									//	f64_vec3 intermed;
+
+										// use: d vb / da = b transpose [ dvi/dxj ] a
+										// Prototypical element: a.x b.y dvy/dx
+										// b.x a.y dvx/dy
+										//intermed.x = unit_b.dotxy(gradvx);
+										//intermed.y = unit_b.dotxy(gradvy);
+										//intermed.z = unit_b.dotxy(gradvz);
+
+									{
+										d_intermed_j_by_dvj = unit_b.dotxy(coeffgradvq_by_vq);
+
+										//	f64 dvb_by_db, dvperp_by_db, dvHall_by_db;
+
+											//dvb_by_db = unit_b.dot(intermed);
+											//dvperp_by_db = unit_perp.dot(intermed);
+											//dvHall_by_db = unit_Hall.dot(intermed);
+
+											//dvb_by_db_by_dx = unit_b.x*d_intermed_j_by_dvj;
+											//dvb_by_db_by_dy = unit_b.y*d_intermed_j_by_dvj;
+											//dvb_by_db_by_dz = unit_b.z*d_intermed_j_by_dvj;
+
+											//dvperp_by_db_by_dx = unit_perp.x*d_intermed_j_by_dvj;
+
+											// coeffgradvq_by_vq is the derivative of gradvx wrt x
+
+											// dvb_by_db is ROC wrt v .. b ? 
+
+										//	W_bb += 4.0*THIRD*dvb_by_db;
+										//	W_bP += dvperp_by_db;
+										//	W_bH += dvHall_by_db;
+										//	W_PP -= 2.0*THIRD*dvb_by_db;
+										//	W_HH -= 2.0*THIRD*dvb_by_db;
+
+										dW_bb_by_dv += 4.0*THIRD*unit_b*d_intermed_j_by_dvj;
+										dW_bP_by_dv += unit_perp*d_intermed_j_by_dvj;
+										dW_bH_by_dv += unit_Hall*d_intermed_j_by_dvj;
+										dW_PP_by_dv -= 2.0*THIRD*unit_b*d_intermed_j_by_dvj;
+										dW_HH_by_dv -= 2.0*THIRD*unit_b*d_intermed_j_by_dvj;
+
+									}
+									{
+										//		f64 dvb_by_dperp, dvperp_by_dperp,
+										//			dvHall_by_dperp;
+												// Optimize by getting rid of different labels.
+
+										//		intermed.x = unit_perp.dotxy(gradvx);
+										//		intermed.y = unit_perp.dotxy(gradvy);
+										//		intermed.z = unit_perp.dotxy(gradvz);
+
+										d_intermed_j_by_dvj = unit_perp.dotxy(coeffgradvq_by_vq);
+
+										//		dvb_by_dperp = unit_b.dot(intermed);
+										//		dvperp_by_dperp = unit_perp.dot(intermed);
+										//		dvHall_by_dperp = unit_Hall.dot(intermed);
+
+										//		W_bb -= 2.0*THIRD*dvperp_by_dperp;
+										//		W_PP += 4.0*THIRD*dvperp_by_dperp;
+										//		W_HH -= 2.0*THIRD*dvperp_by_dperp;
+										//		W_bP += dvb_by_dperp;
+										//		W_PH += dvHall_by_dperp;
+
+										dW_bb_by_dv -= 2.0*THIRD*unit_perp*d_intermed_j_by_dvj;
+										dW_PP_by_dv += 4.0*THIRD*unit_perp*d_intermed_j_by_dvj;
+										dW_HH_by_dv -= 2.0*THIRD*unit_perp*d_intermed_j_by_dvj;
+										dW_bP_by_dv += unit_b*d_intermed_j_by_dvj;
+										dW_PH_by_dv += unit_Hall*d_intermed_j_by_dvj;
+
+									}
+									{
+										//f64 dvb_by_dHall, dvperp_by_dHall, dvHall_by_dHall;
+										//// basically, all should be 0
+
+										//intermed.x = unit_Hall.dotxy(gradvx);
+										//intermed.y = unit_Hall.dotxy(gradvy);
+										//intermed.z = unit_Hall.dotxy(gradvz);
+
+										//dvb_by_dHall = unit_b.dot(intermed);
+										//dvperp_by_dHall = unit_perp.dot(intermed);
+										//dvHall_by_dHall = unit_Hall.dot(intermed);
+
+										d_intermed_j_by_dvj = unit_Hall.dotxy(coeffgradvq_by_vq); // 0
+
+									//	W_bb -= 2.0*THIRD*dvHall_by_dHall;
+									//	W_PP -= 2.0*THIRD*dvHall_by_dHall;
+									//	W_HH += 4.0*THIRD*dvHall_by_dHall;
+									//	W_bH += dvb_by_dHall;
+									//	W_PH += dvperp_by_dHall;
+
+										dW_bb_by_dv -= 2.0*THIRD*unit_Hall*d_intermed_j_by_dvj;
+										dW_PP_by_dv -= 2.0*THIRD*unit_Hall*d_intermed_j_by_dvj;
+										dW_HH_by_dv += 4.0*THIRD*unit_Hall*d_intermed_j_by_dvj;
+										dW_bH_by_dv += unit_b*d_intermed_j_by_dvj;
+										dW_PH_by_dv += unit_perp*d_intermed_j_by_dvj;
+									}
+								}
+								{
+									f64 ita_1 = ita_par*(nu*nu / (nu*nu + omegamod*omegamod));
+									//
+									//								Pi_b_b += -ita_par*W_bb;
+									//								Pi_P_P += -0.5*(ita_par + ita_1)*W_PP - 0.5*(ita_par - ita_1)*W_HH;
+									//								Pi_H_H += -0.5*(ita_par + ita_1)*W_HH - 0.5*(ita_par - ita_1)*W_PP;
+									//								Pi_H_P += -ita_1*W_PH;
+																	// W_HH = 0
+
+									dPibb_by_dv += -ita_par*dW_bb_by_dv;
+									dPiPP_by_dv += -0.5*(ita_par + ita_1)*dW_PP_by_dv - 0.5*(ita_par - ita_1)*dW_HH_by_dv;
+									dPiHH_by_dv += -0.5*(ita_par + ita_1)*dW_HH_by_dv - 0.5*(ita_par - ita_1)*dW_PP_by_dv;
+									dPiHP_by_dv += -ita_1*dW_PH_by_dv;
+								}
+								{
+									f64 ita_2 = ita_par*(nu*nu / (nu*nu + 0.25*omegamod*omegamod));
+									//Pi_P_b += -ita_2*W_bP;
+									//Pi_H_b += -ita_2*W_bH;
+
+									dPiPb_by_dv += -ita_2*dW_bP_by_dv;
+									dPiHb_by_dv += -ita_2*dW_bH_by_dv;
+								}
+								{
+									f64 ita_3 = ita_par*(nu*omegamod / (nu*nu + omegamod*omegamod));
+									//Pi_P_P -= ita_3*W_PH;
+									//Pi_H_H += ita_3*W_PH;
+									//Pi_H_P += 0.5*ita_3*(W_PP - W_HH);
+
+									dPiPP_by_dv -= ita_3*dW_PH_by_dv;
+									dPiHH_by_dv += ita_3*dW_PH_by_dv;
+									dPiHP_by_dv += 0.5*ita_3*(dW_PP_by_dv - dW_HH_by_dv);
+								}
+								{
+									f64 ita_4 = 0.5*ita_par*(nu*omegamod / (nu*nu + 0.25*omegamod*omegamod));
+									//Pi_P_b += -ita_4*W_bH;
+									//Pi_H_b += ita_4*W_bP;
+
+									dPiPb_by_dv += -ita_4*dW_bH_by_dv;
+									dPiHb_by_dv += ita_4*dW_bP_by_dv;
+								}
+
+
+							} // scope W
+
+							  // All we want left over at this point is Pi .. and unit_b
+
+							f64_vec3 Dmomflux_b, Dmomflux_perp, Dmomflux_Hall;
+							{
+								// Most efficient way: compute mom flux in magnetic coords
+								f64_vec3 mag_edge;
+								f64_vec2 edge_normal;
+								edge_normal.x = THIRD * (nextpos.y - prevpos.y);
+								edge_normal.y = THIRD * (prevpos.x - nextpos.x);
+
+								mag_edge.x = unit_b.x*edge_normal.x + unit_b.y*edge_normal.y;
+								mag_edge.y = unit_perp.x*edge_normal.x + unit_perp.y*edge_normal.y;
+								mag_edge.z = unit_Hall.x*edge_normal.x + unit_Hall.y*edge_normal.y;
+
+								//momflux_b = -(Pi_b_b*mag_edge.x + Pi_P_b*mag_edge.y + Pi_H_b*mag_edge.z);
+								//momflux_perp = -(Pi_P_b*mag_edge.x + Pi_P_P*mag_edge.y + Pi_H_P*mag_edge.z);
+								//momflux_Hall = -(Pi_H_b*mag_edge.x + Pi_H_P*mag_edge.y + Pi_H_H*mag_edge.z);
+								Dmomflux_b = -(dPibb_by_dv*mag_edge.x + dPiPb_by_dv*mag_edge.y + dPiHb_by_dv*mag_edge.z);
+								Dmomflux_perp = -(dPiPb_by_dv*mag_edge.x + dPiPP_by_dv*mag_edge.y + dPiHP_by_dv*mag_edge.z);
+								Dmomflux_Hall = -(dPiHb_by_dv*mag_edge.x + dPiHP_by_dv*mag_edge.y + dPiHH_by_dv*mag_edge.z);
+							}
+
+							// unit_b.x*momflux_b + unit_perp.x*momflux_perp + unit_Hall.x*momflux_Hall
+							// is the flow of p_x dotted with the edge_normal
+							// ownrates will be divided by N to give dv/dt
+							// m N dvx/dt = integral div momflux_x
+							// Therefore divide here just by m
+
+							f64_vec3 Dvisc_contrib;// , Dvisc_contriby, Dvisc_contribz;
+						//	Dvisc_contribx = over_m_s*(unit_b.x*Dmomflux_b + unit_perp.x*Dmomflux_perp + unit_Hall.x*Dmomflux_Hall);
+							Dvisc_contrib = over_m_s*(unit_b.x*Dmomflux_b + unit_perp.x*Dmomflux_perp + unit_Hall.x*Dmomflux_Hall);
+							//	Dvisc_contriby = over_m_s*(unit_b.y*Dmomflux_b + unit_perp.y*Dmomflux_perp + unit_Hall.y*Dmomflux_Hall);
+							//	Dvisc_contribz = over_m_s*(unit_b.z*Dmomflux_b + unit_perp.z*Dmomflux_perp + unit_Hall.z*Dmomflux_Hall);
+
+								// only the elements xx, xy, yx, yy, zz will be kept.
+							deriv_xy.xx += Dvisc_contrib.x;
+							deriv_xy.xy += Dvisc_contrib.y;
+
+							Dvisc_contrib = over_m_s*(unit_b.y*Dmomflux_b + unit_perp.y*Dmomflux_perp + unit_Hall.y*Dmomflux_Hall);
+							deriv_xy.yx += Dvisc_contrib.x;
+							deriv_xy.yy += Dvisc_contrib.y;
+
+							Dvisc_contrib = over_m_s*(unit_b.z*Dmomflux_b + unit_perp.z*Dmomflux_perp + unit_Hall.z*Dmomflux_Hall);
+							deriv_z += Dvisc_contrib.z;
+
+						}; // whether unmagnetized
+					}; // is it for neutrals
+				}; // was ita_par == 0
+
+				   // v0.vez = vie_k.vez + h_use * MAR.z / (n_use.n*AreaMinor);
+
+				prevpos = opppos;
+				opppos = nextpos;
+			}; // next i
+
+
+			memcpy(&(p__coeffself_xy[iVertex + BEGINNING_OF_CENTRAL]), &deriv_xy, sizeof(f64_tens2));
+			p__coeffself_z[iVertex + BEGINNING_OF_CENTRAL] = deriv_z;
+
+		}
+		else {
+			// NOT domain vertex: Do nothing			
+			memset(&(p__coeffself_xy[iVertex + BEGINNING_OF_CENTRAL]), 0, sizeof(f64_tens2));
+			p__coeffself_z[iVertex + BEGINNING_OF_CENTRAL] = 0.0;
+
+		}; // whether domain vertex
+
+	}; // if do vertex at all
+
+	// __syncthreads(); // end of first vertex part
+	// Do we need syncthreads? Not overwriting any shared data here...
+
+	info = p_info_minor[iMinor];
+	memset(&deriv_xy, 0, sizeof(f64_tens2));
+	deriv_z = 0.0;
+	{
+		long izNeighMinor[6];
+		char szPBC[6];
+
+		if (((info.flag == DOMAIN_TRIANGLE) || (info.flag == CROSSING_INS))
+			&& (shared_ita_par[threadIdx.x] > 0.0)) {
+
+			memcpy(izNeighMinor, p_izNeighMinor + iMinor * 6, sizeof(long) * 6);
+			memcpy(szPBC, p_szPBCtriminor + iMinor * 6, sizeof(char) * 6);
+
+			short i = 0;
+			short inext = i + 1; if (inext > 5) inext = 0;
+			short iprev = i - 1; if (iprev < 0) iprev = 5;
+			f64_vec2 prevpos, nextpos, opppos;
+
+			if ((izNeighMinor[iprev] >= StartMinor) && (izNeighMinor[iprev] < EndMinor))
+			{
+				prevpos = shared_pos[izNeighMinor[iprev] - StartMinor];
+			}
+			else {
+				if ((izNeighMinor[iprev] >= StartMajor + BEGINNING_OF_CENTRAL) &&
+					(izNeighMinor[iprev] < EndMajor + BEGINNING_OF_CENTRAL))
+				{
+					prevpos = shared_pos_verts[izNeighMinor[iprev] - BEGINNING_OF_CENTRAL - StartMajor];
+				} else {
+					prevpos = p_info_minor[izNeighMinor[iprev]].pos;
+				};
+			};
+			if (szPBC[iprev] == ROTATE_ME_CLOCKWISE) {
+				prevpos = Clockwise_d*prevpos;
+			}
+			if (szPBC[iprev] == ROTATE_ME_ANTICLOCKWISE) {
+				prevpos = Anticlockwise_d*prevpos;
+			}
+
+			if ((izNeighMinor[i] >= StartMinor) && (izNeighMinor[i] < EndMinor))
+			{
+				opppos = shared_pos[izNeighMinor[i] - StartMinor];
+			}
+			else {
+				if ((izNeighMinor[i] >= StartMajor + BEGINNING_OF_CENTRAL) &&
+					(izNeighMinor[i] < EndMajor + BEGINNING_OF_CENTRAL))
+				{
+					opppos = shared_pos_verts[izNeighMinor[i] - BEGINNING_OF_CENTRAL - StartMajor];
+				}
+				else {
+					opppos = p_info_minor[izNeighMinor[i]].pos;
+				};
+			};
+			if (szPBC[i] == ROTATE_ME_CLOCKWISE) {
+				opppos = Clockwise_d*opppos;
+			}
+			if (szPBC[i] == ROTATE_ME_ANTICLOCKWISE) {
+				opppos = Anticlockwise_d*opppos;
+			}
+			f64_vec3 omega_c;
+			// Let's make life easier and load up an array of 6 n's beforehand.
+#pragma unroll 
+			for (short i = 0; i < 6; i++)
+			{
+				inext = i + 1; if (inext > 5) inext = 0;
+				iprev = i - 1; if (iprev < 0) iprev = 5;
+
+				if ((izNeighMinor[inext] >= StartMinor) && (izNeighMinor[inext] < EndMinor))
+				{
+					nextpos = shared_pos[izNeighMinor[inext] - StartMinor];
+				}
+				else {
+					if ((izNeighMinor[inext] >= StartMajor + BEGINNING_OF_CENTRAL) &&
+						(izNeighMinor[inext] < EndMajor + BEGINNING_OF_CENTRAL))
+					{
+						nextpos = shared_pos_verts[izNeighMinor[inext] - BEGINNING_OF_CENTRAL - StartMajor];
+					}
+					else {
+						nextpos = p_info_minor[izNeighMinor[inext]].pos;
 					};
 				};
 				if (szPBC[inext] == ROTATE_ME_CLOCKWISE) {
@@ -5480,198 +6486,558 @@ kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species_dbydbeta_z(
 						bUsableSide = 0;
 				}
 
-				f64_vec2 ROCgradvz;
 				if (bUsableSide)
 				{
-					if ((TestDomainPos(prevpos) == false) || (TestDomainPos(nextpos) == false))
-					{
-						// One of the sides is dipped under the insulator -- set transverse deriv to 0.
-						// Bear in mind we are looking from a vertex into a tri, it can be ins tri.
 
-						ROCgradvz = (opp_x - shared_regr_verts[threadIdx.x])*(opppos - info.pos) /
-							(opppos - info.pos).dot(opppos - info.pos);
-					} else {
+					f64_vec2 coeffgradvq_by_vq; // component j = rate of change of dvq/dj wrt change in vq_self
 
-						ROCgradvz = GetGradientDBydBeta(
-								prevpos, info.pos, nextpos, opppos,
-								prev_v, shared_vz_verts[threadIdx.x], next_v, opp_v,
-								prev_x, shared_regr_verts[threadIdx.x], next_x, opp_x
-							);						
-					};
-					if (info.flag == CROSSING_INS) {
-						char flag = p_info_minor[izNeighMinor[i]].flag;
-						if (flag == CROSSING_INS) {
-							// just set it to 0.
-							bUsableSide = false;
-							ROCgradvz.x = 0.0;
-							ROCgradvz.y = 0.0;
-						};
-					};
-				};
+					// We take the derivative considering only the longitudinal component.
+					// The effect of self v on the transverse component should be small.
+					coeffgradvq_by_vq = (-1.0)*(opppos - info.pos) /
+						(opppos - info.pos).dot(opppos - info.pos);
 
-				if (bUsableSide) {
-					if ((VISCMAG == 0) || (omega_c.dot(omega_c) < 0.01*0.1*nu*nu))
-					{
-						// run unmagnetised case
-						f64 Pi_zx, Pi_zy;
-						Pi_zx = -ita_par*(ROCgradvz.x);
-						Pi_zy = -ita_par*(ROCgradvz.y);
+					if (iSpecies == 0) {
 
-						f64 visc_contrib;
 						f64_vec2 edge_normal;
 						edge_normal.x = THIRD * (nextpos.y - prevpos.y);
 						edge_normal.y = THIRD * (prevpos.x - nextpos.x);
 
-						//visc_contrib.x = 0.0;
-						//visc_contrib.y = 0.0;
-						visc_contrib = -over_m_s*(Pi_zx*edge_normal.x + Pi_zy*edge_normal.y);
+						f64 visc_contrib_z = over_m_n*ita_par*(coeffgradvq_by_vq.dot(edge_normal));
+						// same for all dimensions
 
-						ownrates_visc.z += visc_contrib;
+						deriv_xy.xx += visc_contrib_z;
+						deriv_xy.yy += visc_contrib_z;
+						deriv_z += visc_contrib_z;
 
-						// So we are saying if edge_normal.x > 0 and gradviz.x > 0
-						// then Pi_zx < 0 then ownrates += a positive amount. That is correct.
-					} else {
-						f64_vec3 unit_b, unit_perp, unit_Hall;
-						f64 Pi_b_b = 0.0, Pi_P_b = 0.0, Pi_P_P = 0.0, Pi_H_b = 0.0, Pi_H_P = 0.0, Pi_H_H = 0.0;
+
+					}
+					else {
+						if ((VISCMAG == 0) || (omega_c.dot(omega_c) < 0.01*0.1*nu*nu))
 						{
-							f64 W_bb = 0.0, W_bP = 0.0, W_bH = 0.0, W_PP = 0.0, W_PH = 0.0, W_HH = 0.0;
-							// these have to be alive at same time as 9 x partials
-							// but we can make do with 3x partials
-							// 2. Now get partials in magnetic coordinates 
-							f64 omegamod;
-							{
-								f64_vec2 edge_normal;
-								edge_normal.x = THIRD * (nextpos.y - prevpos.y);
-								edge_normal.y = THIRD * (prevpos.x - nextpos.x);
+							// run unmagnetised case
+							//f64 Pi_xx, Pi_xy, Pi_yx, Pi_yy, Pi_zx, Pi_zy;
+							//
+							//						Pi_xx = -ita_par*THIRD*(4.0*gradvx.x - 2.0*gradvy.y);
+							//						Pi_xy = -ita_par*(gradvx.y + gradvy.x);
+							//						Pi_yx = Pi_xy;
+							//						Pi_yy = -ita_par*THIRD*(4.0*gradvy.y - 2.0*gradvx.x);
+							//						Pi_zx = -ita_par*(gradvz.x);
+							//						Pi_zy = -ita_par*(gradvz.y);
 
-								f64 omegasq = omega_c.dot(omega_c);
-								omegamod = sqrt(omegasq);
-								unit_b = omega_c / omegamod;
-								unit_perp = Make3(edge_normal, 0.0) - unit_b*(unit_b.dotxy(edge_normal));
-								unit_perp = unit_perp / unit_perp.modulus();
-								unit_Hall = unit_b.cross(unit_perp); // Note sign.
-							}
-							{
-								f64 intermedz;
+							// We now want to make Pi = dPi/d v_self ... 
+							// Only vx affects gradvx and only vy affects gradvy
 
-								// use: d vb / da = b transpose [ dvi/dxj ] a
-								// Prototypical element: a.x b.y dvy/dx
-								// b.x a.y dvx/dy
-								intermedz = unit_b.dotxy(ROCgradvz);
-								{
-									f64 dvb_by_db, dvperp_by_db, dvHall_by_db;
+							f64 dPixx_bydvx = -ita_par*THIRD*4.0*coeffgradvq_by_vq.x;
+							f64 dPixx_bydvy = ita_par*THIRD*2.0*coeffgradvq_by_vq.y;
+							f64 dPixy_bydvx = -ita_par*coeffgradvq_by_vq.y;
+							f64 dPixy_bydvy = -ita_par*coeffgradvq_by_vq.y;
+							f64 dPiyy_bydvx = ita_par*THIRD*2.0*coeffgradvq_by_vq.x;
+							f64 dPiyy_bydvy = -ita_par*THIRD*4.0*coeffgradvq_by_vq.y;
 
-									dvb_by_db = unit_b.z*(intermedz);
-									dvperp_by_db = unit_perp.z*(intermedz);
-									dvHall_by_db = unit_Hall.z*(intermedz); // 0
-																			  // This actually is always 0 because vHall isn't changing.
-									W_bb += 4.0*THIRD*dvb_by_db;
-									W_bP += dvperp_by_db;
-									W_bH += dvHall_by_db;
-									W_PP -= 2.0*THIRD*dvb_by_db;
-									W_HH -= 2.0*THIRD*dvb_by_db;
-								}
-								{
-									f64 dvb_by_dperp, dvperp_by_dperp,
-										dvHall_by_dperp;
-									// Optimize by getting rid of different labels.
+							f64 dPizx_bydvz = -ita_par*coeffgradvq_by_vq.x;
+							f64 dPizy_bydvz = -ita_par*coeffgradvq_by_vq.y;
 
-									intermedz = unit_perp.dotxy(ROCgradvz);
+							// We are going to want d [ ROC x y ] / d v xy
+							// we discard any effect of vz on ROCxy
+							// In this unmagnetized version we can say that Pi_zx, Pi_zy is what contributes to visc_contrib.z.
 
-									dvb_by_dperp = unit_b.z*(intermedz);
-									dvperp_by_dperp = unit_perp.z*(intermedz);
-									dvHall_by_dperp = unit_Hall.z*(intermedz); // 0
-
-									W_bb -= 2.0*THIRD*dvperp_by_dperp;
-									W_PP += 4.0*THIRD*dvperp_by_dperp;
-									W_HH -= 2.0*THIRD*dvperp_by_dperp;
-									W_bP += dvb_by_dperp;
-									W_PH += dvHall_by_dperp;
-								}
-								{
-									f64 dvb_by_dHall, dvperp_by_dHall, dvHall_by_dHall;
-
-									intermedz = unit_Hall.dotxy(ROCgradvz); // 0
-
-									dvb_by_dHall = unit_b.z*(intermedz);
-									dvperp_by_dHall = unit_perp.z*(intermedz);
-									dvHall_by_dHall = unit_Hall.z*(intermedz);
-
-									W_bb -= 2.0*THIRD*dvHall_by_dHall;
-									W_PP -= 2.0*THIRD*dvHall_by_dHall;
-									W_HH += 4.0*THIRD*dvHall_by_dHall;
-									W_bH += dvb_by_dHall;
-									W_PH += dvperp_by_dHall;
-								}
-							}
-							{
-								f64 ita_1 = ita_par*(nu*nu / (nu*nu + omegamod*omegamod));
-
-								Pi_b_b += -ita_par*W_bb;
-								Pi_P_P += -0.5*(ita_par + ita_1)*W_PP - 0.5*(ita_par - ita_1)*W_HH;
-								Pi_H_H += -0.5*(ita_par + ita_1)*W_HH - 0.5*(ita_par - ita_1)*W_PP;
-								Pi_H_P += -ita_1*W_PH;
-							}
-							{
-								f64 ita_2 = ita_par*(nu*nu / (nu*nu + 0.25*omegamod*omegamod));
-								Pi_P_b += -ita_2*W_bP;
-								Pi_H_b += -ita_2*W_bH;
-							}
-							{
-								f64 ita_3 = ita_par*(nu*omegamod / (nu*nu + omegamod*omegamod));
-								Pi_P_P -= ita_3*W_PH;
-								Pi_H_H += ita_3*W_PH;
-								Pi_H_P += 0.5*ita_3*(W_PP - W_HH);
-							}
-							{
-								f64 ita_4 = 0.5*ita_par*(nu*omegamod / (nu*nu + 0.25*omegamod*omegamod));
-								Pi_P_b += -ita_4*W_bH;
-								Pi_H_b += ita_4*W_bP;
-							}
-						} // scope W
-
-						f64 momflux_b, momflux_perp, momflux_Hall;
-						{
-							// Most efficient way: compute mom flux in magnetic coords
-							f64_vec3 mag_edge;
+							f64_tens2 visc_contrib;
 							f64_vec2 edge_normal;
 							edge_normal.x = THIRD * (nextpos.y - prevpos.y);
 							edge_normal.y = THIRD * (prevpos.x - nextpos.x);
 
-							mag_edge.x = unit_b.x*edge_normal.x + unit_b.y*edge_normal.y;
-							mag_edge.y = unit_perp.x*edge_normal.x + unit_perp.y*edge_normal.y;
-							mag_edge.z = unit_Hall.x*edge_normal.x + unit_Hall.y*edge_normal.y; // 0
+							visc_contrib.xx = -over_m_s*(dPixx_bydvx*edge_normal.x + dPixy_bydvx*edge_normal.y);
+							visc_contrib.xy = -over_m_s*(dPixx_bydvy*edge_normal.x + dPixy_bydvy*edge_normal.y);
+							visc_contrib.yx = -over_m_s*(dPixy_bydvx*edge_normal.x + dPiyy_bydvx*edge_normal.y);
+							visc_contrib.yy = -over_m_s*(dPixy_bydvy*edge_normal.x + dPiyy_bydvy*edge_normal.y);
 
-							momflux_b = -(Pi_b_b*mag_edge.x + Pi_P_b*mag_edge.y + Pi_H_b*mag_edge.z);
-							momflux_perp = -(Pi_P_b*mag_edge.x + Pi_P_P*mag_edge.y + Pi_H_P*mag_edge.z);
-							momflux_Hall = -(Pi_H_b*mag_edge.x + Pi_H_P*mag_edge.y + Pi_H_H*mag_edge.z);
+							f64 visc_contrib_z = -over_m_s*(dPizx_bydvz*edge_normal.x + dPizy_bydvz*edge_normal.y);
+
+							deriv_xy += visc_contrib;
+							deriv_z += visc_contrib_z;
+
 						}
+						else {
 
-						// ROC :
-						f64_vec3 visc_contrib;
-						visc_contrib.x = over_m_s*(unit_b.x*momflux_b + unit_perp.x*momflux_perp + unit_Hall.x*momflux_Hall);
-						visc_contrib.y = over_m_s*(unit_b.y*momflux_b + unit_perp.y*momflux_perp + unit_Hall.y*momflux_Hall);
-						visc_contrib.z = over_m_s*(unit_b.z*momflux_b + unit_perp.z*momflux_perp + unit_Hall.z*momflux_Hall);
+							f64_vec3 unit_b, unit_perp, unit_Hall;
+							f64_vec3 dPibb_by_dv(0.0, 0.0, 0.0),
+								dPiPb_by_dv(0.0, 0.0, 0.0),
+								dPiPP_by_dv(0.0, 0.0, 0.0),
+								dPiHb_by_dv(0.0, 0.0, 0.0),
+								dPiHP_by_dv(0.0, 0.0, 0.0),
+								dPiHH_by_dv(0.0, 0.0, 0.0);
+							{
+								f64_vec3 dW_bb_by_dv(0.0, 0.0, 0.0),
+									dW_bP_by_dv(0.0, 0.0, 0.0),
+									dW_bH_by_dv(0.0, 0.0, 0.0),
+									dW_PP_by_dv(0.0, 0.0, 0.0),
+									dW_PH_by_dv(0.0, 0.0, 0.0),
+									dW_HH_by_dv(0.0, 0.0, 0.0);
+								// these have to be alive at same time as 9 x partials
+								// but we can make do with 3x partials
+								// 2. Now get partials in magnetic coordinates 
+								f64 omegamod, d_intermed_j_by_dvj;
+								{
+									f64_vec2 edge_normal;
+									edge_normal.x = THIRD * (nextpos.y - prevpos.y);
+									edge_normal.y = THIRD * (prevpos.x - nextpos.x);
 
-						ownrates_visc += visc_contrib;
-					};
+									f64 omegasq = omega_c.dot(omega_c);
+									omegamod = sqrt(omegasq);
+									unit_b = omega_c / omegamod;
+									unit_perp = Make3(edge_normal, 0.0) - unit_b*(unit_b.dotxy(edge_normal));
+									unit_perp = unit_perp / unit_perp.modulus();
+									unit_Hall = unit_b.cross(unit_perp); // Note sign.
+
+								}
+								{
+									//	f64_vec3 intermed;
+
+									// use: d vb / da = b transpose [ dvi/dxj ] a
+									// Prototypical element: a.x b.y dvy/dx
+									// b.x a.y dvx/dy
+									//intermed.x = unit_b.dotxy(gradvx);
+									//intermed.y = unit_b.dotxy(gradvy);
+									//intermed.z = unit_b.dotxy(gradvz);
+
+									{
+										d_intermed_j_by_dvj = unit_b.dotxy(coeffgradvq_by_vq);
+
+										//	f64 dvb_by_db, dvperp_by_db, dvHall_by_db;
+
+										//dvb_by_db = unit_b.dot(intermed);
+										//dvperp_by_db = unit_perp.dot(intermed);
+										//dvHall_by_db = unit_Hall.dot(intermed);
+
+										//dvb_by_db_by_dx = unit_b.x*d_intermed_j_by_dvj;
+										//dvb_by_db_by_dy = unit_b.y*d_intermed_j_by_dvj;
+										//dvb_by_db_by_dz = unit_b.z*d_intermed_j_by_dvj;
+
+										//dvperp_by_db_by_dx = unit_perp.x*d_intermed_j_by_dvj;
+
+										// coeffgradvq_by_vq is the derivative of gradvx wrt x
+
+										// dvb_by_db is ROC wrt v .. b ? 
+
+										//	W_bb += 4.0*THIRD*dvb_by_db;
+										//	W_bP += dvperp_by_db;
+										//	W_bH += dvHall_by_db;
+										//	W_PP -= 2.0*THIRD*dvb_by_db;
+										//	W_HH -= 2.0*THIRD*dvb_by_db;
+
+										dW_bb_by_dv += 4.0*THIRD*unit_b*d_intermed_j_by_dvj;
+										dW_bP_by_dv += unit_perp*d_intermed_j_by_dvj;
+										dW_bH_by_dv += unit_Hall*d_intermed_j_by_dvj;
+										dW_PP_by_dv -= 2.0*THIRD*unit_b*d_intermed_j_by_dvj;
+										dW_HH_by_dv -= 2.0*THIRD*unit_b*d_intermed_j_by_dvj;
+
+									}
+									{
+										//		f64 dvb_by_dperp, dvperp_by_dperp,
+										//			dvHall_by_dperp;
+										// Optimize by getting rid of different labels.
+
+										//		intermed.x = unit_perp.dotxy(gradvx);
+										//		intermed.y = unit_perp.dotxy(gradvy);
+										//		intermed.z = unit_perp.dotxy(gradvz);
+
+										d_intermed_j_by_dvj = unit_perp.dotxy(coeffgradvq_by_vq);
+
+										//		dvb_by_dperp = unit_b.dot(intermed);
+										//		dvperp_by_dperp = unit_perp.dot(intermed);
+										//		dvHall_by_dperp = unit_Hall.dot(intermed);
+
+										//		W_bb -= 2.0*THIRD*dvperp_by_dperp;
+										//		W_PP += 4.0*THIRD*dvperp_by_dperp;
+										//		W_HH -= 2.0*THIRD*dvperp_by_dperp;
+										//		W_bP += dvb_by_dperp;
+										//		W_PH += dvHall_by_dperp;
+
+										dW_bb_by_dv -= 2.0*THIRD*unit_perp*d_intermed_j_by_dvj;
+										dW_PP_by_dv += 4.0*THIRD*unit_perp*d_intermed_j_by_dvj;
+										dW_HH_by_dv -= 2.0*THIRD*unit_perp*d_intermed_j_by_dvj;
+										dW_bP_by_dv += unit_b*d_intermed_j_by_dvj;
+										dW_PH_by_dv += unit_Hall*d_intermed_j_by_dvj;
+
+									}
+									{
+										//f64 dvb_by_dHall, dvperp_by_dHall, dvHall_by_dHall;
+										//// basically, all should be 0
+
+										//intermed.x = unit_Hall.dotxy(gradvx);
+										//intermed.y = unit_Hall.dotxy(gradvy);
+										//intermed.z = unit_Hall.dotxy(gradvz);
+
+										//dvb_by_dHall = unit_b.dot(intermed);
+										//dvperp_by_dHall = unit_perp.dot(intermed);
+										//dvHall_by_dHall = unit_Hall.dot(intermed);
+
+										d_intermed_j_by_dvj = unit_Hall.dotxy(coeffgradvq_by_vq); // 0
+
+																									//	W_bb -= 2.0*THIRD*dvHall_by_dHall;
+																									//	W_PP -= 2.0*THIRD*dvHall_by_dHall;
+																									//	W_HH += 4.0*THIRD*dvHall_by_dHall;
+																									//	W_bH += dvb_by_dHall;
+																									//	W_PH += dvperp_by_dHall;
+
+										dW_bb_by_dv -= 2.0*THIRD*unit_Hall*d_intermed_j_by_dvj;
+										dW_PP_by_dv -= 2.0*THIRD*unit_Hall*d_intermed_j_by_dvj;
+										dW_HH_by_dv += 4.0*THIRD*unit_Hall*d_intermed_j_by_dvj;
+										dW_bH_by_dv += unit_b*d_intermed_j_by_dvj;
+										dW_PH_by_dv += unit_perp*d_intermed_j_by_dvj;
+									}
+								}
+								{
+									f64 ita_1 = ita_par*(nu*nu / (nu*nu + omegamod*omegamod));
+									//
+									//								Pi_b_b += -ita_par*W_bb;
+									//								Pi_P_P += -0.5*(ita_par + ita_1)*W_PP - 0.5*(ita_par - ita_1)*W_HH;
+									//								Pi_H_H += -0.5*(ita_par + ita_1)*W_HH - 0.5*(ita_par - ita_1)*W_PP;
+									//								Pi_H_P += -ita_1*W_PH;
+									// W_HH = 0
+
+									dPibb_by_dv += -ita_par*dW_bb_by_dv;
+									dPiPP_by_dv += -0.5*(ita_par + ita_1)*dW_PP_by_dv - 0.5*(ita_par - ita_1)*dW_HH_by_dv;
+									dPiHH_by_dv += -0.5*(ita_par + ita_1)*dW_HH_by_dv - 0.5*(ita_par - ita_1)*dW_PP_by_dv;
+									dPiHP_by_dv += -ita_1*dW_PH_by_dv;
+								}
+								{
+									f64 ita_2 = ita_par*(nu*nu / (nu*nu + 0.25*omegamod*omegamod));
+									//Pi_P_b += -ita_2*W_bP;
+									//Pi_H_b += -ita_2*W_bH;
+
+									dPiPb_by_dv += -ita_2*dW_bP_by_dv;
+									dPiHb_by_dv += -ita_2*dW_bH_by_dv;
+								}
+								{
+									f64 ita_3 = ita_par*(nu*omegamod / (nu*nu + omegamod*omegamod));
+									//Pi_P_P -= ita_3*W_PH;
+									//Pi_H_H += ita_3*W_PH;
+									//Pi_H_P += 0.5*ita_3*(W_PP - W_HH);
+
+									dPiPP_by_dv -= ita_3*dW_PH_by_dv;
+									dPiHH_by_dv += ita_3*dW_PH_by_dv;
+									dPiHP_by_dv += 0.5*ita_3*(dW_PP_by_dv - dW_HH_by_dv);
+								}
+								{
+									f64 ita_4 = 0.5*ita_par*(nu*omegamod / (nu*nu + 0.25*omegamod*omegamod));
+									//Pi_P_b += -ita_4*W_bH;
+									//Pi_H_b += ita_4*W_bP;
+
+									dPiPb_by_dv += -ita_4*dW_bH_by_dv;
+									dPiHb_by_dv += ita_4*dW_bP_by_dv;
+								}
+
+
+							} // scope W
+
+								// All we want left over at this point is Pi .. and unit_b
+
+							f64_vec3 Dmomflux_b, Dmomflux_perp, Dmomflux_Hall;
+							{
+								// Most efficient way: compute mom flux in magnetic coords
+								f64_vec3 mag_edge;
+								f64_vec2 edge_normal;
+								edge_normal.x = THIRD * (nextpos.y - prevpos.y);
+								edge_normal.y = THIRD * (prevpos.x - nextpos.x);
+
+								mag_edge.x = unit_b.x*edge_normal.x + unit_b.y*edge_normal.y;
+								mag_edge.y = unit_perp.x*edge_normal.x + unit_perp.y*edge_normal.y;
+								mag_edge.z = unit_Hall.x*edge_normal.x + unit_Hall.y*edge_normal.y;
+
+								//momflux_b = -(Pi_b_b*mag_edge.x + Pi_P_b*mag_edge.y + Pi_H_b*mag_edge.z);
+								//momflux_perp = -(Pi_P_b*mag_edge.x + Pi_P_P*mag_edge.y + Pi_H_P*mag_edge.z);
+								//momflux_Hall = -(Pi_H_b*mag_edge.x + Pi_H_P*mag_edge.y + Pi_H_H*mag_edge.z);
+								Dmomflux_b = -(dPibb_by_dv*mag_edge.x + dPiPb_by_dv*mag_edge.y + dPiHb_by_dv*mag_edge.z);
+								Dmomflux_perp = -(dPiPb_by_dv*mag_edge.x + dPiPP_by_dv*mag_edge.y + dPiHP_by_dv*mag_edge.z);
+								Dmomflux_Hall = -(dPiHb_by_dv*mag_edge.x + dPiHP_by_dv*mag_edge.y + dPiHH_by_dv*mag_edge.z);
+							}
+
+							// unit_b.x*momflux_b + unit_perp.x*momflux_perp + unit_Hall.x*momflux_Hall
+							// is the flow of p_x dotted with the edge_normal
+							// ownrates will be divided by N to give dv/dt
+							// m N dvx/dt = integral div momflux_x
+							// Therefore divide here just by m
+
+							f64_vec3 Dvisc_contrib;// , Dvisc_contriby, Dvisc_contribz;
+													//	Dvisc_contribx = over_m_s*(unit_b.x*Dmomflux_b + unit_perp.x*Dmomflux_perp + unit_Hall.x*Dmomflux_Hall);
+							Dvisc_contrib = over_m_s*(unit_b.x*Dmomflux_b + unit_perp.x*Dmomflux_perp + unit_Hall.x*Dmomflux_Hall);
+							//	Dvisc_contriby = over_m_s*(unit_b.y*Dmomflux_b + unit_perp.y*Dmomflux_perp + unit_Hall.y*Dmomflux_Hall);
+							//	Dvisc_contribz = over_m_s*(unit_b.z*Dmomflux_b + unit_perp.z*Dmomflux_perp + unit_Hall.z*Dmomflux_Hall);
+
+							// only the elements xx, xy, yx, yy, zz will be kept.
+							deriv_xy.xx += Dvisc_contrib.x;
+							deriv_xy.xy += Dvisc_contrib.y;
+
+							Dvisc_contrib = over_m_s*(unit_b.y*Dmomflux_b + unit_perp.y*Dmomflux_perp + unit_Hall.y*Dmomflux_Hall);
+							deriv_xy.yx += Dvisc_contrib.x;
+							deriv_xy.yy += Dvisc_contrib.y;
+
+							Dvisc_contrib = over_m_s*(unit_b.z*Dmomflux_b + unit_perp.z*Dmomflux_perp + unit_Hall.z*Dmomflux_Hall);
+							deriv_z += Dvisc_contrib.z;
+
+						}; // whether mag
+
+					}; // whether neutral
 				}; // bUsableSide
 
+				// v0.vez = vie_k.vez + h_use * MAR.z / (n_use.n*AreaMinor);
+
+				// Just leaving these but they won't do anything :
 				prevpos = opppos;
-				prev_v = opp_v;
-				prev_x = opp_x;
 				opppos = nextpos;
-				opp_v = next_v;
-				opp_x = next_x;
-			};
+			}; // next i
 
-			// OVERWRITE:
-			memcpy(&(p_ROCMAR[iMinor]), &(ownrates_visc), sizeof(f64_vec3));
 
-		}
-		else {
+			memcpy(&(p__coeffself_xy[iVertex + BEGINNING_OF_CENTRAL]), &deriv_xy, sizeof(f64_tens2));
+			p__coeffself_z[iVertex + BEGINNING_OF_CENTRAL] = deriv_z;
+
+		} else {
 			// Not domain tri or crossing_ins
 			// Did we fairly model the insulator as a reflection of v?
+			memset(&(p__coeffself_xy[iVertex + BEGINNING_OF_CENTRAL]), 0, sizeof(f64_tens2));
+			p__coeffself_z[iVertex + BEGINNING_OF_CENTRAL] = 0.0;
+
 		}
 	} // scope
+
+}
+
+
+__global__ void kernelComputeCombinedDEpsByDBeta(
+	f64 const hsub,
+	structural * __restrict__ p_info_minor,
+	f64_vec2 * __restrict__ p_regr_xy,
+	f64 * __restrict__ p_regr_iz,
+	f64 * __restrict__ p_regr_ez,
+	f64_vec3 * __restrict__ p_MAR_ion2,
+	f64_vec3 * __restrict__ p_MAR_elec2,
+	nvals * __restrict__ p_n_minor,
+	f64 * __restrict__ p_AreaMinor,
+	f64_vec2 * __restrict__ p_Depsilon_xy,
+	f64 * __restrict__ p_Depsilon_iz,
+	f64 * __restrict__ p_Depsilon_ez
+) {
+	long const iMinor = blockDim.x * blockIdx.x + threadIdx.x;
+
+	// eps = v - v_k - h MAR / N
+	structural info = p_info_minor[iMinor];
+	v4 Depsilon;
+	memset(&Depsilon, 0, sizeof(v4));
+	if ((info.flag == DOMAIN_VERTEX) || (info.flag == DOMAIN_TRIANGLE)
+		|| (info.flag == CROSSING_INS)) // ?
+	{
+		f64_vec2 regrxy = p_regr_xy[iMinor];
+		f64 regriz = p_regr_iz[iMinor];
+		f64 regrez = p_regr_ez[iMinor];
+		f64_vec3 MAR_ion = p_MAR_ion2[iMinor];
+		f64_vec3 MAR_elec = p_MAR_elec2[iMinor];
+		f64 N = p_AreaMinor[iMinor] * p_n_minor[iMinor].n;
+
+		Depsilon.vxy = regrxy 
+			- hsub*((MAR_ion.xypart()*m_ion + MAR_elec.xypart()*m_e) /
+			((m_ion + m_e)*N));
+		Depsilon.viz = regriz - hsub*(MAR_ion.z / N);
+		Depsilon.vez = regrez - hsub*(MAR_elec.z / N);
+
+	}
+	else {
+		// epsilon = 0
+	};
+	p_Depsilon_xy[iMinor] = Depsilon.vxy;
+	p_Depsilon_iz[iMinor] = Depsilon.viz;
+	p_Depsilon_ez[iMinor] = Depsilon.vez;
+}
+
+// not beta
+__global__ void kernelCreateDByDBetaCoeffmatrix(
+	f64 const hsub,
+	structural * __restrict__ p_info_minor,
+	
+	Tensor2 * __restrict__ p_matrix_xy_i,
+	Tensor2 * __restrict__ p_matrix_xy_e,
+	f64 * __restrict__ p_coeffself_iz,
+	f64 * __restrict__ p_coeffself_ez,
+
+	nvals * __restrict__ p_n_minor,
+	f64 * __restrict__ p_AreaMinor,
+
+	f64_tens2 * __restrict__ p_invmatrix,
+	f64 * __restrict__ p_invcoeffselfviz,
+	f64 * __restrict__ p_invcoeffselfvez
+) {
+	long const iMinor = blockDim.x * blockIdx.x + threadIdx.x;
+
+	// eps = v - v_k - h MAR / N
+	structural info = p_info_minor[iMinor];
+	
+	Tensor2 invmatrix;
+	memset(&invmatrix, 0, sizeof(Tensor2));
+	f64 invcoeffselfviz = 0.0;
+	f64 invcoeffselfvez = 0.0;
+
+	if ((info.flag == DOMAIN_VERTEX) || (info.flag == DOMAIN_TRIANGLE)
+		|| (info.flag == CROSSING_INS)) // ?
+	{
+		f64 N = p_AreaMinor[iMinor] * p_n_minor[iMinor].n;
+		
+		Tensor2 mat, matxy1, matxy2;
+		memset(&mat, 0, sizeof(Tensor2));
+		memcpy(&matxy1, &(p_matrix_xy_i[iMinor]), sizeof(Tensor2));
+		memcpy(&matxy2, &(p_matrix_xy_e[iMinor]), sizeof(Tensor2));
+
+		// Think this through carefully.
+
+		mat.xx = 1.0;
+		mat.yy = 1.0;
+		mat.xx += -hsub*((matxy1.xx*m_ion + matxy2.xx*m_e) /
+			((m_ion + m_e)*N)); 
+		mat.xy += -hsub*((matxy1.xy*m_ion + matxy2.xy*m_e) /
+			((m_ion + m_e)*N));
+		mat.yx += -hsub*((matxy1.yx*m_ion + matxy2.yx*m_e) /
+			((m_ion + m_e)*N));
+		mat.yy += -hsub*((matxy1.yy*m_ion + matxy2.yy*m_e) /
+			((m_ion + m_e)*N));
+		
+		mat.Inverse(invmatrix);
+
+		invcoeffselfviz = 1.0 / (1.0 - hsub*(p_coeffself_iz[iMinor] / N)); // rate of change of epsilon iz wrt viz
+		invcoeffselfvez = 1.0 / (1.0 - hsub*(p_coeffself_ez[iMinor] / N));
+
+	}
+	else {
+		// epsilon = 0
+	};
+
+	memcpy(&(p_invmatrix[iMinor]), &invmatrix, sizeof(Tensor2));
+	p_invcoeffselfviz[iMinor] = invcoeffselfviz;
+	p_invcoeffselfvez[iMinor] = invcoeffselfvez;
+}
+
+
+__global__ void kernelCreateNeutralInverseCoeffself(
+	f64 const hsub,
+	structural * __restrict__ p_info_minor,
+	nvals * __restrict__ p_n_minor,
+	f64 * __restrict__ p_AreaMinor,
+
+	f64 * __restrict__ p__coeffself_input,
+	f64 * __restrict__ p__invcoeffself_output
+	)
+{
+	long const iMinor = blockDim.x * blockIdx.x + threadIdx.x;
+
+	// eps = v - v_k - h MAR / N
+	structural info = p_info_minor[iMinor];
+
+	f64 invcoeffself = 0.0;
+
+	if ((info.flag == DOMAIN_VERTEX) || (info.flag == DOMAIN_TRIANGLE)
+		|| (info.flag == CROSSING_INS)) // ?
+	{
+		f64 N = p_AreaMinor[iMinor] * p_n_minor[iMinor].n;
+
+		// Think this through carefully.
+
+		invcoeffself = 1.0 / (1.0 - hsub*(p__coeffself_input[iMinor] / N)); // rate of change of epsilon iz wrt viz
+		
+	} else {
+		// epsilon = 0
+	};
+
+	p__invcoeffself_output[iMinor] = invcoeffself;	
+}
+
+
+__global__ void kernelCreateJacobiRegressorz
+(f64 * __restrict__ p_regr,
+	f64 * __restrict__ p_factor1,
+	f64 * __restrict__ p_factor2)
+{
+	long const iMinor = blockDim.x * blockIdx.x + threadIdx.x;
+	p_regr[iMinor] = p_factor1[iMinor] * p_factor2[iMinor];
+}
+
+__global__ void kernelCreateJacobiRegressorxy
+(f64_vec2 * __restrict__ p_regr,
+	f64_vec2 * __restrict__ p_factoreps,
+	f64_tens2 * __restrict__ p_factor2)
+{
+	long const iMinor = blockDim.x * blockIdx.x + threadIdx.x;
+	p_regr[iMinor] = p_factor2[iMinor] * p_factoreps[iMinor];
+}
+
+__global__ void AssembleVector2(
+	f64_vec2 * __restrict__ p_vec2,
+	f64 * __restrict__ p__x,
+	f64 * __restrict__ p__y)
+{
+	long const iMinor = blockDim.x * blockIdx.x + threadIdx.x;
+	f64_vec2 vec2;
+	vec2.x = p__x[iMinor];
+	vec2.y = p__y[iMinor];
+	p_vec2[iMinor] = vec2;
+}
+
+__global__ void kernelCreateJacobiRegressorNeutralxy
+( f64_vec2 * __restrict__ p_out,
+	f64_vec2 * __restrict__ p_in,
+	f64 * __restrict__ p_invcoeffself)
+{
+	long const iMinor = blockDim.x * blockIdx.x + threadIdx.x;
+	f64_vec2 vec2 = p_in[iMinor] * p_invcoeffself[iMinor];
+	p_out[iMinor] = vec2;
+}
+
+__global__ void AddLCtoVector4
+(v4 * __restrict__ p_operand,
+	f64_vec2 * __restrict__ p_regr2,
+	f64 * __restrict__ p_regr_iz,
+	f64 * __restrict__ p_regr_ez,
+	v4 * __restrict__ p_storemove)
+{
+	long const index = blockDim.x * blockIdx.x + threadIdx.x;
+
+	v4 operand = p_operand[index];
+	v4 old = operand;
+	v4 move;
+	int i, j;
+	for (i = 0; i < REGRESSORS; i++)
+	{
+		operand.vxy += beta_n_c[i] * p_regr2[index + i*NMINOR];
+		operand.viz += beta_n_c[i] * p_regr_iz[index + i*NMINOR];
+		operand.vez += beta_n_c[i] * p_regr_ez[index + i*NMINOR];		
+	};
+	move.vxy = operand.vxy - old.vxy;
+	move.viz = operand.viz - old.viz;
+	move.vez = operand.vez - old.vez;
+	p_storemove[index] = move;
+	p_operand[index] = operand;
+}
+
+__global__ void AddLCtoVector3
+(f64_vec3 * __restrict__ p_operand,
+	f64_vec2 * __restrict__ p_regr2,
+	f64 * __restrict__ p_regr_z,
+	f64_vec2 * __restrict__ p_storemove_xy,
+	f64 * __restrict__ p_storemove_z)
+{
+	long const index = blockDim.x * blockIdx.x + threadIdx.x;
+
+	f64_vec3 operand = p_operand[index];
+	f64_vec3 old = operand;
+	f64_vec2 movexy;
+	int i, j;
+	for (i = 0; i < REGRESSORS; i++)
+	{
+		f64_vec2 temp2 = p_regr2[index + i*NMINOR];
+		operand.x += beta_n_c[i] * temp2.x;
+		operand.y += beta_n_c[i] * temp2.y;
+		operand.z += beta_n_c[i] * p_regr_z[index + i*NMINOR];
+	};
+	movexy.x = operand.x - old.x;
+	movexy.y = operand.y - old.y;
+	p_storemove_xy[index] = movexy;
+	p_storemove_z[index] = operand.z - old.z;
+	p_operand[index] = operand;
 }

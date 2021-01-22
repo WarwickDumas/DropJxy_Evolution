@@ -518,7 +518,205 @@ __global__ void GetMax(
 	f64 * __restrict__ p_max
 );
 
+__global__ void kernelCreateJacobiRegressorxy
+(f64_vec2 * __restrict__ p_regr,
+	f64_vec2 * __restrict__ p_factoreps,
+	f64_tens2 * __restrict__ p_factor2);
+
+
+__global__ void SplitVector4(
+	f64_vec2 * __restrict__ p_xy,
+	f64 * __restrict__ p_z1,
+	f64 * __restrict__ p_z2,
+	v4 * __restrict__ p_v4
+);
+
+
+__global__ void kernelCreateJacobiRegressorz
+(f64 * __restrict__ p_regr,
+	f64 * __restrict__ p_factor1,
+	f64 * __restrict__ p_factor2);
+
+
+__global__ void CalculateCoeffself(
+	structural * __restrict__ p_info_minor,
+
+	long * __restrict__ p_izTri,
+	char * __restrict__ p_szPBC,
+	long * __restrict__ p_izNeighMinor,
+	char * __restrict__ p_szPBCtriminor,
+
+	f64 * __restrict__ p_ita_parallel_minor,   // nT / nu ready to look up
+	f64 * __restrict__ p_nu_minor,   // nT / nu ready to look up
+	f64_vec3 * __restrict__ p_B_minor,
+
+	Tensor2 * __restrict__ p__coeffself_xy, // matrix ... 
+	f64 * __restrict__ p__coeffself_z,
+
+	// Note that we then need to add matrices and invert somehow, for xy.
+	// For z we just take 1/x .
+
+	int const iSpecies,
+	f64 const m_s,
+	f64 const over_m_s
+);
+
 __global__ void Test_Asinh();
+__global__ void
+// __launch_bounds__(128) -- manual says that if max is less than 1 block, kernel launch will fail. Too bad huh.
+kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species(
+
+	structural * __restrict__ p_info_minor,
+	v4 * __restrict__ p_vie_minor,
+	// For neutral it needs a different pointer.
+	f64_vec3 * __restrict__ p_v_n,
+
+	long * __restrict__ p_izTri,
+	char * __restrict__ p_szPBC,
+	long * __restrict__ p_izNeighMinor,
+	char * __restrict__ p_szPBCtriminor,
+
+	f64 * __restrict__ p_ita_parallel_minor,   // nT / nu ready to look up
+	f64 * __restrict__ p_nu_minor,   // nT / nu ready to look up
+	f64_vec3 * __restrict__ p_B_minor,
+
+	f64_vec3 * __restrict__ p_MAR,
+	NTrates * __restrict__ p_NT_addition_rate,
+	NTrates * __restrict__ p_NT_addition_tri,
+	int const iSpecies,
+	f64 const m_s,
+	f64 const over_m_s);
+
+
+__global__ void
+// __launch_bounds__(128) -- manual says that if max is less than 1 block, kernel launch will fail. Too bad huh.
+kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species_dbydbeta_xy(
+
+	structural * __restrict__ p_info_minor,
+	v4 * __restrict__ p_vie_minor,
+	f64_vec3 * __restrict__ p_v_n,
+	f64_vec2 * __restrict__ p__x, // regressor
+
+	long * __restrict__ p_izTri,
+	char * __restrict__ p_szPBC,
+	long * __restrict__ p_izNeighMinor,
+	char * __restrict__ p_szPBCtriminor,
+
+	f64 * __restrict__ p_ita_parallel_minor,   // nT / nu ready to look up
+	f64 * __restrict__ p_nu_minor,   // nT / nu ready to look up
+	f64_vec3 * __restrict__ p_B_minor,
+
+	f64_vec3 * __restrict__ p_ROCMAR,
+	int const iSpecies,
+	f64 const m_s,
+	f64 const over_m_s
+);// easy way to put it in constant memory;
+
+__global__ void
+// __launch_bounds__(128) -- manual says that if max is less than 1 block, kernel launch will fail. Too bad huh.
+kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species_dbydbeta_z(
+
+	structural * __restrict__ p_info_minor,
+	v4 * __restrict__ p_vie_minor,
+	f64_vec3 * __restrict__ p_v_n,
+	f64 * __restrict__ p__x, // regressor vz
+
+	long * __restrict__ p_izTri,
+	char * __restrict__ p_szPBC,
+	long * __restrict__ p_izNeighMinor,
+	char * __restrict__ p_szPBCtriminor,
+
+	f64 * __restrict__ p_ita_parallel_minor,   // nT / nu ready to look up
+	f64 * __restrict__ p_nu_minor,   // nT / nu ready to look up
+	f64_vec3 * __restrict__ p_B_minor,
+
+	f64_vec3 * __restrict__ p_ROCMAR,
+	int const iSpecies,
+	f64 const m_s,
+	f64 const over_m_s
+);
+__global__ void kernelCreateNeutralInverseCoeffself(
+	f64 const hsub,
+	structural * __restrict__ p_info_minor,
+	nvals * __restrict__ p_n_minor,
+	f64 * __restrict__ p_AreaMinor,
+
+	f64 * __restrict__ p__coeffself_input,
+	f64 * __restrict__ p__invcoeffself_output
+);
+
+__global__ void AddLCtoVector3
+(f64_vec3 * __restrict__ p_operand,
+	f64_vec2 * __restrict__ p_regr2,
+	f64 * __restrict__ p_regr_z,
+	f64_vec2 * __restrict__ p_storemove_xy,
+	f64 * __restrict__ p_storemove_z);
+
+__global__ void AssembleVector2(
+	f64_vec2 * __restrict__ p_vec2,
+	f64 * __restrict__ p__x,
+	f64 * __restrict__ p__y);
+
+__global__ void AddLCtoVector4
+(v4 * __restrict__ p_operand,
+	f64_vec2 * __restrict__ p_regr2,
+	f64 * __restrict__ p_regr_iz,
+	f64 * __restrict__ p_regr_ez,
+	v4 * __restrict__ p_storemove);
+
+__global__ void kernelCreateJacobiRegressorNeutralxy
+(f64_vec2 * __restrict__ p_out,
+	f64_vec2 * __restrict__ p_in,
+	f64 * __restrict__ p_invcoeffself);
+
+__global__ void kernelCreate_neutral_viscous_contrib_to_MAR_and_NT_Geometric(
+	structural * __restrict__ p_info_minor,
+	f64_vec3 * __restrict__ p_v_n_minor,
+
+	long * __restrict__ p_izTri,
+	char * __restrict__ p_szPBC,
+	long * __restrict__ p_izNeighMinor,
+	char * __restrict__ p_szPBCtriminor,
+
+	f64 * __restrict__ p_ita_neut_minor,   //
+	f64 * __restrict__ p_nu_neut_minor,   // 
+
+	f64_vec3 * __restrict__ p_MAR_neut,
+	NTrates * __restrict__ p_NT_addition_rate,
+	NTrates * __restrict__ p_NT_addition_tri);
+
+
+__global__ void kernelComputeCombinedDEpsByDBeta(
+	f64 const hsub,
+	structural * __restrict__ p_info_minor,
+	f64_vec2 * __restrict__ p_regr_xy,
+	f64 * __restrict__ p_regr_iz,
+	f64 * __restrict__ p_regr_ez,
+	f64_vec3 * __restrict__ p_MAR_ion2,
+	f64_vec3 * __restrict__ p_MAR_elec2,
+	nvals * __restrict__ p_n_minor,
+	f64 * __restrict__ p_AreaMinor,
+	f64_vec2 * __restrict__ p_Depsilon_xy,
+	f64 * __restrict__ p_Depsilon_iz,
+	f64 * __restrict__ p_Depsilon_ez
+);
+
+__global__ void kernelCreateDByDBetaCoeffmatrix(
+	f64 const hsub,
+	structural * __restrict__ p_info_minor,
+
+	Tensor2 * __restrict__ p_matrix_xy_i,
+	Tensor2 * __restrict__ p_matrix_xy_e,
+	f64 * __restrict__ p_coeffself_iz,
+	f64 * __restrict__ p_coeffself_ez,
+
+	nvals * __restrict__ p_n_minor,
+	f64 * __restrict__ p_AreaMinor,
+
+	f64_tens2 * __restrict__ p_invmatrix,
+	f64 * __restrict__ p_invcoeffselfviz,
+	f64 * __restrict__ p_invcoeffselfvez
+);
 
 __global__ void kernelCreatePredictionsDebug(
 	f64 const hsub,
