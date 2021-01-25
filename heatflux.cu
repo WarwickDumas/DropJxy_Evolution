@@ -49,6 +49,13 @@ __device__ __forceinline__ f64_vec2 GetGradient(
 	f64_vec2 vec_out = (nextpos - (ourpos + proportion*(opppos - ourpos)));
 	f64 out_modulus = vec_out.modulus();
 	
+	//Apparently this sometimes comes out as zero.
+
+	//That does not seem right.
+	if (out_modulus == 0.0) printf("ourpos %1.10E %1.10E ppn %1.10E opppos %1.10E %1.10E nextpos %1.10E %1.10E vec-out=0\n",
+		ourpos.x, ourpos.y, proportion, opppos.x, opppos.y, nextpos.x, nextpos.y);
+
+
 	f64 intermediatevalue = our_v + (opp_v - our_v)*proportion;
 	f64 transversederivnext = (next_v - intermediatevalue) / out_modulus;	
 	// deriv in the direction towards nextpos.
@@ -60,8 +67,28 @@ __device__ __forceinline__ f64_vec2 GetGradient(
 	f64 transversederivprev = -(prev_v - intermediatevalue) / lengthout;
 
 	// Special formula now found:
-	f64 transversederiv = asinh(0.5*(sinh(transversederivprev) + sinh(transversederivnext)));
 	
+	// . First need to rescale the two things to have a sum of squares that is 400.
+	// . Now take sinh of the average of asinh's
+	// . Now scale back again.
+	// . This way the shape of the curve is not units-dependent.
+	
+	f64 transversederiv;
+	f64 root = sqrt(transversederivprev*transversederivprev +
+		transversederivnext*transversederivnext);
+	if (root == 0.0) { transversederiv = 0.0; } 
+	else {
+		f64 overroot = 1.0 / root;
+		transversederiv = root*0.05*sinh(0.5*(asinh(20.0*overroot*transversederivprev)
+			+ asinh(20.0*overroot*transversederivnext)));
+
+		if (transversederiv != transversederiv) printf("xversederiv NaN y1 %1.8E y2 %1.8E overroot %1.8E "
+			"asinh %1.7E %1.8E sinh %1.8E root %1.8E \n",
+			transversederivprev, transversederivnext, overroot, asinh(20.0*overroot*transversederivprev),
+			asinh(20.0*overroot*transversederivnext), sinh(0.5*(asinh(20.0*overroot*transversederivprev)
+				+ asinh(20.0*overroot*transversederivnext))), root);
+	};
+	 		
 	// Get longi derivative first :
 	f64_vec2 gradv;
 	gradv.x = (opp_v - our_v) / (opppos - ourpos).dot(opppos - ourpos);
@@ -71,6 +98,11 @@ __device__ __forceinline__ f64_vec2 GetGradient(
 	transversederiv /= out_modulus; // no longer deriv -- done this way to minimize divides.
 	gradv.x += transversederiv*vec_out.x;
 	gradv.y += transversederiv*vec_out.y;
+
+	// DEBUG:
+	if (out_modulus == 0) printf("Out_modulus == 0\n");
+	if (gradv.x != gradv.x) printf("opppos %1.8E %1.8E ourpos %1.8E %1.8E vec_out.x %1.8E \n",
+		opppos.x, opppos.y, ourpos.x, ourpos.y, vec_out.x);
 
 	return gradv;
 }
@@ -130,13 +162,73 @@ __device__ __forceinline__ f64_vec2 GetGradientDBydBeta(f64_vec2 prevpos, f64_ve
 	// (asinh x)' =  1/ sqrt(1+x*x)
 	// d/dx sinh x = cosh x
 
-	// f'g(x) 
-	f64 avgsinh = 0.5*(sinh(transversederivprev) + sinh(transversederivnext));
-	f64 d_by_dbeta_transversederiv = (1.0 / sqrt(1.0 + avgsinh*avgsinh)) * // f'g(x)
-		0.5*(cosh(transversederivprev)*d_by_dbeta_prev +
-			cosh(transversederivnext)*d_by_dbeta_next);
-	// g'(x)
+	// Empirical derivative might well be faster.
+	f64 d_by_dbeta_transversederiv;
+	f64 root = sqrt(transversederivprev*transversederivprev +
+		transversederivnext*transversederivnext);
 	
+	if (root == 0.0) {
+	// 0 may be wrong? 
+	// Be careful what rescaling is doing in the case both operands are very small.
+
+	// Try empirical estimate in this case.
+
+		f64 smallstep = 1.0e-7;
+		bool bCont = false;
+		do {
+			smallstep *= 0.1;
+			bCont = false;
+			root = smallstep*sqrt(d_by_dbeta_prev*d_by_dbeta_prev + d_by_dbeta_next*d_by_dbeta_next);
+			if (root == 0.0) {
+				d_by_dbeta_transversederiv = 0.0;
+			} else {
+				f64 overroot = 1.0 / root;
+				f64 transversederiv_stepped =
+					root*0.05*sinh(0.5*(asinh(20.0*overroot*d_by_dbeta_prev)
+						+ asinh(20.0*overroot*d_by_dbeta_next)));
+				f64 d_by_dbeta_transversederiv2 = transversederiv_stepped / smallstep;
+
+				smallstep *= 0.5;
+				root *= 0.5;
+				overroot *= 2.0;
+				transversederiv_stepped =
+					root*0.05*sinh(0.5*(asinh(20.0*overroot*d_by_dbeta_prev)
+						+ asinh(20.0*overroot*d_by_dbeta_next)));
+				f64 d_by_dbeta_transversederiv1 = transversederiv_stepped / smallstep;
+
+				if ((d_by_dbeta_transversederiv2 > 1.01*d_by_dbeta_transversederiv1) ||
+					(d_by_dbeta_transversederiv2 < 0.99*d_by_dbeta_transversederiv1)) {
+					// go again
+					bCont = true;
+				} else {
+					d_by_dbeta_transversederiv = d_by_dbeta_transversederiv1
+						+ d_by_dbeta_transversederiv1 - d_by_dbeta_transversederiv2;
+					// let's assume derivative changes linearly.
+					// Q2 = Q(step*0.5) = 0.25*step*step*f'' + 0.5*step*f'
+					// Q1 = Q(step*0.25) = 0.25*0.25*step*step*f'' + 0.25*step*f'
+					// Q(0) = ?
+
+				};
+			};
+		} while (bCont);
+	} else {
+		f64 overroot = 1.0 / root;
+		f64 y1 = transversederivprev;
+		f64 y2 = transversederivnext;
+
+		f64 avgasinh = 0.5*(asinh(20.0*y1*overroot) + asinh(20.0*y2*overroot));
+		f64 ratio = (y1*d_by_dbeta_prev + y2*d_by_dbeta_next) / (y1*y1 + y2*y2);
+
+		d_by_dbeta_transversederiv = (y1*d_by_dbeta_prev + y2*d_by_dbeta_next)*0.05*overroot*
+			sinh(avgasinh) + root*0.05*cosh(avgasinh)*10.0*
+			((d_by_dbeta_prev - y1*ratio) / sqrt(401.0*y1*y1 + y2*y2)
+				+ (d_by_dbeta_next - y2*ratio) / sqrt(y1*y1 + 401.0*y2*y2));
+		
+		//transversederiv = root*0.05*sinh(0.5*(asinh(20.0*overroot*transversederivprev)
+		//	+ asinh(20.0*overroot*transversederivnext)));
+
+	};
+
 	// Get longi derivative first :
 	f64_vec2 d_by_dbeta_gradv;
 	//gradv.x = (opp_v - our_v) / (opppos - ourpos).dot(opppos - ourpos);
@@ -154,8 +246,138 @@ __device__ __forceinline__ f64_vec2 GetGradientDBydBeta(f64_vec2 prevpos, f64_ve
 	return d_by_dbeta_gradv;
 }
 
+__device__ __forceinline__ f64_vec2 GetGradientDBydBetaDebug(f64_vec2 prevpos, f64_vec2 ourpos, f64_vec2 nextpos, f64_vec2 opppos,
+	f64 prev_v, f64 our_v, f64 next_v, f64 opp_v,
+	f64 prev_a, f64 our_a, f64 next_a, f64 opp_a // adding beta*a to v
+)
+{
+	// New method that can make sense for velocities:
+	// ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^	
+	// Consider the transverse derivative:
+
+	f64 proportion = (nextpos - ourpos).dot(opppos - ourpos) / (opppos - ourpos).dot(opppos - ourpos);
+	f64_vec2 vec_out = (nextpos - (ourpos + proportion*(opppos - ourpos)));
+	f64 out_modulus = vec_out.modulus();
+
+	f64 transversederivnext = (next_v - (our_v + (opp_v - our_v)*proportion)) / out_modulus;
+	// deriv in the direction towards nextpos.
+	f64 d_by_dbeta_next = (next_a - (our_a + (opp_a - our_a)*proportion)) / out_modulus;
+
+	proportion = (prevpos - ourpos).dot(opppos - ourpos) / (opppos - ourpos).dot(opppos - ourpos);
+	f64 lengthout = (prevpos - (ourpos + proportion*(opppos - ourpos))).modulus();
+
+	f64 transversederivprev = -(prev_v - (our_v + (opp_v - our_v)*proportion)) / lengthout;
+	f64 d_by_dbeta_prev = -(prev_a - (our_a + (opp_a - our_a)*proportion)) / lengthout;
+
+	printf("xversderivprevnext %1.9E %1.9E dbydbeta %1.9E %1.9E \n", transversederivprev, transversederivnext,
+		d_by_dbeta_prev, d_by_dbeta_next);
+
+	// transversederiv = asinh(0.5*(sinh(prev)+sinh(next)))
+
+	// (asinh x)' =  1/ sqrt(1+x*x)
+	// d/dx sinh x = cosh x
+
+	// Empirical derivative might well be faster.
+	f64 d_by_dbeta_transversederiv;
+	f64 root = sqrt(transversederivprev*transversederivprev +
+		transversederivnext*transversederivnext);
+
+	printf("root %1.10E \n", root);
+
+	if (root == 0.0) {
+		// 0 may be wrong? 
+		// Be careful what rescaling is doing in the case both operands are very small.
+
+		// Try empirical estimate in this case.
+
+		f64 smallstep = 1.0e-7;
+		bool bCont = false;
+		do {
+			smallstep *= 0.1;
+			bCont = false;
+			root = smallstep*sqrt(d_by_dbeta_prev*d_by_dbeta_prev + d_by_dbeta_next*d_by_dbeta_next);
+			if (root == 0.0) {
+				d_by_dbeta_transversederiv = 0.0;
+				printf("d_by_dbeta_transversederiv = 0.0;\n");
+			}
+			else {
+				f64 overroot = 1.0 / root;
+				f64 transversederiv_stepped =
+					root*0.05*sinh(0.5*(asinh(20.0*overroot*d_by_dbeta_prev)
+						+ asinh(20.0*overroot*d_by_dbeta_next)));
+				f64 d_by_dbeta_transversederiv2 = transversederiv_stepped / smallstep;
+
+				smallstep *= 0.5;
+				root *= 0.5;
+				overroot *= 2.0;
+				transversederiv_stepped =
+					root*0.05*sinh(0.5*(asinh(20.0*overroot*d_by_dbeta_prev)
+						+ asinh(20.0*overroot*d_by_dbeta_next)));
+				f64 d_by_dbeta_transversederiv1 = transversederiv_stepped / smallstep;
+
+				printf("dbydbeta xversderiv12 %1.9E %1.9E \n",
+					d_by_dbeta_transversederiv1, d_by_dbeta_transversederiv2);
+
+				if ((d_by_dbeta_transversederiv2 > 1.01*d_by_dbeta_transversederiv1) ||
+					(d_by_dbeta_transversederiv2 < 0.99*d_by_dbeta_transversederiv1)) {
+					// go again
+					bCont = true;
+					
+				}
+				else {
+					d_by_dbeta_transversederiv = d_by_dbeta_transversederiv1
+						+ d_by_dbeta_transversederiv1 - d_by_dbeta_transversederiv2;
+					// let's assume derivative changes linearly.
+					// Q2 = Q(step*0.5) = 0.25*step*step*f'' + 0.5*step*f'
+					// Q1 = Q(step*0.25) = 0.25*0.25*step*step*f'' + 0.25*step*f'
+					// Q(0) = ?
+
+				};
+			};
+		} while (bCont);
+	}
+	else {
+		f64 overroot = 1.0 / root;
+		f64 y1 = transversederivprev;
+		f64 y2 = transversederivnext;
+		printf("overroot %1.9E y12 %1.9E %1.9E", overroot, y1, y2);
+
+		f64 avgasinh = 0.5*(asinh(20.0*y1*overroot) + asinh(20.0*y2*overroot));
+		f64 ratio = (y1*d_by_dbeta_prev + y2*d_by_dbeta_next) / (y1*y1 + y2*y2);
+		
+		printf("avgasinh %1.9E ratio %1.9E \n", avgasinh, ratio);
+
+		d_by_dbeta_transversederiv = (y1*d_by_dbeta_prev + y2*d_by_dbeta_next)*0.05*overroot*
+			sinh(avgasinh) + root*0.05*cosh(avgasinh)*10.0*
+			((d_by_dbeta_prev - ratio) / sqrt(401.0*y1*y1 + y2*y2)
+				+ (d_by_dbeta_next - ratio) / sqrt(y1*y1 + 401.0*y2*y2));
+
+		printf("d_by_dbeta_transversederiv %1.9E \n", d_by_dbeta_transversederiv);
+
+		//transversederiv = root*0.05*sinh(0.5*(asinh(20.0*overroot*transversederivprev)
+		//	+ asinh(20.0*overroot*transversederivnext)));
+
+	};
+
+	// Get longi derivative first :
+	f64_vec2 d_by_dbeta_gradv;
+	//gradv.x = (opp_v - our_v) / (opppos - ourpos).dot(opppos - ourpos);
+	//gradv.y = gradv.x * (opppos.y - ourpos.y);
+	//gradv.x *= (opppos.x - ourpos.x);
+	d_by_dbeta_gradv.x = (opp_a - our_a) / (opppos - ourpos).dot(opppos - ourpos);
+	d_by_dbeta_gradv.y = d_by_dbeta_gradv.x * (opppos.y - ourpos.y);
+	d_by_dbeta_gradv.x *= (opppos.x - ourpos.x);
+
+	d_by_dbeta_transversederiv /= out_modulus; // no longer deriv -- done this way to minimize divides.
+											   //gradv.x += transversederiv*vec_out.x;
+											   //gradv.y += transversederiv*vec_out.y;
+	d_by_dbeta_gradv.x += d_by_dbeta_transversederiv*vec_out.x;
+	d_by_dbeta_gradv.y += d_by_dbeta_transversederiv*vec_out.y;
+	return d_by_dbeta_gradv;
+}
 
 
+/*
 __device__ void GetGradient3(f64_vec2 prevpos, f64_vec2 ourpos, f64_vec2 nextpos, f64_vec2 opppos,
 	f64 prev_v1, f64 our_v1, f64 next_v1, f64 opp_v1, f64_vec2 * p_result1,
 	f64 prev_v2, f64 our_v2, f64 next_v2, f64 opp_v2, f64_vec2 * p_result2,
@@ -223,7 +445,7 @@ __device__ void GetGradient3(f64_vec2 prevpos, f64_vec2 ourpos, f64_vec2 nextpos
 	p_result3->x += transversederiv*vec_out.x;
 	p_result3->y += transversederiv*vec_out.y;	
 }
-
+*/
 
 
 
@@ -3103,8 +3325,8 @@ kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species(
 			for (i = 0; i < tri_len; i++)
 			{
 				// Tri 0 is anticlockwise of neighbour 0, we think
-				inext = i + 1; if (inext > 5) inext = 0;
-				iprev = i - 1; if (iprev < 0) iprev = 5;
+				inext = i + 1; if (inext == tri_len) inext = 0;
+				iprev = i - 1; if (iprev < 0) iprev = tri_len-1;
 
 				f64_vec2 gradvx, gradvy, gradvz;
 				f64_vec3 htg_diff;
@@ -3190,6 +3412,13 @@ kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species(
 							(opppos - info.pos).dot(opppos - info.pos);
 
 					} else {
+						
+						if (TESTIONVERTVISC) {
+							printf("%d i inext %d %d izTri %d %d ourpos %1.8E %1.8E prev %1.8E %1.8E next %1.8E %1.8E opp %1.8E %1.8E \n",
+								iVertex, i, inext, izTri[i], izTri[inext],
+								info.pos.x, info.pos.y, prevpos.x, prevpos.y, nextpos.x, nextpos.y, opppos.x, opppos.y);
+						}
+
 						gradvx = GetGradient(
 							//f64_vec2 prevpos, f64_vec2 ourpos, f64_vec2 nextpos, f64_vec2 opppos,
 							prevpos, info.pos, nextpos, opppos,
@@ -3209,6 +3438,8 @@ kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species(
 							prev_v.z, shared_v_verts[threadIdx.x].z, next_v.z, opp_v.z
 						);
 						
+
+
 						// Could switch to the 3 in one function that handles all 3. in one.
 
 					}
@@ -3256,6 +3487,13 @@ kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species(
 
 						ownrates_visc += visc_contrib;
 						visc_htg += -THIRD*(m_s)*(htg_diff.dot(visc_contrib));
+
+						if (iVertex == VERTCHOSEN) {
+							printf("unmag %d : %d : ita %1.8E gradvx %1.8E %1.8E Pi_xx %1.8E Pi_xy %1.8E contrib.x %1.8E edgenml %1.8E %1.8E\n"
+								"------------\n",
+								iVertex, izTri[i], ita_par, gradvx.x, gradvx.y, Pi_xx, Pi_xy, visc_contrib.x, edge_normal.x, edge_normal.y);
+
+						}
 
 						// So we are saying if edge_normal.x > 0 and gradviz.x > 0
 						// then Pi_zx < 0 then ownrates += a positive amount. That is correct.
@@ -3437,24 +3675,27 @@ kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species(
 						
 						
 						if (TESTIONVERTVISC) {
-							printf("iVertex %d tri %d ION ita_par %1.9E omega %1.9E %1.9E %1.9E nu %1.9E ourpos %1.8E %1.8E \n"
+							printf("iVertex %d tri %d species %d ita_par %1.9E gradvx %1.8E %1.8E\n"
+								"omega %1.9E %1.9E %1.9E nu %1.9E ourpos %1.8E %1.8E \n"
 								"unit_b %1.8E %1.8E %1.8E unit_perp %1.8E %1.8E %1.8E unit_Hall %1.8E %1.8E %1.8E\n"
 								"Pi_b_b %1.8E Pi_P_b %1.8E Pi_P_P %1.8E Pi_H_b %1.8E Pi_H_P %1.8E Pi_H_H %1.8E\n"
-								"momflux b %1.8E perp %1.8E cross %1.8E visc_contrib %1.9E %1.9E %1.9E \n",
-								iVertex, izTri[i], ita_par, omega_c.x, omega_c.y, omega_c.z, nu,
+								"momflux b %1.8E perp %1.8E cross %1.8E visc_contrib %1.9E %1.9E %1.9E \n"
+								"---------------------\n",
+								iVertex, izTri[i], iSpecies, ita_par, gradvx.x, gradvx.y,
+								omega_c.x, omega_c.y, omega_c.z, nu,
 								info.pos.x, info.pos.y,
 								unit_b.x, unit_b.y, unit_b.z, unit_perp.x, unit_perp.y, unit_perp.z, unit_Hall.x, unit_Hall.y, unit_Hall.z,
 								Pi_b_b, Pi_P_b, Pi_P_P, Pi_H_b, Pi_H_P, Pi_H_H,
 								momflux_b, momflux_perp, momflux_Hall,
 								visc_contrib.x, visc_contrib.y, visc_contrib.z
 							);
-							printf(
-								"htgdiff %1.10E %1.10E %1.10E htg %1.10E \n===========================\n",
-								htg_diff.x,
-								htg_diff.y,
-								htg_diff.z,
-								-TWOTHIRDS*((iSpecies == 1) ? m_ion : m_e)*(htg_diff.dot(visc_contrib))
-							);
+							//printf(
+							//	"htgdiff %1.10E %1.10E %1.10E htg %1.10E \n===========================\n",
+							//	htg_diff.x,
+							//	htg_diff.y,
+							//	htg_diff.z,
+							//	-TWOTHIRDS*((iSpecies == 1) ? m_ion : m_e)*(htg_diff.dot(visc_contrib))
+							//);
 						}
 						
 					}
@@ -4154,8 +4395,8 @@ kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species_dbydbeta_xy(
 			for (i = 0; i < tri_len; i++)
 			{
 				// Tri 0 is anticlockwise of neighbour 0, we think
-				inext = i + 1; if (inext > 5) inext = 0;
-				iprev = i - 1; if (iprev < 0) iprev = 5;
+				inext = i + 1; if (inext == tri_len) inext = 0;
+				iprev = i - 1; if (iprev < 0) iprev = tri_len - 1;
 
 				f64_vec2 ROCgradvx, ROCgradvy;
 
@@ -5110,8 +5351,8 @@ kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species_dbydbeta_z(
 			for (i = 0; i < tri_len; i++)
 			{
 				// Tri 0 is anticlockwise of neighbour 0, we think
-				inext = i + 1; if (inext > 5) inext = 0;
-				iprev = i - 1; if (iprev < 0) iprev = 5;
+				inext = i + 1; if (inext == tri_len) inext = 0;
+				iprev = i - 1; if (iprev < 0) iprev = tri_len - 1;
 
 				f64_vec2 ROCgradvz;
 
@@ -5608,16 +5849,30 @@ kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species_dbydbeta_z(
 					{
 						// One of the sides is dipped under the insulator -- set transverse deriv to 0.
 						// Bear in mind we are looking from a vertex into a tri, it can be ins tri.
+						if (iMinor == 40372) printf("longi. x %1.8E %1.8E\n", opp_x, shared_regr[threadIdx.x]);
 
 						ROCgradvz = (opp_x - shared_regr[threadIdx.x])*(opppos - info.pos) /
 							(opppos - info.pos).dot(opppos - info.pos);
 					} else {
 
-						ROCgradvz = GetGradientDBydBeta(
+						if (iMinor == 40372) {
+							printf("40372 v %1.8E %1.8E %1.8E %1.8E x %1.8E %1.8E %1.8E %1.8E\n",
+								prev_v, shared_vz[threadIdx.x], next_v, opp_v,
+								prev_x, shared_regr[threadIdx.x], next_x, opp_x);
+
+							ROCgradvz = GetGradientDBydBetaDebug(
 								prevpos, info.pos, nextpos, opppos,
 								prev_v, shared_vz[threadIdx.x], next_v, opp_v,
 								prev_x, shared_regr[threadIdx.x], next_x, opp_x
-							);						
+							);
+						}
+						else {
+							ROCgradvz = GetGradientDBydBeta(
+								prevpos, info.pos, nextpos, opppos,
+								prev_v, shared_vz[threadIdx.x], next_v, opp_v,
+								prev_x, shared_regr[threadIdx.x], next_x, opp_x
+							);
+						};
 					};
 					if (info.flag == CROSSING_INS) {
 						char flag = p_info_minor[izNeighMinor[i]].flag;
@@ -5629,6 +5884,10 @@ kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species_dbydbeta_z(
 						};
 					};
 				};
+
+
+				if (iMinor == 40372) printf("40372 ROCgradvz %1.8E %1.8E bUsableSide %d\n",
+					ROCgradvz.x, ROCgradvz.y, bUsableSide ? 1 : 0);
 
 				if (bUsableSide) {
 					if (iSpecies == 0) {
@@ -5655,6 +5914,8 @@ kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species_dbydbeta_z(
 							//visc_contrib.x = 0.0;
 							//visc_contrib.y = 0.0;
 							visc_contrib = -over_m_s*(Pi_zx*edge_normal.x + Pi_zy*edge_normal.y);
+
+							if (iMinor == 40372) printf("40372 unmag visc_contrib.z %1.8E \n", visc_contrib);
 
 							ownrates_visc.z += visc_contrib;
 
@@ -5784,6 +6045,8 @@ kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species_dbydbeta_z(
 							visc_contrib.y = over_m_s*(unit_b.y*momflux_b + unit_perp.y*momflux_perp + unit_Hall.y*momflux_Hall);
 							visc_contrib.z = over_m_s*(unit_b.z*momflux_b + unit_perp.z*momflux_perp + unit_Hall.z*momflux_Hall);
 
+							if (iMinor == 40372) printf("40372 mag visc_contrib.z %1.8E \n", visc_contrib.z);
+
 							ownrates_visc += visc_contrib;
 						};
 					};
@@ -5796,6 +6059,8 @@ kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species_dbydbeta_z(
 				opp_v = next_v;
 				opp_x = next_x;
 			};
+
+			if (iMinor == 40372) printf("40372 ROCMAR.z %1.8E \n", ownrates_visc.z);
 
 			// OVERWRITE:
 			memcpy(&(p_ROCMAR[iMinor]), &(ownrates_visc), sizeof(f64_vec3));
@@ -5947,8 +6212,8 @@ __global__ void CalculateCoeffself(
 			for (i = 0; i < tri_len; i++)
 			{
 				// Tri 0 is anticlockwise of neighbour 0, we think
-				inext = i + 1; if (inext > 5) inext = 0;
-				iprev = i - 1; if (iprev < 0) iprev = 5;
+				inext = i + 1; if (inext == tri_len) inext = 0;
+				iprev = i - 1; if (iprev < 0) iprev = tri_len - 1;
 
 
 				// Order of calculations may help things to go out/into scope at the right times so careful with that.
@@ -6840,6 +7105,9 @@ __global__ void kernelComputeCombinedDEpsByDBeta(
 		Depsilon.viz = regriz - hsub*(MAR_ion.z / N);
 		Depsilon.vez = regrez - hsub*(MAR_elec.z / N);
 
+		if (iMinor == 40372) printf("40372 Depsilon.viz %1.8E MAR_ion.z %1.8E \n",
+			Depsilon.viz, MAR_ion.z);
+
 	}
 	else {
 		// epsilon = 0
@@ -6847,6 +7115,8 @@ __global__ void kernelComputeCombinedDEpsByDBeta(
 	p_Depsilon_xy[iMinor] = Depsilon.vxy;
 	p_Depsilon_iz[iMinor] = Depsilon.viz;
 	p_Depsilon_ez[iMinor] = Depsilon.vez;
+	if (iMinor == 40372) printf("sent -- 40372 Depsilon.viz %1.8E \n", Depsilon.viz);
+
 }
 
 // not beta

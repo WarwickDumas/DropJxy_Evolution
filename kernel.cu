@@ -26,7 +26,7 @@
 #define TESTADVECT (0)
 #define TESTADVECTZ (0)//iVertex == VERTCHOSEN)
 #define TESTADVECTNEUT (0) //iVertex == VERTCHOSEN)
-#define TESTIONVERTVISC (0) //iVertex == VERTCHOSEN)
+#define TESTIONVERTVISC (0)//(iVertex == VERTCHOSEN)
 #define TESTNEUTVISC (0) // iVertex == VERTCHOSEN) 
 #define TESTVISC (0) //iVertex == VERTCHOSEN) 
 #define TESTIONVISC (0) 
@@ -752,6 +752,9 @@ __global__ void kernelCreateEpsilon_Visc(
 
 		//if (iMinor == CHOSEN) printf("%d epsilon.vez %1.14E vie.vez %1.14E vie_k.vez %1.14E hsub/N %1.14E MAR_elec.z %1.14E\n",
 		//	iMinor, epsilon.vez, vie.vez, vie_k.vez, hsub / N, MAR_elec.z);
+		if ((epsilon.vxy.x != epsilon.vxy.x) || (epsilon.vxy.y != epsilon.vxy.y))
+			printf("%d epsilon x y %1.8E %1.8E\n",
+				iMinor, epsilon.vxy.x, epsilon.vxy.y);
 
 		if (p_bFailedTest != 0) {
 			// Stability criterion:
