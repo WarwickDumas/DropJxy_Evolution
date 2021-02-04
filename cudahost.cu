@@ -8,7 +8,7 @@
 #define LAPACKE
 #define PRECISE_VISCOSITY 
 #define DEBUGTE               0
-         
+
 #include <stdlib.h>
 #include <stdio.h>
 #include <math.h>
@@ -16,41 +16,41 @@
 #include <windows.h>
 
 //#include "lapacke.h"
- 
+
 #include "mesh.h"
 #include "FFxtubes.h"
 #include "cuda_struct.h"
 #include "flags.h"
 #include "kernel.h"
 #include "matrix_real.h"
-              
+               
 #ifdef LAPACKE 
 // Auxiliary routines prototypes 
 extern void print_matrix(char* desc, int m, int n, double* a, int lda);
 extern void print_int_vector(char* desc, int n, int* a);
 #endif
- 
+
 extern HWND hwndGraphics;
 extern TriMesh X4; 
-                
+
 #define BWD_SUBCYCLE_FREQ  1
 #define BWD_STEP_RATIO     1    // divide substeps by this for bwd
 #define NUM_BWD_ITERATIONS 4
 #define FWD_STEP_FACTOR    2    // multiply substeps by this for fwd
-              
+
 // This will be slow but see if it solves it.
-                       
-#define CHOSEN 115968
+ 
+#define CHOSEN 108752
 // 19020 for ez visc
 #define CHOSEN1 14332
 #define CHOSEN2 14334 
-#define VERTCHOSEN 29952
+#define VERTCHOSEN 22736
 #define VERTCHOSEN2 50
-    
+
 #define ITERATIONS_BEFORE_SWITCH  18
 #define REQUIRED_IMPROVEMENT_RATE  0.98
 #define REQUIRED_IMPROVEMENT_RATE_J  0.985
- 
+
 // This is the file for CUDA host code.
 #include "simulation.cu"
   
@@ -9960,25 +9960,25 @@ void RunBackwardR8LSForViscosity(v4 * p_vie_k, v4 * p_vie, f64 const hsub, cuSys
 
 
 		// Debug:
-		kernelCreatePredictionsDebug << <numTilesMinor, threadsPerTileMinor >> > (
-			// eps = v - (v_k +- h [viscous effect])
-			// x = -eps/coeffself
-			hsub,
-			pX_use->p_info,
+		//kernelCreatePredictionsDebug << <numTilesMinor, threadsPerTileMinor >> > (
+		//	// eps = v - (v_k +- h [viscous effect])
+		//	// x = -eps/coeffself
+		//	hsub,
+		//	pX_use->p_info,
 
-			p_epsilon_xy,
-			p_epsilon_iz,
-			p_epsilon_ez,
+		//	p_epsilon_xy,
+		//	p_epsilon_iz,
+		//	p_epsilon_ez,
 
-			p_d_epsxy_by_d_beta_i, // f64_vec2
-			p_d_eps_iz_by_d_beta_i,
-			p_d_eps_ez_by_d_beta_i,
+		//	p_d_epsxy_by_d_beta_i, // f64_vec2
+		//	p_d_eps_iz_by_d_beta_i,
+		//	p_d_eps_ez_by_d_beta_i,
 
-			p_GradAz,
-			p_epsilon_i,
-			p_epsilon_e
-			);
-		Call(cudaThreadSynchronize(), "cudaTS Create predictions");
+		//	p_GradAz,
+		//	p_epsilon_i,
+		//	p_epsilon_e
+		//	);
+		//Call(cudaThreadSynchronize(), "cudaTS Create predictions");
 
 
 
@@ -10026,16 +10026,16 @@ void RunBackwardR8LSForViscosity(v4 * p_vie_k, v4 * p_vie, f64 const hsub, cuSys
 		Call(cudaThreadSynchronize(), "cudaTS Create epsilon visc");
 
 
-		 
-		kernelCompare << <numTilesMinor, threadsPerTileMinor >> > (
-			p_epsilon_xy,
-			p_epsilon_iz,
-			p_epsilon_ez,
-			p_GradAz,
-			p_epsilon_i,
-			p_epsilon_e);
-		Call(cudaThreadSynchronize(), "cudaTS Compare");
-		printf("COMPARISON DONE");
+		// 
+		//kernelCompare << <numTilesMinor, threadsPerTileMinor >> > (
+		//	p_epsilon_xy,
+		//	p_epsilon_iz,
+		//	p_epsilon_ez,
+		//	p_GradAz,
+		//	p_epsilon_i,
+		//	p_epsilon_e);
+		//Call(cudaThreadSynchronize(), "cudaTS Compare");
+		//printf("COMPARISON DONE");
 
 
 
@@ -10946,6 +10946,8 @@ void RunBackward8LSForNeutralViscosity_Geometric(f64_vec3 * p_v_n_k, f64_vec3 * 
 	// Requires averaging of n,T to triangles first. & ita
 	// ***************************************************
 
+	GlobalSuppressSuccessVerbosity = false;
+
 	static bool bHistoryNeutVisc = false;
 
 	f64 beta[REGRESSORS];
@@ -11071,6 +11073,10 @@ void RunBackward8LSForNeutralViscosity_Geometric(f64_vec3 * p_v_n_k, f64_vec3 * 
 
 	f64 oldRSS = 0.0;
 
+	AssembleVector2 << <numTilesMinor, threadsPerTileMinor >> > (
+		p_epsilon_xy, p_epsilon_x, p_epsilon_y);
+	Call(cudaThreadSynchronize(), "cudaTS AssembleVector2");
+
 	while (bContinue)
 	{
 		// &&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&
@@ -11094,25 +11100,40 @@ void RunBackward8LSForNeutralViscosity_Geometric(f64_vec3 * p_v_n_k, f64_vec3 * 
 		// Regr 8: prev move z
 		// [on 1st ever go, multiply]
 
-		AssembleVector2 << <numTilesMinor, threadsPerTileMinor >> > (
-			p_regressors2, p_epsilon_x, p_epsilon_y);
-		Call(cudaThreadSynchronize(), "cudaTS AssembleVector2");
+		// These all come out almost same -- is something wrong with that?
 
-		cudaMemcpy(p_regressors_iz + NMINOR,
-			p_epsilon_z, sizeof(f64)*NMINOR, cudaMemcpyDeviceToDevice);
+		// New plan:
 
-		kernelCreateJacobiRegressorNeutralxy << <numTilesMinor, threadsPerTileMinor >> >
-			(p_regressors2 + NMINOR * 2,
-				p_regressors2,
+		// 0, 1: Jac xy, z
+		// 2, 3: square
+		// 4, 5: deps(xy, z)/beta 0,1 minus 0,1
+		// 6, 7: stored move OR square of the above
+		
+
+
+
+//		cudaMemcpy(p_regressors_iz + NMINOR,
+//			p_epsilon_z, sizeof(f64)*NMINOR, cudaMemcpyDeviceToDevice);
+
+		kernelCreateJacobiRegressorNeutralxy2 << <numTilesMinor, threadsPerTileMinor >> >
+			(p_regressors2 , //+NMINOR* 2,
+				p_epsilon_x, p_epsilon_y,
 				p__invcoeffself);
 		Call(cudaThreadSynchronize(), "cudaTS Jacobi ez");
 		
 		kernelCreateJacobiRegressorz << <numTilesMinor, threadsPerTileMinor >> >
-			(p_regressors_iz + NMINOR * 3,
+			(p_regressors_iz + NMINOR, // *3
 				p_epsilon_z,
 				p__invcoeffself);
 		Call(cudaThreadSynchronize(), "cudaTS Jacobi ez");
-		
+
+		cudaMemcpy(p_regressors2 + NMINOR * 2, p_regressors2, sizeof(f64_vec2)*NMINOR, cudaMemcpyDeviceToDevice);
+		kernelSquare2 << <numTilesMinor, threadsPerTileMinor >> >(p_regressors2 + NMINOR * 2);
+		Call(cudaThreadSynchronize(), "cudaTS kernelsquare2");
+
+		cudaMemcpy(p_regressors_iz + NMINOR * 3, p_regressors_iz + NMINOR, sizeof(f64)*NMINOR, cudaMemcpyDeviceToDevice);
+		kernelSquare << <numTilesMinor, threadsPerTileMinor >> >(p_regressors_iz + NMINOR*3);
+		Call(cudaThreadSynchronize(), "cudaTS kernelsquare");
 
 		SubroutineComputeDbyDbetaNeutral(hsub, p_regressors2, p_regressors_iz, p_v_n, pX_use, 0,
 			1, 0); // XY_ONLY
@@ -11124,9 +11145,18 @@ void RunBackward8LSForNeutralViscosity_Geometric(f64_vec3 * p_v_n_k, f64_vec3 * 
 			0, 1); // Z
 		
 		// Regressor 5: for J
-		cudaMemcpy(p_regressors2 + NMINOR * 4, p_d_epsxy_by_d_beta_i + NMINOR*2, sizeof(f64_vec2)*NMINOR, cudaMemcpyDeviceToDevice);
+		Subtract_xy << <numTilesMinor, threadsPerTileMinor >> >
+			(p_regressors2 + NMINOR * 4, p_d_epsxy_by_d_beta_i, p_regressors2);
+		Call(cudaThreadSynchronize(), "cudaTS Subtract_xy");
+		//cudaMemcpy(p_regressors2 + NMINOR * 4, p_d_epsxy_by_d_beta_i + NMINOR*2, sizeof(f64_vec2)*NMINOR, cudaMemcpyDeviceToDevice);
+		// deps/dbeta includes +1*regressor, so take -1*regressor
+
 		// Regressor 6: for J
-		cudaMemcpy(p_regressors_iz + NMINOR * 5, p_d_eps_iz_by_d_beta_i + NMINOR*3, sizeof(f64)*NMINOR, cudaMemcpyDeviceToDevice);
+		Subtract << <numTilesMinor, threadsPerTileMinor >> >
+			(p_regressors_iz + NMINOR * 5, p_d_eps_iz_by_d_beta_i + NMINOR, p_regressors_iz + NMINOR);
+		Call(cudaThreadSynchronize(), "cudaTS Subtract");
+
+		//cudaMemcpy(p_regressors_iz + NMINOR * 5, p_d_eps_iz_by_d_beta_i + NMINOR*3, sizeof(f64)*NMINOR, cudaMemcpyDeviceToDevice);
 		
 		SubroutineComputeDbyDbetaNeutral(hsub, p_regressors2, p_regressors_iz, p_v_n, pX_use, 4,
 			1, 0); // XY_ONLY
@@ -11138,8 +11168,18 @@ void RunBackward8LSForNeutralViscosity_Geometric(f64_vec3 * p_v_n_k, f64_vec3 * 
 			cudaMemcpy(p_regressors_iz + NMINOR * 7, p_stored_move_neut_z, sizeof(f64)*NMINOR, cudaMemcpyDeviceToDevice);
 		} else {
 			// Just use more deps/dbeta as regressors on the first ever go:
-			cudaMemcpy(p_regressors2 + NMINOR * 6, p_d_epsxy_by_d_beta_i + NMINOR * 4, sizeof(f64_vec2)*NMINOR, cudaMemcpyDeviceToDevice);
-			cudaMemcpy(p_regressors_iz + NMINOR * 7, p_d_eps_iz_by_d_beta_i + NMINOR * 5, sizeof(f64)*NMINOR, cudaMemcpyDeviceToDevice);
+			//cudaMemcpy(p_regressors2 + NMINOR * 6, p_d_epsxy_by_d_beta_i + NMINOR * 4, sizeof(f64_vec2)*NMINOR, cudaMemcpyDeviceToDevice);
+			//cudaMemcpy(p_regressors_iz + NMINOR * 7, p_d_eps_iz_by_d_beta_i + NMINOR * 5, sizeof(f64)*NMINOR, cudaMemcpyDeviceToDevice);
+
+			cudaMemcpy(p_regressors2 + NMINOR * 6, p_regressors2 + NMINOR*4, sizeof(f64_vec2)*NMINOR, cudaMemcpyDeviceToDevice);
+			kernelSquare2 << <numTilesMinor, threadsPerTileMinor >> >(p_regressors2 + NMINOR * 6);
+			Call(cudaThreadSynchronize(), "cudaTS kernelsquare2");
+
+			cudaMemcpy(p_regressors_iz + NMINOR * 7, p_regressors_iz + NMINOR*5, sizeof(f64)*NMINOR, cudaMemcpyDeviceToDevice);
+			kernelSquare << <numTilesMinor, threadsPerTileMinor >> >(p_regressors_iz + NMINOR * 7);
+			Call(cudaThreadSynchronize(), "cudaTS kernelsquare");
+
+
 		};
 
 		SubroutineComputeDbyDbetaNeutral(hsub, p_regressors2, p_regressors_iz, p_v_n, pX_use, 6,
@@ -11150,6 +11190,11 @@ void RunBackward8LSForNeutralViscosity_Geometric(f64_vec3 * p_v_n_k, f64_vec3 * 
 		// &&&&&&&&&&&&&&&&&&&&&&&&&&&&&
 		// 3. Solver section
 		// &&&&&&&&&&&&&&&&&&&&&&&&&&&&&
+
+				
+	//	cudaMemset(p_d_epsxy_by_d_beta_i+NMINOR, 0, sizeof(f64_vec2)*NMINOR*(REGRESSORS-1));
+	//	cudaMemset(p_d_eps_iz_by_d_beta_i+NMINOR, 0, sizeof(f64)*NMINOR*(REGRESSORS-1));
+
 
 		// 3a. Add up sum products
 
@@ -11190,10 +11235,9 @@ void RunBackward8LSForNeutralViscosity_Geometric(f64_vec3 * p_v_n_k, f64_vec3 * 
 				sum_product_matrix[i] += p_sum_product_matrix_host[iTile *REGRESSORS*REGRESSORS + i];
 		};
 		// Try this:
-		if ((sum_product_matrix[REGRESSORS*REGRESSORS - 1] == 0.0) && (eps_deps[REGRESSORS - 1] == 0.0))
-			sum_product_matrix[REGRESSORS*REGRESSORS - 1] = 1.0;
-		if ((sum_product_matrix[REGRESSORS*(REGRESSORS - 1) - 1] == 0.0) && (eps_deps[REGRESSORS - 2] == 0.0))
-			sum_product_matrix[REGRESSORS*(REGRESSORS - 1) - 1] = 1.0;
+		for (i = 0; i < REGRESSORS; i++)
+			if ((sum_product_matrix[REGRESSORS*i + i] == 0.0) && (eps_deps[i] == 0.0))
+				sum_product_matrix[REGRESSORS*i + i] = 1.0;
 
 		if (!GlobalSuppressSuccessVerbosity)
 		{
@@ -11226,14 +11270,27 @@ void RunBackward8LSForNeutralViscosity_Geometric(f64_vec3 * p_v_n_k, f64_vec3 * 
 		for (i = 0; i < REGRESSORS; i++)
 			printf(" %1.8E ", beta[i]);
 		printf("\n");
-
+		
 		CallMAC(cudaMemcpyToSymbol(beta_n_c, beta, REGRESSORS * sizeof(f64)));
 
 		printf("Iteration %d visc: [ beta ", iIteration);
 		for (i = 0; i < REGRESSORS; i++) printf("%1.3E ", beta[i]);
 		printf(" ]\n");
+		//
+		//f64 tempf64_2, tempf64_3, tempf64_4;
+		//// prediction:
+		//cudaMemcpy(&tempf64, &(p_epsilon_x[CHOSEN]), sizeof(f64), cudaMemcpyDeviceToHost);
+		//cudaMemcpy(&tempf64_2, &(p_epsilon_y[CHOSEN]), sizeof(f64), cudaMemcpyDeviceToHost);
+		//printf("%d epsilon xy %1.8E %1.8E ", CHOSEN, tempf64, tempf64_2);
 
-
+		//cudaMemcpy(&tempf64_3, &(p_d_epsxy_by_d_beta_i[CHOSEN].x), sizeof(f64), cudaMemcpyDeviceToHost);
+		//cudaMemcpy(&tempf64_4, &(p_d_epsxy_by_d_beta_i[CHOSEN].y), sizeof(f64), cudaMemcpyDeviceToHost);
+		//printf("deps / dbeta0 %1.8E %1.8E |", tempf64_3, tempf64_4);
+		//
+		//f64 predict1 = tempf64 + beta[0] * tempf64_3;
+		//f64 predict2 = tempf64_2 + beta[0] * tempf64_4;
+		//printf(" prediction %1.8E %1.8E \n", predict1, predict2);
+		//
 		// 3c. Add lc to soln vector.
 
 		AddLCtoVector3 << <numTilesMinor, threadsPerTileMinor >> >
@@ -11285,6 +11342,13 @@ void RunBackward8LSForNeutralViscosity_Geometric(f64_vec3 * p_v_n_k, f64_vec3 * 
 			);
 		Call(cudaThreadSynchronize(), "cudaTS Create epsilon visc");
 
+		AssembleVector2 << <numTilesMinor, threadsPerTileMinor >> > (
+			p_epsilon_xy, p_epsilon_x, p_epsilon_y);
+		Call(cudaThreadSynchronize(), "cudaTS AssembleVector2");
+
+	//	cudaMemcpy(&tempf64, &(p_epsilon_x[CHOSEN]), sizeof(f64), cudaMemcpyDeviceToHost);
+	//	cudaMemcpy(&tempf64_2, &(p_epsilon_y[CHOSEN]), sizeof(f64), cudaMemcpyDeviceToHost);
+	//	printf(" Result %1.8E %1.8E \n\n", tempf64, tempf64_2);
 
 		bContinue = false;
 		cudaMemcpy(p_boolhost, p_bFailed, sizeof(bool)*numTilesMinor, cudaMemcpyDeviceToHost);
@@ -11332,8 +11396,10 @@ void RunBackward8LSForNeutralViscosity_Geometric(f64_vec3 * p_v_n_k, f64_vec3 * 
 		//if ((iIteration > 1) && (RSS_xy + RSS_iz + RSS_ez > oldRSS)) getch();
 		oldRSS = RSS_xy + RSS_z ;
 
-
 		++iIteration;
+		
+		getch();
+
 	};
 	
 
@@ -11344,7 +11410,8 @@ labelBudgerigar3:
 	SubtractVector3 << <numTilesMinor, threadsPerTileMinor >> >(p_stored_move3, p_v_n, p_v_n_k);
 	Call(cudaThreadSynchronize(), "cudaTS subtract vector 3");
 	GlobalSuppressSuccessVerbosity = DEFAULTSUPPRESSVERBOSITY;
-	
+	while (1) getch();
+
 }
 
 int Compare_f64_vec2(f64_vec2 * p1, f64_vec2 * p2, long N);
@@ -17408,7 +17475,7 @@ void Go_visit_the_other_file()
 		Call(cudaThreadSynchronize(), "cudaTS GetLapMinor addaaa2");
 
 		cudaMemcpy(p_temphost3, p_temp2, sizeof(f64), cudaMemcpyDeviceToHost);
-
+		 
 		f64 sum_depsbydbeta_sq = 0.0;
 		f64 sum_eps_depsbydbeta = 0.0;
 		f64 sum_eps_eps = 0.0;
@@ -17426,7 +17493,7 @@ void Go_visit_the_other_file()
 		beta = -sum_eps_depsbydbeta / sum_depsbydbeta_sq;
 
 		for (long i = 0; i < BEGINNING_OF_CENTRAL; i++)
-		{
+		{ 
 			if (flaglist[i]) {
 				cudaMemcpy(&Az, &(p_Az[i]), sizeof(f64), cudaMemcpyDeviceToHost);
 
@@ -17471,7 +17538,7 @@ void inline SubroutineComputeDbyDbetaNeutral(
 			pX_use->p_info,
 			pX_use->p_vie,
 			p_v_n, // not used
-			p_regrxy,
+			p_regrxy + i*NMINOR, 
 
 			pX_use->p_izTri_vert,
 			pX_use->p_szPBCtri_vert,
@@ -17494,7 +17561,7 @@ void inline SubroutineComputeDbyDbetaNeutral(
 			pX_use->p_info,
 			pX_use->p_vie,
 			p_v_n,
-			p_regriz, // regressor 1
+			p_regriz + i*NMINOR, // regressor 1
 
 			pX_use->p_izTri_vert,
 			pX_use->p_szPBCtri_vert,
@@ -17509,15 +17576,31 @@ void inline SubroutineComputeDbyDbetaNeutral(
 			);
 		Call(cudaThreadSynchronize(), "cudaTS  dbydbeta regr1 neutz");
 	};
-
+		 
+	kernelComputeNeutralDEpsByDBeta << <numTilesMinor, threadsPerTileMinor >> >
+		(
+			hsub,
+			pX_use->p_info,
+			p_regrxy + i*NMINOR,
+			p_regriz + i*NMINOR,
+			p_ROCMAR1,
+			pX_use->p_n_minor,
+			pX_use->p_AreaMinor,
+			p_d_epsxy_by_d_beta_i + i*NMINOR,
+			p_d_eps_iz_by_d_beta_i + i*NMINOR
+			);
+	Call(cudaThreadSynchronize(), "cudaTS  dbydbeta ");
 
 }
-
+ 
 
 void inline SubroutineComputeDbyDbeta(
 	f64 const hsub, f64_vec2 * p_regrxy, f64 * p_regriz, f64 * p_regrez, v4 * p_vie, cuSyst * pX_use, int i,
 	int iUsexy, int iUseiz, int iUseez)
 {
+	printf("######################################################################\n\n");
+
+	f64 tempf64;
 
 	cudaMemset(p_ROCMAR1, 0, sizeof(f64_vec3)*NMINOR);
 	cudaMemset(p_ROCMAR2, 0, sizeof(f64_vec3)*NMINOR);
@@ -17562,7 +17645,9 @@ void inline SubroutineComputeDbyDbeta(
 			p_ROCMAR2, 2, m_e_, 1.0 / m_e_
 			);
 		Call(cudaThreadSynchronize(), "cudaTS  dbydbeta regr1 xy_e");
-	};
+	//	cudaMemcpy(&tempf64, &(p_ROCMAR2[CHOSEN].z), sizeof(f64), cudaMemcpyDeviceToHost);
+//		printf("\nROCMAR2[%d].z %1.14E \n\n", CHOSEN, tempf64);
+	}; 
 
 	if (iUseiz) {
 		kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species_dbydbeta_z << <numTriTiles, threadsPerTileMinor >> > (
@@ -17583,8 +17668,10 @@ void inline SubroutineComputeDbyDbeta(
 			p_ROCMAR1, 1, m_i_, 1.0 / m_i_
 			);
 		Call(cudaThreadSynchronize(), "cudaTS  dbydbeta regr1 ionz");
+	//	cudaMemcpy(&tempf64, &(p_ROCMAR2[CHOSEN].z), sizeof(f64), cudaMemcpyDeviceToHost);
+	//	printf("\nROCMAR2[%d].z %1.14E \n\n", CHOSEN, tempf64);
 	}
-	 
+	
 	if (iUseez) {
 		kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species_dbydbeta_z << <numTriTiles, threadsPerTileMinor >> > (
 			pX_use->p_info,
@@ -17596,24 +17683,29 @@ void inline SubroutineComputeDbyDbeta(
 			pX_use->p_szPBCtri_vert,
 			pX_use->p_izNeigh_TriMinor,
 			pX_use->p_szPBC_triminor,
-
+			 
 			p_temp2, //
 			p_temp4, //
 			pX_use->p_B,
-
+			 
 			p_ROCMAR2, 2, m_e_, 1.0 / m_e_
 			);
 		Call(cudaThreadSynchronize(), "cudaTS  dbydbeta regr1 elecz");
-	}
-	printf("iUse %d %d %d ; now entering CCDEPDB \n", iUsexy, iUseiz, iUseez);
+
+	//	cudaMemcpy(&tempf64, &(p_ROCMAR2[CHOSEN].z), sizeof(f64), cudaMemcpyDeviceToHost);
+
+//		printf("\nROCMAR2[%d].z %1.14E \n\n", CHOSEN, tempf64);
+
+	} 
+	//printf("iUse %d %d %d ; now entering CCDEPDB \n", iUsexy, iUseiz, iUseez);
 
 	kernelComputeCombinedDEpsByDBeta << <numTilesMinor, threadsPerTileMinor >> >
 	(
 		hsub,
 		pX_use->p_info,
-		p_regrxy,
-		p_regriz,
-		p_regrez,
+		p_regrxy + i*NMINOR,
+		p_regriz + i*NMINOR,
+		p_regrez + i*NMINOR,
 		p_ROCMAR1,
 		p_ROCMAR2,
 		pX_use->p_n_minor,
@@ -17623,6 +17715,74 @@ void inline SubroutineComputeDbyDbeta(
 		p_d_eps_ez_by_d_beta_i + i*NMINOR
 	);
 	Call(cudaThreadSynchronize(), "cudaTS  dbydbeta ");
+
+	// Tuesday:
+	// Let's compare an empirical estimate now.
+	// Pick a cell for comparison -- CHOSEN will do.
+		
+	// Straight to comparing the MAR that we get ... and do this for ez.
+
+	/*
+	cudaMemset(p_MAR_elec2, 0, sizeof(f64_vec3)*NMINOR);
+	kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species << <numTriTiles, threadsPerTileMinor >> > (
+		pX_use->p_info,
+		p_vie,
+		pX_use->p_v_n, 
+		pX_use->p_izTri_vert,
+		pX_use->p_szPBCtri_vert,
+		pX_use->p_izNeigh_TriMinor,
+		pX_use->p_szPBC_triminor,
+		p_temp2, // p_ita_parallel_ion_minor,   // nT / nu ready to look up
+		p_temp4, //f64 * __restrict__ p_nu_ion_minor,   // nT / nu ready to look up
+		pX_use->p_B,
+		p_MAR_elec2, // accumulates
+		NT_addition_rates_d_temp, NT_addition_tri_d,
+		2, m_e_, 1.0 / m_e_);
+	Call(cudaThreadSynchronize(), "cudaTS Create visc flux elec");
+
+	cudaMemcpy(&tempf64, &(p_MAR_elec2[CHOSEN].z), sizeof(f64), cudaMemcpyDeviceToHost);
+	printf("existing MAR[%d].z %1.14E \n", CHOSEN, tempf64);
+	f64 MAR1 = tempf64;
+
+	AddLittleBitORegressors << <numTilesMinor, threadsPerTileMinor >> >
+		(1.0e-10, p_vie, p_regrxy + i*NMINOR,
+		p_regriz + i*NMINOR,
+		p_regrez + i*NMINOR);
+	Call(cudaThreadSynchronize(), "cudaTS AddLittleBit");
+
+	cudaMemset(p_MAR_elec2, 0, sizeof(f64_vec3)*NMINOR);
+	kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species << <numTriTiles, threadsPerTileMinor >> > (
+		pX_use->p_info,
+		p_vie,
+		pX_use->p_v_n,
+		pX_use->p_izTri_vert,
+		pX_use->p_szPBCtri_vert,
+		pX_use->p_izNeigh_TriMinor,
+		pX_use->p_szPBC_triminor,
+		p_temp2, // p_ita_parallel_ion_minor,   // nT / nu ready to look up
+		p_temp4, //f64 * __restrict__ p_nu_ion_minor,   // nT / nu ready to look up
+		pX_use->p_B,
+		p_MAR_elec2, // accumulates
+		NT_addition_rates_d_temp, NT_addition_tri_d,
+		2, m_e_, 1.0 / m_e_);
+	Call(cudaThreadSynchronize(), "cudaTS Create visc flux elec");
+	cudaMemcpy(&tempf64, &(p_MAR_elec2[CHOSEN].z), sizeof(f64), cudaMemcpyDeviceToHost);
+	printf("updated MAR[%d].z %1.14E \n\n", CHOSEN, tempf64);
+	f64 MAR2 = tempf64;
+	
+	printf("estimate of deriv = %1.14E  ;  ", (MAR2 - MAR1) * 1.0e10);
+	f64 temp___;
+	cudaMemcpy(&tempf64, &(p_regrez[CHOSEN + i*NMINOR]), sizeof(f64), cudaMemcpyDeviceToHost);
+	cudaMemcpy(&temp___, &(p_vie[CHOSEN].vez), sizeof(f64), cudaMemcpyDeviceToHost);
+	printf("regr ez[%d] = %1.10E  vez %1.10E \n\n", CHOSEN, tempf64, temp___);
+
+	AddLittleBitORegressors << <numTilesMinor, threadsPerTileMinor >> >
+		(-1.0e-10, p_vie, p_regrxy + i*NMINOR,
+			p_regriz + i*NMINOR,
+			p_regrez + i*NMINOR);
+	Call(cudaThreadSynchronize(), "cudaTS AddLittleBit");
+	*/
+
 }
 
 
@@ -17647,6 +17807,7 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 	f64 TSS_xy, TSS_iz, TSS_ez, RSS_xy, RSS_iz, RSS_ez;
 	f64 Rsquared_xy, Rsquared_iz, Rsquared_ez;
 
+	HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
 	cudaMemcpy(p_vie, p_vie_k, sizeof(v4)*NMINOR, cudaMemcpyDeviceToDevice);
 	cudaMemset(zero_vec4, 0, sizeof(v4)*NMINOR);
 	int iIteration = 0;
@@ -17912,27 +18073,30 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 			// Collect deps/dbeta for first 4 regressors:
 			// ===================================================
 
-
+		
 			SubroutineComputeDbyDbeta(hsub,p_regressors2, p_regressors_iz, p_regressors_ez, p_vie, pX_use, 0,
 				1, 0, 0); // XY_ONLY
 			SubroutineComputeDbyDbeta(hsub,p_regressors2, p_regressors_iz, p_regressors_ez, p_vie, pX_use, 1,
 				0, 1, 0);// IZ_ONLY);
 			SubroutineComputeDbyDbeta(hsub, p_regressors2, p_regressors_iz, p_regressors_ez, p_vie, pX_use, 2,
 				0, 0, 1);// EZ_ONLY);
+						
 			SubroutineComputeDbyDbeta(hsub, p_regressors2, p_regressors_iz, p_regressors_ez, p_vie, pX_use, 3,
 				1, 1, 1); // all apply
+				//1, 0, 1);
+				
 
 			// Regressor 5:
 			cudaMemcpy(p_regressors2 + NMINOR * 4, p_d_epsxy_by_d_beta_i, sizeof(f64_vec2)*NMINOR, cudaMemcpyDeviceToDevice);
 			// Regressor 6:
 			cudaMemcpy(p_regressors_iz + NMINOR * 5, p_d_eps_iz_by_d_beta_i + NMINOR, sizeof(f64)*NMINOR, cudaMemcpyDeviceToDevice);
 			cudaMemcpy(p_regressors_ez + NMINOR * 5, p_d_eps_ez_by_d_beta_i + NMINOR*2, sizeof(f64)*NMINOR, cudaMemcpyDeviceToDevice);
-
+			
 			SubroutineComputeDbyDbeta(hsub, p_regressors2, p_regressors_iz, p_regressors_ez, p_vie, pX_use, 4,
 				1, 0, 0);
 			SubroutineComputeDbyDbeta(hsub, p_regressors2, p_regressors_iz, p_regressors_ez, p_vie, pX_use, 5,
 				0, 1, 1); // all apply
-
+				
 			// 7 = previous xy move, or historic xy move
 			// 8 = previous iz and ez moves, or historic.
 
@@ -17944,8 +18108,7 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 					cudaMemcpy(p_regressors_iz + NMINOR * 7, p_d_eps_iz_by_d_beta_i + 5 * NMINOR, sizeof(f64)*NMINOR, cudaMemcpyDeviceToDevice);
 					cudaMemcpy(p_regressors_ez + NMINOR * 7, p_d_eps_ez_by_d_beta_i + 5 * NMINOR, sizeof(f64)*NMINOR, cudaMemcpyDeviceToDevice);
 
-				}
-				else {
+				} else {
 					// Historic move split into xy, izez :
 					SplitVector4 << <numTilesMinor, threadsPerTileMinor >> > (
 						p_regressors2 + NMINOR * 6, p_regressors_iz + NMINOR * 7, p_regressors_ez + NMINOR * 7,
@@ -17960,12 +18123,12 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 					p_stored_move4
 					);
 			};
-
+			
 			SubroutineComputeDbyDbeta(hsub, p_regressors2, p_regressors_iz, p_regressors_ez, p_vie, pX_use, 6,
 				1, 0, 0);
 			SubroutineComputeDbyDbeta(hsub, p_regressors2, p_regressors_iz, p_regressors_ez, p_vie, pX_use, 7,
 				0, 1, 1); 
-
+				
 			break;
 		case 1:
 			// Primarily z move.
@@ -18049,26 +18212,26 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 			SubroutineComputeDbyDbeta(hsub, p_regressors2, p_regressors_iz, p_regressors_ez, p_vie, pX_use, 1,
 				1, 0, 0); 
 
-			dbgfile = fopen("debug_1.txt", "w");
-			for (long iMinor = 0; iMinor < NMINOR; iMinor++)
-			{
-				fprintf(dbgfile, "eps %1.14E %1.14E %1.14E %1.14E | regr ", p_tempvec2_host2[iMinor].x, p_tempvec2_host2[iMinor].y,
-					p_temphost3[iMinor], p_temphost4[iMinor]);
-				for (int j = 0; j < REGRESSORS; j++)
-				{
-					fprintf(dbgfile, "%d : %1.14E %1.14E %1.14E %1.14E | ", j, p_tempvec2_host[iMinor + j*NMINOR].x, p_tempvec2_host[iMinor + j*NMINOR].y,
-						p_temphost1[iMinor + j*NMINOR], p_temphost2[iMinor + j*NMINOR]);
-				}
-				fprintf(dbgfile, " deps/dbeta ");
-				for (int j = 0; j < REGRESSORS; j++)
-				{
-					fprintf(dbgfile, "%d : %1.14E %1.14E %1.14E %1.14E | ", j,
-						p_tempvec2_host3[iMinor + j*NMINOR].x, p_tempvec2_host3[iMinor + j*NMINOR].y,
-						p_temphost5[iMinor + j*NMINOR], p_temphost6[iMinor + j*NMINOR]);
-				}
-				fprintf(dbgfile, "\n");
-			};
-			fclose(dbgfile);
+			//dbgfile = fopen("debug_1.txt", "w");
+			//for (long iMinor = 0; iMinor < NMINOR; iMinor++)
+			//{
+			//	fprintf(dbgfile, "eps %1.14E %1.14E %1.14E %1.14E | regr ", p_tempvec2_host2[iMinor].x, p_tempvec2_host2[iMinor].y,
+			//		p_temphost3[iMinor], p_temphost4[iMinor]);
+			//	for (int j = 0; j < REGRESSORS; j++)
+			//	{
+			//		fprintf(dbgfile, "%d : %1.14E %1.14E %1.14E %1.14E | ", j, p_tempvec2_host[iMinor + j*NMINOR].x, p_tempvec2_host[iMinor + j*NMINOR].y,
+			//			p_temphost1[iMinor + j*NMINOR], p_temphost2[iMinor + j*NMINOR]);
+			//	}
+			//	fprintf(dbgfile, " deps/dbeta ");
+			//	for (int j = 0; j < REGRESSORS; j++)
+			//	{
+			//		fprintf(dbgfile, "%d : %1.14E %1.14E %1.14E %1.14E | ", j,
+			//			p_tempvec2_host3[iMinor + j*NMINOR].x, p_tempvec2_host3[iMinor + j*NMINOR].y,
+			//			p_temphost5[iMinor + j*NMINOR], p_temphost6[iMinor + j*NMINOR]);
+			//	}
+			//	fprintf(dbgfile, "\n");
+			//};
+			//fclose(dbgfile);
 			kernelCreateJacobiRegressorz << <numTilesMinor, threadsPerTileMinor >> >
 				(p_regressors_iz + NMINOR * 2,
 					p_d_eps_iz_by_d_beta_i + NMINOR,
@@ -18143,8 +18306,7 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 		//			p_epsilon_xy,
 		//			p_epsilon_iz, p_epsilon_ez);
 		//		Call(cudaThreadSynchronize(), "AssembleVector4");
-
-
+		
 		//	} else {
 		//		if ((i == REGRESSORS - 1) && ((iIteration > 0) || (bHistory))) {
 		//			cudaMemcpy(p_regressors4 + i*NMINOR, p_stored_move4, sizeof(v4)*NMINOR, cudaMemcpyDeviceToDevice);
@@ -18192,8 +18354,7 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 		//	// ============================================================
 		//	// Now calculate deps/dbeta for this regressor
 		//	// ===============================================
-
-
+		
 		//	cudaMemset(p_MAR_ion2, 0, sizeof(f64_vec3)*NMINOR);
 		//	cudaMemset(p_MAR_elec2, 0, sizeof(f64_vec3)*NMINOR);
 		//	cudaMemset(NT_addition_tri_d, 0, sizeof(NTrates)*NUMVERTICES * 2);
@@ -18241,51 +18402,44 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 		//		);
 		//	Call(cudaThreadSynchronize(), "cudaTS Create epsilon visc");
 		//}; // next i
-
-
-
-
-
-
-
 		// All regressors now created, and deps/dbeta obtained.
 
-		// Let's spit out data to find out what happened.
-
-		//	Regressors:
-		cudaMemcpy(p_tempvec2_host, p_regressors2, sizeof(f64_vec2)*NMINOR*REGRESSORS, cudaMemcpyDeviceToHost);
-		cudaMemcpy(p_temphost1, p_regressors_iz, sizeof(f64)*NMINOR*REGRESSORS, cudaMemcpyDeviceToHost);
-		cudaMemcpy(p_temphost2, p_regressors_ez, sizeof(f64)*NMINOR*REGRESSORS, cudaMemcpyDeviceToHost);
-		//  epsilon:
-		cudaMemcpy(p_tempvec2_host2, p_epsilon_xy, sizeof(f64)*NMINOR, cudaMemcpyDeviceToHost);
-		cudaMemcpy(p_temphost3, p_epsilon_iz, sizeof(f64)*NMINOR, cudaMemcpyDeviceToHost);
-		cudaMemcpy(p_temphost4, p_epsilon_ez, sizeof(f64)*NMINOR, cudaMemcpyDeviceToHost);
-		//  
-		cudaMemcpy(p_tempvec2_host3, p_d_epsxy_by_d_beta_i, sizeof(f64_vec2)*NMINOR*REGRESSORS, cudaMemcpyDeviceToHost);
-		cudaMemcpy(p_temphost5, p_d_eps_iz_by_d_beta_i, sizeof(f64)*NMINOR*REGRESSORS, cudaMemcpyDeviceToHost);
-		cudaMemcpy(p_temphost6, p_d_eps_ez_by_d_beta_i, sizeof(f64)*NMINOR*REGRESSORS, cudaMemcpyDeviceToHost);
+		////	Regressors:
+		//cudaMemcpy(p_tempvec2_host, p_regressors2, sizeof(f64_vec2)*NMINOR*REGRESSORS, cudaMemcpyDeviceToHost);
+		//cudaMemcpy(p_temphost1, p_regressors_iz, sizeof(f64)*NMINOR*REGRESSORS, cudaMemcpyDeviceToHost);
+		//cudaMemcpy(p_temphost2, p_regressors_ez, sizeof(f64)*NMINOR*REGRESSORS, cudaMemcpyDeviceToHost);
+		////  epsilon:
+		//cudaMemcpy(p_tempvec2_host2, p_epsilon_xy, sizeof(f64)*NMINOR, cudaMemcpyDeviceToHost);
+		//cudaMemcpy(p_temphost3, p_epsilon_iz, sizeof(f64)*NMINOR, cudaMemcpyDeviceToHost);
+		//cudaMemcpy(p_temphost4, p_epsilon_ez, sizeof(f64)*NMINOR, cudaMemcpyDeviceToHost);
+		////  
+		//cudaMemcpy(p_tempvec2_host3, p_d_epsxy_by_d_beta_i, sizeof(f64_vec2)*NMINOR*REGRESSORS, cudaMemcpyDeviceToHost);
+		//cudaMemcpy(p_temphost5, p_d_eps_iz_by_d_beta_i, sizeof(f64)*NMINOR*REGRESSORS, cudaMemcpyDeviceToHost);
+		//cudaMemcpy(p_temphost6, p_d_eps_ez_by_d_beta_i, sizeof(f64)*NMINOR*REGRESSORS, cudaMemcpyDeviceToHost);
 
 
-		dbgfile = fopen("debug.txt", "w");
-		for (long iMinor = 0; iMinor < NMINOR; iMinor++)
-		{
-			fprintf(dbgfile, "eps %1.14E %1.14E %1.14E %1.14E | regr ", p_tempvec2_host2[iMinor].x, p_tempvec2_host2[iMinor].y,
-				p_temphost3[iMinor], p_temphost4[iMinor]);
-			for (int j = 0; j < REGRESSORS; j++)
-			{
-				fprintf(dbgfile, "%d : %1.14E %1.14E %1.14E %1.14E | ",j, p_tempvec2_host[iMinor + j*NMINOR].x, p_tempvec2_host[iMinor + j*NMINOR].y,
-					p_temphost1[iMinor + j*NMINOR], p_temphost2[iMinor + j*NMINOR]);
-			}
-			fprintf(dbgfile, " deps/dbeta ");
-			for (int j = 0; j < REGRESSORS; j++)
-			{
-				fprintf(dbgfile, "%d : %1.14E %1.14E %1.14E %1.14E | ", j, 
-					p_tempvec2_host3[iMinor + j*NMINOR].x, p_tempvec2_host3[iMinor + j*NMINOR].y,
-					p_temphost5[iMinor + j*NMINOR], p_temphost6[iMinor + j*NMINOR]);
-			}
-			fprintf(dbgfile, "\n");
-		};
-		fclose(dbgfile);
+		//dbgfile = fopen("debug.txt", "w");
+		//for (long iMinor = 0; iMinor < NMINOR; iMinor++)
+		//{
+		//	fprintf(dbgfile, "eps %1.14E %1.14E %1.14E %1.14E | regr ", p_tempvec2_host2[iMinor].x, p_tempvec2_host2[iMinor].y,
+		//		p_temphost3[iMinor], p_temphost4[iMinor]);
+		//	for (int j = 0; j < REGRESSORS; j++)
+		//	{
+		//		fprintf(dbgfile, "%d : %1.14E %1.14E %1.14E %1.14E | ",j, p_tempvec2_host[iMinor + j*NMINOR].x, p_tempvec2_host[iMinor + j*NMINOR].y,
+		//			p_temphost1[iMinor + j*NMINOR], p_temphost2[iMinor + j*NMINOR]);
+		//	}
+		//	fprintf(dbgfile, " deps/dbeta ");
+		//	for (int j = 0; j < REGRESSORS; j++)
+		//	{
+		//		fprintf(dbgfile, "%d : %1.14E %1.14E %1.14E %1.14E | ", j, 
+		//			p_tempvec2_host3[iMinor + j*NMINOR].x, p_tempvec2_host3[iMinor + j*NMINOR].y,
+		//			p_temphost5[iMinor + j*NMINOR], p_temphost6[iMinor + j*NMINOR]);
+		//	}
+		//	fprintf(dbgfile, "\n");
+		//};
+		//fclose(dbgfile);
+
+
 
 		// &&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&
 		// &&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&
@@ -18293,10 +18447,6 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 		// ===============================================
 		// collect eps deps and sum-product matrix
 		// ===============================================
-
-		// 
-
-				
 
 
 		cudaMemset(p_eps_against_deps, 0, sizeof(f64)*REGRESSORS * numTilesMinor);
@@ -18332,10 +18482,10 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 				sum_product_matrix[i] += p_sum_product_matrix_host[iTile *REGRESSORS*REGRESSORS + i];
 		};
 		// Try this:
-		if ((sum_product_matrix[REGRESSORS*REGRESSORS - 1] == 0.0) && (eps_deps[REGRESSORS - 1] == 0.0))
-			sum_product_matrix[REGRESSORS*REGRESSORS - 1] = 1.0;
-		if ((sum_product_matrix[REGRESSORS*(REGRESSORS - 1) - 1] == 0.0) && (eps_deps[REGRESSORS - 2] == 0.0))
-			sum_product_matrix[REGRESSORS*(REGRESSORS - 1) - 1] = 1.0;
+		for (i = 0; i < REGRESSORS; i++) 
+			if ((sum_product_matrix[REGRESSORS*i + i] == 0.0) && (eps_deps[i] == 0.0))
+				sum_product_matrix[REGRESSORS*i + i] = 1.0;
+		
 
 		if (!GlobalSuppressSuccessVerbosity)
 		{
@@ -18361,11 +18511,17 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 		for (i = 0; i < REGRESSORS; i++)
 			for (int j = 0; j < REGRESSORS; j++)
 				matLU.LU[i][j] = sum_product_matrix[i*REGRESSORS + j];
-		printf("got to here 1\n");
 		matLU.LUdecomp();
-		printf("got to here 2\n");
 		matLU.LUSolve(eps_deps, beta);
-		printf("got to here 3\n");
+
+////
+//		beta[0] = 0.0;
+//		beta[1] = 0.0;
+//		beta[4] = 0.0;
+//		beta[5] = 0.0;
+//		beta[6] = 0.0;
+//		beta[7] = 0.0;
+
 
 		printf("\nbeta: ");
 		for (i = 0; i < REGRESSORS; i++)
@@ -18410,20 +18566,12 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 		#endif
 		*/
 
-
-		// OK this is a bit hmmm.
-		// What I think we need to do is consider each dimensional move separately. 
-		// This does mean more runs of evaluating the derivative.
-		// Also let's consider carefully what R7 means in terms of .. Taylor series?
-
-
 		// Debug:
 		//printf("a = dummy1, s = dummy2, d = dummy3; other = continue\n");
 		//char o = getch();
 		//if ((o == 'a') || (o == 's') || (o == 'd') || (o == 'f') || (o == 'g') || (o == 'h') || (o == 'j') || (o == 'k') ) 
 		//{
 		//	memset(beta,0,sizeof(f64)*REGRESSORS);
-
 		//	if (o == 'a') beta[0] = 100.0;
 		//	if (o == 's') beta[1] = 100.0;
 		//	if (o == 'd') beta[2] = 100.0;
@@ -18452,7 +18600,7 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 		//		p_tempvec4_host[iMaxiz].vxy.y, p_tempvec4_host[iMaxiz].viz, p_tempvec4_host[iMaxiz].vez);
 		//	printf("vie_4 : %d : %1.9E %1.9E %1.9E %1.9E \n", iMaxez, p_tempvec4_host[iMaxez].vxy.x,
 		//		p_tempvec4_host[iMaxez].vxy.y, p_tempvec4_host[iMaxez].viz, p_tempvec4_host[iMaxez].vez);
-
+		 
 		AddLCtoVector4 << <numTilesMinor, threadsPerTileMinor >> >
 			(p_vie, p_regressors2, p_regressors_iz, p_regressors_ez, p_stored_move4);
 		
@@ -18470,7 +18618,7 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 		// ===========================================================================
 		// Finally, test whether the new values satisfy 'reasonable' criteria:
 
-		/*
+		
 		// Debug:
 		kernelCreatePredictionsDebug << <numTilesMinor, threadsPerTileMinor >> > (
 			// eps = v - (v_k +- h [viscous effect])
@@ -18492,31 +18640,48 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 			);
 		Call(cudaThreadSynchronize(), "cudaTS Create predictions");
 
-		*/
-
-
+		
 		cudaMemset(p_MAR_ion2, 0, sizeof(f64_vec3)*NMINOR);
 		cudaMemset(p_MAR_elec2, 0, sizeof(f64_vec3)*NMINOR);
 		cudaMemset(NT_addition_tri_d, 0, sizeof(NTrates)*NUMVERTICES * 2);
 		cudaMemset(NT_addition_rates_d_temp, 0, sizeof(NTrates)*NUMVERTICES);
-		kernelCreate_viscous_contrib_to_MAR_and_NT << <numTriTiles, threadsPerTileMinor >> >(
+
+		kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species << <numTriTiles, threadsPerTileMinor >> > (
 			pX_use->p_info,
 			p_vie,
+			// For neutral it needs a different pointer.
+			pX_use->p_v_n, // not used
 			pX_use->p_izTri_vert,
 			pX_use->p_szPBCtri_vert,
 			pX_use->p_izNeigh_TriMinor,
 			pX_use->p_szPBC_triminor,
+
 			p_temp1, // p_ita_parallel_ion_minor,   // nT / nu ready to look up
-			p_temp2, //f64 * __restrict__ p_ita_parallel_elec_minor,   // nT / nu ready to look up
 			p_temp3, //f64 * __restrict__ p_nu_ion_minor,   // nT / nu ready to look up
-			p_temp4, // f64 * __restrict__ p_nu_elec_minor,   // nT / nu ready to look up
 			pX_use->p_B,
-			p_MAR_ion2, // just accumulates
-			p_MAR_elec2,
-			NT_addition_rates_d_temp,
-			// Again need to accumulate on to the existing one, the one here needs to start from zero each time probably
-			NT_addition_tri_d);
-		Call(cudaThreadSynchronize(), "cudaTS visccontrib ~~");
+			p_MAR_ion2, // accumulates
+			NT_addition_rates_d_temp, NT_addition_tri_d,
+			1, m_ion_, 1.0 / m_ion_);
+		Call(cudaThreadSynchronize(), "cudaTS Create visc flux ion");
+
+		kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species << <numTriTiles, threadsPerTileMinor >> > (
+			pX_use->p_info,
+			p_vie,
+			// For neutral it needs a different pointer.
+			pX_use->p_v_n, // not used
+			pX_use->p_izTri_vert,
+			pX_use->p_szPBCtri_vert,
+			pX_use->p_izNeigh_TriMinor,
+			pX_use->p_szPBC_triminor,
+
+			p_temp2, // p_ita_parallel_ion_minor,   // nT / nu ready to look up
+			p_temp4, //f64 * __restrict__ p_nu_ion_minor,   // nT / nu ready to look up
+
+			pX_use->p_B,
+			p_MAR_elec2, // accumulates
+			NT_addition_rates_d_temp, NT_addition_tri_d,
+			2, m_e_, 1.0 / m_e_);
+		Call(cudaThreadSynchronize(), "cudaTS Create visc flux elec");
 
 		// Given putative ROC and coeff on self, it is simple to calculate eps and Jacobi. So do so:
 		CallMAC(cudaMemset(p_bFailed, 0, sizeof(bool)*numTilesMinor));
@@ -18536,21 +18701,38 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 			p_bFailed
 			);
 		Call(cudaThreadSynchronize(), "cudaTS Create epsilon visc");
-
-
-		/*
+		
+		
 		kernelCompare << <numTilesMinor, threadsPerTileMinor >> > (
 			p_epsilon_xy,
 			p_epsilon_iz,
 			p_epsilon_ez,
 			p_GradAz,
 			p_epsilon_i,
-			p_epsilon_e);
+			p_epsilon_e,
+			p_Residuals // the score for distance from prediction
+			);
 		Call(cudaThreadSynchronize(), "cudaTS Compare");
 		printf("COMPARISON DONE");
 
+		cudaMemcpy(p_temphost5, p_Residuals, sizeof(f64)*NMINOR, cudaMemcpyDeviceToHost);
+		f64 Max = 0.0;
+		long iMax = 0;
+		for (iMinor = 0; iMinor < NMINOR; iMinor++)
+			if (p_temphost5[iMinor] > Max) {
+				iMax = iMinor; Max = p_temphost5[iMinor];
+			};
+		printf("iMax = %d p_temphost5[%d] = %1.10E \n",
+			iMax, iMax, p_temphost5[iMax]);
 
-		*/
+		f64 tempf64, tempf64_2;
+		cudaMemcpy(&tempf64, &(p_epsilon_ez[iMax]), sizeof(f64), cudaMemcpyDeviceToHost);
+		cudaMemcpy(&tempf64_2, &(p_epsilon_e[iMax]), sizeof(f64), cudaMemcpyDeviceToHost);
+		SetConsoleTextAttribute(hConsole, 11);
+		printf("\niMax = %d actual epsez %1.10E predicted %1.10E \n\n",
+			iMax, tempf64, tempf64_2);
+		SetConsoleTextAttribute(hConsole, 15);
+		
 
 
 		bContinue = false;
@@ -18603,14 +18785,10 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 		//if ((iIteration > 1) && (RSS_xy + RSS_iz + RSS_ez > oldRSS)) getch();
 		oldRSS = RSS_xy + RSS_iz + RSS_ez;
 
-
 		// Criterion may need some magic.
-
-
-
+		
 		// yes it happens. L2 is not below precision either.
-
-
+		
 		//// Debug: find maximum epsilons:		
 		//cudaMemcpy(p_tempvec2_host, p_epsilon_xy, sizeof(f64_vec2)*NMINOR, cudaMemcpyDeviceToHost);
 		//printf("eps_xy : maxio %1.8E at %d\n", p_tempvec2_host[iMaxx].modulus(), iMaxx);
@@ -18618,8 +18796,7 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 		//printf("eps_iz : maxio %1.8E at %d\n", p_temphost6[iMaxiz], iMaxiz);
 		//cudaMemcpy(p_temphost6, p_epsilon_ez, sizeof(f64)*NMINOR, cudaMemcpyDeviceToHost);
 		//printf("eps_ez : maxio %1.8E at %d\n", p_temphost6[iMaxez], iMaxez);
-
-
+		
 		iIteration++;
 	};
 
@@ -18630,11 +18807,9 @@ labelBudgerigar2:
 	SubtractVector4 << <numTilesMinor, threadsPerTileMinor >> >(p_stored_move4, p_vie, p_vie_k);
 	Call(cudaThreadSynchronize(), "cudaTS subtract vector 4");
 	GlobalSuppressSuccessVerbosity = DEFAULTSUPPRESSVERBOSITY;
-
-
+	
 	// Important.
 	// Maybe let it be bundled up as p_stored_move4.
-
 
 }
 

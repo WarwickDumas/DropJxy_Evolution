@@ -1,5 +1,7 @@
 
 #define TESTHEAT (0)
+#define TESTXYDERIVZVISCVERT (0) //iVertex == VERTCHOSEN)
+
 
 //
 //
@@ -36,6 +38,75 @@
 //}
 
 
+__global__ void kernelSquare
+(f64 * __restrict__ p__x)
+{
+
+	long const iMinor = blockDim.x * blockIdx.x + threadIdx.x;
+	f64 x = p__x[iMinor];
+	p__x[iMinor] = x*x;
+}
+
+__global__ void kernelSquare2
+(f64_vec2 * __restrict__ p__x)
+{
+
+	long const iMinor = blockDim.x * blockIdx.x + threadIdx.x;
+	f64_vec2 x = p__x[iMinor];
+	x.x = x.x*x.x;
+	x.y = x.y*x.y;
+	p__x[iMinor] = x;
+}
+__global__ void kernelComputeNeutralDEpsByDBeta 
+(
+	f64 const hsub,
+	structural * __restrict__ p_info_minor,
+	f64_vec2 * __restrict__ p_regr_xy,
+	f64 * __restrict__ p_regr_z,
+	f64_vec3 * __restrict__ p_ROCMAR,
+	nvals * __restrict__ p_n_minor,
+	f64 * __restrict__ p_AreaMinor,
+	f64_vec2 * __restrict__ p_eps_xy,
+	f64 * __restrict__ p_eps_z
+	)
+{
+	long const iMinor = blockDim.x * blockIdx.x + threadIdx.x;
+	structural info = p_info_minor[iMinor];
+	f64_vec2 epsxy;
+	f64 epsz = 0.0;
+	memset(&epsxy, 0, sizeof(f64_vec2));
+	if ((info.flag == DOMAIN_VERTEX) || (info.flag == DOMAIN_TRIANGLE)
+		|| (info.flag == CROSSING_INS)) // ?
+	{
+		f64 N = p_AreaMinor[iMinor] * p_n_minor[iMinor].n_n;
+
+		f64_vec2 regrxy = p_regr_xy[iMinor];
+		f64 regrz = p_regr_z[iMinor];
+		f64_vec3 ROCMAR = p_ROCMAR[iMinor];
+		f64 fac;
+		if (N == 0) {
+			fac = 0.0; // ?
+		} else {
+			fac = hsub / N;
+		};
+		// epsilon = v_n - v_n_k - hsub*(MAR_neut) / N;
+		// Rate of change:
+		epsxy.x = regrxy.x - fac*ROCMAR.x;
+		epsxy.y = regrxy.y - fac*ROCMAR.y;
+		epsz = regrz - fac*ROCMAR.z;
+
+		if ((iMinor > BEGINNING_OF_CENTRAL) && ((iMinor - BEGINNING_OF_CENTRAL) % 8000 == 0)) {
+			printf("iVertex %d deps/dbeta %1.9E regrz %1.9E fac %1.9E ROCMAR.z %1.9E \n",
+				iMinor - BEGINNING_OF_CENTRAL, epsz, regrz, fac, ROCMAR.z);
+		}
+
+	} else {
+		// eps = 0
+	};
+
+	p_eps_xy[iMinor] = epsxy;
+	p_eps_z[iMinor] = epsz;
+}
 
 __device__ __forceinline__ f64_vec2 GetGradient(
 	f64_vec2 prevpos, f64_vec2 ourpos, f64_vec2 nextpos, 
@@ -175,7 +246,9 @@ __device__ __forceinline__ f64_vec2 GetGradientDBydBeta(f64_vec2 prevpos, f64_ve
 
 		f64 smallstep = 1.0e-7;
 		bool bCont = false;
+		int iIterate = 0;
 		do {
+			iIterate++;
 			smallstep *= 0.1;
 			bCont = false;
 			root = smallstep*sqrt(d_by_dbeta_prev*d_by_dbeta_prev + d_by_dbeta_next*d_by_dbeta_next);
@@ -184,16 +257,16 @@ __device__ __forceinline__ f64_vec2 GetGradientDBydBeta(f64_vec2 prevpos, f64_ve
 			} else {
 				f64 overroot = 1.0 / root;
 				f64 transversederiv_stepped =
-					root*0.05*sinh(0.5*(asinh(20.0*overroot*d_by_dbeta_prev)
-						+ asinh(20.0*overroot*d_by_dbeta_next)));
+					root*0.05*sinh(0.5*(asinh(20.0*overroot*d_by_dbeta_prev*smallstep)
+						+ asinh(20.0*overroot*d_by_dbeta_next*smallstep)));
 				f64 d_by_dbeta_transversederiv2 = transversederiv_stepped / smallstep;
 
 				smallstep *= 0.5;
 				root *= 0.5;
 				overroot *= 2.0;
 				transversederiv_stepped =
-					root*0.05*sinh(0.5*(asinh(20.0*overroot*d_by_dbeta_prev)
-						+ asinh(20.0*overroot*d_by_dbeta_next)));
+					root*0.05*sinh(0.5*(asinh(20.0*overroot*d_by_dbeta_prev*smallstep)
+						+ asinh(20.0*overroot*d_by_dbeta_next*smallstep)));
 				f64 d_by_dbeta_transversederiv1 = transversederiv_stepped / smallstep;
 
 				if ((d_by_dbeta_transversederiv2 > 1.01*d_by_dbeta_transversederiv1) ||
@@ -207,10 +280,11 @@ __device__ __forceinline__ f64_vec2 GetGradientDBydBeta(f64_vec2 prevpos, f64_ve
 					// Q2 = Q(step*0.5) = 0.25*step*step*f'' + 0.5*step*f'
 					// Q1 = Q(step*0.25) = 0.25*0.25*step*step*f'' + 0.25*step*f'
 					// Q(0) = ?
-
+					bCont = false;
 				};
 			};
-		} while (bCont);
+		} while ((bCont) && (iIterate < 100));
+		if (iIterate == 100) printf("\niIterate==100 dbydbetatransversederiv = %1.9E \n\n",d_by_dbeta_transversederiv);
 	} else {
 		f64 overroot = 1.0 / root;
 		f64 y1 = transversederivprev;
@@ -251,6 +325,7 @@ __device__ __forceinline__ f64_vec2 GetGradientDBydBetaDebug(f64_vec2 prevpos, f
 	f64 prev_a, f64 our_a, f64 next_a, f64 opp_a // adding beta*a to v
 )
 {
+	int iIterate;
 	// New method that can make sense for velocities:
 	// ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^	
 	// Consider the transverse derivative:
@@ -269,9 +344,6 @@ __device__ __forceinline__ f64_vec2 GetGradientDBydBetaDebug(f64_vec2 prevpos, f
 	f64 transversederivprev = -(prev_v - (our_v + (opp_v - our_v)*proportion)) / lengthout;
 	f64 d_by_dbeta_prev = -(prev_a - (our_a + (opp_a - our_a)*proportion)) / lengthout;
 
-	printf("xversderivprevnext %1.9E %1.9E dbydbeta %1.9E %1.9E \n", transversederivprev, transversederivnext,
-		d_by_dbeta_prev, d_by_dbeta_next);
-
 	// transversederiv = asinh(0.5*(sinh(prev)+sinh(next)))
 
 	// (asinh x)' =  1/ sqrt(1+x*x)
@@ -281,9 +353,7 @@ __device__ __forceinline__ f64_vec2 GetGradientDBydBetaDebug(f64_vec2 prevpos, f
 	f64 d_by_dbeta_transversederiv;
 	f64 root = sqrt(transversederivprev*transversederivprev +
 		transversederivnext*transversederivnext);
-
 	printf("root %1.10E \n", root);
-
 	if (root == 0.0) {
 		// 0 may be wrong? 
 		// Be careful what rescaling is doing in the case both operands are very small.
@@ -292,21 +362,22 @@ __device__ __forceinline__ f64_vec2 GetGradientDBydBetaDebug(f64_vec2 prevpos, f
 
 		f64 smallstep = 1.0e-7;
 		bool bCont = false;
+		iIterate = 0;
 		do {
+			iIterate++;
 			smallstep *= 0.1;
 			bCont = false;
 			root = smallstep*sqrt(d_by_dbeta_prev*d_by_dbeta_prev + d_by_dbeta_next*d_by_dbeta_next);
 			if (root == 0.0) {
 				d_by_dbeta_transversederiv = 0.0;
-				printf("d_by_dbeta_transversederiv = 0.0;\n");
 			}
 			else {
 				f64 overroot = 1.0 / root;
 				f64 transversederiv_stepped =
-					root*0.05*sinh(0.5*(asinh(20.0*overroot*d_by_dbeta_prev)
-						+ asinh(20.0*overroot*d_by_dbeta_next)));
+					root*0.05*sinh(0.5*(asinh(20.0*overroot*d_by_dbeta_prev*smallstep)
+						+ asinh(20.0*overroot*d_by_dbeta_next*smallstep)));
 				f64 d_by_dbeta_transversederiv2 = transversederiv_stepped / smallstep;
-
+				
 				smallstep *= 0.5;
 				root *= 0.5;
 				overroot *= 2.0;
@@ -315,14 +386,13 @@ __device__ __forceinline__ f64_vec2 GetGradientDBydBetaDebug(f64_vec2 prevpos, f
 						+ asinh(20.0*overroot*d_by_dbeta_next)));
 				f64 d_by_dbeta_transversederiv1 = transversederiv_stepped / smallstep;
 
-				printf("dbydbeta xversderiv12 %1.9E %1.9E \n",
+				printf("empirical, xverse12 %1.9E %1.9E \n",
 					d_by_dbeta_transversederiv1, d_by_dbeta_transversederiv2);
 
 				if ((d_by_dbeta_transversederiv2 > 1.01*d_by_dbeta_transversederiv1) ||
 					(d_by_dbeta_transversederiv2 < 0.99*d_by_dbeta_transversederiv1)) {
 					// go again
 					bCont = true;
-					
 				}
 				else {
 					d_by_dbeta_transversederiv = d_by_dbeta_transversederiv1
@@ -334,25 +404,87 @@ __device__ __forceinline__ f64_vec2 GetGradientDBydBetaDebug(f64_vec2 prevpos, f
 
 				};
 			};
-		} while (bCont);
+		} while ((bCont) && (iIterate < 20));
 	}
 	else {
 		f64 overroot = 1.0 / root;
+		f64 transversederiv = root*0.05*sinh(0.5*(asinh(20.0*overroot*transversederivprev)
+			+ asinh(20.0*overroot*transversederivnext)));
+
+		f64 smallstep = 1.0e-7;
+		iIterate = 0;
+		bool bCont = false;
+		do {
+			iIterate++;
+			smallstep *= 0.1;
+			bCont = false;
+			f64 putativeprev = transversederivprev + smallstep*d_by_dbeta_prev;
+			f64 putativenext = transversederivnext + smallstep*d_by_dbeta_next;
+			root = sqrt(putativeprev*putativeprev+putativenext*putativenext);
+			if (root == 0.0) {
+				d_by_dbeta_transversederiv = 0.0;
+				printf("root == 0.0\n");
+				bCont = false;
+			}
+			else {
+				f64 overroot = 1.0 / root;
+				f64 transversederiv_stepped;
+				f64 transversederiv_stepped2 =
+					root*0.05*sinh(0.5*(asinh(20.0*overroot*putativeprev)
+						+ asinh(20.0*overroot*putativenext)));
+				f64 d_by_dbeta_transversederiv2 = (transversederiv_stepped2-transversederiv) / smallstep;
+
+				smallstep *= 0.5;
+
+				putativeprev = transversederivprev + smallstep*d_by_dbeta_prev;
+				putativenext = transversederivnext + smallstep*d_by_dbeta_next;
+				root = sqrt(putativeprev*putativeprev + putativenext*putativenext);
+				overroot = 1.0 / root;
+
+				transversederiv_stepped =
+					root*0.05*sinh(0.5*(asinh(20.0*overroot*putativeprev)
+						+ asinh(20.0*overroot*putativenext)));
+				f64 d_by_dbeta_transversederiv1 = (transversederiv_stepped-transversederiv) / smallstep;
+
+				printf("empirical, smallstep %1.9E d/db xverse12 %1.9E %1.9E putativeprevnext %1.10E %1.10E\n estderivs %1.14E %1.14E %1.14E\n",
+					smallstep, d_by_dbeta_transversederiv1, d_by_dbeta_transversederiv2,
+					putativeprev, putativenext,
+					transversederiv, transversederiv_stepped, transversederiv_stepped2
+					);
+
+				if ((d_by_dbeta_transversederiv2 > 1.01*d_by_dbeta_transversederiv1) ||
+					(d_by_dbeta_transversederiv2 < 0.99*d_by_dbeta_transversederiv1)) {
+					// go again
+					bCont = true;
+				}
+				else {
+					d_by_dbeta_transversederiv = d_by_dbeta_transversederiv1
+						+ d_by_dbeta_transversederiv1 - d_by_dbeta_transversederiv2;
+					// let's assume derivative changes linearly.
+					// Q2 = Q(step*0.5) = 0.25*step*step*f'' + 0.5*step*f'
+					// Q1 = Q(step*0.25) = 0.25*0.25*step*step*f'' + 0.25*step*f'
+					// Q(0) = ?
+					bCont = false;
+				};
+			};
+		} while ((bCont) && (iIterate < 20));
+
+		printf("empirical d/db xverse %1.13E \n", d_by_dbeta_transversederiv);
+
+
+		overroot = 1.0 / root;
 		f64 y1 = transversederivprev;
 		f64 y2 = transversederivnext;
-		printf("overroot %1.9E y12 %1.9E %1.9E", overroot, y1, y2);
 
 		f64 avgasinh = 0.5*(asinh(20.0*y1*overroot) + asinh(20.0*y2*overroot));
 		f64 ratio = (y1*d_by_dbeta_prev + y2*d_by_dbeta_next) / (y1*y1 + y2*y2);
-		
-		printf("avgasinh %1.9E ratio %1.9E \n", avgasinh, ratio);
-
+		printf("overroot %1.9E avgasinh %1.9E ratio %1.9E \n", overroot, avgasinh, ratio);
 		d_by_dbeta_transversederiv = (y1*d_by_dbeta_prev + y2*d_by_dbeta_next)*0.05*overroot*
 			sinh(avgasinh) + root*0.05*cosh(avgasinh)*10.0*
-			((d_by_dbeta_prev - ratio) / sqrt(401.0*y1*y1 + y2*y2)
-				+ (d_by_dbeta_next - ratio) / sqrt(y1*y1 + 401.0*y2*y2));
-
-		printf("d_by_dbeta_transversederiv %1.9E \n", d_by_dbeta_transversederiv);
+			((d_by_dbeta_prev - y1*ratio) / sqrt(401.0*y1*y1 + y2*y2)
+				+ (d_by_dbeta_next - y2*ratio) / sqrt(y1*y1 + 401.0*y2*y2));
+		printf("answer %1.13E sinh(avg) %1.10E cosh(avg) %1.10E\n---------\n", d_by_dbeta_transversederiv,
+			sinh(avgasinh), cosh(avgasinh));
 
 		//transversederiv = root*0.05*sinh(0.5*(asinh(20.0*overroot*transversederivprev)
 		//	+ asinh(20.0*overroot*transversederivnext)));
@@ -368,13 +500,17 @@ __device__ __forceinline__ f64_vec2 GetGradientDBydBetaDebug(f64_vec2 prevpos, f
 	d_by_dbeta_gradv.y = d_by_dbeta_gradv.x * (opppos.y - ourpos.y);
 	d_by_dbeta_gradv.x *= (opppos.x - ourpos.x);
 
+	printf("longitudinal component %1.10E %1.10E\n", d_by_dbeta_gradv.x, d_by_dbeta_gradv.y);
+
 	d_by_dbeta_transversederiv /= out_modulus; // no longer deriv -- done this way to minimize divides.
 											   //gradv.x += transversederiv*vec_out.x;
 											   //gradv.y += transversederiv*vec_out.y;
 	d_by_dbeta_gradv.x += d_by_dbeta_transversederiv*vec_out.x;
 	d_by_dbeta_gradv.y += d_by_dbeta_transversederiv*vec_out.y;
+	printf("tranverse    component %1.10E %1.10E\n", d_by_dbeta_transversederiv*vec_out.x, d_by_dbeta_transversederiv*vec_out.y);
 	return d_by_dbeta_gradv;
 }
+
 
 
 /*
@@ -3463,6 +3599,11 @@ kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species(
 					htg_diff = shared_v_verts[threadIdx.x] - opp_v;
 				}
 
+				if (TESTXYDERIVZVISCVERT) {
+					printf("%d %d %d gradvx %1.9E %1.9E gradvy %1.9E %1.9E gradvz %1.9E %1.9E \n",
+						iVertex, i, izTri[i], gradvx.x, gradvx.y, gradvy.x, gradvy.y, gradvz.x, gradvz.y);
+				}
+
 				if (ita_par > 0.0) {
 					if ((VISCMAG == 0) || (omega_c.dot(omega_c) < 0.01*0.1*nu*nu))
 					{
@@ -3673,7 +3814,14 @@ kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species(
 
 						visc_htg += -TWOTHIRDS*(m_s)*(htg_diff.dot(visc_contrib));
 						
-						
+
+						if (TESTXYDERIVZVISCVERT) {
+							printf("%d visc_ctbz %1.9E over_m_s %1.8E mf b P H %1.9E %1.9E %1.9E b.z P.z H.z %1.8E %1.8E %1.8E \n",
+								iVertex, visc_contrib.z, over_m_s, momflux_b, momflux_perp, momflux_Hall, unit_b.z, unit_perp.z, unit_Hall.z);
+							printf("Pi bb Pb Hb PP HP HH %1.8E %1.8E %1.8E %1.8E %1.8E %1.8E \n",
+								Pi_b_b, Pi_P_b, Pi_H_b, Pi_P_P, Pi_H_P, Pi_H_H);
+						}
+
 						if (TESTIONVERTVISC) {
 							printf("iVertex %d tri %d species %d ita_par %1.9E gradvx %1.8E %1.8E\n"
 								"omega %1.9E %1.9E %1.9E nu %1.9E ourpos %1.8E %1.8E \n"
@@ -3954,6 +4102,11 @@ kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species(
 							prev_v.z, shared_v[threadIdx.x].z, next_v.z, opp_v.z
 						);
 					}
+
+					if (iMinor == CHOSEN) printf("%d %d %d vz prev own anti opp %1.10E %1.10E %1.10E %1.10E "
+						"gradvz %1.10E %1.10E\n", iMinor, i, izNeighMinor[i],
+						prev_v.z, shared_v[threadIdx.x].z, next_v.z, opp_v.z, gradvz.x, gradvz.y);
+
 					if (info.flag == CROSSING_INS) {
 						char flag = p_info_minor[izNeighMinor[i]].flag;
 						if (flag == CROSSING_INS) {
@@ -3971,7 +4124,7 @@ kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species(
 					htg_diff = shared_v[threadIdx.x] - opp_v;
 					
 				} else {
-					if (TESTIONVISC) printf("side not usable: %d", i);
+					//if (TESTIONVISC) printf("side not usable: %d", i);
 				};
 
 				if (bUsableSide) {
@@ -3996,6 +4149,9 @@ kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species(
 						visc_contrib.y = -over_m_s*(Pi_yx*edge_normal.x + Pi_yy*edge_normal.y);
 						visc_contrib.z = -over_m_s*(Pi_zx*edge_normal.x + Pi_zy*edge_normal.y);
 
+						if (iMinor == CHOSEN) printf("%d %d %d unmag visc_contrib.z %1.10E Pi_zx %1.10E Pi_zy %1.10E edgenml %1.8E %1.8E\n",
+							iMinor, i, izNeighMinor[i], visc_contrib.z, Pi_zx, Pi_zy, edge_normal.x, edge_normal.y);
+
 						ownrates_visc += visc_contrib;
 
 						if (i % 2 == 0) {
@@ -4006,8 +4162,7 @@ kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species(
 
 						// So we are saying if edge_normal.x > 0 and gradviz.x > 0
 						// then Pi_zx < 0 then ownrates += a positive amount. That is correct.
-					}
-					else {
+					} else {
 						f64_vec3 unit_b, unit_perp, unit_Hall;
 						f64 omegamod;
 						{
@@ -4131,6 +4286,9 @@ kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species(
 							momflux_perp = -(Pi_P_b*mag_edge.x + Pi_P_P*mag_edge.y + Pi_H_P*mag_edge.z);
 							momflux_Hall = -(Pi_H_b*mag_edge.x + Pi_H_P*mag_edge.y + Pi_H_H*mag_edge.z);
 
+							if (iMinor == CHOSEN) printf("%d %d %d mag_edge %1.8E %1.8E %1.8E Pi_b_b %1.10E Pi_H_P %1.8E Pi_H_b %1.8E \n",
+								iMinor, i, izNeighMinor[i], mag_edge.x, mag_edge.y, mag_edge.z, Pi_b_b, Pi_H_P, Pi_H_b);
+
 						}
 
 						// Time to double-check carefully the signs.
@@ -4146,12 +4304,10 @@ kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species(
 						visc_contrib.y = over_m_s*(unit_b.y*momflux_b + unit_perp.y*momflux_perp + unit_Hall.y*momflux_Hall);
 						visc_contrib.z = over_m_s*(unit_b.z*momflux_b + unit_perp.z*momflux_perp + unit_Hall.z*momflux_Hall);
 
-						if (TESTIONVISC)
-							printf("%d %d over_m_s %1.9E "
-								"ita_par %1.10E visc_contrib.x %1.10E \n",
+						if (iMinor == CHOSEN) printf("%d %d %d mag visc_ctb.z %1.10E b.z %1.10E momf_b %1.10E "
+							"perp.z %1.10E momf_perp %1.10E unit_H.z %1.8E mf_H %1.9E\n",
+							iMinor, i, izNeighMinor[i], visc_contrib.z, unit_b.z, momflux_b, unit_perp.z, momflux_perp, unit_Hall.z, momflux_Hall);
 
-								iMinor, izNeighMinor[i], over_m_s,
-								ita_par, visc_contrib.x);
 
 						ownrates_visc += visc_contrib;
 						if (i % 2 != 0) // not vertex
@@ -4308,7 +4464,7 @@ kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species_dbydbeta_xy(
 	__syncthreads();
 
 	if (threadIdx.x < threadsPerTileMajor) {
-		memset(&ownrates_visc, 0, sizeof(f64_vec3));
+		memcpy(&ownrates_visc, p_ROCMAR + iVertex + BEGINNING_OF_CENTRAL,sizeof(f64_vec3));
 		visc_htg = 0.0;
 
 		long izTri[MAXNEIGH_d];
@@ -4502,6 +4658,11 @@ kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species_dbydbeta_xy(
 					}
 				}
 
+				if (TESTXYDERIVZVISCVERT) {
+					printf("%d %d %d ROCgradvx %1.9E %1.9E ROCgradvy %1.9E %1.9E\n",
+						iVertex, i, izTri[i], ROCgradvx.x, ROCgradvx.y, ROCgradvy.x, ROCgradvy.y);
+				};
+
 				if (ita_par > 0.0) {
 
 					if (iSpecies == 0) {
@@ -4683,6 +4844,13 @@ kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species_dbydbeta_xy(
 							visc_contrib.y = over_m_s*(unit_b.y*momflux_b + unit_perp.y*momflux_perp + unit_Hall.y*momflux_Hall);
 							visc_contrib.z = over_m_s*(unit_b.z*momflux_b + unit_perp.z*momflux_perp + unit_Hall.z*momflux_Hall);
 
+							if (TESTXYDERIVZVISCVERT) {
+								printf("%d visc_ctbz %1.9E over_m_s %1.8E mf b P H %1.9E %1.9E %1.9E b.z P.z H.z %1.8E %1.8E %1.8E \n",
+									iVertex, visc_contrib.z, over_m_s, momflux_b, momflux_perp, momflux_Hall, unit_b.z, unit_perp.z, unit_Hall.z);
+								printf("Pi bb Pb Hb PP HP HH %1.8E %1.8E %1.8E %1.8E %1.8E %1.8E \n",
+									Pi_b_b, Pi_P_b, Pi_H_b, Pi_P_P, Pi_H_P, Pi_H_H);
+							}
+
 							ownrates_visc += visc_contrib;
 
 						}
@@ -4699,7 +4867,7 @@ kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species_dbydbeta_xy(
 				opp_x = next_x;
 			}; // next i
 
-			// Overwrite instead of update:
+			// Update:
 			memcpy(p_ROCMAR + iVertex + BEGINNING_OF_CENTRAL, &ownrates_visc, sizeof(f64_vec3));
 		} else {
 			// NOT domain vertex: Do nothing			
@@ -4709,7 +4877,7 @@ kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species_dbydbeta_xy(
 	// Do we need syncthreads? Not overwriting any shared data here...
 
 	info = p_info_minor[iMinor];
-	memset(&ownrates_visc, 0, sizeof(f64_vec3));
+	memcpy(&(ownrates_visc), &(p_ROCMAR[iMinor]), sizeof(f64_vec3));
 	{
 		long izNeighMinor[6];
 		char szPBC[6];
@@ -5141,7 +5309,7 @@ kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species_dbydbeta_xy(
 				opp_x = next_x;
 			};
 
-			// OVERWRITE:
+			// UPDATE:
 			memcpy(&(p_ROCMAR[iMinor]), &(ownrates_visc), sizeof(f64_vec3));
 
 		} else {
@@ -5270,7 +5438,8 @@ kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species_dbydbeta_z(
 	__syncthreads();
 
 	if (threadIdx.x < threadsPerTileMajor) {
-		memset(&ownrates_visc, 0, sizeof(f64_vec3));
+		//memset(&ownrates_visc, 0, sizeof(f64_vec3));
+		memcpy(&ownrates_visc, p_ROCMAR + iVertex + BEGINNING_OF_CENTRAL, sizeof(f64_vec3));
 		visc_htg = 0.0;
 
 		long izTri[MAXNEIGH_d];
@@ -5630,7 +5799,7 @@ kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species_dbydbeta_z(
 				opp_x = next_x;
 			}; // next i
 
-			   // Overwrite instead of update:
+			// UPDATE
 			memcpy(p_ROCMAR + iVertex + BEGINNING_OF_CENTRAL, &ownrates_visc, sizeof(f64_vec3));
 		} else {			
 			memset(p_ROCMAR + iVertex + BEGINNING_OF_CENTRAL, 0, sizeof(f64_vec3));
@@ -5640,7 +5809,8 @@ kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species_dbydbeta_z(
 	// Do we need syncthreads? Not overwriting any shared data here...
 
 	info = p_info_minor[iMinor];
-	memset(&ownrates_visc, 0, sizeof(f64_vec3));
+
+	memcpy(&(ownrates_visc), &(p_ROCMAR[iMinor]), sizeof(f64_vec3));
 	{
 		long izNeighMinor[6];
 		char szPBC[6];
@@ -5849,24 +6019,23 @@ kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species_dbydbeta_z(
 					{
 						// One of the sides is dipped under the insulator -- set transverse deriv to 0.
 						// Bear in mind we are looking from a vertex into a tri, it can be ins tri.
-						if (iMinor == 40372) printf("longi. x %1.8E %1.8E\n", opp_x, shared_regr[threadIdx.x]);
+						if (iMinor == CHOSEN) printf("longi. x %1.8E %1.8E\n", opp_x, shared_regr[threadIdx.x]);
 
 						ROCgradvz = (opp_x - shared_regr[threadIdx.x])*(opppos - info.pos) /
 							(opppos - info.pos).dot(opppos - info.pos);
 					} else {
 
-						if (iMinor == 40372) {
-							printf("40372 v %1.8E %1.8E %1.8E %1.8E x %1.8E %1.8E %1.8E %1.8E\n",
-								prev_v, shared_vz[threadIdx.x], next_v, opp_v,
+						if ((iMinor == CHOSEN)) {
+							printf("%d v %1.8E %1.8E %1.8E %1.8E x %1.8E %1.8E %1.8E %1.8E\n",
+								CHOSEN, prev_v, shared_vz[threadIdx.x], next_v, opp_v,
 								prev_x, shared_regr[threadIdx.x], next_x, opp_x);
-
 							ROCgradvz = GetGradientDBydBetaDebug(
 								prevpos, info.pos, nextpos, opppos,
 								prev_v, shared_vz[threadIdx.x], next_v, opp_v,
 								prev_x, shared_regr[threadIdx.x], next_x, opp_x
 							);
-						}
-						else {
+						} else {
+
 							ROCgradvz = GetGradientDBydBeta(
 								prevpos, info.pos, nextpos, opppos,
 								prev_v, shared_vz[threadIdx.x], next_v, opp_v,
@@ -5886,8 +6055,9 @@ kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species_dbydbeta_z(
 				};
 
 
-				if (iMinor == 40372) printf("40372 ROCgradvz %1.8E %1.8E bUsableSide %d\n",
-					ROCgradvz.x, ROCgradvz.y, bUsableSide ? 1 : 0);
+				if (iMinor == CHOSEN) printf("%d ROCgradvz %1.8E %1.8E bUsableSide %d\n",
+					CHOSEN, ROCgradvz.x, ROCgradvz.y, bUsableSide ? 1 : 0);
+
 
 				if (bUsableSide) {
 					if (iSpecies == 0) {
@@ -5915,7 +6085,7 @@ kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species_dbydbeta_z(
 							//visc_contrib.y = 0.0;
 							visc_contrib = -over_m_s*(Pi_zx*edge_normal.x + Pi_zy*edge_normal.y);
 
-							if (iMinor == 40372) printf("40372 unmag visc_contrib.z %1.8E \n", visc_contrib);
+							if (iMinor == CHOSEN) printf("CHOSEN unmag visc_contrib.z %1.8E \n", visc_contrib);
 
 							ownrates_visc.z += visc_contrib;
 
@@ -6045,7 +6215,7 @@ kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species_dbydbeta_z(
 							visc_contrib.y = over_m_s*(unit_b.y*momflux_b + unit_perp.y*momflux_perp + unit_Hall.y*momflux_Hall);
 							visc_contrib.z = over_m_s*(unit_b.z*momflux_b + unit_perp.z*momflux_perp + unit_Hall.z*momflux_Hall);
 
-							if (iMinor == 40372) printf("40372 mag visc_contrib.z %1.8E \n", visc_contrib.z);
+							if ((0) && (iMinor == CHOSEN)) printf("CHOSEN mag visc_contrib.z %1.8E \n", visc_contrib.z);
 
 							ownrates_visc += visc_contrib;
 						};
@@ -6060,9 +6230,9 @@ kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species_dbydbeta_z(
 				opp_x = next_x;
 			};
 
-			if (iMinor == 40372) printf("40372 ROCMAR.z %1.8E \n", ownrates_visc.z);
+			if (iMinor == CHOSEN) printf("CHOSEN ROCMAR.z %1.8E \n", ownrates_visc.z);
 
-			// OVERWRITE:
+			// UPDATE:
 			memcpy(&(p_ROCMAR[iMinor]), &(ownrates_visc), sizeof(f64_vec3));
 
 		} else {
@@ -6292,6 +6462,11 @@ __global__ void CalculateCoeffself(
 						
 						f64 visc_contrib_z = over_m_n*ita_par*(coeffgradvq_by_vq.dot(edge_normal));
 						// same for all dimensions
+
+						if (iVertex % 8000 == 0) {
+							printf("iVertex %d contribz %1.10E ita %1.9E gradthingy %1.9E %1.9E\n",
+								iVertex, visc_contrib_z, ita_par, coeffgradvq_by_vq.x, coeffgradvq_by_vq.y);
+						}
 
 						deriv_xy.xx += visc_contrib_z;
 						deriv_xy.yy += visc_contrib_z;
@@ -6575,6 +6750,9 @@ __global__ void CalculateCoeffself(
 				opppos = nextpos;
 			}; // next i
 
+			if (iVertex % 8000 == 0) {
+				printf("iVertex %d deriv_z %1.10E \n", iVertex, deriv_z);
+			};
 
 			memcpy(&(p__coeffself_xy[iVertex + BEGINNING_OF_CENTRAL]), &deriv_xy, sizeof(f64_tens2));
 			p__coeffself_z[iVertex + BEGINNING_OF_CENTRAL] = deriv_z;
@@ -7105,8 +7283,9 @@ __global__ void kernelComputeCombinedDEpsByDBeta(
 		Depsilon.viz = regriz - hsub*(MAR_ion.z / N);
 		Depsilon.vez = regrez - hsub*(MAR_elec.z / N);
 
-		if (iMinor == 40372) printf("40372 Depsilon.viz %1.8E MAR_ion.z %1.8E \n",
-			Depsilon.viz, MAR_ion.z);
+		if (iMinor == CHOSEN) 
+			printf("kernelCCdepsbydbeta %d regrez %1.12E Depsilon.vez %1.12E MAR_elec.z %1.12E hsub %1.8E N %1.12E\n",
+			CHOSEN, regrez, Depsilon.vez, MAR_elec.z, hsub, N);
 
 	}
 	else {
@@ -7115,7 +7294,7 @@ __global__ void kernelComputeCombinedDEpsByDBeta(
 	p_Depsilon_xy[iMinor] = Depsilon.vxy;
 	p_Depsilon_iz[iMinor] = Depsilon.viz;
 	p_Depsilon_ez[iMinor] = Depsilon.vez;
-	if (iMinor == 40372) printf("sent -- 40372 Depsilon.viz %1.8E \n", Depsilon.viz);
+	if (iMinor == CHOSEN) printf("sent -- %d Depsilon.viz %1.8E \n", CHOSEN, Depsilon.viz);
 
 }
 
@@ -7211,6 +7390,12 @@ __global__ void kernelCreateNeutralInverseCoeffself(
 
 		invcoeffself = 1.0 / (1.0 - hsub*(p__coeffself_input[iMinor] / N)); // rate of change of epsilon iz wrt viz
 		
+		if ((iMinor > BEGINNING_OF_CENTRAL) && ((iMinor-BEGINNING_OF_CENTRAL) % 8000 == 0)) {
+			printf("iVertex %d coeffself %1.9E = 1- h/N %1.9E ; h/N = %1.8E\n",
+				iMinor-BEGINNING_OF_CENTRAL, 1.0 - hsub*(p__coeffself_input[iMinor] / N),
+				p__coeffself_input[iMinor], hsub/N);
+		}
+
 	} else {
 		// epsilon = 0
 	};
@@ -7226,6 +7411,10 @@ __global__ void kernelCreateJacobiRegressorz
 {
 	long const iMinor = blockDim.x * blockIdx.x + threadIdx.x;
 	p_regr[iMinor] = p_factor1[iMinor] * p_factor2[iMinor];
+	if ((iMinor > BEGINNING_OF_CENTRAL) && ((iMinor - BEGINNING_OF_CENTRAL) % 8000 == 0)) {
+		printf("iVertex %d regr %1.10E factor1 %1.9E factor2 %1.9E \n",
+			iMinor-BEGINNING_OF_CENTRAL, p_regr[iMinor], p_factor1[iMinor], p_factor2[iMinor]);
+	}
 }
 
 __global__ void kernelCreateJacobiRegressorxy
@@ -7235,6 +7424,20 @@ __global__ void kernelCreateJacobiRegressorxy
 {
 	long const iMinor = blockDim.x * blockIdx.x + threadIdx.x;
 	p_regr[iMinor] = p_factor2[iMinor] * p_factoreps[iMinor];
+}
+
+
+__global__ void kernelCreateJacobiRegressorNeutralxy2 
+(f64_vec2 * __restrict__ p_regr,
+	f64 * __restrict__ p_factorepsx,
+	f64 * __restrict__ p_factorepsy,
+	f64 * __restrict__ p_factor2)
+{
+	long const iMinor = blockDim.x * blockIdx.x + threadIdx.x;
+	f64_vec2 regr2;
+	regr2.x = p_factorepsx[iMinor]; 
+	regr2.y = p_factorepsy[iMinor]; 
+	p_regr[iMinor] = p_factor2[iMinor]*regr2;
 }
 
 __global__ void AssembleVector2(

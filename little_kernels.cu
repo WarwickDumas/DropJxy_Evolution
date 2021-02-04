@@ -768,7 +768,23 @@ __global__ void kernelAccumulateSummandsNeutVisc(
 		};
 	}
 
+__global__ void Subtract(
+		f64 * __restrict__ p_c,
+		f64 * __restrict__ p_b,
+		f64 * __restrict__ p_a
+	) {
+		long const index = threadIdx.x + blockIdx.x * threadsPerTileMinor;
+		p_c[index] = p_b[index] - p_a[index];
+}
 
+__global__ void Subtract_xy(
+	f64_vec2 * __restrict__ p_c,
+	f64_vec2 * __restrict__ p_b,
+	f64_vec2 * __restrict__ p_a
+) {
+	long const index = threadIdx.x + blockIdx.x * threadsPerTileMinor;
+	p_c[index] = p_b[index] - p_a[index];
+}
 
 
 __global__ void kernelAccumulateSummandsNeutVisc2(
@@ -892,6 +908,27 @@ __global__ void kernelAccumulateSummandsNeutVisc2(
 		};
 	}
 
+
+__global__ void AddLittleBitORegressors(
+	f64 const coeff,
+	v4 * __restrict__ p_operand,
+	f64_vec2 * __restrict__ p__regrxy,
+	f64 * __restrict__ p__regriz,
+	f64 * __restrict__ p__regrez)
+{
+	long const index = blockDim.x*blockIdx.x + threadIdx.x;
+
+	v4 operand = p_operand[index];
+
+	operand.vxy += coeff*p__regrxy[index];
+	operand.viz += coeff*p__regriz[index];
+	operand.vez += coeff*p__regrez[index];
+
+	if (index % 20000 == 0) printf("%d regrez %1.14E operand.vez %1.14E\n", index, p__regrez[index],
+		operand.vez);
+
+	p_operand[index] = operand;
+}
 
 __global__ void AddLCtoVector4component(
 	v4 * __restrict__ p_operand,

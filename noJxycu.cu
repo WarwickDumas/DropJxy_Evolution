@@ -34,9 +34,32 @@ extern void Setup_residual_array();
 #include <dxerr.h>
 #include <commdlg.h>    // probably used by avi_utils
 #include "surfacegraph_tri.h"
-#include "avi_utils.cpp"     // for making .avi
+//#include "avi_utils.cpp"     // for making .avi
 #include "kernel.h"
-     
+
+#include <mfapi.h>
+#include <mfidl.h>
+#include <Mfreadwrite.h>
+#include <mferror.h>
+#include <iostream>
+#include <shlwapi.h>
+#include <combaseapi.h>
+
+#pragma comment(lib, "mfreadwrite")
+#pragma comment(lib, "mfplat")
+#pragma comment(lib, "mf")
+#pragma comment(lib, "mfuuid")
+
+template <class T> void SafeRelease(T **ppT)
+{
+	if (*ppT)
+	{
+		(*ppT)->Release();
+		*ppT = NULL;
+	}
+}
+
+
 //=======================================================
 // Declarations of functions:
    
@@ -132,19 +155,21 @@ bool boolGlobalHistory, GlobalboolDisplayMeshWireframe;
 
 // avi file -oriented variables
 int const NUMAVI = 9;
-HAVI hAvi[NUMAVI + 1]; // does it work without OHMSLAW? //  OHMSLAW,
+//HAVI hAvi[NUMAVI + 1]; // does it work without OHMSLAW? //  OHMSLAW,
 int const GraphFlags[NUMAVI] = { SPECIES_ION, OVERALL, JZAZBXYEZ, ONE_D, IONIZEGRAPH,
 				DTGRAPH, ACCELGRAPHS, OHMS2, ARELZ};
 
-char szAvi[NUMAVI][128] = { "Elec","Total","JzAzBxy","Test", "Ionize", "dT", "Accel",
-							"Ohms","arelz"};
+WCHAR szmp4[NUMAVI][128] = { L"Elec",L"Total",L"JzAzBxy",L"Test", 
+L"Ionize", L"dT", L"Accel",	L"Ohms", L"arelz"};
 
-AVICOMPRESSOPTIONS opts;
+//AVICOMPRESSOPTIONS opts;
 int counter;
 HBITMAP surfbit, dib;
 HDC surfdc, dibdc;
 LPVOID lpvBits;
 BITMAPINFO bitmapinfo;
+
+DWORD dwBits[VIDEO_HEIGHT*VIDEO_WIDTH];
 
 f64 graphdata[20][10000]; 
 f64 graph_r[10000];
@@ -186,6 +211,156 @@ f64 GetTriangleArea(f64_vec2 pos0, f64_vec2 pos1, f64_vec2 pos2)
 		+ (pos0.x + pos2.x)*(pos0.y - pos2.y));
 	return fabs(area);
 }
+
+
+// Format constants
+//const UINT32 VIDEO_WIDTH = 640;
+//const UINT32 VIDEO_HEIGHT = 480;
+const UINT32 VIDEO_FPS = 5;
+const UINT64 VIDEO_FRAME_DURATION = 10 * 1000 * 1000 / VIDEO_FPS; // ?
+const UINT32 VIDEO_BIT_RATE = 1048768;
+const UINT32 VIDEO_PELS = VIDEO_WIDTH * VIDEO_HEIGHT;
+const UINT32 VIDEO_FRAME_COUNT = 5;
+// with 50 frames per nanosecond and 30 nanoseconds in file, it's 1500
+// But to begin let's say 5?
+const GUID   VIDEO_INPUT_FORMAT = MFVideoFormat_RGB24;
+
+HRESULT InitializeSinkWriter(
+	IMFSinkWriter **ppWriter, 
+	DWORD *pStreamIndex, 
+	LPCWSTR szFilename)
+{
+	*ppWriter = NULL;
+	*pStreamIndex = NULL;
+
+	IMFSinkWriter   *pSinkWriter = NULL;
+	IMFMediaType    *pMediaTypeOut = NULL;
+	IMFMediaType    *pMediaTypeIn = NULL;
+	DWORD           streamIndex;
+	
+	HRESULT hr = MFCreateSinkWriterFromURL(szFilename, NULL, NULL, &pSinkWriter);
+
+	// Set the output media type.
+	if (SUCCEEDED(hr)) 
+		hr = MFCreateMediaType(&pMediaTypeOut);	
+	if (SUCCEEDED(hr))
+		hr = pMediaTypeOut->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Video);
+	if (SUCCEEDED(hr)) 
+		hr = pMediaTypeOut->SetGUID(MF_MT_SUBTYPE, MFVideoFormat_H264);
+	// whereas webcam capture sample says WMMEDIASUBTYPE_I420
+	
+	if (SUCCEEDED(hr)) 
+		hr = pMediaTypeOut->SetUINT32(MF_MT_AVG_BITRATE, VIDEO_BIT_RATE);
+	if (SUCCEEDED(hr)) 
+		hr = pMediaTypeOut->SetUINT32(MF_MT_INTERLACE_MODE, MFVideoInterlace_Progressive);
+	if (SUCCEEDED(hr)) 
+		hr = MFSetAttributeSize(pMediaTypeOut, MF_MT_FRAME_SIZE, VIDEO_WIDTH, VIDEO_HEIGHT);
+	if (SUCCEEDED(hr)) 
+		hr = MFSetAttributeRatio(pMediaTypeOut, MF_MT_FRAME_RATE, VIDEO_FPS, 1);
+	if (SUCCEEDED(hr)) 
+		hr = MFSetAttributeRatio(pMediaTypeOut, MF_MT_PIXEL_ASPECT_RATIO, 1, 1);
+	if (SUCCEEDED(hr)) 
+		hr = pSinkWriter->AddStream(pMediaTypeOut, &streamIndex);
+	
+	// Set the input media type.
+	if (SUCCEEDED(hr)) 
+		hr = MFCreateMediaType(&pMediaTypeIn);	
+	if (SUCCEEDED(hr)) 
+		hr = pMediaTypeIn->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Video);	
+	if (SUCCEEDED(hr)) 
+		hr = pMediaTypeIn->SetGUID(MF_MT_SUBTYPE, VIDEO_INPUT_FORMAT);
+	if (SUCCEEDED(hr)) 
+		hr = pMediaTypeIn->SetUINT32(MF_MT_INTERLACE_MODE, MFVideoInterlace_Progressive); 
+		
+	// should that be 0 ? 
+
+	if (SUCCEEDED(hr)) 
+		hr = MFSetAttributeSize(pMediaTypeIn, MF_MT_FRAME_SIZE, VIDEO_WIDTH, VIDEO_HEIGHT);
+	if (SUCCEEDED(hr)) 
+		hr = MFSetAttributeRatio(pMediaTypeIn, MF_MT_FRAME_RATE, VIDEO_FPS, 1);
+	if (SUCCEEDED(hr)) 
+		hr = MFSetAttributeRatio(pMediaTypeIn, MF_MT_PIXEL_ASPECT_RATIO, 1, 1);
+	if (SUCCEEDED(hr)) 
+		hr = pSinkWriter->SetInputMediaType(streamIndex, pMediaTypeIn, NULL);
+	
+	// Tell the sink writer to start accepting data.
+	if (SUCCEEDED(hr)) {
+		hr = pSinkWriter->BeginWriting();
+	}
+
+	// Return the pointer to the caller.
+	if (SUCCEEDED(hr)) {
+		*ppWriter = pSinkWriter;
+		(*ppWriter)->AddRef();
+		*pStreamIndex = streamIndex;
+	}
+
+	SafeRelease(&pSinkWriter);
+	SafeRelease(&pMediaTypeOut);
+	SafeRelease(&pMediaTypeIn);
+	return hr;
+}
+
+HRESULT WriteFrame(
+	IMFSinkWriter *pWriter,
+	DWORD streamIndex,
+	const LONGLONG& rtStart        // Time stamp.
+)
+{
+	IMFSample *pSample = NULL;
+	IMFMediaBuffer *pBuffer = NULL;
+
+	// SHOULD THIS BE 3 * ?
+
+	const LONG cbWidth = 3 * VIDEO_WIDTH; // 4 bytes --- why?
+
+	// so cbWidth is width in bytes
+
+	const DWORD cbBuffer = cbWidth * VIDEO_HEIGHT;
+	BYTE *pData = NULL;
+	// Create a new memory buffer.
+	HRESULT hr = MFCreateMemoryBuffer(cbBuffer, &pBuffer);
+	// Lock the buffer and copy the video frame to the buffer.
+	if (SUCCEEDED(hr))
+		hr = pBuffer->Lock(&pData, NULL, NULL);
+	
+	if (SUCCEEDED(hr))
+		hr = MFCopyImage(
+			pData,                      // Destination buffer.
+			cbWidth,                    // Destination stride.
+			(BYTE *)lpvBits,//(BYTE*)videoFrameBuffer,    // First row in source image.
+			cbWidth,                    // Source stride.
+			cbWidth,                    // Image width in bytes.
+			//I added x 3
+			VIDEO_HEIGHT                // Image height in pixels.
+		);
+	
+	if (pBuffer) pBuffer->Unlock();
+	
+	// Set the data length of the buffer.
+	if (SUCCEEDED(hr))
+		hr = pBuffer->SetCurrentLength(cbBuffer);
+
+	// Create a media sample and add the buffer to the sample.
+	if (SUCCEEDED(hr))
+		hr = MFCreateSample(&pSample);
+	if (SUCCEEDED(hr))
+		hr = pSample->AddBuffer(pBuffer);
+	// Set the time stamp and the duration.
+	if (SUCCEEDED(hr))
+		hr = pSample->SetSampleTime(rtStart);
+	if (SUCCEEDED(hr))
+		hr = pSample->SetSampleDuration(VIDEO_FRAME_DURATION);
+
+	// Send the sample to the Sink Writer.
+	if (SUCCEEDED(hr))
+		hr = pWriter->WriteSample(streamIndex, pSample);
+
+	SafeRelease(&pSample);
+	SafeRelease(&pBuffer);
+	return hr;
+}
+
 
 void TriMesh::CalculateTotalGraphingData()
 {
@@ -2481,22 +2656,22 @@ case OHMSLAW:
 }
 
 
-
-
-__global__ void addKernel(int *c, const int *a, const int *b)
-{
-    int i = threadIdx.x;
-    c[i] = a[i] + b[i];
-}
+IMFSinkWriter *pSinkWriter[NUMAVI];
+DWORD izStream[NUMAVI];
 
 HRESULT hresult;
+
+LONGLONG rtStart = 0;
 
 int main()
 {
    
+	printf("hello\n");
+
+
 	HINSTANCE hInstance = GetModuleHandle(NULL);
 	HWND hwndConsole = GetConsoleWindow();
-	char szInitialFilenameAvi[512];
+	WCHAR szInitialFilenameAvi[512];
 	MSG msg;
 	HDC hdc;
 	//	HACCEL hAccelTable;
@@ -2506,7 +2681,7 @@ int main()
 	//HWND hwndConsole;
 	FILE * fp;
 	extern char Functionalfilename[1024];
-
+	
 	int nDevices, iWhich;
 	cudaDeviceProp prop;
 	cudaGetDeviceCount(&nDevices);
@@ -2532,7 +2707,20 @@ int main()
 
 	size_t uFree, uTotal;
 	cudaMemGetInfo(&uFree, &uTotal);
-	printf("Memory on device: uFree %d uTotal %d\n", uFree, uTotal);
+	printf("Memory on device: uFree %zd uTotal %zd\n", uFree, uTotal);
+
+	HRESULT hr = CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
+	if (!SUCCEEDED(hr)) {
+		printf("CoInitializeEx failed. press p\n");
+		while (getch() != 'p');
+		exit(23233);
+	}
+	hr = MFStartup(MF_VERSION);
+	if (!SUCCEEDED(hr)) {
+		printf("MFStartup failed. press p\n");
+		while (getch() != 'p');
+		exit(23234);
+	}
 
 
 	h = TIMESTEP;
@@ -2557,6 +2745,7 @@ int main()
 		filetag++;
 		sprintf(Functionalfilename, FUNCTIONALFILE_START "%03d.txt", filetag);
 	} while ((_access(Functionalfilename, 0)) != -1);
+
 	printf("\n\nopening %s \n", Functionalfilename);
 	fp = fopen(Functionalfilename, "w");
 	if (fp == 0) {
@@ -2814,30 +3003,44 @@ int main()
 
 	BitBlt(dibdc, 0, 0, VIDEO_WIDTH, VIDEO_HEIGHT, surfdc, 0, 0, SRCCOPY);
 	
+	rtStart = 0; // timeslice : where to place frames into mp4 files.
+
 	for (i = 0; i < NUMAVI; i++)
 	{
-		sprintf(szInitialFilenameAvi, "%s%s_%s", FOLDER, szAvi[i], INITIALAVI);
-		hAvi[i] = CreateAvi(szInitialFilenameAvi, AVIFRAMEPERIOD, NULL);
-		if (hAvi[i] == 0) {
-			printf("Failed to create avi file %d", i);
-			getch(); getch(); getch();
+		swprintf(szInitialFilenameAvi, L"%s%s_%s", FOLDER, szmp4[i], INITIALMP4);
+	
+		pSinkWriter[i] = NULL;
+
+		hr = InitializeSinkWriter(&(pSinkWriter[i]), &(izStream[i]), szInitialFilenameAvi);
+
+		if (!SUCCEEDED(hr)) {
+			printf("Failed to create mp4 file %d %ls \n", i, szmp4[i]);
 		}
+
+		// hAvi[i] = CreateAvi(szInitialFilenameAvi, AVIFRAMEPERIOD, NULL);
+		//if (hAvi[i] == 0) {
+		//	printf("Failed to create avi file %d", i);
+		//	getch(); getch(); getch();
+		//}
 	};
+	
+	printf("got to here: Initialized SinkWriters \n");
+	getch();
 
 	// 1000/25 = 40
-	ZeroMemory(&opts, sizeof(opts));
-	opts.fccHandler = mmioFOURCC('D', 'I', 'B', ' ');//('d','i','v','x');
-	opts.dwFlags = 8;
+	//ZeroMemory(&opts, sizeof(opts));
+	//opts.fccHandler = mmioFOURCC('D', 'I', 'B', ' ');//('d','i','v','x');
+	//opts.dwFlags = 8;
 
-	for (i = 0; i < NUMAVI; i++)
-	{
-		hresult = SetAviVideoCompression(hAvi[i], dib, &opts, false, hWnd); // always run this for every avi file but can
-																  // call with false as long as we know opts contains valid information. 
-		if (hresult != 0) {
-			printf("error: i = %d, hresult = %d", i, (long)hresult);
-			getch(); getch(); getch();
-		};
-	};
+	//for (i = 0; i < NUMAVI; i++)
+	//{
+	//	hresult = SetAviVideoCompression(hAvi[i], dib, &opts, false, hWnd); // always run this for every avi file but can
+	//															  // call with false as long as we know opts contains valid information. 
+	//	if (hresult != 0) {
+	//		printf("error: i = %d, hresult = %d", i, (long)hresult);
+	//		getch(); getch(); getch();
+	//	};
+	//};
 
 	counter = 0;
 	//ReleaseDC(hWnd,surfdc);
@@ -2913,7 +3116,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 	real time_back_for_Adot;
 	FILE * file, *fp;
 	int maxeerr, count, iMin;
-	char buf1000[1024];
+	WCHAR buf1000[1024];
+	char buf1001[1024];
 	int attempts;
 	real store_h;
 	char ch, o;
@@ -3421,9 +3625,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			GSCCPU++;
 			printf("Done steps CPU: %d   ||   Remaining this run: %d\n\n", GSCCPU, steps_remaining_CPU);
 			  
-			sprintf(buf1000, "autosaveCPU%d.dat", GSCCPU);
-			pX->Save(buf1000);
-			printf("saved as %s\n", buf1000);
+			sprintf(buf1001, "autosaveCPU%d.dat", GSCCPU);
+			pX->Save(buf1001);
+			printf("saved as %s\n", buf1001);
 		};
 		printf("%s\n", report_time(1));
 		  
@@ -3445,41 +3649,48 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 				BitBlt(dibdc, 0, 0, VIDEO_WIDTH, VIDEO_HEIGHT, surfdc, 0, 0, SRCCOPY);
 				p_backbuffer_surface->ReleaseDC(surfdc);
 
-				printf("got to here 7a\n");
-
-				if (hAvi[i] == NULL) {
-					printf("nojxycu.cu agrees that hAvi[i] == NULL\n");
-				} else {
-					printf("hAvi[i] not NULL here\n");
-					// Debug
-				}
-
+				//GetDIBits(dibdc, dib, 0, VIDEO_HEIGHT, dwBits, &bmi, 0);
+				// just use lpvBits
+				
 				// getting hAvi[i] == 0 for the last one.
 				// But on debug? No such thing? Same.
 
-				hresult = AddAviFrame(hAvi[i], dib);
+				printf("Adding frame to %d : \n", i);
+				hresult = WriteFrame(pSinkWriter[i], izStream[i], rtStart);
+
+				//hresult = AddAviFrame(hAvi[i], dib);
 				if (hresult != 0) printf("\n******************************************************* \n"
 					"hresult = %d\n********************************************** \n", hresult);
 				
-				printf("got to here 7b\n");
-
 			};
+			rtStart += VIDEO_FRAME_DURATION;
+
 			// sprintf(szFile, "System_%d", GlobalStepsCounter);
 			// pX->SaveText(szFile);
 		};
-		printf("got to here 8");
-		
+
 		if (GlobalStepsCounter % (AVI_FILE_PINCHOFF_FREQUENCY * GRAPHICS_FREQUENCY) == 0)
 		{
 			for (i = 0; i < NUMAVI; i++)
 			{
 				// now have to pinch out avi file and make a new one
-				CloseAvi(hAvi[i]);
-				sprintf(buf1000, "%s%s_%d.avi", FOLDER, szAvi[i], GlobalStepsCounter);
-				hAvi[i] = CreateAvi(buf1000, AVIFRAMEPERIOD, NULL);
-				hresult = SetAviVideoCompression(hAvi[i], dib, &opts, false, hWnd);
-				if (hresult != 0) printf("\n******************************************************* \n"
-					"SetAviVideoCompression: hresult = %d\n********************************************** \n", hresult);
+				pSinkWriter[i]->Finalize();
+				// CloseAvi(hAvi[i]);
+
+				swprintf(buf1000, L"%s%s_%d.mp4", FOLDER, szmp4[i], GlobalStepsCounter);
+				//hAvi[i] = CreateAvi(buf1000, AVIFRAMEPERIOD, NULL);
+				SafeRelease(&pSinkWriter[i]);
+				pSinkWriter[i] = NULL;
+				rtStart = 0;
+				if (!SUCCEEDED(InitializeSinkWriter(&(pSinkWriter[i]), &(izStream[i]), szmp4[i])))
+				{
+					printf("Failed to create %ls \n", buf1000);
+					getch();
+				}
+
+				//hresult = SetAviVideoCompression(hAvi[i], dib, &opts, false, hWnd);
+				//if (hresult != 0) printf("\n******************************************************* \n"
+				//	"SetAviVideoCompression: hresult = %d\n********************************************** \n", hresult);
 
 			};
 		};
@@ -3487,9 +3698,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 		RefreshGraphs(*pX,GlobalSpeciesToGraph); // sends data to graphs AND renders them
 		Direct3D.pd3dDevice->Present( NULL, NULL, NULL, NULL );
 		 
-		printf("got to here 9\n");
-
-
 		if (GlobalStepsCounter % REDELAUN_FREQUENCY == 0)
 		{
 			Setup_residual_array(); // We have not specifically checked that cuSyst1 is the
@@ -3807,11 +4015,17 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 		DeleteObject(dib);
 		DeleteDC(dibdc);
 		for (i = 0; i < NUMAVI; i++)
-			CloseAvi(hAvi[i]);
+		{
+			pSinkWriter[i]->Finalize();
+			SafeRelease(&(pSinkWriter[i]));
+		}
+		// CloseAvi(hAvi[i]);
 
 		//  _controlfp_s(0, cw, _MCW_EM); // Line A
 		PerformCUDA_Revoke();
 
+		MFShutdown();
+		CoUninitialize();
 
 		PostQuitMessage(0);
 		break;

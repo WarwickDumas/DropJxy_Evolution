@@ -649,10 +649,12 @@ __global__ void kernelCreatePredictionsDebug(
 			epsilon_xy += beta_n_c[i] * p_d_epsxy_by_d[iMinor + i*NMINOR];
 			epsilon_iz += beta_n_c[i] * p_d_epsiz_by_d[iMinor + i*NMINOR];
 			epsilon_ez += beta_n_c[i] * p_d_epsez_by_d[iMinor + i*NMINOR];
+			if (iMinor == CHOSEN) printf("epsilon_ez %1.14E beta %1.9E deps %1.9E \n", epsilon_ez,
+				beta_n_c[i], p_d_epsez_by_d[iMinor + i*NMINOR]);
 		}
 
-		if (iMinor == CHOSEN) printf("%d beta[0] %1.14E d/dbeta %1.14E pred %1.14E\n",
-			iMinor, beta_n_c[0], p_d_epsez_by_d[iMinor + 0*NMINOR],
+		if (iMinor == CHOSEN) printf("%d beta[0] %1.14E beta[2] %1.14E beta[3] %1.8E d/dbeta 2 %1.14E 3 %1.14E pred %1.14E\n",
+			iMinor, beta_n_c[0], beta_n_c[2], beta_n_c[3], p_d_epsez_by_d[iMinor + 2*NMINOR], p_d_epsez_by_d[iMinor + 3 * NMINOR],
 			epsilon_ez);
 
 
@@ -676,7 +678,9 @@ __global__ void kernelCompare(
 	f64 * __restrict__ p_epsez,
 	f64_vec2 * __restrict__ p_epsxyp,
 	f64 * __restrict__ p_epsizp,
-	f64 * __restrict__ p_epsezp)
+	f64 * __restrict__ p_epsezp,
+	f64 * __restrict__ p_distance
+	)
 {
 	long const index = blockDim.x*blockIdx.x + threadIdx.x;
 	f64_vec2 eps1 = p_epsxy[index];
@@ -690,6 +694,8 @@ __global__ void kernelCompare(
 	if (index == CHOSEN) printf("%d epsez %1.14E pred %1.14E diff %1.8E ppn %1.4E\n",
 		index, epsez, epsezp, diff, diff/epsez);
 	
+	p_distance[index] = fabs(diff/(fabs(epsez)+1.0e+2)); 
+
 	/*if ((fabs(diff) > 1.0e-10) && (fabs(diff) > fabs(1.0e-8*eps2.x))) printf("%d x dimension : %1.10E %1.10E\n", index,
 		eps1.x, eps2.x);
 	diff = eps1.y - eps2.y;
@@ -737,7 +743,7 @@ __global__ void kernelCreateEpsilon_Visc(
 	memset(&epsilon, 0, sizeof(v4));
 	if ((info.flag == DOMAIN_VERTEX) || (info.flag == DOMAIN_TRIANGLE)
 		|| (info.flag == CROSSING_INS)) // ?
-	{
+	{ 
 		v4 vie = p_vie[iMinor];
 		v4 vie_k = p_vie_k[iMinor];
 		f64_vec3 MAR_ion = p_MAR_ion2[iMinor];
@@ -750,8 +756,9 @@ __global__ void kernelCreateEpsilon_Visc(
 		epsilon.viz = vie.viz - vie_k.viz - hsub*(MAR_ion.z / N);
 		epsilon.vez = vie.vez - vie_k.vez - hsub*(MAR_elec.z / N);
 
-		//if (iMinor == CHOSEN) printf("%d epsilon.vez %1.14E vie.vez %1.14E vie_k.vez %1.14E hsub/N %1.14E MAR_elec.z %1.14E\n",
-		//	iMinor, epsilon.vez, vie.vez, vie_k.vez, hsub / N, MAR_elec.z);
+		if (iMinor == CHOSEN) printf("%d epsilon.vez %1.14E vie.vez %1.14E vie_k.vez %1.14E hsub/N %1.14E MAR_elec.z %1.14E\n-------------\n",
+			iMinor, epsilon.vez, vie.vez, vie_k.vez, hsub / N, MAR_elec.z);
+		      
 		if ((epsilon.vxy.x != epsilon.vxy.x) || (epsilon.vxy.y != epsilon.vxy.y))
 			printf("%d epsilon x y %1.8E %1.8E\n",
 				iMinor, epsilon.vxy.x, epsilon.vxy.y);
