@@ -60,6 +60,10 @@
 #define VISCMAG 1 
 #define MIDPT_A
 #define TEST_ACCEL_EZ (0)//iMinor == CHOSEN)
+#define TEST_EPSILON_Y (0)
+#define TEST_EPSILON_X (iVertex == VERTCHOSEN)
+#define TEST_EPSILON_Y_IMINOR (0)
+#define TEST_EPSILON_X_MINOR (iMinor == CHOSEN)
 
 #define ARTIFICIAL_RELATIVE_THRESH  1.0e10 // if we let it be more strict than heat thresh then it drives a difference generating heat!
 #define ARTIFICIAL_RELATIVE_THRESH_HEAT  1.0e10   // typical initial density is 1e8 vs 1e18
@@ -616,61 +620,6 @@ __device__ f64 GetIonizationRatesDebug(f64 const Te, f64 const v, f64 * p_Recomb
 	return rate;
 }
 
-__global__ void kernelCreatePredictionsDebug(
-	f64 const hsub,
-	structural * __restrict__ p_info_minor,
-	f64_vec2 * __restrict__ p_epsxyold,
-	f64 * __restrict__ p_epsizold,
-	f64 * __restrict__ p_epsezold,
-	f64_vec2 * __restrict__ p_d_epsxy_by_d,
-	f64 * __restrict__ p_d_epsiz_by_d,
-	f64 * __restrict__ p_d_epsez_by_d,
-	f64_vec2 * __restrict__ p_predictxy,
-	f64 * __restrict__ p_predictiz,
-	f64 * __restrict__ p_predictez
-) {
-	long const iMinor = blockDim.x * blockIdx.x + threadIdx.x;
-
-	// eps = v - v_k - h MAR / N
-	structural info = p_info_minor[iMinor];
-	
-	if ((info.flag == DOMAIN_VERTEX) || (info.flag == DOMAIN_TRIANGLE)
-		|| (info.flag == CROSSING_INS)) // ?
-	{
-		f64_vec2 epsilon_xy = p_epsxyold[iMinor];
-		f64 epsilon_iz = p_epsizold[iMinor];
-		f64 epsilon_ez = p_epsezold[iMinor];
-
-		if (iMinor == CHOSEN) printf("Predict: %d epsoldez %1.14E ",
-			iMinor, epsilon_ez);
-
-		for (int i = 0; i < REGRESSORS; i++)
-		{
-			epsilon_xy += beta_n_c[i] * p_d_epsxy_by_d[iMinor + i*NMINOR];
-			epsilon_iz += beta_n_c[i] * p_d_epsiz_by_d[iMinor + i*NMINOR];
-			epsilon_ez += beta_n_c[i] * p_d_epsez_by_d[iMinor + i*NMINOR];
-			if (iMinor == CHOSEN) printf("epsilon_ez %1.14E beta %1.9E deps %1.9E \n", epsilon_ez,
-				beta_n_c[i], p_d_epsez_by_d[iMinor + i*NMINOR]);
-		}
-
-		if (iMinor == CHOSEN) printf("%d beta[0] %1.14E beta[2] %1.14E beta[3] %1.8E d/dbeta 2 %1.14E 3 %1.14E pred %1.14E\n",
-			iMinor, beta_n_c[0], beta_n_c[2], beta_n_c[3], p_d_epsez_by_d[iMinor + 2*NMINOR], p_d_epsez_by_d[iMinor + 3 * NMINOR],
-			epsilon_ez);
-
-
-		p_predictxy[iMinor] = epsilon_xy;
-		p_predictiz[iMinor] = epsilon_iz;
-		p_predictez[iMinor] = epsilon_ez;
-
-
-	} else {
-		p_predictxy[iMinor].x = 0.0;
-		p_predictxy[iMinor].y = 0.0;
-		p_predictiz[iMinor] = 0.0;
-		p_predictez[iMinor] = 0.0;
-	};
-}
-
 
 __global__ void kernelCompare(
 	f64_vec2 * __restrict__ p_epsxy,
@@ -756,9 +705,23 @@ __global__ void kernelCreateEpsilon_Visc(
 		epsilon.viz = vie.viz - vie_k.viz - hsub*(MAR_ion.z / N);
 		epsilon.vez = vie.vez - vie_k.vez - hsub*(MAR_elec.z / N);
 
-		if (iMinor == CHOSEN) printf("%d epsilon.vez %1.14E vie.vez %1.14E vie_k.vez %1.14E hsub/N %1.14E MAR_elec.z %1.14E\n-------------\n",
-			iMinor, epsilon.vez, vie.vez, vie_k.vez, hsub / N, MAR_elec.z);
-		      
+		if (TEST_EPSILON_X_MINOR)
+			printf("%d epsilon.vx %1.14E vie.vx %1.14E vie_k.vx %1.14E hsub/N %1.14E\nMAR_ion.x %1.10E MAR_elec.x %1.10E avg'd %1.10E \n-------------\n",
+			iMinor, epsilon.vxy.x, vie.vxy.x, vie_k.vxy.x, hsub / N,
+			MAR_ion.x, MAR_elec.x,
+			(MAR_ion.x*m_ion + MAR_elec.x*m_e) / (m_ion + m_e)
+		);
+		if ((TEST_EPSILON_X_MINOR) || (TEST_EPSILON_Y_IMINOR)) 
+			printf("%d epsilon.vy %1.14E vie.vy %1.14E vie_k.vy %1.14E hsub/N %1.14E\nMAR_ion.y %1.10E MAR_elec.y %1.10E avg'd %1.10E \n-------------\n",
+			iMinor, epsilon.vxy.y, vie.vxy.y, vie_k.vxy.y, hsub / N, 
+			MAR_ion.y, MAR_elec.y,
+			(MAR_ion.y*m_ion + MAR_elec.y*m_e) / (m_ion + m_e)
+		);
+		  
+	//	if (iMinor == CHOSEN) printf("%d epsilon.vez %1.14E vie.vez %1.14E vie_k.vez %1.14E hsub/N %1.14E MAR_elec.z %1.14E\n-------------\n",
+	//		iMinor, epsilon.vez, vie.vez, vie_k.vez, hsub / N, MAR_elec.z);
+
+
 		if ((epsilon.vxy.x != epsilon.vxy.x) || (epsilon.vxy.y != epsilon.vxy.y))
 			printf("%d epsilon x y %1.8E %1.8E\n",
 				iMinor, epsilon.vxy.x, epsilon.vxy.y);
@@ -32421,9 +32384,6 @@ __global__ void kernelAccumulateSummandsVisc(
 	memset(&(sumdata_eps_deps[threadIdx.x]), 0, sizeof(f64)*REGRESSORS);
 	memset(&(sum_product[threadIdx.x]), 0, sizeof(f64)*REGRESSORS*REGRESSORS);
 	
-
-
-
 	eps_xy = p_eps_xy[iMinor];
 	eps_iz = p_eps_iz[iMinor];
 	eps_ez = p_eps_ez[iMinor];
@@ -32443,9 +32403,6 @@ __global__ void kernelAccumulateSummandsVisc(
 			sum_product[threadIdx.x][i][j] = depsbydbeta2[i].dot(depsbydbeta2[j])
 			+ depsbydbeta[i] * depsbydbeta[j] + depsbydbeta_e[i] * depsbydbeta_e[j];				
 	};
-
-
-
 
 
 	eps_xy = p_eps_xy[iMinor + threadsPerTileMinor / 4];
@@ -32491,9 +32448,7 @@ __global__ void kernelAccumulateSummandsVisc(
 			+ depsbydbeta[i] * depsbydbeta[j] + depsbydbeta_e[i] * depsbydbeta_e[j];
 	};
 
-
-
-
+	
 	eps_xy = p_eps_xy[iMinor + 3 * threadsPerTileMinor / 4];
 	eps_iz = p_eps_iz[iMinor + 3 * threadsPerTileMinor / 4];
 	eps_ez = p_eps_ez[iMinor + 3 * threadsPerTileMinor / 4];

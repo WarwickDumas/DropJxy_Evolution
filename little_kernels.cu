@@ -793,121 +793,132 @@ __global__ void kernelAccumulateSummandsNeutVisc2(
 		// outputs:
 		f64 * __restrict__ p_sum_eps_deps_,  // 8 values for this block
 		f64 * __restrict__ p_sum_product_matrix_
-	)
+)
+{
+	__shared__ f64 sumdata_eps_deps[threadsPerTileMinor/4][REGRESSORS];
+	__shared__ f64 sum_product[threadsPerTileMinor/4][REGRESSORS][REGRESSORS];
+	// Call with threadsPerTileMinor/4
+
+	// !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+	long const iMinor = threadIdx.x + blockIdx.x * threadsPerTileMinor;
+	// !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+	f64 depsbydbeta[REGRESSORS], eps;
+	int i, j;
+	memset(&(sumdata_eps_deps[threadIdx.x]), 0, sizeof(f64)*REGRESSORS);
+	memset(&(sum_product[threadIdx.x]), 0, sizeof(f64)*REGRESSORS*REGRESSORS);
+
+		
+	eps = p_eps[iMinor];
+#pragma unroll
+	for (i = 0; i < REGRESSORS; i++)
 	{
-		__shared__ f64 sumdata_eps_deps[threadsPerTileMinor/4][REGRESSORS];
-		__shared__ f64 sum_product[threadsPerTileMinor/4][REGRESSORS][REGRESSORS];
-		// Call with threadsPerTileMinor/4
-
-		// !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-		long const iMinor = threadIdx.x + blockIdx.x * threadsPerTileMinor;
-		// !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-
-		f64 depsbydbeta[REGRESSORS], eps;
-		int i, j;
-		memset(&(sumdata_eps_deps[threadIdx.x]), 0, sizeof(f64)*REGRESSORS);
-		memset(&(sum_product[threadIdx.x]), 0, sizeof(f64)*REGRESSORS*REGRESSORS);
-
-		
-		eps = p_eps[iMinor];
+		depsbydbeta[i] = p_d_eps_by_d_beta[iMinor + i*NMINOR];
+	};
 #pragma unroll
-		for (i = 0; i < REGRESSORS; i++)
-		{
-			depsbydbeta[i] = p_d_eps_by_d_beta[iMinor + i*NMINOR];
-		};
-#pragma unroll
-		for (i = 0; i < REGRESSORS; i++)
-		{
-			sumdata_eps_deps[threadIdx.x][i] = depsbydbeta[i] * eps;
-			for (j = 0; j < REGRESSORS; j++)
-				sum_product[threadIdx.x][i][j] = depsbydbeta[i] * depsbydbeta[j];
-		};				
+	for (i = 0; i < REGRESSORS; i++)
+	{
+		sumdata_eps_deps[threadIdx.x][i] = depsbydbeta[i] * eps;
+		for (j = 0; j < REGRESSORS; j++)
+			sum_product[threadIdx.x][i][j] = depsbydbeta[i] * depsbydbeta[j];
+	};				
 		
 
-		eps = p_eps[iMinor + threadsPerTileMinor/4];
+	eps = p_eps[iMinor + threadsPerTileMinor/4];
 #pragma unroll
-		for (i = 0; i < REGRESSORS; i++)
-		{
-			depsbydbeta[i] = p_d_eps_by_d_beta[iMinor + threadsPerTileMinor / 4 + i*NMINOR];
-		};
+	for (i = 0; i < REGRESSORS; i++)
+	{
+		depsbydbeta[i] = p_d_eps_by_d_beta[iMinor + threadsPerTileMinor / 4 + i*NMINOR];
+	};
 #pragma unroll
-		for (i = 0; i < REGRESSORS; i++)
-		{
-			sumdata_eps_deps[threadIdx.x][i] += depsbydbeta[i] * eps;
-			for (j = 0; j < REGRESSORS; j++)
-				sum_product[threadIdx.x][i][j] += depsbydbeta[i] * depsbydbeta[j];
-		};
+	for (i = 0; i < REGRESSORS; i++)
+	{
+		sumdata_eps_deps[threadIdx.x][i] += depsbydbeta[i] * eps;
+		for (j = 0; j < REGRESSORS; j++)
+			sum_product[threadIdx.x][i][j] += depsbydbeta[i] * depsbydbeta[j];
+	};
 
-		eps = p_eps[iMinor + threadsPerTileMinor / 2];
+	eps = p_eps[iMinor + threadsPerTileMinor / 2];
 #pragma unroll
-		for (i = 0; i < REGRESSORS; i++)
-		{
-			depsbydbeta[i] = p_d_eps_by_d_beta[iMinor + threadsPerTileMinor / 2 + i*NMINOR];
-		};
+	for (i = 0; i < REGRESSORS; i++)
+	{
+		depsbydbeta[i] = p_d_eps_by_d_beta[iMinor + threadsPerTileMinor / 2 + i*NMINOR];
+	};
 #pragma unroll
-		for (i = 0; i < REGRESSORS; i++)
-		{
-			sumdata_eps_deps[threadIdx.x][i] += depsbydbeta[i] * eps;
-			for (j = 0; j < REGRESSORS; j++)
-				sum_product[threadIdx.x][i][j] += depsbydbeta[i] * depsbydbeta[j];
-		};
+	for (i = 0; i < REGRESSORS; i++)
+	{
+		sumdata_eps_deps[threadIdx.x][i] += depsbydbeta[i] * eps;
+		for (j = 0; j < REGRESSORS; j++)
+			sum_product[threadIdx.x][i][j] += depsbydbeta[i] * depsbydbeta[j];
+	};
 
-		eps = p_eps[iMinor + 3*threadsPerTileMinor / 4];
+	eps = p_eps[iMinor + 3*threadsPerTileMinor / 4];
 #pragma unroll
-		for (i = 0; i < REGRESSORS; i++)
-		{
-			depsbydbeta[i] = p_d_eps_by_d_beta[iMinor + 3*threadsPerTileMinor / 4 + i*NMINOR];
-		};
+	for (i = 0; i < REGRESSORS; i++)
+	{
+		depsbydbeta[i] = p_d_eps_by_d_beta[iMinor + 3*threadsPerTileMinor / 4 + i*NMINOR];
+	};
 #pragma unroll
-		for (i = 0; i < REGRESSORS; i++)
+	for (i = 0; i < REGRESSORS; i++)
+	{
+		sumdata_eps_deps[threadIdx.x][i] += depsbydbeta[i] * eps;
+		for (j = 0; j < REGRESSORS; j++)
+			sum_product[threadIdx.x][i][j] += depsbydbeta[i] * depsbydbeta[j];
+	};
+
+
+
+	__syncthreads();
+
+	int s = blockDim.x;
+	int k = s / 2;
+
+	while (s != 1) {
+		if (threadIdx.x < k)
 		{
-			sumdata_eps_deps[threadIdx.x][i] += depsbydbeta[i] * eps;
-			for (j = 0; j < REGRESSORS; j++)
-				sum_product[threadIdx.x][i][j] += depsbydbeta[i] * depsbydbeta[j];
+			for (i = 0; i < REGRESSORS; i++)
+			{
+				sumdata_eps_deps[threadIdx.x][i] += sumdata_eps_deps[threadIdx.x + k][i];
+				for (j = 0; j < REGRESSORS; j++)
+					sum_product[threadIdx.x][i][j] += sum_product[threadIdx.x + k][i][j];
+			};				
 		};
-
-
-
 		__syncthreads();
 
-		int s = blockDim.x;
-		int k = s / 2;
-
-		while (s != 1) {
-			if (threadIdx.x < k)
+		// Modify for case blockdim not 2^n:
+		if ((s % 2 == 1) && (threadIdx.x == k - 1)) {
+			for (i = 0; i < REGRESSORS; i++)
 			{
-				for (i = 0; i < REGRESSORS; i++)
-				{
-					sumdata_eps_deps[threadIdx.x][i] += sumdata_eps_deps[threadIdx.x + k][i];
-					for (j = 0; j < REGRESSORS; j++)
-						sum_product[threadIdx.x][i][j] += sum_product[threadIdx.x + k][i][j];
-				};				
-			};
-			__syncthreads();
-
-			// Modify for case blockdim not 2^n:
-			if ((s % 2 == 1) && (threadIdx.x == k - 1)) {
-				for (i = 0; i < REGRESSORS; i++)
-				{
-					sumdata_eps_deps[threadIdx.x][i] += sumdata_eps_deps[threadIdx.x + s - 1][i];
-					for (j = 0; j < REGRESSORS; j++)
-						sum_product[threadIdx.x][i][j] += sum_product[threadIdx.x + s - 1][i][j];
-				};				
-			};
-			// In case k == 81, add [39] += [80]
-			// Otherwise we only get to 39+40=79.
-			s = k;
-			k = s / 2;
-			__syncthreads();
+				sumdata_eps_deps[threadIdx.x][i] += sumdata_eps_deps[threadIdx.x + s - 1][i];
+				for (j = 0; j < REGRESSORS; j++)
+					sum_product[threadIdx.x][i][j] += sum_product[threadIdx.x + s - 1][i][j];
+			};				
 		};
+		// In case k == 81, add [39] += [80]
+		// Otherwise we only get to 39+40=79.
+		s = k;
+		k = s / 2;
+		__syncthreads();
+	};
 
-		if (threadIdx.x == 0)
-		{
-			memcpy(&(p_sum_eps_deps_[blockIdx.x*REGRESSORS]), sumdata_eps_deps[0], sizeof(f64)*REGRESSORS);
-			memcpy(&(p_sum_product_matrix_[blockIdx.x*REGRESSORS*REGRESSORS]), &(sum_product[0][0][0]), sizeof(f64)*REGRESSORS*REGRESSORS);
-		};
-	}
+	if (threadIdx.x == 0)
+	{
+		memcpy(&(p_sum_eps_deps_[blockIdx.x*REGRESSORS]), sumdata_eps_deps[0], sizeof(f64)*REGRESSORS);
+		memcpy(&(p_sum_product_matrix_[blockIdx.x*REGRESSORS*REGRESSORS]), &(sum_product[0][0][0]), sizeof(f64)*REGRESSORS*REGRESSORS);
+	};
+}
 
+__global__ void Vector3Breakdown(
+	f64_vec3 * __restrict__ p_input,
+	f64_vec2 * __restrict__ p_outxy,
+	f64 * __restrict__ p_outz
+) {
+	long const index = blockDim.x*blockIdx.x + threadIdx.x;
+	f64_vec3 vec3 = p_input[index];
+	p_outz[index] = vec3.z;
+	f64_vec2 xy; xy.x = vec3.x; xy.y = vec3.y;
+	p_outxy[index] = xy;
+}
 
 __global__ void AddLittleBitORegressors(
 	f64 const coeff,
