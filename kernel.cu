@@ -61,9 +61,9 @@
 #define MIDPT_A
 #define TEST_ACCEL_EZ (0)//iMinor == CHOSEN)
 #define TEST_EPSILON_Y (0)
-#define TEST_EPSILON_X (iVertex == VERTCHOSEN)
-#define TEST_EPSILON_Y_IMINOR (0)
-#define TEST_EPSILON_X_MINOR (iMinor == CHOSEN)
+#define TEST_EPSILON_X (0)
+#define TEST_EPSILON_Y_IMINOR (0)//iMinor == lChosen)
+#define TEST_EPSILON_X_MINOR (0)
 
 #define ARTIFICIAL_RELATIVE_THRESH  1.0e10 // if we let it be more strict than heat thresh then it drives a difference generating heat!
 #define ARTIFICIAL_RELATIVE_THRESH_HEAT  1.0e10   // typical initial density is 1e8 vs 1e18
@@ -715,12 +715,15 @@ __global__ void kernelCreateEpsilon_Visc(
 			(MAR_ion.x*m_ion + MAR_elec.x*m_e) / (m_ion + m_e)
 		);
 		if ((TEST_EPSILON_X_MINOR) || (TEST_EPSILON_Y_IMINOR)) 
-			printf("%d epsilon.vy %1.14E vie.vy %1.14E vie_k.vy %1.14E hsub/N %1.14E\nMAR_ion.y %1.10E MAR_elec.y %1.10E avg'd %1.10E \n-------------\n",
+			printf("%d epsilon.vy %1.14E vie.vy %1.14E vie_k.vy %1.14E hsub/N %1.14E\n"
+				"factor_i %1.11E factor_e %1.11E MAR_ion.y %1.14E MAR_elec.y %1.14E avg'd %1.14E \n-------------\n",
 			iMinor, epsilon.vxy.y, vie.vxy.y, vie_k.vxy.y, hsub / N, 
-			MAR_ion.y, MAR_elec.y,
+				-hsub*(m_ion / ((m_ion + m_e)*N)),
+				-hsub*(m_e / ((m_ion + m_e)*N)),
+				MAR_ion.y, MAR_elec.y,
 			(MAR_ion.y*m_ion + MAR_elec.y*m_e) / (m_ion + m_e)
 		);
-		  
+		
 	//	if (iMinor == CHOSEN) printf("%d epsilon.vez %1.14E vie.vez %1.14E vie_k.vez %1.14E hsub/N %1.14E MAR_elec.z %1.14E\n-------------\n",
 	//		iMinor, epsilon.vez, vie.vez, vie_k.vez, hsub / N, MAR_elec.z);
 
@@ -827,8 +830,11 @@ __global__ void kernelCreateEpsilon_NeutralVisc(
 	structural info = p_info_minor[iMinor];
 	f64_vec3 epsilon;
 	memset(&epsilon, 0, sizeof(f64_vec3));
-	if ((info.flag == DOMAIN_VERTEX) || (info.flag == DOMAIN_TRIANGLE)
-		|| (info.flag == CROSSING_INS)) // ?
+	if (
+		(info.flag == DOMAIN_VERTEX) || (info.flag == DOMAIN_TRIANGLE)
+		||
+		((info.flag == CROSSING_INS) && (TestDomainPos(info.pos)))
+		)
 	{
 		f64_vec3 v_n = p_v_n[iMinor];
 		f64_vec3 v_n_k = p_v_n_k[iMinor];

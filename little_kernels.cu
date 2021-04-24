@@ -1935,6 +1935,11 @@ __global__ void kernelCalculateOverallVelocitiesVertices(
 	f64 const h_full_adv
 )
 {
+#ifdef EULERIAN
+	long const iVertex = threadIdx.x + blockIdx.x * blockDim.x; // INDEX OF VERTEX
+	f64_vec2 v_overall(0.0, 0.0);
+	p_v_overall_major[iVertex] = v_overall;
+#else
 	__shared__ f64_vec2 shared_pos[threadsPerTileMinor];
 
 	long const iVertex = threadIdx.x + blockIdx.x * blockDim.x; // INDEX OF VERTEX
@@ -2089,6 +2094,7 @@ __global__ void kernelCalculateOverallVelocitiesVertices(
 	}
 
 	p_v_overall_major[iVertex] = v_overall;
+#endif
 }
 
 __global__ void kernelCentroidVelocitiesTriangles(
@@ -3224,9 +3230,11 @@ __global__ void kernelAddtoT_lc(
 {
 	long const iVertex = blockDim.x*blockIdx.x + threadIdx.x;
 	f64 T = p__T[iVertex];
+	f64 oldT = T;
 	for (int i = 0; i < howmany; i++)
 		T += beta_n_c[i] * p_addition[i*NUMVERTICES+iVertex];
 	p__T[iVertex] = T;
+	p_addition[(howmany - 1)*NUMVERTICES + iVertex] = T - oldT;
 }
 
 __global__ void kernelAddtoT_lc___(
