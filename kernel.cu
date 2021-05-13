@@ -28,7 +28,7 @@
 #define TESTADVECTNEUT (0) //iVertex == VERTCHOSEN)
 #define TESTIONVERTVISC (0)//(iVertex == VERTCHOSEN)
 #define TESTNEUTVISC (0) // iVertex == VERTCHOSEN) 
-#define TESTVISC (0) //iVertex == VERTCHOSEN) 
+#define TESTVISC (0) // iMinor == CHOSEN)
 #define TESTIONVISC (0) 
 #define TESTHEAT (0)
 #define TESTHEATFULL (0)
@@ -668,1237 +668,6 @@ __global__ void kernelCompare(
 
 
 
-
-__global__ void kernelCreateEpsilon_Visc(
-	f64 const hsub,
-	structural * __restrict__ p_info_minor,
-	v4 * __restrict__ p_vie,
-	v4 * __restrict__ p_vie_k,
-	f64_vec3 * __restrict__ p_MAR_ion2,
-	f64_vec3 * __restrict__ p_MAR_elec2,
-	nvals * __restrict__ p_n_minor,
-	f64 * __restrict__ p_AreaMinor,
-	
-	f64_vec2 * __restrict__ p_epsilon_xy,
-	f64 * __restrict__ p_epsilon_iz,
-	f64 * __restrict__ p_epsilon_ez,
-	bool * __restrict__ p_bFailedTest
-) {
-	long const iMinor = blockDim.x * blockIdx.x + threadIdx.x;
-
-	// eps = v - v_k - h MAR / N
-	structural info = p_info_minor[iMinor];
-	v4 epsilon;
-	memset(&epsilon, 0, sizeof(v4));
-	if (
-		(info.flag == DOMAIN_VERTEX) || (info.flag == DOMAIN_TRIANGLE)
-		|| 
-		((info.flag == CROSSING_INS) && (TestDomainPos(info.pos)))
-		)
-	{
-		v4 vie = p_vie[iMinor];
-		v4 vie_k = p_vie_k[iMinor];
-		f64_vec3 MAR_ion = p_MAR_ion2[iMinor];
-		f64_vec3 MAR_elec = p_MAR_elec2[iMinor];
-		f64 N = p_AreaMinor[iMinor] * p_n_minor[iMinor].n;
-
-		epsilon.vxy = vie.vxy - vie_k.vxy
-			- hsub*((MAR_ion.xypart()*m_ion + MAR_elec.xypart()*m_e) /
-			((m_ion + m_e)*N));
-		epsilon.viz = vie.viz - vie_k.viz - hsub*(MAR_ion.z / N);
-		epsilon.vez = vie.vez - vie_k.vez - hsub*(MAR_elec.z / N);
-
-		if (TEST_EPSILON_X_MINOR)
-			printf("%d epsilon.vx %1.14E vie.vx %1.14E vie_k.vx %1.14E hsub/N %1.14E\nMAR_ion.x %1.10E MAR_elec.x %1.10E avg'd %1.10E \n-------------\n",
-			iMinor, epsilon.vxy.x, vie.vxy.x, vie_k.vxy.x, hsub / N,
-			MAR_ion.x, MAR_elec.x,
-			(MAR_ion.x*m_ion + MAR_elec.x*m_e) / (m_ion + m_e)
-		);
-		if ((TEST_EPSILON_X_MINOR) || (TEST_EPSILON_Y_IMINOR)) 
-			printf("%d epsilon.vy %1.14E vie.vy %1.14E vie_k.vy %1.14E hsub/N %1.14E\n"
-				"factor_i %1.11E factor_e %1.11E MAR_ion.y %1.14E MAR_elec.y %1.14E avg'd %1.14E \n-------------\n",
-			iMinor, epsilon.vxy.y, vie.vxy.y, vie_k.vxy.y, hsub / N, 
-				-hsub*(m_ion / ((m_ion + m_e)*N)),
-				-hsub*(m_e / ((m_ion + m_e)*N)),
-				MAR_ion.y, MAR_elec.y,
-			(MAR_ion.y*m_ion + MAR_elec.y*m_e) / (m_ion + m_e)
-		);
-		
-	//	if (iMinor == CHOSEN) printf("%d epsilon.vez %1.14E vie.vez %1.14E vie_k.vez %1.14E hsub/N %1.14E MAR_elec.z %1.14E\n-------------\n",
-	//		iMinor, epsilon.vez, vie.vez, vie_k.vez, hsub / N, MAR_elec.z);
-
-
-		if ((epsilon.vxy.x != epsilon.vxy.x) || (epsilon.vxy.y != epsilon.vxy.y))
-			printf("%d epsilon x y %1.8E %1.8E\n",
-				iMinor, epsilon.vxy.x, epsilon.vxy.y);
-
-		if (p_bFailedTest != 0) {
-			// Stability criterion:
-			// We need to know whether it's still heading the same way, in EACH dimension.
-			// For general viscosity we just ask if the dot product of next forward move, with our move, is positive.
-
-			// The onward move is hA v_n . 
-			bool bFail = false;
-			// if ((v_n.x > v_n_k.x) && (MAR_neut.x < 0.0)) bFail = true; // heading wrong way
-//			if (
-//				  (vie.vxy.x - vie_k.vxy.x)*(m_ion*MAR_ion.x + m_e*MAR_elec.x)
-//				+ (vie.vxy.y - vie_k.vxy.y)*(m_ion*MAR_ion.y + m_e*MAR_elec.y)				
-//					< 0.0) bFail = true;
-//			
-//			if ((vie.viz - vie_k.viz)*MAR_ion.z < 0.0) bFail = true;
-//			if ((vie.vez - vie_k.vez)*MAR_elec.z < 0.0) bFail = true;
-//
-
-			// What means that this is sensibly close to the trajectory?
-			// Say we look back and it comes from a v_k that is 1% out
-			// ** h should govern how big of an error we can make**
-
-			// Allow a 1% error away from accurate backward move.
-			// Allow a small independent drift.
-#define ALLOWABLE_v_DRIFT_RATE 1.0e9
-			// after 1.0e-7 it's gained spuriously 1e2 cm/s. But not really because it's still a zero-sum when we do flows.
-
-			f64_vec3 mix = (m_ion*MAR_ion + m_e*MAR_elec) / (m_ion + m_e);
-			f64 epsmixz = (m_ion*epsilon.viz + m_e*epsilon.vez) / (m_ion + m_e);
-			//if (epsilon.vxy.dot(epsilon.vxy) > (0.0001*(hsub*hsub / (N*N))*(mix.dotxy(mix))
-			//	+ ALLOWABLE_v_DRIFT_RATE*hsub*ALLOWABLE_v_DRIFT_RATE*hsub)) bFail = true;
-
-			if (epsilon.vxy.x*epsilon.vxy.x > 0.0001*(hsub*hsub / (N*N))*mix.x*mix.x
-				+ ALLOWABLE_v_DRIFT_RATE*hsub*ALLOWABLE_v_DRIFT_RATE*hsub) bFail = true;
-			if (epsilon.vxy.y*epsilon.vxy.y > 0.0001*(hsub*hsub / (N*N))*mix.y*mix.y
-				+ ALLOWABLE_v_DRIFT_RATE*hsub*ALLOWABLE_v_DRIFT_RATE*hsub) bFail = true;
-				
-			if (epsilon.viz*epsilon.viz > 0.0001*(hsub*hsub / (N*N))*MAR_ion.z*MAR_ion.z
-				+ ALLOWABLE_v_DRIFT_RATE*hsub*ALLOWABLE_v_DRIFT_RATE*hsub) bFail = true;
-			if (epsilon.vez*epsilon.vez > 0.0001*(hsub*hsub / (N*N))*MAR_elec.z*MAR_elec.z
-				+ ALLOWABLE_v_DRIFT_RATE*hsub*ALLOWABLE_v_DRIFT_RATE*hsub) bFail = true;
-
-			if (epsmixz*epsmixz > 0.00001*(hsub*hsub / (N*N))*mix.z*mix.z
-				+ ALLOWABLE_v_DRIFT_RATE*hsub*ALLOWABLE_v_DRIFT_RATE*hsub) bFail = true;
-			if (epsilon.vxy.dot(epsilon.vxy) > 0.00001*(hsub*hsub / (N*N))*mix.dotxy(mix)
-				+ ALLOWABLE_v_DRIFT_RATE*hsub*ALLOWABLE_v_DRIFT_RATE*hsub) bFail = true;
-
-			// We allow a 0.1-1% deviation from trajectory over time.
-
-			// Previous threshold: 1e-14*(v^2 + 1e4) . absolute part 1e-10 vs
-			// 1e(18-24).
-			// REL_THRESHOLD_VISC*REL_THRESHOLD_VISC*(v_n.dot(v_n) + 1.0e4))))
-			
-			if (bFail) p_bFailedTest[blockIdx.x] = true;
-		};
-
-
-	//	if ((p_bFailedTest != 0) && 
-	//		((epsilon.vxy.dot(epsilon.vxy) > REL_THRESHOLD_VISC*REL_THRESHOLD_VISC*(vie.vxy.dot(vie.vxy) + 1.0e4))				
-	//			||				
-	//			(epsilon.viz*epsilon.viz > REL_THRESHOLD_VISC*REL_THRESHOLD_VISC*(vie.viz*vie.viz + 1.0e4))
-	//			||
-	//			(epsilon.vez*epsilon.vez > REL_THRESHOLD_VISC*REL_THRESHOLD_VISC*(vie.vez*vie.vez + 1.0e8))
-	//			))
-	//	{
-	//		p_bFailedTest[blockIdx.x] = true;
-	//	}
-		
-	} else {
-		// epsilon = 0
-	};
-	p_epsilon_xy[iMinor] = epsilon.vxy;
-	p_epsilon_iz[iMinor] = epsilon.viz;
-	p_epsilon_ez[iMinor] = epsilon.vez;
-
-
-}
-
-
-__global__ void kernelCreateEpsilon_NeutralVisc(
-	f64 const hsub,
-	structural * __restrict__ p_info_minor,
-	f64_vec3 * __restrict__ p_v_n,
-	f64_vec3 * __restrict__ p_v_n_k,
-	f64_vec3 * __restrict__ pMAR_neut,
-	nvals * __restrict__ p_n_minor,
-	f64 * __restrict__ p_AreaMinor,
-
-	f64 * __restrict__ p_eps_x,
-	f64 * __restrict__ p_eps_y,
-	f64 * __restrict__ p_eps_z,
-	bool * __restrict__ p_bFailedTest
-) {
-	long const iMinor = blockDim.x * blockIdx.x + threadIdx.x;
-
-	// eps = v - v_k - h MAR / N
-	structural info = p_info_minor[iMinor];
-	f64_vec3 epsilon;
-	memset(&epsilon, 0, sizeof(f64_vec3));
-	if (
-		(info.flag == DOMAIN_VERTEX) || (info.flag == DOMAIN_TRIANGLE)
-		||
-		((info.flag == CROSSING_INS) && (TestDomainPos(info.pos)))
-		)
-	{
-		f64_vec3 v_n = p_v_n[iMinor];
-		f64_vec3 v_n_k = p_v_n_k[iMinor];
-		f64_vec3 MAR_neut = pMAR_neut[iMinor];
-		f64 N = p_AreaMinor[iMinor] * p_n_minor[iMinor].n_n;
-
-		epsilon = v_n - v_n_k - hsub*(MAR_neut) / N;
-
-		if (p_bFailedTest != 0)
-		{
-			// Stability criterion:
-			// We need to know whether it's still heading the same way, in EACH dimension.
-			// For general viscosity we just ask if the dot product of next forward move, with our move, is positive.
-
-			// The onward move is hA v_n . 
-			bool bFail = false;
-			// if ((v_n.x > v_n_k.x) && (MAR_neut.x < 0.0)) bFail = true; // heading wrong way
-		//	if ((v_n.x - v_n_k.x)*MAR_neut.x < 0.0) bFail = true;
-		//	if ((v_n.y - v_n_k.y)*MAR_neut.y < 0.0) bFail = true;
-		//	if ((v_n.z - v_n_k.z)*MAR_neut.z < 0.0) bFail = true;
-			
-			// What means that this is sensibly close to the trajectory?
-			// Say we look back and it comes from a v_k that is 1% out
-			// ** h should govern how big of an error we can make**
-			
-			// Allow a 1% error away from accurate backward move.
-			// Allow a small independent drift.
-#define ALLOWABLE_v_DRIFT_RATE 1.0e9
-			// after 1.0e-7 it's gained spuriously 1e2 cm/s. But not really because it's still a zero-sum when we do flows.
-
-			if (epsilon.x*epsilon.x > 0.0001*(hsub*hsub / (N*N))*MAR_neut.x*MAR_neut.x
-				+ ALLOWABLE_v_DRIFT_RATE*hsub*ALLOWABLE_v_DRIFT_RATE*hsub) bFail = true;
-			if (epsilon.y*epsilon.y > 0.0001*(hsub*hsub / (N*N))*MAR_neut.y*MAR_neut.y
-				+ ALLOWABLE_v_DRIFT_RATE*hsub*ALLOWABLE_v_DRIFT_RATE*hsub) bFail = true;
-			if (epsilon.z*epsilon.z > 0.0001*(hsub*hsub / (N*N))*MAR_neut.z*MAR_neut.z
-				+ ALLOWABLE_v_DRIFT_RATE*hsub*ALLOWABLE_v_DRIFT_RATE*hsub) bFail = true;
-
-			if (epsilon.dot(epsilon) > (0.00001*(hsub*hsub / (N*N))*MAR_neut.dot(MAR_neut)
-				+ ALLOWABLE_v_DRIFT_RATE*hsub*ALLOWABLE_v_DRIFT_RATE*hsub)) bFail = true;
-
-			if ((bFail) && (bSwitch)) printf("%d eps %1.8E %1.8E %1.8E h/N MAR %1.8E %1.8E %1.8E Thr %1.8E\n", 
-				iMinor, epsilon.x, epsilon.y, epsilon.z, 
-				(hsub/N)*MAR_neut.x, (hsub / N)*MAR_neut.y, (hsub / N)*MAR_neut.z,
-				hsub*ALLOWABLE_v_DRIFT_RATE);
-
-			// 1e9*1e-12 = 1e-3 so how can we possibly have L2eps at order 1e-4.
-
-
-			// Previous threshold: 1e-14*(v^2 + 1e4) . absolute part 1e-10 vs
-			// 1e(18-24).
-				// REL_THRESHOLD_VISC*REL_THRESHOLD_VISC*(v_n.dot(v_n) + 1.0e4))))
-
-	//		if (bFail) printf("%d v_n %1.14E %1.14E %1.14E vk %1.14E %1.14E %1.14E MAR %1.14E %1.14E %1.14E hsub/N %1.14E\n"
-	//			"eps %1.14E %1.14E %1.14E move %1.14E %1.14E %1.14E\n",
-	//			iMinor, v_n.x, v_n.y, v_n.z, v_n_k.x, v_n_k.y, v_n_k.z, MAR_neut.x, MAR_neut.y, MAR_neut.z, hsub/N, 
-	//			epsilon.x, epsilon.y, epsilon.z, v_n.x - v_n_k.x, v_n.y - v_n_k.y, v_n.z - v_n_k.z
-	//			);
-
-			if (bFail) p_bFailedTest[blockIdx.x] = true;			
-		};
-	} else {
-		// epsilon = 0
-	};
-	p_eps_x[iMinor] = epsilon.x;
-	p_eps_y[iMinor] = epsilon.y;
-	p_eps_z[iMinor] = epsilon.z;
-}
-
-__global__ void kernelCreateEpsilon_NeutralVisc__TestStability(
-	f64 const hsub,
-	structural * __restrict__ p_info_minor,
-	f64_vec3 * __restrict__ p_v_n,
-	f64_vec3 * __restrict__ p_v_n_k,
-	f64_vec3 * __restrict__ pMAR_neut,
-	nvals * __restrict__ p_n_minor,
-	f64 * __restrict__ p_AreaMinor,
-
-	f64_vec3 * __restrict__ p_eps3,
-	bool * __restrict__ p_bFailedTest
-) {
-	/*long const iMinor = blockDim.x * blockIdx.x + threadIdx.x;
-
-	// eps = v - v_k - h MAR / N
-	structural info = p_info_minor[iMinor];
-	f64_vec3 epsilon;
-	memset(&epsilon, 0, sizeof(f64_vec3));
-	if ((info.flag == DOMAIN_VERTEX) || (info.flag == DOMAIN_TRIANGLE)
-		|| (info.flag == CROSSING_INS)) // ?
-	{
-		f64_vec3 v_n = p_v_n[iMinor];
-		f64_vec3 v_n_k = p_v_n_k[iMinor];
-		f64_vec3 MAR_neut = pMAR_neut[iMinor];
-		f64 N = p_AreaMinor[iMinor] * p_n_minor[iMinor].n_n;
-
-		f64_vec3 suggested_move = p_forward_move[iMinor];
-
-		epsilon = v_n - v_n_k - hsub*(MAR_neut) / N;    // v_n-v_n_k is the move we made, h *MAR_neut/N is the move implied.
-		// suppose we also load in the initial suggested move.
-
-
-		bFailed = false;
-		if ((epsilon.dot(epsilon) < REL_THRESHOLD_VISC*REL_THRESHOLD_VISC*(v_n.dot(v_n) + 1.0e4))) {
-			// it's ok - do nothing
-		}
-		else {
-			// overshooting test:
-			if (
-				(((v_n.x - v_n_k.x) > 0.0) && ((hsub*MAR_neut.x / N) < -(v_n.x - v_n_k.x)))
-				||
-				(((v_n.x - v_n_k.x) <= 0.0) && ((hsub*MAR_neut.x / N) > -(v_n.x - v_n_k.x)))
-				)
-			{
-				// it more than reverses itself, once we evaluate MAR_neut at v_n.
-
-
-				// overshooting:
-				bFailed = true;
-
-			}
-			else {
-				// not overshooting:
-				// is it between fwd & bwd?!
-
-				// Suppose for the suggested move, Xk + F(Xinit) - Xinit < 0: using X gives us a result to the left of X. 
-				// Whereas for bwd, Xk + F(Xbwd) - Xbwd = 0.
-
-				// Too far (beyond bwd): Xk + F(X) - X > 0   
-				// Not far enough: Xk + F(X) - X < Xk + F(Xinit)-Xinit
-
-				if (
-					((initialimageminusinitial.x < 0.0) && (image - X > 0.0))
-					||
-					((initialimageminusinitial.x > 0.0) && (image - X < 0.0))
-					)
-				{
-					// beyond bwd:
-					bFailed = true; // move back towards bwd?
-				}
-				else {
-//					if (((initialimageminusinitial.x < 0.0) && (image - X < initialimageminusinitial.x))
-//						||
-//						((initialimageminusinitial.x > 0.0) && (image - X > initialimageminusinitial.x))
-//						) 
-						// ended up the wrong side of fwd, God knows how, but this is no good.
-
-
-						// yeah this isn't the right test.
-
-						// The right test is the overshooting one, for which we have to
-						// run and evaluate 
-
-					if (((F(X) < 0.0) && (Xk + F(X) + F(Xk+F(X)) > Xk))
-							||
-						((F(X) > 0.0) && (Xk + F(X) + F(Xk + F(X)) < Xk)))
-					{
-						bFailed = true; // still overshooting; move towards bwd
-					}
-				}
-			}
-		}
-		
-		if ((p_bFailedTest != 0) &&	(bFailed))
-		{
-			p_bFailedTest[blockIdx.x] = true;
-		}
-
-	}
-	else {
-		// epsilon = 0
-	};
-	p_eps3[iMinor] = epsilon;*/
-}
-
-__global__ void kernelCalc_Matrices_for_Jacobi_NeutralViscosity(
-	f64 const hsub,
-	structural * __restrict__ p_info_minor,
-	f64_vec3 * __restrict__ p_v_n_minor,
-
-	long * __restrict__ p_izTri,
-	char * __restrict__ p_szPBC,
-	long * __restrict__ p_izNeighMinor,
-	char * __restrict__ p_szPBCtriminor,
-
-	f64 * __restrict__ p_ita_minor,   // nT / nu ready to look up
-	f64 * __restrict__ p_nu_minor,   // nT / nu ready to look up
-	
-	nvals * __restrict__ p_n_minor,
-	f64 * __restrict__ p_AreaMinor,
-
-	f64_tens3 * __restrict__ p_matrix_n
-)
-{
-	//__shared__ v4 shared_vie[threadsPerTileMinor]; // sort of thing we want as input
-	// Not used, right? Nothing nonlinear?
-	__shared__ f64_vec2 shared_pos[threadsPerTileMinor];
-	__shared__ f64 shared_ita_par[threadsPerTileMinor]; // reuse for i,e ; or make 2 vars to combine the routines.
-	__shared__ f64 shared_nu[threadsPerTileMinor];
-
-	//__shared__ v4 shared_vie_verts[threadsPerTileMajor];
-	__shared__ f64_vec2 shared_pos_verts[threadsPerTileMajor];
-	__shared__ f64 shared_ita_par_verts[threadsPerTileMajor];
-	__shared__ f64 shared_nu_verts[threadsPerTileMajor]; // used for creating ita_perp, ita_cross
-
-														 // 4+2+2+1+1 *1.5 = 15 per thread. That is possibly as slow as having 24 per thread. 
-														 // Thus putting some stuff in shared may speed up if there are spills.
-
-	long const iMinor = blockDim.x*blockIdx.x + threadIdx.x;
-	long const iVertex = threadsPerTileMajor*blockIdx.x + threadIdx.x; // only meaningful threadIdx.x < threadsPerTileMajor
-
-	long const StartMinor = threadsPerTileMinor*blockIdx.x;
-	long const StartMajor = threadsPerTileMajor*blockIdx.x;
-	long const EndMinor = StartMinor + threadsPerTileMinor;
-	long const EndMajor = StartMajor + threadsPerTileMajor;
-
-	f64_vec2 opppos, prevpos, nextpos;
-	f64 nu, ita_par;  // optimization: we always each loop want to get rid of omega, nu once we have calc'd these, if possible!!
-
-	shared_pos[threadIdx.x] = p_info_minor[iMinor].pos;
-	shared_ita_par[threadIdx.x] = p_ita_minor[iMinor];
-	shared_nu[threadIdx.x] = p_nu_minor[iMinor];
-
-	// Perhaps the real answer is this. Advection and therefore advective momflux
-	// do not need to be recalculated very often at all. At 1e6 cm/s, we aim for 1 micron,
-	// get 1e-10s to actually do the advection !!
-	// So an outer cycle. Still limiting the number of total things in a minor tile. We might like 384 = 192*2.
-
-	structural info;
-	if (threadIdx.x < threadsPerTileMajor) {
-		info = p_info_minor[iVertex + BEGINNING_OF_CENTRAL];
-		shared_pos_verts[threadIdx.x] = info.pos;
-		if ((info.flag == DOMAIN_VERTEX) || (info.flag == OUTERMOST))
-		{
-			//	memcpy(&(shared_vie_verts[threadIdx.x]), &(p_vie_minor[iVertex + BEGINNING_OF_CENTRAL]), sizeof(v4));
-			shared_ita_par_verts[threadIdx.x] = p_ita_minor[iVertex + BEGINNING_OF_CENTRAL];
-			shared_nu_verts[threadIdx.x] = p_nu_minor[iVertex + BEGINNING_OF_CENTRAL];
-			// But now I am going to set ita == 0 in OUTERMOST and agree never to look there because that's fairer than one-way traffic and I don't wanna handle OUTERMOST?
-			// I mean, I could handle it, and do flows only if the flag does not come up OUTER_FRILL.
-			// OK just do that.
-		} else {
-			//	memset(&(shared_vie_verts[threadIdx.x]), 0, sizeof(v4));
-			shared_ita_par_verts[threadIdx.x] = 0.0;
-			shared_nu_verts[threadIdx.x] = 0.0;
-		};
-	};
-
-	__syncthreads();
-	
-	if (threadIdx.x < threadsPerTileMajor) {
-
-		long izTri[MAXNEIGH_d];
-		char szPBC[MAXNEIGH_d];
-		short tri_len = info.neigh_len; // ?!
-
-		if ((info.flag == DOMAIN_VERTEX) && (info.pos.modulus() < 4.5)
-			&& (shared_ita_par_verts[threadIdx.x] > 0.0))
-			//|| (info.flag == OUTERMOST)) // !!!!!!!!!!!!!!!!
-		{
-			// We are losing energy if there is viscosity into OUTERMOST.
-			memcpy(izTri, p_izTri + iVertex*MAXNEIGH_d, MAXNEIGH_d * sizeof(long));
-			memcpy(szPBC, p_szPBC + iVertex*MAXNEIGH_d, MAXNEIGH_d * sizeof(char));
-
-			f64_tens3 J; // Jacobean
-			memset(&J, 0, sizeof(f64_tens3));
-			//d_eps_x_by_d_vx = 1.0;
-			J.xx = 1.0;
-			J.yy = 1.0;
-			J.zz = 1.0;
-			// d_eps_z_by_d_viz = 1.0;  // Note that eps includes v_k+1
-
-
-#pragma unroll 
-			for (short i = 0; i < tri_len; i++)
-			{
-				// Tri 0 is anticlockwise of neighbour 0, we think
-
-				{
-					if ((izTri[i] >= StartMinor) && (izTri[i] < EndMinor))
-					{
-						if (shared_ita_par_verts[threadIdx.x] < shared_ita_par[izTri[i] - StartMinor])
-						{
-							ita_par = shared_ita_par_verts[threadIdx.x];
-							nu = shared_nu_verts[threadIdx.x];
-						}
-						else {
-							ita_par = shared_ita_par[izTri[i] - StartMinor];
-							nu = shared_nu[izTri[i] - StartMinor];
-						};
-					}
-					else {
-						f64 ita_theirs = p_ita_minor[izTri[i]];
-						f64 nu_theirs = p_nu_minor[izTri[i]];
-						if (shared_ita_par_verts[threadIdx.x] < ita_theirs) {
-							ita_par = shared_ita_par_verts[threadIdx.x];
-							nu = shared_nu_verts[threadIdx.x];
-						}
-						else {
-							ita_par = ita_theirs;
-							nu = nu_theirs;
-						};
-
-						// I understand why we are still doing minimum ita at the wall but we would ideally like to stop.
-
-					};
-				} // Guaranteed DOMAIN_VERTEX never needs to skip an edge; we include CROSSING_INS in viscosity.
-
-				f64_vec2 gradvx, gradvy, gradvz;
-				f64_vec2 edge_normal;
-
-				if (ita_par > 0.0) // note it was the minimum taken.
-				{
-					f64_vec2 opppos, prevpos, nextpos;
-					// ideally we might want to leave position out of the loop so that we can avoid reloading it.
-
-					short iprev = i - 1; if (iprev < 0) iprev = tri_len - 1;
-					short inext = i + 1; if (inext >= tri_len) inext = 0;
-
-					if ((izTri[iprev] >= StartMinor) && (izTri[iprev] < EndMinor))
-					{
-						prevpos = shared_pos[izTri[iprev] - StartMinor];
-					}
-					else {
-						prevpos = p_info_minor[izTri[iprev]].pos;
-					}
-					if (szPBC[iprev] == ROTATE_ME_CLOCKWISE) {
-						prevpos = Clockwise_d*prevpos;
-					}
-					if (szPBC[iprev] == ROTATE_ME_ANTICLOCKWISE) {
-						prevpos = Anticlockwise_d*prevpos;
-					}
-
-					if ((izTri[i] >= StartMinor) && (izTri[i] < EndMinor))
-					{
-						opppos = shared_pos[izTri[i] - StartMinor];
-
-					}
-					else {
-						opppos = p_info_minor[izTri[i]].pos;
-
-						//	if (iVertex == VERTCHOSEN) printf("opp_v %1.9E v_n_minor izTri[i] %d \n", opp_v.x, izTri[i]);
-					}
-					if (szPBC[i] == ROTATE_ME_CLOCKWISE) {
-						opppos = Clockwise_d*opppos;
-					}
-					if (szPBC[i] == ROTATE_ME_ANTICLOCKWISE) {
-						opppos = Anticlockwise_d*opppos;
-					}
-
-					if ((izTri[inext] >= StartMinor) && (izTri[inext] < EndMinor))
-					{
-						nextpos = shared_pos[izTri[inext] - StartMinor];
-					}
-					else {
-						nextpos = p_info_minor[izTri[inext]].pos;
-					}
-					if (szPBC[inext] == ROTATE_ME_CLOCKWISE) {
-						nextpos = Clockwise_d*nextpos;
-					}
-					if (szPBC[inext] == ROTATE_ME_ANTICLOCKWISE) {
-						nextpos = Anticlockwise_d*nextpos;
-					}
-
-					f64 area_quadrilateral = 0.5*(
-						(info.pos.x + nextpos.x)*(info.pos.y - nextpos.y)
-						+ (prevpos.x + info.pos.x)*(prevpos.y - info.pos.y)
-						+ (opppos.x + prevpos.x)*(opppos.y - prevpos.y)
-						+ (nextpos.x + opppos.x)*(nextpos.y - opppos.y)
-						);
-
-					edge_normal.x = THIRD * (nextpos.y - prevpos.y);
-					edge_normal.y = THIRD * (prevpos.x - nextpos.x);
-
-					f64 grad_vjdx_coeff_on_vj_self = 0.5*(prevpos.y - nextpos.y) / area_quadrilateral;
-					f64 grad_vjdy_coeff_on_vj_self = 0.5*(nextpos.x - prevpos.x) / area_quadrilateral;
-				
-					// For neutral fluid viscosity does not involve dimensional transfers.
-
-					f64_vec3 zero3(0.0, 0.0, 0.0);
-
-					Augment_JacobeanNeutral(&J,
-							hsub / (p_n_minor[iVertex + BEGINNING_OF_CENTRAL].n_n*p_AreaMinor[iVertex + BEGINNING_OF_CENTRAL] * m_n),
-							edge_normal, ita_par, nu, zero3,
-							grad_vjdx_coeff_on_vj_self,
-							grad_vjdy_coeff_on_vj_self
-							);					
-				}
-			};
-
-			f64_tens3 result;
-			J.Inverse(result);
-
-			memcpy(&(p_matrix_n[iVertex + BEGINNING_OF_CENTRAL]), &result, sizeof(f64_tens3));
-			// inverted it so that we are ready to put Jacobi = result.eps
-
-		} else {
-			// NOT domain vertex: Do nothing			
-
-			// NOTE: We did not include OUTERMOST. Justification / effect ??
-		};
-	};
-	// __syncthreads(); // end of first vertex part
-	// Do we need syncthreads? Not overwriting any shared data here...
-
-	info = p_info_minor[iMinor];
-
-	//if ((info.flag == OUTER_FRILL) || (info.flag == INNER_FRILL)) {
-	{
-		long izNeighMinor[6];
-		char szPBC[6];
-
-		// JUST TO GET IT TO RUN:
-		if (((info.flag == DOMAIN_TRIANGLE) || (info.flag == CROSSING_INS)) &&
-			(info.pos.modulus() < 4.9) && (shared_ita_par[threadIdx.x] > 0.0)) {
-
-			memcpy(izNeighMinor, p_izNeighMinor + iMinor * 6, sizeof(long) * 6);
-			memcpy(szPBC, p_szPBCtriminor + iMinor * 6, sizeof(char) * 6);
-
-			f64_tens3 J; // Jacobean
-			memset(&J, 0, sizeof(f64_tens3));
-			//d_eps_x_by_d_vx = 1.0;
-			J.xx = 1.0;
-			J.yy = 1.0;
-			J.zz = 1.0;
-
-			// Let's make life easier and load up an array of 6 n's beforehand.
-#pragma unroll 
-			for (short i = 0; i < 6; i++)
-			{
-				bool bUsableSide = true;
-				{
-					// newly uncommented:
-					if ((izNeighMinor[i] >= StartMinor) && (izNeighMinor[i] < EndMinor))
-					{
-						if (shared_ita_par[threadIdx.x] < shared_ita_par[izNeighMinor[i] - StartMinor])
-						{
-							ita_par = shared_ita_par[threadIdx.x];
-							nu = shared_nu[threadIdx.x];
-						}
-						else {
-							ita_par = shared_ita_par[izNeighMinor[i] - StartMinor];
-							nu = shared_nu[izNeighMinor[i] - StartMinor];
-						};
-
-						if (shared_ita_par[izNeighMinor[i] - StartMinor] == 0.0) bUsableSide = false;
-					}
-					else {
-						if ((izNeighMinor[i] >= StartMajor + BEGINNING_OF_CENTRAL) &&
-							(izNeighMinor[i] < EndMajor + BEGINNING_OF_CENTRAL))
-						{
-							if (shared_ita_par[threadIdx.x] < shared_ita_par_verts[izNeighMinor[i] - StartMajor - BEGINNING_OF_CENTRAL])
-							{
-								ita_par = shared_ita_par[threadIdx.x];
-								nu = shared_nu[threadIdx.x];
-							}
-							else {
-								ita_par = shared_ita_par_verts[izNeighMinor[i] - StartMajor - BEGINNING_OF_CENTRAL];
-								nu = shared_nu_verts[izNeighMinor[i] - StartMajor - BEGINNING_OF_CENTRAL];
-							};
-							if (shared_ita_par_verts[izNeighMinor[i] - StartMajor - BEGINNING_OF_CENTRAL] == 0.0) bUsableSide = false;
-						}
-						else {
-							f64 ita_par_opp = p_ita_minor[izNeighMinor[i]];
-							f64 nu_theirs = p_nu_minor[izNeighMinor[i]];
-							if (shared_ita_par[threadIdx.x] < ita_par_opp) {
-								ita_par = shared_ita_par[threadIdx.x];
-								nu = shared_nu[threadIdx.x]; // why do I deliberately use the corresponding nu? nvm
-							}
-							else {
-								ita_par = ita_par_opp;
-								nu = nu_theirs;
-							}
-							if (ita_par_opp == 0.0) bUsableSide = false;
-						}
-					}
-				}
-
-				f64_vec2 edge_normal;
-				f64_vec3 htg_diff;
-
-				if (bUsableSide)
-				{
-					short inext = i + 1; if (inext > 5) inext = 0;
-					short iprev = i - 1; if (iprev < 0) iprev = 5;
-					f64_vec2 prevpos, nextpos, opppos;
-
-					if ((izNeighMinor[iprev] >= StartMinor) && (izNeighMinor[iprev] < EndMinor))
-					{
-						prevpos = shared_pos[izNeighMinor[iprev] - StartMinor];
-					}
-					else {
-						if ((izNeighMinor[iprev] >= StartMajor + BEGINNING_OF_CENTRAL) &&
-							(izNeighMinor[iprev] < EndMajor + BEGINNING_OF_CENTRAL))
-						{
-							prevpos = shared_pos_verts[izNeighMinor[iprev] - BEGINNING_OF_CENTRAL - StartMajor];
-						}
-						else {
-							prevpos = p_info_minor[izNeighMinor[iprev]].pos;
-						};
-					};
-					if (szPBC[iprev] == ROTATE_ME_CLOCKWISE) {
-						prevpos = Clockwise_d*prevpos;
-					};
-					if (szPBC[iprev] == ROTATE_ME_ANTICLOCKWISE) {
-						prevpos = Anticlockwise_d*prevpos;
-					};
-
-					if ((izNeighMinor[i] >= StartMinor) && (izNeighMinor[i] < EndMinor))
-					{
-						opppos = shared_pos[izNeighMinor[i] - StartMinor];
-					}
-					else {
-						if ((izNeighMinor[i] >= StartMajor + BEGINNING_OF_CENTRAL) &&
-							(izNeighMinor[i] < EndMajor + BEGINNING_OF_CENTRAL))
-						{
-							opppos = shared_pos_verts[izNeighMinor[i] - BEGINNING_OF_CENTRAL - StartMajor];
-						}
-						else {
-							opppos = p_info_minor[izNeighMinor[i]].pos;
-						};
-					};
-					if (szPBC[i] == ROTATE_ME_CLOCKWISE) {
-						opppos = Clockwise_d*opppos;
-					}
-					if (szPBC[i] == ROTATE_ME_ANTICLOCKWISE) {
-						opppos = Anticlockwise_d*opppos;
-					}
-
-					if ((izNeighMinor[inext] >= StartMinor) && (izNeighMinor[inext] < EndMinor))
-					{
-						nextpos = shared_pos[izNeighMinor[inext] - StartMinor];
-					}
-					else {
-						if ((izNeighMinor[inext] >= StartMajor + BEGINNING_OF_CENTRAL) &&
-							(izNeighMinor[inext] < EndMajor + BEGINNING_OF_CENTRAL))
-						{
-							nextpos = shared_pos_verts[izNeighMinor[inext] - BEGINNING_OF_CENTRAL - StartMajor];
-						}
-						else {
-							nextpos = p_info_minor[izNeighMinor[inext]].pos;
-						};
-					};
-					if (szPBC[inext] == ROTATE_ME_CLOCKWISE) {
-						nextpos = Clockwise_d*nextpos;
-					}
-					if (szPBC[inext] == ROTATE_ME_ANTICLOCKWISE) {
-						nextpos = Anticlockwise_d*nextpos;
-					}
-
-					f64 area_quadrilateral = 0.5*(
-						(info.pos.x + nextpos.x)*(info.pos.y - nextpos.y)
-						+ (prevpos.x + info.pos.x)*(prevpos.y - info.pos.y)
-						+ (opppos.x + prevpos.x)*(opppos.y - prevpos.y)
-						+ (nextpos.x + opppos.x)*(nextpos.y - opppos.y)
-						);
-
-					f64 grad_vjdx_coeff_on_vj_self = 0.5*(prevpos.y - nextpos.y) / area_quadrilateral;
-					f64 grad_vjdy_coeff_on_vj_self = 0.5*(nextpos.x - prevpos.x) / area_quadrilateral;
-
-					if (info.flag == CROSSING_INS) {
-						char flag = p_info_minor[izNeighMinor[i]].flag; 
-						if (flag == CROSSING_INS) {
-
-							bUsableSide = 0;
-							grad_vjdx_coeff_on_vj_self = 0.0;
-							grad_vjdy_coeff_on_vj_self = 0.0;
-							/*
-						
-							f64 prev_vx = p_v_n_minor[izNeighMinor[iprev]].x;
-							if (prev_vx == 0.0) // prev is in the insulator.
-							{
-								// do like the above but it goes (ours, next, opp) somehow?
-
-								f64 area_triangle = 0.5*(
-									(info.pos.x + nextpos.x)*(info.pos.y - nextpos.y)
-									+ (opppos.x + info.pos.x)*(opppos.y - info.pos.y)
-									+ (nextpos.x + opppos.x)*(nextpos.y - opppos.y));
-
-								//gradvx.x = 0.5*(
-								//	(shared_v_n[threadIdx.x].x + next_v.x)*(info.pos.y - nextpos.y)
-								//	+ (opp_v.x + shared_v_n[threadIdx.x].x)*(opppos.y - info.pos.y)
-								//	+ (next_v.x + opp_v.x)*(nextpos.y - opppos.y) // nextpos = pos_anti, assumed
-								//	) / area_triangle;
-
-								grad_vjdx_coeff_on_vj_self = 0.5*(opppos.y - nextpos.y) / area_triangle;
-								grad_vjdy_coeff_on_vj_self = 0.5*(nextpos.x - opppos.x) / area_triangle;
-								
-							} else {
-								f64 next_vx = p_v_n_minor[izNeighMinor[inext]].x;
-								if (next_vx == 0.0) // next is in the insulator
-								{
-									f64 area_triangle = 0.5*(
-										(prevpos.x + info.pos.x)*(prevpos.y - info.pos.y)
-										+ (opppos.x + prevpos.x)*(opppos.y - prevpos.y)
-										+ (info.pos.x + opppos.x)*(info.pos.y - opppos.y)
-										);
-
-									grad_vjdx_coeff_on_vj_self = 0.5*(prevpos.y - opppos.y) / area_triangle;
-									grad_vjdy_coeff_on_vj_self = 0.5*(opppos.x - prevpos.x) / area_triangle;
-
-								} else {
-									//printf("\n\n\nDid not make sense! Alert RING-TAILED LEMUR. iMinor %d iNiegh %d \n"
-									//	"izNeighMinor[inext] %d izNeighMinor[iprev] %d flag %d %d \n"
-									//	"prev_v.x %1.8E next_v.x %1.8E \n"
-									//	"\n\n\a", iMinor,
-									//	izNeighMinor[i],
-									//	izNeighMinor[inext], izNeighMinor[iprev], p_info_minor[izNeighMinor[inext]].flag,
-									//	p_info_minor[izNeighMinor[iprev]].flag, prev_v.x, next_v.x);
-								};
-							};
-							*/
-						};
-					};
-
-					edge_normal.x = THIRD * (nextpos.y - prevpos.y);
-					edge_normal.y = THIRD * (prevpos.x - nextpos.x);  // need to define so as to create unit vectors
-
-					f64_vec3 zero3(0.0, 0.0, 0.0);
-					Augment_Jacobean(&J,
-						hsub / (p_n_minor[iMinor].n_n * p_AreaMinor[iMinor] * m_n),
-						edge_normal, ita_par, nu, zero3,
-						grad_vjdx_coeff_on_vj_self,
-						grad_vjdy_coeff_on_vj_self
-					);
-
-				}; // bUsableSide
-			};
-
-			f64_tens3 result;
-			J.Inverse(result);
-			memcpy(&(p_matrix_n[iMinor]), &result, sizeof(f64_tens3));
-
-		} else {
-			// Not domain tri or crossing_ins
-			// Did we fairly model the insulator as a reflection of v?
-		}
-	} // scope
-
-}
-
-__global__ void kernelCalc_Matrices_for_Jacobi_NeutralViscosity_SYMM(
-	f64 const hsub,
-	structural * __restrict__ p_info_minor,
-	f64_vec3 * __restrict__ p_v_n_minor,
-
-	long * __restrict__ p_izTri,
-	char * __restrict__ p_szPBC,
-	long * __restrict__ p_izNeighMinor,
-	char * __restrict__ p_szPBCtriminor,
-
-	f64 * __restrict__ p_ita_minor,   // nT / nu ready to look up
-	f64 * __restrict__ p_nu_minor,   // nT / nu ready to look up
-
-	nvals * __restrict__ p_n_minor,
-	f64 * __restrict__ p_AreaMinor,
-
-	f64_tens3 * __restrict__ p_matrix_n
-)
-{
-	//__shared__ v4 shared_vie[threadsPerTileMinor]; // sort of thing we want as input
-	// Not used, right? Nothing nonlinear?
-	__shared__ f64_vec2 shared_pos[threadsPerTileMinor];
-	__shared__ f64 shared_ita_par[threadsPerTileMinor]; // reuse for i,e ; or make 2 vars to combine the routines.
-	__shared__ f64 shared_nu[threadsPerTileMinor];
-
-	//__shared__ v4 shared_vie_verts[threadsPerTileMajor];
-	__shared__ f64_vec2 shared_pos_verts[threadsPerTileMajor];
-	__shared__ f64 shared_ita_par_verts[threadsPerTileMajor];
-	__shared__ f64 shared_nu_verts[threadsPerTileMajor]; // used for creating ita_perp, ita_cross
-
-														 // 4+2+2+1+1 *1.5 = 15 per thread. That is possibly as slow as having 24 per thread. 
-														 // Thus putting some stuff in shared may speed up if there are spills.
-
-	long const iMinor = blockDim.x*blockIdx.x + threadIdx.x;
-	long const iVertex = threadsPerTileMajor*blockIdx.x + threadIdx.x; // only meaningful threadIdx.x < threadsPerTileMajor
-
-	long const StartMinor = threadsPerTileMinor*blockIdx.x;
-	long const StartMajor = threadsPerTileMajor*blockIdx.x;
-	long const EndMinor = StartMinor + threadsPerTileMinor;
-	long const EndMajor = StartMajor + threadsPerTileMajor;
-
-	f64_vec2 opppos, prevpos, nextpos;
-	f64 nu, ita_par;  // optimization: we always each loop want to get rid of omega, nu once we have calc'd these, if possible!!
-
-	shared_pos[threadIdx.x] = p_info_minor[iMinor].pos;
-	shared_ita_par[threadIdx.x] = p_ita_minor[iMinor];
-	shared_nu[threadIdx.x] = p_nu_minor[iMinor];
-
-	// Perhaps the real answer is this. Advection and therefore advective momflux
-	// do not need to be recalculated very often at all. At 1e6 cm/s, we aim for 1 micron,
-	// get 1e-10s to actually do the advection !!
-	// So an outer cycle. Still limiting the number of total things in a minor tile. We might like 384 = 192*2.
-
-	structural info;
-	if (threadIdx.x < threadsPerTileMajor) {
-		info = p_info_minor[iVertex + BEGINNING_OF_CENTRAL];
-		shared_pos_verts[threadIdx.x] = info.pos;
-		if ((info.flag == DOMAIN_VERTEX) || (info.flag == OUTERMOST))
-		{
-			//	memcpy(&(shared_vie_verts[threadIdx.x]), &(p_vie_minor[iVertex + BEGINNING_OF_CENTRAL]), sizeof(v4));
-			shared_ita_par_verts[threadIdx.x] = p_ita_minor[iVertex + BEGINNING_OF_CENTRAL];
-			shared_nu_verts[threadIdx.x] = p_nu_minor[iVertex + BEGINNING_OF_CENTRAL];
-			// But now I am going to set ita == 0 in OUTERMOST and agree never to look there because that's fairer than one-way traffic and I don't wanna handle OUTERMOST?
-			// I mean, I could handle it, and do flows only if the flag does not come up OUTER_FRILL.
-			// OK just do that.
-		}
-		else {
-			//	memset(&(shared_vie_verts[threadIdx.x]), 0, sizeof(v4));
-			shared_ita_par_verts[threadIdx.x] = 0.0;
-			shared_nu_verts[threadIdx.x] = 0.0;
-		};
-	};
-
-	__syncthreads();
-
-	f64_tens3 result;
-	f64_vec2 cc0, cc1;
-	if (threadIdx.x < threadsPerTileMajor) {
-
-		long izTri[MAXNEIGH_d];
-		char szPBC[MAXNEIGH_d];
-		short tri_len = info.neigh_len; // ?!
-
-		f64_tens3 result;
-		if ((info.flag == DOMAIN_VERTEX) && (info.pos.modulus() < 4.5)
-			&& (shared_ita_par_verts[threadIdx.x] > 0.0))
-			//|| (info.flag == OUTERMOST)) // !!!!!!!!!!!!!!!!
-		{
-			// We are losing energy if there is viscosity into OUTERMOST.
-			memcpy(izTri, p_izTri + iVertex*MAXNEIGH_d, MAXNEIGH_d * sizeof(long));
-			memcpy(szPBC, p_szPBC + iVertex*MAXNEIGH_d, MAXNEIGH_d * sizeof(char));
-
-			short i = 0;
-			f64_vec2 opppos, prevpos, nextpos;
-			short iprev = i - 1; if (iprev < 0) iprev = tri_len - 1;
-			short inext = i + 1; if (inext >= tri_len) inext = 0;
-
-			if ((izTri[iprev] >= StartMinor) && (izTri[iprev] < EndMinor))
-			{
-				prevpos = shared_pos[izTri[iprev] - StartMinor];
-			}
-			else {
-				prevpos = p_info_minor[izTri[iprev]].pos;
-			}
-			if (szPBC[iprev] == ROTATE_ME_CLOCKWISE) {
-				prevpos = Clockwise_d*prevpos;
-			}
-			if (szPBC[iprev] == ROTATE_ME_ANTICLOCKWISE) {
-				prevpos = Anticlockwise_d*prevpos;
-			}
-			if ((izTri[i] >= StartMinor) && (izTri[i] < EndMinor))
-			{
-				opppos = shared_pos[izTri[i] - StartMinor];
-
-			}
-			else {
-				opppos = p_info_minor[izTri[i]].pos;
-
-				//	if (iVertex == VERTCHOSEN) printf("opp_v %1.9E v_n_minor izTri[i] %d \n", opp_v.x, izTri[i]);
-			}
-			if (szPBC[i] == ROTATE_ME_CLOCKWISE) {
-				opppos = Clockwise_d*opppos;
-			}
-			if (szPBC[i] == ROTATE_ME_ANTICLOCKWISE) {
-				opppos = Anticlockwise_d*opppos;
-			}
-
-			CalculateCircumcenter(&cc0, info.pos, opppos, prevpos);
-
-
-			f64_tens3 J; // Jacobean
-			memset(&J, 0, sizeof(f64_tens3));
-			//d_eps_x_by_d_vx = 1.0;
-			J.xx = 1.0;
-			J.yy = 1.0;
-			J.zz = 1.0;
-			// d_eps_z_by_d_viz = 1.0;  // Note that eps includes v_k+1
-
-
-#pragma unroll 
-			for (short i = 0; i < tri_len; i++)
-			{
-				// Tri 0 is anticlockwise of neighbour 0, we think
-				{
-					if ((izTri[i] >= StartMinor) && (izTri[i] < EndMinor))
-					{
-						if (shared_ita_par_verts[threadIdx.x] < shared_ita_par[izTri[i] - StartMinor])
-						{
-							ita_par = shared_ita_par_verts[threadIdx.x];
-							nu = shared_nu_verts[threadIdx.x];
-						}
-						else {
-							ita_par = shared_ita_par[izTri[i] - StartMinor];
-							nu = shared_nu[izTri[i] - StartMinor];
-						};
-					}
-					else {
-						f64 ita_theirs = p_ita_minor[izTri[i]];
-						f64 nu_theirs = p_nu_minor[izTri[i]];
-						if (shared_ita_par_verts[threadIdx.x] < ita_theirs) {
-							ita_par = shared_ita_par_verts[threadIdx.x];
-							nu = shared_nu_verts[threadIdx.x];
-						}
-						else {
-							ita_par = ita_theirs;
-							nu = nu_theirs;
-						};
-
-						// I understand why we are still doing minimum ita at the wall but we would ideally like to stop.
-
-					};
-				} // Guaranteed DOMAIN_VERTEX never needs to skip an edge; we include CROSSING_INS in viscosity.
-
-				short iprev = i - 1; if (iprev < 0) iprev = tri_len - 1;
-				short inext = i + 1; if (inext >= tri_len) inext = 0;
-
-				if ((izTri[inext] >= StartMinor) && (izTri[inext] < EndMinor))
-				{
-					nextpos = shared_pos[izTri[inext] - StartMinor];
-				}
-				else {
-					nextpos = p_info_minor[izTri[inext]].pos;
-				}
-				if (szPBC[inext] == ROTATE_ME_CLOCKWISE) {
-					nextpos = Clockwise_d*nextpos;
-				}
-				if (szPBC[inext] == ROTATE_ME_ANTICLOCKWISE) {
-					nextpos = Anticlockwise_d*nextpos;
-				}
-
-				CalculateCircumcenter(&cc1, opppos, info.pos, nextpos);
-
-				if (ita_par > 0.0) // note it was the minimum taken.
-				{
-					// ideally we might want to leave position out of the loop so that we can avoid reloading it.
-
-					f64 visc_contrib_x_coeff_on_vx_self = 
-						over_m_n*ita_par*(-1.0/(opppos - info.pos).modulus())*(cc1 - cc0).modulus();
-					f64 contrib_to_Jxx =
-						-(hsub / (p_n_minor[iVertex + BEGINNING_OF_CENTRAL].n_n*p_AreaMinor[iVertex + BEGINNING_OF_CENTRAL]))
-						* visc_contrib_x_coeff_on_vx_self;
-					J.xx += contrib_to_Jxx;
-					J.yy += contrib_to_Jxx;
-					J.zz += contrib_to_Jxx;
-
-					// For neutral fluid viscosity does not involve dimensional transfers.
-
-					//Augment_JacobeanNeutral(&J,
-					//	hsub / (p_n_minor[iVertex + BEGINNING_OF_CENTRAL].n_n*p_AreaMinor[iVertex + BEGINNING_OF_CENTRAL] * m_n),
-					//	edge_normal, ita_par, nu, zero3,
-					//	grad_vjdx_coeff_on_vj_self,
-					//	grad_vjdy_coeff_on_vj_self					);
-
-					// 
-					//pJ->yy += Factor*
-					//	((
-					//		// Pi_zx
-					//		-ita_par*grad_vjdx_coeff_on_vj_self
-					//		)*edge_normal.x + (
-					//			// Pi_zy
-					//			-ita_par*grad_vjdy_coeff_on_vj_self
-					//			)*edge_normal.y);
-				}
-
-				cc0 = cc1;
-				prevpos = opppos;
-				opppos = nextpos;
-			}; // next i
-
-			J.Inverse(result);
-
-			// inverted it so that we are ready to put Jacobi = result.eps
-
-		} else {
-			
-			memset(&result, 0, sizeof(f64_tens3));
-			result.xx = 1.0;
-			result.yy = 1.0;
-			result.zz = 1.0;
-			// NOTE: We did not include OUTERMOST. Justification / effect ??
-		};
-		memcpy(&(p_matrix_n[iVertex + BEGINNING_OF_CENTRAL]), &result, sizeof(f64_tens3));
-
-	};
-	// __syncthreads(); // end of first vertex part
-	// Do we need syncthreads? Not overwriting any shared data here...
-
-	info = p_info_minor[iMinor];
-
-	//if ((info.flag == OUTER_FRILL) || (info.flag == INNER_FRILL)) {
-	{
-		long izNeighMinor[6];
-		char szPBC[6];
-
-		// JUST TO GET IT TO RUN:
-		if (((info.flag == DOMAIN_TRIANGLE) || (info.flag == CROSSING_INS)) &&
-			(info.pos.modulus() < 4.9) && (shared_ita_par[threadIdx.x] > 0.0)) {
-
-			memcpy(izNeighMinor, p_izNeighMinor + iMinor * 6, sizeof(long) * 6);
-			memcpy(szPBC, p_szPBCtriminor + iMinor * 6, sizeof(char) * 6);
-
-			short i = 0;
-			short inext = i + 1; if (inext > 5) inext = 0;
-			short iprev = i - 1; if (iprev < 0) iprev = 5;
-			if ((izNeighMinor[iprev] >= StartMinor) && (izNeighMinor[iprev] < EndMinor))
-			{
-				prevpos = shared_pos[izNeighMinor[iprev] - StartMinor];
-			}
-			else {
-				if ((izNeighMinor[iprev] >= StartMajor + BEGINNING_OF_CENTRAL) &&
-					(izNeighMinor[iprev] < EndMajor + BEGINNING_OF_CENTRAL))
-				{
-					prevpos = shared_pos_verts[izNeighMinor[iprev] - BEGINNING_OF_CENTRAL - StartMajor];
-				}
-				else {
-					prevpos = p_info_minor[izNeighMinor[iprev]].pos;
-				};
-			};
-			if (szPBC[iprev] == ROTATE_ME_CLOCKWISE) {
-				prevpos = Clockwise_d*prevpos;
-			};
-			if (szPBC[iprev] == ROTATE_ME_ANTICLOCKWISE) {
-				prevpos = Anticlockwise_d*prevpos;
-			};
-
-			if ((izNeighMinor[i] >= StartMinor) && (izNeighMinor[i] < EndMinor))
-			{
-				opppos = shared_pos[izNeighMinor[i] - StartMinor];
-			}
-			else {
-				if ((izNeighMinor[i] >= StartMajor + BEGINNING_OF_CENTRAL) &&
-					(izNeighMinor[i] < EndMajor + BEGINNING_OF_CENTRAL))
-				{
-					opppos = shared_pos_verts[izNeighMinor[i] - BEGINNING_OF_CENTRAL - StartMajor];
-				}
-				else {
-					opppos = p_info_minor[izNeighMinor[i]].pos;
-				};
-			};
-			if (szPBC[i] == ROTATE_ME_CLOCKWISE) {
-				opppos = Clockwise_d*opppos;
-			}
-			if (szPBC[i] == ROTATE_ME_ANTICLOCKWISE) {
-				opppos = Anticlockwise_d*opppos;
-			}
-
-			CalculateCircumcenter(&cc0, info.pos, opppos, prevpos);
-
-			f64_tens3 J; // Jacobean
-			memset(&J, 0, sizeof(f64_tens3));
-			//d_eps_x_by_d_vx = 1.0;
-			J.xx = 1.0;
-			J.yy = 1.0;
-			J.zz = 1.0;
-
-			// Let's make life easier and load up an array of 6 n's beforehand.
-#pragma unroll 
-			for (short i = 0; i < 6; i++)
-			{
-				inext = i + 1; if (inext > 5) inext = 0;
-				iprev = i - 1; if (iprev < 0) iprev = 5;
-				bool bUsableSide = true;
-				{
-					// newly uncommented:
-					if ((izNeighMinor[i] >= StartMinor) && (izNeighMinor[i] < EndMinor))
-					{
-						if (shared_ita_par[threadIdx.x] < shared_ita_par[izNeighMinor[i] - StartMinor])
-						{
-							ita_par = shared_ita_par[threadIdx.x];
-							nu = shared_nu[threadIdx.x];
-						}
-						else {
-							ita_par = shared_ita_par[izNeighMinor[i] - StartMinor];
-							nu = shared_nu[izNeighMinor[i] - StartMinor];
-						};
-
-						if (shared_ita_par[izNeighMinor[i] - StartMinor] == 0.0) bUsableSide = false;
-					}
-					else {
-						if ((izNeighMinor[i] >= StartMajor + BEGINNING_OF_CENTRAL) &&
-							(izNeighMinor[i] < EndMajor + BEGINNING_OF_CENTRAL))
-						{
-							if (shared_ita_par[threadIdx.x] < shared_ita_par_verts[izNeighMinor[i] - StartMajor - BEGINNING_OF_CENTRAL])
-							{
-								ita_par = shared_ita_par[threadIdx.x];
-								nu = shared_nu[threadIdx.x];
-							}
-							else {
-								ita_par = shared_ita_par_verts[izNeighMinor[i] - StartMajor - BEGINNING_OF_CENTRAL];
-								nu = shared_nu_verts[izNeighMinor[i] - StartMajor - BEGINNING_OF_CENTRAL];
-							};
-							if (shared_ita_par_verts[izNeighMinor[i] - StartMajor - BEGINNING_OF_CENTRAL] == 0.0) bUsableSide = false;
-						}
-						else {
-							f64 ita_par_opp = p_ita_minor[izNeighMinor[i]];
-							f64 nu_theirs = p_nu_minor[izNeighMinor[i]];
-							if (shared_ita_par[threadIdx.x] < ita_par_opp) {
-								ita_par = shared_ita_par[threadIdx.x];
-								nu = shared_nu[threadIdx.x]; // why do I deliberately use the corresponding nu? nvm
-							}
-							else {
-								ita_par = ita_par_opp;
-								nu = nu_theirs;
-							}
-							if (ita_par_opp == 0.0) bUsableSide = false;
-						}
-					}
-				}
-				
-				if ((izNeighMinor[inext] >= StartMinor) && (izNeighMinor[inext] < EndMinor))
-				{
-					nextpos = shared_pos[izNeighMinor[inext] - StartMinor];
-				}
-				else {
-					if ((izNeighMinor[inext] >= StartMajor + BEGINNING_OF_CENTRAL) &&
-						(izNeighMinor[inext] < EndMajor + BEGINNING_OF_CENTRAL))
-					{
-						nextpos = shared_pos_verts[izNeighMinor[inext] - BEGINNING_OF_CENTRAL - StartMajor];
-					}
-					else {
-						nextpos = p_info_minor[izNeighMinor[inext]].pos;
-					};
-				};
-				if (szPBC[inext] == ROTATE_ME_CLOCKWISE) {
-					nextpos = Clockwise_d*nextpos;
-				}
-				if (szPBC[inext] == ROTATE_ME_ANTICLOCKWISE) {
-					nextpos = Anticlockwise_d*nextpos;
-				}
-
-				CalculateCircumcenter(&cc1, info.pos, nextpos, opppos);
-				if (bUsableSide)
-				{
-					
-					f64 visc_contrib_x_coeff_on_vx_self =
-						over_m_n*ita_par*(-1.0 / (opppos - info.pos).modulus())*(cc1 - cc0).modulus();
-					f64 contrib_to_Jxx =
-						-(hsub / (p_n_minor[iMinor].n_n*p_AreaMinor[iMinor]))
-						* visc_contrib_x_coeff_on_vx_self;
-					J.xx += contrib_to_Jxx;
-					J.yy += contrib_to_Jxx;
-					J.zz += contrib_to_Jxx;
-
-				}; // bUsableSide
-
-				cc0 = cc1;
-				prevpos = opppos;
-				opppos = nextpos;
-
-			}; // next i
-
-			J.Inverse(result);
-
-		}
-		else {
-			// Not domain tri or crossing_ins
-			// Did we fairly model the insulator as a reflection of v?
-			memset(&result, 0, sizeof(f64_tens3));
-			result.xx = 1.0;
-			result.yy = 1.0;
-			result.zz = 1.0;
-		}
-	} // scope
-	memcpy(&(p_matrix_n[iMinor]), &result, sizeof(f64_tens3));
-
-}
 
 __global__ void kernelSplitIntoSeedRegressors
 (
@@ -4093,7 +2862,11 @@ __global__ void kernelCalculate_ita_visc(
 	f64 * __restrict__ p_nu_nn_visc,
 	f64 * __restrict__ p_ita_par_ion_minor,
 	f64 * __restrict__ p_ita_par_elec_minor,
-	f64 * __restrict__ p_ita_neutral_minor)
+	f64 * __restrict__ p_ita_neutral_minor,
+
+	int * __restrict__ p_iSelect,
+	int * __restrict__ p_iSelectNeut
+	)
 {
 	// Save nu_iHeart, nu_eHeart, nu_nn_visc.
 
@@ -4103,13 +2876,28 @@ __global__ void kernelCalculate_ita_visc(
 	nvals our_n;
 	long const index = threadIdx.x + blockIdx.x * blockDim.x; 
 	structural info = p_info_minor[index];
-	if ((info.flag == DOMAIN_VERTEX)  ||
+
+	// DEBUG
+	//if (index == CHOSEN) printf("index %d info.flag %d info.pos %1.13E %1.14E \n",
+	//	index, info.flag, info.pos.x, info.pos.y);
+	int Selected_ie = 0, Selected_neut = 0;
+
+	if (p_iSelect != 0) {
+		Selected_ie = p_iSelect[index];
+		Selected_neut = p_iSelectNeut[index];
+	} else {
+		Selected_ie = 1;
+		Selected_neut = 1;
+	};
+
+	if (((info.flag == DOMAIN_VERTEX)  ||
 		// (info.flag == OUTERMOST) ||
 		(info.flag == DOMAIN_TRIANGLE) || 
 		( (info.flag == CROSSING_INS) && (TestDomainPos(info.pos)))
-		)	
+		)	&& 
+			((Selected_ie > 0) || (Selected_neut > 0))
+		)
 	{
-
 		// We have not ruled out calculating traffic into outermost vertex cell - so this needs nu calculated in it.
 		// (Does it actually try and receive traffic?)
 
@@ -4131,8 +2919,9 @@ __global__ void kernelCalculate_ita_visc(
 			our_n.n*
 			Get_lnLambda_d(our_n.n, T.Te) / (T.Te*sqrt_T);
 
-		if ((our_n.n < LOW_THRESH_FOR_VISC_CALCS) || (T.Te < 1.1e-14)
-			|| (info.pos.dot(info.pos) > VISCOSITY_MAX_RADIUS*VISCOSITY_MAX_RADIUS)) {
+		//if ((our_n.n < LOW_THRESH_FOR_VISC_CALCS) || (T.Te < 1.1e-14)
+		//	|| (info.pos.dot(info.pos) > VISCOSITY_MAX_RADIUS*VISCOSITY_MAX_RADIUS)) {
+		if (Selected_ie == 0) {
 			p_ita_par_elec_minor[index] = 0.0;
 		} else {
 			p_ita_par_elec_minor[index] =
@@ -4163,8 +2952,13 @@ __global__ void kernelCalculate_ita_visc(
 		nu_ni_visc = nu_in_visc * (our_n.n / our_n.n_n);
 		nu_ii = our_n.n*kB_to_3halves*Get_lnLambda_ion_d(our_n.n, T.Ti) *Nu_ii_Factor / (sqrt_T*T.Ti);
 				
-		if ((our_n.n < LOW_THRESH_FOR_VISC_CALCS) || (T.Ti < 1.1e-14)
-			|| (info.pos.dot(info.pos) > VISCOSITY_MAX_RADIUS*VISCOSITY_MAX_RADIUS)){
+		//if (index == CHOSEN) printf("got to here. T.Ti %1.9E our_n.n %1.9E LOW_THRESH %1.9E \n",
+		//	T.Ti, our_n.n, LOW_THRESH_FOR_VISC_CALCS);
+
+		//if ((our_n.n < LOW_THRESH_FOR_VISC_CALCS) || (T.Ti < 1.1e-14)
+		//	|| (info.pos.dot(info.pos) > VISCOSITY_MAX_RADIUS*VISCOSITY_MAX_RADIUS))
+		
+		if (Selected_ie == 0) {
 			p_ita_par_ion_minor[index] = 0.0;
 		} else {
 			p_ita_par_ion_minor[index] = 0.5*our_n.n*T.Ti / (0.3*nu_ii + 0.4*nu_in_visc + 0.000273*nu_eiBar);
@@ -4192,8 +2986,9 @@ __global__ void kernelCalculate_ita_visc(
 		f64 nu_n = 0.3*nu_nn + 0.4*nu_ni_visc;
 
 		// This is set at 1e10
-		if ((our_n.n_n < LOW_THRESH_FOR_VISC_CALCS)
-			|| (info.pos.dot(info.pos) > VISCOSITY_MAX_RADIUS*VISCOSITY_MAX_RADIUS)) {
+		//if ((our_n.n_n < LOW_THRESH_FOR_VISC_CALCS)
+		//	|| (info.pos.dot(info.pos) > VISCOSITY_MAX_RADIUS*VISCOSITY_MAX_RADIUS)) {
+		if (Selected_neut == 0){
 			p_ita_neutral_minor[index] = 0.0;
 		} else {
 			f64 ita = our_n.n_n*T.Tn / nu_n;
@@ -28457,6 +27252,80 @@ __global__ void kernelCreate_neutral_viscous_contrib_to_MAR_and_NT(
 
 }
 
+
+__global__ void kernelExpandSelectFlagIta(
+	structural * __restrict__ p_info_minor,
+	long * __restrict__ p_izTri,
+	long * __restrict__ p_izNeighMinor,
+	int * __restrict__ p_iSelectFlag,
+	int * __restrict__ p_iSelectflagNeut,
+	int const number
+) {
+
+	long const iMinor = blockDim.x*blockIdx.x + threadIdx.x;
+	long const iVertex = threadsPerTileMajor*blockIdx.x + threadIdx.x; // only meaningful threadIdx.x < threadsPerTileMajor
+
+	structural info;
+	if (threadIdx.x < threadsPerTileMajor) {
+
+		info = p_info_minor[iVertex + BEGINNING_OF_CENTRAL];
+		long izTri[MAXNEIGH_d];
+		short tri_len = info.neigh_len;
+		memcpy(izTri, p_izTri + iVertex*MAXNEIGH_d, MAXNEIGH_d * sizeof(long));
+
+		if (p_iSelectFlag[iVertex + BEGINNING_OF_CENTRAL] == 0) {
+
+			bool found = false;
+			for (short i = 0; ((i < tri_len) && (found == false)); i++)
+			{
+				if (p_iSelectFlag[izTri[i]] == number) {
+					found = true;
+				};
+			};
+			if (found) p_iSelectFlag[iVertex + BEGINNING_OF_CENTRAL] = number + 1;
+		};
+
+		if (p_iSelectflagNeut[iVertex + BEGINNING_OF_CENTRAL] == 0) {
+
+			bool found = false;
+			for (short i = 0; ((i < tri_len) && (found == false)); i++)
+			{
+				if (p_iSelectflagNeut[izTri[i]] == number) {
+					found = true;
+				};
+			};
+			if (found) p_iSelectflagNeut[iVertex + BEGINNING_OF_CENTRAL] = number + 1;
+		};
+	};
+
+	info = p_info_minor[iMinor];
+	long izNeighMinor[6];
+	memcpy(izNeighMinor, p_izNeighMinor + iMinor * 6, sizeof(long) * 6);
+
+	if (p_iSelectFlag[iMinor] == 0) {
+		bool found = false;
+		for (short i = 0; ((i < 6) && (found == false)); i++)
+		{
+			if (p_iSelectFlag[izNeighMinor[i]] == number) {
+					found = true;
+				};			
+		};
+		if (found) p_iSelectFlag[iMinor] = number + 1;	
+	};
+
+	if (p_iSelectflagNeut[iMinor] == 0) {
+		bool found = false;
+		for (short i = 0; ((i < 6) && (found == false)); i++)
+		{
+			if (p_iSelectflagNeut[izNeighMinor[i]] == number) {
+				found = true;
+			};
+		};
+		if (found) p_iSelectflagNeut[iMinor] = number + 1;
+	};
+}
+
+
 // Neutral routine:
 __global__ void kernelCreate_neutral_viscous_contrib_to_MAR_and_NT_Geometric(
 	structural * __restrict__ p_info_minor,
@@ -28474,6 +27343,12 @@ __global__ void kernelCreate_neutral_viscous_contrib_to_MAR_and_NT_Geometric(
 	NTrates * __restrict__ p_NT_addition_rate,
 	NTrates * __restrict__ p_NT_addition_tri)
 {
+
+	// ************************************************************************
+	// ***********   WATCH OUT ************************************************
+	// ************************************************************************
+	// A copy of this routine with fixed flows only is in heatflux.cu
+
 	__shared__ f64_vec3 shared_v_n[threadsPerTileMinor]; // sort of thing we want as input
 	__shared__ f64_vec2 shared_pos[threadsPerTileMinor];
 	__shared__ f64 shared_ita_par[threadsPerTileMinor]; // reuse for i,e ; or make 2 vars to combine the routines.
@@ -29246,6 +28121,8 @@ __global__ void kernelCreate_neutral_viscous_contrib_to_MAR_and_NT_Geometric(
 	} // scope
 
 }
+
+
 __global__ void kernelCreate_neutral_viscous_contrib_to_MAR_and_NT_SYMM(
 	structural * __restrict__ p_info_minor,
 	f64_vec3 * __restrict__ p_v_n_minor,
@@ -32680,7 +31557,7 @@ __global__ void kernelAccumulateSummandsVisc(
 
 	if (threadIdx.x == 0)
 	{
-		memcpy(&(p_sum_eps_deps_[blockIdx.x*REGRESSORS]), sumdata_eps_deps[0], sizeof(f64)*REGRESSORS);
+		memcpy(&(p_sum_eps_deps_[blockIdx.x*REGRESSORS]), &(sumdata_eps_deps[0][0]), sizeof(f64)*REGRESSORS);
 		memcpy(&(p_sum_product_matrix_[blockIdx.x*REGRESSORS*REGRESSORS]), &(sum_product[0][0][0]), sizeof(f64)*REGRESSORS*REGRESSORS);
 	};
 }
@@ -32690,12 +31567,85 @@ __global__ void SplitVector4(
 	f64_vec2 * __restrict__ p_xy,
 	f64 * __restrict__ p_z1,
 	f64 * __restrict__ p_z2,
-	v4 * __restrict__ p_v4
+	v4 * __restrict__ p_v4,
+	int * __restrict__ p_Select
 )
 {
 	long const iMinor = threadIdx.x + blockIdx.x * threadsPerTileMinor;
-	v4 temp = p_v4[iMinor];
+	v4 temp;
+	if (p_Select[iMinor] == 0) {
+		memset(&temp, 0, sizeof(v4));
+	} else {
+		temp = p_v4[iMinor];
+	}
 	p_xy[iMinor] = temp.vxy;
 	p_z1[iMinor] = temp.viz;
 	p_z2[iMinor] = temp.vez;
+}
+
+
+__global__ void kernelAccumulateSummandsProduct(
+	f64_vec2 * __restrict__ p_eps_xy, // 
+	f64 * __restrict__ p_eps_iz,
+	f64 * __restrict__ p_eps_ez,
+	f64_vec2 * __restrict__ p_d_epsxy_by_d_beta, // f64_vec2
+	f64 * __restrict__ p_d_eps_iz_by_d_beta,
+	f64 * __restrict__ p_d_eps_ez_by_d_beta,
+	// outputs:
+	f64 * __restrict__ p_sum_eps_deps_
+)
+{
+	__shared__ f64 sumdata_eps_deps[threadsPerTileMinor];
+
+	long const iMinor = threadIdx.x + blockIdx.x * threadsPerTileMinor;
+
+	f64_vec2 depsbydbeta2;
+	f64 depsbydbeta, depsbydbeta_e;
+
+	f64_vec2 eps_xy;
+	f64 eps_iz, eps_ez;
+	int i, j;
+
+	sumdata_eps_deps[threadIdx.x] = 0.0;
+
+	//memset(&(sumdata_eps_deps[threadIdx.x]), 0, sizeof(f64)*REGRESSORS);
+	
+	eps_xy = p_eps_xy[iMinor];
+	eps_iz = p_eps_iz[iMinor];
+	eps_ez = p_eps_ez[iMinor];
+	
+	depsbydbeta2 = p_d_epsxy_by_d_beta[iMinor];
+	depsbydbeta = p_d_eps_iz_by_d_beta[iMinor];
+	depsbydbeta_e = p_d_eps_ez_by_d_beta[iMinor];
+	
+	sumdata_eps_deps[threadIdx.x] = depsbydbeta2.dot(eps_xy)
+		+ depsbydbeta * eps_iz + depsbydbeta_e * eps_ez;
+		
+	__syncthreads();
+
+	int s = blockDim.x;
+	int k = s / 2;
+
+	while (s != 1) {
+		if (threadIdx.x < k)
+		{
+			sumdata_eps_deps[threadIdx.x] += sumdata_eps_deps[threadIdx.x + k];			
+		};
+		__syncthreads();
+
+		// Modify for case blockdim not 2^n:
+		if ((s % 2 == 1) && (threadIdx.x == k - 1)) {
+			sumdata_eps_deps[threadIdx.x] += sumdata_eps_deps[threadIdx.x + s - 1];			
+		};
+		// In case k == 81, add [39] += [80]
+		// Otherwise we only get to 39+40=79.
+		s = k;
+		k = s / 2;
+		__syncthreads();
+	};
+
+	if (threadIdx.x == 0)
+	{
+		p_sum_eps_deps_[blockIdx.x] = sumdata_eps_deps[0];
+	};
 }
