@@ -911,10 +911,15 @@ __global__ void kernelAccumulateSummandsNeutVisc2(
 __global__ void Vector3Breakdown(
 	f64_vec3 * __restrict__ p_input,
 	f64_vec2 * __restrict__ p_outxy,
-	f64 * __restrict__ p_outz
+	f64 * __restrict__ p_outz,
+	int * __restrict__ p_Select
 ) {
 	long const index = blockDim.x*blockIdx.x + threadIdx.x;
-	f64_vec3 vec3 = p_input[index];
+	f64_vec3 vec3;
+	memset(&vec3, 0, sizeof(f64_vec3));
+	if (p_Select[index] != 0) {
+		vec3 = p_input[index];
+	};
 	p_outz[index] = vec3.z;
 	f64_vec2 xy; xy.x = vec3.x; xy.y = vec3.y;
 	p_outxy[index] = xy;
@@ -5265,16 +5270,81 @@ __global__ void kernelTransmitHeatToVerts(
 		NT_addition_rates[iVertex].NiTi += sum_NiTi;
 		NT_addition_rates[iVertex].NeTe += sum_NeTe;
 		NT_addition_rates[iVertex].NnTn += sum_NnTn;
+		
 	}
 
 	// Idea: pre-store a value which is the sum of N at corners.
 }
+__global__ void kernelTransmit_3x_HeatToVerts(
+	structural * __restrict__ p_info,
+	long * __restrict__ p_izTri,
+	nvals * __restrict__ p_n_minor,
+	f64 * __restrict__ p_AreaMajor, // populated?
+	f64 * __restrict__ p_Nsum,
+	f64 * __restrict__ p_Nsum_n,
+	NTrates * __restrict__ NT_addition_rates,
+	NTrates * __restrict__ NT_addition_tri1,
+	NTrates * __restrict__ NT_addition_tri2,
+	NTrates * __restrict__ NT_addition_tri3
+) {
+	long iVertex = blockDim.x*blockIdx.x + threadIdx.x;
+	structural info = p_info[iVertex + BEGINNING_OF_CENTRAL];
+	nvals n_use = p_n_minor[iVertex + BEGINNING_OF_CENTRAL];
+	f64 AreaMajor = p_AreaMajor[iVertex];
+	f64 N = n_use.n*AreaMajor;
+	f64 Nn = n_use.n_n*AreaMajor;
 
+	NTrates NTtri1, NTtri2, NTtri3, NTrat;
+
+	long izTri[MAXNEIGH_d];
+	short i;
+	f64 sum_NeTe = 0.0, sum_NiTi = 0.0, sum_NnTn = 0.0;
+	if (info.flag == DOMAIN_VERTEX) {
+		memcpy(izTri, p_izTri + MAXNEIGH_d*iVertex, sizeof(long)*MAXNEIGH_d);
+		for (i = 0; i < info.neigh_len; i++)
+		{
+			NTtri1 = NT_addition_tri1[izTri[i]];
+			NTtri2 = NT_addition_tri2[izTri[i]];
+			NTtri3 = NT_addition_tri3[izTri[i]];
+			sum_NiTi += (N / p_Nsum[izTri[i]])*	(NTtri1.NiTi+NTtri2.NiTi+NTtri3.NiTi);
+			sum_NeTe += (N / p_Nsum[izTri[i]])*	(NTtri1.NeTe+NTtri2.NeTe+NTtri3.NeTe);
+			sum_NnTn += (Nn / p_Nsum_n[izTri[i]])*	(NTtri1.NnTn + NTtri2.NnTn + NTtri3.NnTn);
+			// stabilize in the way we apportion heat out of triangle
+		};
+		NTrat = NT_addition_rates[iVertex];
+		NTrat.NiTi += sum_NiTi;
+		NTrat.NeTe += sum_NeTe;
+		NTrat.NnTn += sum_NnTn;
+		NT_addition_rates[iVertex] = NTrat;
+	};
+	// Idea: pre-store a value which is the sum of N at corners.
+}
 // Not optimized: !!
 #define FACTOR_HALL (1.0/0.96)
 #define FACTOR_PERP (1.2/0.96)
 #define DEBUGNANS
 
+__global__ void kernelAdd3(f64_vec3 * __restrict__ p_update, f64_vec3 * __restrict__ p_addition)
+{
+	long const index = blockDim.x*blockIdx.x + threadIdx.x;
+	f64_vec3 vec = p_update[index];
+	f64_vec3 vec2 = p_addition[index];
+	vec += vec2;
+	p_update[index] = vec;
+}
+
+__global__ void kernelAddNT(NTrates * __restrict__ p_update, NTrates * __restrict__ p_addition)
+{
+	long const index = blockDim.x*blockIdx.x + threadIdx.x;
+	NTrates vec = p_update[index];
+	NTrates vec2 = p_addition[index];
+	vec.NiTi += vec2.NiTi;
+	vec.NeTe += vec2.NeTe;
+	vec.NnTn += vec2.NnTn;
+	vec.N += vec2.N;
+	vec.Nn += vec2.Nn;
+	p_update[index] = vec;
+}
 __global__ void Subtract_V4(
 	v4 * __restrict__ p_result,
 	v4 * __restrict__ p_a,

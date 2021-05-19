@@ -5361,17 +5361,6 @@ kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species___fixedflows_only(
 			shared_v[threadIdx.x].x, shared_v[threadIdx.x].y, shared_v[threadIdx.x].z,
 			shared_nu[threadIdx.x]);
 
-	//This is funny-- - for the thread that loads 43963, we here have got v = 0 ?
-	//	yet we do pick up v for it as next
-
-	//	This isn't making much sense.
-
-
-	// Perhaps the real answer is this. Advection and therefore advective momflux
-	// do not need to be recalculated very often at all. At 1e6 cm/s, we aim for 1 micron,
-	// get 1e-10s to actually do the advection !!
-	// So an outer cycle. Still limiting the number of total things in a minor tile. We might like 384 = 192*2.
-
 	structural info;
 	if (threadIdx.x < threadsPerTileMajor) {
 		info = p_info_minor[iVertex + BEGINNING_OF_CENTRAL];
@@ -6008,8 +5997,7 @@ kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species___fixedflows_only(
 
 			if (iSpecies == 1) {
 				p_NT_addition_rate[iVertex].NiTi += visc_htg;
-			}
-			else {
+			} else {
 				p_NT_addition_rate[iVertex].NeTe += visc_htg;
 			}
 
@@ -15552,3 +15540,38 @@ __global__ void CreateLC4(
 	p_regrlc_iz_[iMinor] = lciz;
 	p_regrlc_ez_[iMinor] = lcez;
 }
+
+
+__global__ void kernelZeroSelected(
+	f64_vec3 * __restrict__ p_MAR_i,
+	f64_vec3 * __restrict__ p_MAR_e,
+	f64_vec3 * __restrict__ p_MAR_n,
+	NTrates * __restrict__ p_NTrates_vert,
+	NTrates * __restrict__ p_NTrates_tri,
+	int * __restrict__ p_Select,
+	int * __restrict__ p_SelectNeut
+) {
+	long const index = blockDim.x*blockIdx.x + threadIdx.x;
+	if (p_Select[index] != 0) {
+		memset(&(p_MAR_i[index]), 0, sizeof(f64_vec3));
+		memset(&(p_MAR_e[index]), 0, sizeof(f64_vec3));		
+		if (index >= BEGINNING_OF_CENTRAL) {
+			p_NTrates_vert[index - BEGINNING_OF_CENTRAL].NiTi = 0.0;
+			p_NTrates_vert[index - BEGINNING_OF_CENTRAL].NeTe = 0.0;
+		} else {
+			p_NTrates_tri[index].NiTi = 0.0;
+			p_NTrates_tri[index].NeTe = 0.0;
+		};
+	};
+	if (p_SelectNeut[index] != 0) {
+		memset(&(p_MAR_n[index]), 0, sizeof(f64_vec3));
+		if (index >= BEGINNING_OF_CENTRAL) {
+			p_NTrates_vert[index - BEGINNING_OF_CENTRAL].NnTn = 0.0;
+		}
+		else {
+			p_NTrates_tri[index].NnTn = 0.0;
+		};
+	};
+}
+
+
