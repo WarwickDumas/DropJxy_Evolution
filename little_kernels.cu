@@ -2601,9 +2601,9 @@ __global__ void kernelCalculateNu_eHeartNu_iHeart_nu_nn_visc(
 		TeV = T.Te * one_over_kB;
 		Estimate_Ion_Neutral_Cross_sections_d(TeV, &sigma_MT, &sigma_visc);
 		sqrt_T = sqrt(T.Te);
+		sigma_visc *= ArtificialUpliftFactor_MT(our_n.n, our_n.n_n);
 		nu_en_visc = our_n.n_n * sigma_visc * sqrt_T * over_sqrt_m_e;
 
-		sigma_visc *= ArtificialUpliftFactor(our_n.n, our_n.n_n);
 
 		f64 nu_eiBar = nu_eiBarconst * kB_to_3halves * max(MINIMUM_NU_EI_DENSITY, our_n.n) *
 			Get_lnLambda_d(our_n.n, T.Te) / (T.Te*sqrt_T);
@@ -2782,6 +2782,7 @@ __global__ void kernelCalculate_kappa_nu_vertices(
 		// which again is only about half as much. BUT WE KNOW HE WORKS in DOUBLE Braginskii ??
 		// says Vranjes -- so check that the rest of the formula does not compensate.
 
+
 		// Would like consistent approach.
 		// 1. We approached the heat flux directly per Golant. Where did it say what nu to use and how to add up?
 		// Can we follow our own logic and then compare with what Zhdanov says?
@@ -2799,12 +2800,24 @@ __global__ void kernelCalculate_kappa_nu_vertices(
 		//nu_eHeart:
 		nu.e = nu_en_visc + 1.87*nu_eiBar;
 		
+
+		if (iVertex == VERTCHOSEN) {
+			printf("iVertex %d nu.n %1.10E nu_i %1.10E nu_e %1.10E nu_eiBar %1.10E nu_ii %1.10E \nnu_eiBar over n %1.10E nu_ii over n %1.10E \n", 
+				iVertex, nu.n, nu.i, nu.e, nu_eiBar, nu_ii, nu_eiBar/our_n.n,
+				nu_ii/our_n.n);
+		}
+
 		// Comparison with Zhdanov's denominator for ita looks like this one overestimated
 		// by a factor of something like 1.6?
 
 		f64 kappa_n = NEUTRAL_KAPPA_FACTOR * our_n.n_n * T.Tn / (m_n * nu.n);
 		f64 kappa_i = (20.0 / 9.0) * our_n.n*T.Ti / (m_i * nu.i);
 		f64 kappa_e = 2.5*our_n.n*T.Te / (m_e * nu.e);
+
+		if (iVertex == VERTCHOSEN) {
+			printf("iVertex %d kappa_n %1.10E kappa_i %1.10E kappa_e %1.10E nn %1.10E n %1.10E Tn %1.10E Ti %1.10E Te %1.10E\n",
+				iVertex, kappa_n, kappa_i, kappa_e, our_n.n_n, our_n.n, T.Tn, T.Ti, T.Te);
+		};
 
 		//if ((TESTKAPPA)) printf("kappa_e %1.9E our_n.n %1.9E Te %1.9E nu %1.9E\n",
 		//	kappa_e, our_n.n, T.Te, nu.e);
@@ -4772,6 +4785,123 @@ __global__ void kernelInterpolateVarsAndPositions(
 // Only saved us 1 var. 9 + 6 + 3 = 18.
 // Still there is premature optimization here -- none of this happens OFTEN.
 
+__global__ void DivideVec2(f64_vec2 * __restrict__ p_update,
+	f64_vec2 * __restrict__ p_apply, f64_vec2 * __restrict__ p_numer)
+{
+	long const index = blockIdx.x*blockDim.x + threadIdx.x;
+	f64_vec2 jill;
+	f64_vec2 jill2 = p_apply[index];
+	f64_vec2 numer = p_numer[index];
+
+	jill.x = numer.x / (jill2.x + 1.0);
+	jill.y = numer.y / (jill2.y + 1.0);
+
+	p_update[index] = jill;
+}
+
+__global__ void Divide(f64 * __restrict__ p_outputz, f64 * __restrict__ p_denom, f64 * __restrict__ p_numer)
+{
+	long const index = blockIdx.x*blockDim.x + threadIdx.x;
+	p_outputz[index] = p_numer[index] / (p_denom[index] + 1.0);
+}
+
+__global__ void kernelDivideAdd3things(f64_vec2 * __restrict__ p_output2,
+	f64_vec2 * __restrict__ p_denom, f64_vec2 * __restrict__ p_summand1,
+	f64_vec2 * __restrict__ p_summand2, f64_vec2 * __restrict__ p_summand3,
+	f64 * __restrict__ p_outputz, f64 * __restrict__ p_denomz, f64 * __restrict__ p_summandz1,
+	f64 * __restrict__ p_summandz2, f64 * __restrict__ p_summandz3)
+{
+	long const index = blockIdx.x*blockDim.x + threadIdx.x;
+
+	f64_vec2 denom = p_denom[index];
+	f64_vec2 numer = p_summand1[index] + p_summand2[index] + p_summand3[index];
+	f64_vec2 output;
+	output.x = numer.x / (denom.x + 1.0);
+	output.y = numer.y / (denom.y + 1.0);
+//	output.z = numer.z / (denom.z + 1.0);
+	p_output2[index] = output;
+	f64 denomz = p_denomz[index];
+	f64 numerz = p_summandz1[index] + p_summandz2[index] + p_summandz3[index];
+	p_outputz[index] = numerz / (denomz + 1.0);
+}
+
+__global__ void kernelAdd3things
+(f64_vec2 * __restrict__ p_output2,
+	f64_vec2 * __restrict__ p_summand1, f64_vec2 * __restrict__ p_summand2,
+	f64_vec2 * __restrict__ p_summand3,
+	f64 * __restrict__ p_outputz, f64 * __restrict__ p_summandz1,
+	f64 * __restrict__ p_summandz2, f64 * __restrict__ p_summandz3)
+{
+	long const index = blockIdx.x*blockDim.x + threadIdx.x;
+	p_output2[index] = p_summand1[index] + p_summand2[index] + p_summand3[index];
+	p_outputz[index] = p_summandz1[index] + p_summandz2[index] + p_summandz3[index];
+}
+	
+	
+__global__ void SubtractVec2(f64_vec2 * __restrict__ p_update,
+	f64_vec2 * __restrict__ p_apply)
+{
+	long const index = blockIdx.x*blockDim.x + threadIdx.x;
+	f64_vec2 jill = p_update[index];
+	f64_vec2 jill2 = p_apply[index];
+
+	if (jill.x > 0.0) {
+		if (jill2.x - jill.x < 0.0) {
+			// moving the right way
+			if (jill2.x*jill.x < 0.0) {
+				jill.x = jill2.x; // distance out the other side of 0 = new value
+			}
+			else {
+				jill.x = 0.0;
+			};
+		}
+		else {
+			jill.x = (jill2.x - jill.x);
+		};
+	} else {
+		if (jill2.x - jill.x > 0.0) {
+			// moving the right way
+			if (jill2.x*jill.x < 0.0) {
+				jill.x = jill2.x; // distance out the other side of 0 = new value
+			} else {
+				jill.x = 0.0;
+			};
+		} else {
+			jill.x = (jill2.x - jill.x);
+		};
+	}
+	
+	if (jill.y > 0.0) {
+		if (jill2.y - jill.y < 0.0) {
+			// moving the right way
+			if (jill2.y*jill.y < 0.0) {
+				jill.y = jill2.y; // distance out the other side of 0 = new value
+			}
+			else {
+				jill.y = 0.0;
+			};
+		}
+		else {
+			jill.y = (jill2.y - jill.y);
+		};
+	}
+	else {
+		if (jill2.y - jill.y > 0.0) {
+			// moving the right way
+			if (jill2.y*jill.y < 0.0) {
+				jill.y = jill2.y; // distance out the other side of 0 = new value
+			}
+			else {
+				jill.y = 0.0;
+			};
+		}
+		else {
+			jill.y = (jill2.y - jill.y);
+		};
+	}
+
+	p_update[index] = jill;
+}
 
 __global__ void Augment_dNv_minor(
 	structural * __restrict__ p_info,
@@ -4815,6 +4945,19 @@ __global__ void Augment_dNv_minor(
 			coeff1 = 0.333333333333333*Nnhere / p_temp_Nntotalmajor[tricornerindex.i1];
 			coeff2 = 0.333333333333333*Nnhere / p_temp_Nntotalmajor[tricornerindex.i2];
 			coeff3 = 0.333333333333333*Nnhere / p_temp_Nntotalmajor[tricornerindex.i3];
+
+			// DEBUG:
+			if (0)//iMinor == CHOSEN) 
+				printf("%d Nntotal123 %1.9E %1.9E %1.9E MARneutz %1.8E %1.8E %1.8E \n",CHOSEN,
+				p_temp_Nntotalmajor[tricornerindex.i1],
+				p_temp_Nntotalmajor[tricornerindex.i2],
+				p_temp_Nntotalmajor[tricornerindex.i3],
+				p_MAR_neut_major[tricornerindex.i1].z,
+				p_MAR_neut_major[tricornerindex.i2].z,
+				p_MAR_neut_major[tricornerindex.i3].z
+				);
+
+
 
 			f64_vec3 add_n = p_MAR_neut_major[tricornerindex.i1] * coeff1
 				+ p_MAR_neut_major[tricornerindex.i2] * coeff2
@@ -4906,6 +5049,31 @@ __global__ void DivideNeTeDifference_by_N(
 		p_dTbydt[iVertex] = 0.0;
 	} else {
 		p_dTbydt[iVertex] = diff / N;
+	}
+}
+
+__global__ void DivideNiTiDifference_by_N(
+	NTrates * __restrict__ NT_addition_rates_initial,
+	NTrates * __restrict__ NT_addition_rates_final,
+	f64 * __restrict__ p_AreaMajor,
+	nvals * __restrict__ p_n_major,
+	f64 * __restrict__ p_dTbydt)
+{
+	long iVertex = blockDim.x*blockIdx.x + threadIdx.x;
+	f64 diff = NT_addition_rates_final[iVertex].NiTi -
+		NT_addition_rates_initial[iVertex].NiTi;
+	f64 N = p_n_major[iVertex].n*p_AreaMajor[iVertex];
+
+	if (N == 0) {
+		p_dTbydt[iVertex] = 0.0;
+	}
+	else {
+		p_dTbydt[iVertex] = diff / N;
+		if (iVertex == VERTCHOSEN) printf("%d final %1.10E initial %1.10E diff %1.10E N %1.8E dT %1.8E\n",
+			VERTCHOSEN, NT_addition_rates_final[iVertex].NiTi,
+			NT_addition_rates_initial[iVertex].NiTi, diff, N,
+			p_dTbydt[iVertex]);
+
 	}
 }
 
@@ -5275,6 +5443,7 @@ __global__ void kernelTransmitHeatToVerts(
 
 	// Idea: pre-store a value which is the sum of N at corners.
 }
+
 __global__ void kernelTransmit_3x_HeatToVerts(
 	structural * __restrict__ p_info,
 	long * __restrict__ p_izTri,
@@ -5316,9 +5485,61 @@ __global__ void kernelTransmit_3x_HeatToVerts(
 		NTrat.NeTe += sum_NeTe;
 		NTrat.NnTn += sum_NnTn;
 		NT_addition_rates[iVertex] = NTrat;
+
+		if (iVertex == VERTCHOSEN) printf("%d : NiTi %1.10E sum_from tris %1.10E \n",
+			iVertex, NTrat.NiTi, sum_NiTi);
+
 	};
 	// Idea: pre-store a value which is the sum of N at corners.
 }
+
+__global__ void kernelCollect_Up_3x_HeatIntoVerts(
+	structural * __restrict__ p_info,
+	long * __restrict__ p_izTri,
+	LONG3 * __restrict__ p_tri_corner_index, // to see which corner we are.
+		
+	NTrates * __restrict__ NT_addition_rates,
+	NTrates * __restrict__ NT_addition_tri1,
+	NTrates * __restrict__ NT_addition_tri2,
+	NTrates * __restrict__ NT_addition_tri3
+	)
+{
+	long const iVertex = blockDim.x*blockIdx.x + threadIdx.x;
+	structural info = p_info[iVertex + BEGINNING_OF_CENTRAL];
+
+	NTrates NTtri1, NTtri2, NTtri3, NTrat;
+
+	long izTri[MAXNEIGH_d];
+	short i;
+	if (info.flag == DOMAIN_VERTEX) {
+		memcpy(izTri, p_izTri + MAXNEIGH_d*iVertex, sizeof(long)*MAXNEIGH_d);
+		for (i = 0; i < info.neigh_len; i++)
+		{
+			// load in the corner data
+			LONG3 corners = p_tri_corner_index[izTri[i]];
+			int iPlus = 0;
+			if (corners.i2 == iVertex) iPlus = 1;
+			if (corners.i3 == iVertex) iPlus = 2;
+			
+			NTtri1 = NT_addition_tri1[izTri[i]*3+iPlus]; // the tri's corner 0 = our vertex
+			NTtri2 = NT_addition_tri1[izTri[i]*3+iPlus]; // the tri's corner 0 = our vertex
+			NTtri3 = NT_addition_tri1[izTri[i]*3+iPlus]; // the tri's corner 0 = our vertex
+			
+			// stabilize in the way we apportion heat out of triangle
+		};
+		NTrat = NT_addition_rates[iVertex];
+		NTrat.NiTi += NTtri1.NiTi + NTtri2.NiTi + NTtri3.NiTi;
+		NTrat.NeTe += NTtri1.NeTe + NTtri2.NeTe + NTtri3.NeTe;
+		NTrat.NnTn += NTtri1.NnTn + NTtri2.NnTn + NTtri3.NnTn;
+		NT_addition_rates[iVertex] = NTrat;
+	};		
+}
+
+
+
+
+
+
 // Not optimized: !!
 #define FACTOR_HALL (1.0/0.96)
 #define FACTOR_PERP (1.2/0.96)

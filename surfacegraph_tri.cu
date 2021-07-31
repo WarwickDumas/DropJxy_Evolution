@@ -1055,7 +1055,7 @@ HRESULT surfacegraph::SetDataWithColour(const TriMesh & X,
 		getch();
 	};	
 	
-	// Now decide on the actual max to use: 
+	// Now decide on the actual max to use: set zeroplane, yscale.
 	int powermax, powermin;
 	if (maximum > 0.0) {
 		real logmaxbase_ours = log(maximum)/log(GRAPH_SCALE_GEOMETRIC_INCREMENT);
@@ -1106,6 +1106,9 @@ HRESULT surfacegraph::SetDataWithColour(const TriMesh & X,
 		zeroplane = 0.0f;
 		this->yscale = 1.0f;
 	};
+
+	
+
 	//printf("*****+++++++\ncode %d zeroplane %f yscale %f ymax %f ymin %f minimum %1.3E maximum %1.3E \n",
 	//	code, zeroplane, this->yscale, ymax, ymin, minimum, maximum);
 
@@ -1981,7 +1984,11 @@ VOID surfacegraph::Render(const char * szTitle, bool RenderTriLabels,
 			//	printf("buffer %s x %f y %f z %f\n",
 			//		buffer,x,zeroplane+yscale*value[i],z);
 				};
-				
+				if (scalemax*1.06 < store_max) {
+					sprintf(buffer, "%1.3E", store_max*this->TickRescaling);
+					RenderLabel(buffer, x, zeroplane + yscale*store_max, z, 0, 0, true);
+				};
+
 			};
 		};
 
@@ -2476,7 +2483,7 @@ void inline surfacegraph::RenderText (const char * text, int lines_down)
 }
 
 void inline surfacegraph::RenderLabel (char * text, float x, float y, float z, 
-									   bool extrainfo, bool botleft)
+									   bool extrainfo, bool botleft, bool bColoured)
 	{
 		RECT rect;
 		D3DXVECTOR3 transformed;
@@ -2518,6 +2525,8 @@ void inline surfacegraph::RenderLabel (char * text, float x, float y, float z,
 		};
 
 		D3DCOLOR textcolor = 0xff000000;
+		if (bColoured) textcolor = 0xff2200bb;
+
 		if (extrainfo) {
 			format = DT_CENTER | DT_VCENTER; // also changing rect, below.
 			textcolor = 0xff700022;

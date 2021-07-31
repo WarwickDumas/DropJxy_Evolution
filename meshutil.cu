@@ -8475,10 +8475,14 @@ real TriMesh::ReturnMaximumVelocity(int offset_v, bool bDisplayInner) const
 	if (maxvsq == 0.0) return 1.0; // do not return 0
 
 	if (bDisplayInner == 0) iMax += (Xdomain - X);
-
-	printf("Max|v| %1.8E found at vertex %d \n", sqrt(maxvsq), iMax);
+	
+	printf("Max|v| %1.8E found at vertex %d vy %1.9E\n", sqrt(maxvsq), iMax,
+		*((real *)(&(pData[BEGINNING_OF_CENTRAL + iMax])) + offset_v + 1)
+	); 
 	return sqrt(maxvsq);
 }
+
+
 real TriMesh::ReturnMaximum3DMagnitude(int offset_v,bool bDisplayInner) const
 {
 	return 1.0;

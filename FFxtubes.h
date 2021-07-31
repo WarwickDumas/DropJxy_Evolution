@@ -17,14 +17,16 @@ bool const bScrewPinch = false;
 
 #define DIRICHLET false
 #define RADIALDECLINE true
+#define EULERIAN
+// change to #define LAGRANGIAN
 
 //#define FLATAZBC
 
 int const NUMAVI = 9;
 #define FOLDER L"C:/outputs/"
 #define FOLDER2 "C:/outputs/"
-#define INITIALAVI "restac11.avi"		
-#define INITIALMP4 L"restac11.mp4"
+#define INITIALAVI "0.avi"		
+#define INITIALMP4 L"0.mp4"
 #define STORYFILE "temp.txt"
 #define STORYFILE2 "temp2.txt"
 
@@ -55,7 +57,7 @@ int const NUMAVI = 9;
 
 #define STEPS_PER_LOOP               1    // soon change to 500
 // frames between file pinch-offs:
-#define AVI_FILE_PINCHOFF_FREQUENCY     200 // 50 = 1 ns
+#define AVI_FILE_PINCHOFF_FREQUENCY     250 // 50 = 1 ns
 
 // 1 frame = 0.01 so 100 frames == 1 ns
 
@@ -63,7 +65,7 @@ int const NUMAVI = 9;
 #define AVIFRAMEPERIOD         15  // milliseconds; 20 ms => 50 fps.
 
 #define VERTDATA_SAVE_FREQUENCY              5
-#define DATA_SAVE_FREQUENCY					 25
+#define DATA_SAVE_FREQUENCY					 1
 // For debug. For production change it to 25
 
 // Program Mechanics:
@@ -76,11 +78,13 @@ int const NUMAVI = 9;
 // Let's keep it real. nvT is best for our fetches and therefore is best.
 #define SWITCH_TO_CENTRE_OF_INTERSECTION_WITH_INSULATOR_FOR_TRI_CENTROID_CPU 0
 
-long const numTriTiles = 336; // note that there are also centrals
-long const numTilesMajor = 336;
-long const numTilesMinor = 504; // 576 = 384 + 192
-								// 456*256 = 304*256 + 304*128
+// Note: NUMVERTICES must be divisble by 12
 
+long const numTriTiles = 384; // 336   note that there are also centrals
+long const numTilesMajor = 384;  // 336
+long const numTilesMinor = 576; // 504 = 336 +  // 576 = 384 + 192
+								// 456*256 = 304*256 + 304*128
+// Set NUMVERTICES_WITHIN below
 								// numTriTiles == numTilesMajor because the two sets are bijective.
 								// Then we also have to assign central minors to tiles, twice the size of the major tiles...
 
@@ -88,7 +92,7 @@ long const threadsPerTileMinor = 256; // PopOhmsLaw ASSUMES THIS IS A POWER OF 2
 long const threadsPerTileMajor = 128; // see about it - usually we take info from minor.
 
 long const threadsPerTileMajorClever = 256;
-long const numTilesMajorClever = 168;
+long const numTilesMajorClever = 192;
 
 long const SIZE_OF_MAJOR_PER_TRI_TILE = 128;
 long const SIZE_OF_TRI_TILE_FOR_MAJOR = 256;
@@ -113,10 +117,11 @@ double const RELTHRESH_AZ =  1.0e-9;
 
  // radii in cm from anode centre : 
 #define DOMAIN_OUTER_RADIUS  10.0   // Assume cold neutrals looking out from this point.
-#define START_SPREADING_OUT_RADIUS 4.3
-#define NUMVERTICES_WITHIN 36864  // Used for initialization - focus on the area of interest
+#define START_SPREADING_OUT_RADIUS 4.24
+#define NUMVERTICES_WITHIN 43008 // 55296 // using NUMVERTICES - 6144 = 61440-6144
+ // 36864  // Used for initialization - focus on the area of interest
 // === 288*128, vs 336*128 for whole lot.
-#define VISCOSITY_MAX_RADIUS  4.5
+#define VISCOSITY_MAX_RADIUS  4.3
 #define MESHMOVE_MAX_RADIUS   6.0
 
 // Think it's time we made radial values going out to 10cm.
@@ -287,19 +292,19 @@ real const FULLANGLE = 2.0*PI/16.0;
 // Need to be careful in case of thermal pressure messing up mesh.
 // Let's assume we do recalculation of parameters as often as we do recalculation of pressure.
 
-real const TIMESTEP = 1.0e-12;// 7.8125e-14; 
+real const TIMESTEP = 2.5e-12;// 7.8125e-14; 
 real const SUBSTEP = 1.0e-13; // 7.8125e-14;
-int const SUBCYCLES = 10; 
-int const GPU_STEPS = 20; // 2e-11
+int const SUBCYCLES = 25; 
+int const GPU_STEPS = 10; // 2.5e-11
 int const ADVECT_FREQUENCY = 10; // 5e-12; 1e-11 = 1e-4/1e7 // 64
-int const ADVECT_STEPS_PER_GPU_VISIT = 2;
+int const ADVECT_STEPS_PER_GPU_VISIT = 1;
 
 
 //long const NUM_VERTICES_PER_CM_SQ = 10000; // 60000; //12000; // use 262144 = 2^18. 2^9 = 512
 //long const NUM_VERTICES_PER_CM_SQ_INSIDE_INS = 9000; // 24000; // 8000;
 // Make life easier: both same.
 
-int const NUM_SUBSTEPS_IN_h_over_2 = 3; // Visc+Accel, Ionisation+Heating
+//int const NUM_SUBSTEPS_IN_h_over_2 = 3; // Visc+Accel, Ionisation+Heating
 
 int const VERTICES_PER_ARRAY = 65536; // for graphics. Just sends warning at the moment.
 
