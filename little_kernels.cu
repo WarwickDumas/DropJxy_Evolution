@@ -2574,6 +2574,18 @@ __global__ void kernelAdvectPositionsTris(
 	p_info_dest[index] = info;
 }
 
+__global__ void BreakDownT3(
+	f64 * __restrict__ p_Tn,
+	f64 * __restrict__ p_Ti,
+	f64 * __restrict__ p_Te,
+	T3 * __restrict__ p_Tmove)
+{
+	long const index = blockIdx.x*blockDim.x + threadIdx.x;
+	T3 T = p_Tmove[index];
+	p_Tn[index] = T.Tn;
+	p_Ti[index] = T.Ti;
+	p_Te[index] = T.Te;
+}
 
 __global__ void kernelCalculateNu_eHeartNu_iHeart_nu_nn_visc(
 	structural * __restrict__ p_info_major,

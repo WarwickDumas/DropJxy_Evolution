@@ -32,6 +32,7 @@
 
 #define SQRTNV
 #define SQRTNT           1
+//#define LIBERALIZED_VISC_SOLVER 
 
 // Note that we have not reconditioned the solver to aim to reduce epsilon in different dimensions differently. It is a bit iffy to have a solver
 // that aims at a different criterion than the threshold applied.
@@ -73,7 +74,66 @@
 //
 //	};
 //}
+__global__ void kernelCombineEquations(
+	f64 * __restrict__ p_eqns_,
+	f64 * __restrict__ p_RHS_,
+	f64 * __restrict__ p_eqns_big_,
+	f64 * __restrict__ p_RHS_big_)
+{
+	long const iEqn = blockDim.x*blockIdx.x + threadIdx.x;
 
+	if (iEqn < ActualInnerEqnsDevice) {
+	
+		// If we never reached EQNS_TOTAL
+
+		// Try removing these lines:
+		
+		// just copy over the line for eqn.
+		memcpy(&(p_eqns_[4 * EQNS_TOTAL*iEqn]),
+			&(p_eqns_big_[4 * (EQNS_TOTAL+MAXRINGLEN)*iEqn]),
+			sizeof(f64) * 4 * EQNS_TOTAL);
+		p_RHS_[iEqn] = p_RHS_big_[iEqn];
+
+	} else {
+
+		// go through and look for ones to add.
+
+		// Can we say that the effects are always reciprocal
+		// so that element (i,j) is nonzero iff (j,i) is nonzero?
+		// Fair assumption?!
+
+		// Read our own equation into memory: (?!)
+
+		// How much mem does it take?
+		//f64 oureqn[4*BIG_EQNS] // that would be 4096 at least.
+		// 4KB per thread.
+		// Say there is 48K memory. Only 12 threads/processor.
+		// Not much good.
+
+
+		// Best speedup is to load sections of the row at a time.
+		// e.g. 96 doubles/thread says keep it down to 64.
+		f64 coefficient;
+		
+		//Need to bear in mind we may not have populated full set of neighs to be affected.
+		//We get to end of neighs or end of unmasked without reaching MAXRINGLEN.
+		
+		for (int j = 0; j < iEqnsDevice; j++) {
+			coefficient = p_eqns_big_[4 * (EQNS_TOTAL + MAXRINGLEN)*j + iEqn];
+			// deps_j/dv_i
+
+			if (coefficient != 0.0) {
+				// add eqn j multiplied by coefficient
+				for (int caret = 0; caret < 4 * EQNS_TOTAL; caret++)
+					p_eqns_[4 * EQNS_TOTAL*iEqn + caret] +=
+					coefficient*p_eqns_big_[4 * (EQNS_TOTAL+MAXRINGLEN)*j + caret];
+				// Try removing this line:
+				// Triggers illegal memory access.				
+				p_RHS_[iEqn] += coefficient*p_RHS_big_[j];
+			};
+		};
+	};
+}
 
 __global__ void kernelCalculate_ita_visc(
 	structural * __restrict__ p_info_minor,
@@ -11069,6 +11129,8 @@ __global__ void kernelCreateEquations(
 
 	nvals * __restrict__ p_n_minor,
 	f64 * __restrict__ p_AreaMinor,
+	f64 * __restrict__ p_ROC_i, 
+	f64 * __restrict__ p_ROC_e,
 
 	long * __restrict__ p_Indexneigh_tri,
 	long * __restrict__ p_izTri_vert,
@@ -11130,9 +11192,13 @@ __global__ void kernelCreateEquations(
 		// too many elements otherwise
 
 		f64 N = p_AreaMinor[iMinor] * p_n_minor[iMinor].n;
-		f64 factor_i = -hsub*(m_ion / ((m_ion + m_e)*N));
-		f64 factor_e = -hsub*(m_e / ((m_ion + m_e)*N));
-		f64 minus_hsub_over_N = -hsub / N;
+
+		f64 ROC_i = p_ROC_i[iMinor];
+		f64 ROC_e = p_ROC_e[iMinor];
+		f64 factor_i = ROC_i*(m_ion / ((m_ion + m_e)));
+		f64 factor_e = ROC_i*(m_e / ((m_ion + m_e))); // effects for xy residual
+
+	//	f64 minus_hsub_over_N = -hsub / N;
 		short iTheirIndex;
 		//	epsilon.vxy = vie.vxy - vie_k.vxy
 		//		- hsub*((MAR_ion.xypart()*m_ion + MAR_elec.xypart()*m_e) /
@@ -11154,28 +11220,17 @@ __global__ void kernelCreateEquations(
 
 		coeff.x = factor_i*ionfluxcoeff3.x + factor_e*elecfluxcoeff3.x;
 		coeff.y = factor_i*ionfluxcoeff3.y + factor_e*elecfluxcoeff3.y;
-
 		//We propose a change in viz. This affects ion pz flux only.
 		coeff.z = factor_i*ionfluxcoeff3.z;
 		coeff.w = factor_e*elecfluxcoeff3.z;
 
 		//Here add 1 or something;
-		
-		coeff.x += 1.0;
+		f64 sqrtN = sqrt(N);
+		coeff.x += sqrtN;
 		// Note that whereas ion flux was 3 dimensions contributing to 3 dimensions of flux,
 		// the equations are 4 dimensions contributing to 4 dimensions of residual.
 
-#ifdef SQRTNV
-		f64 sqrtN = sqrt(N);
-		coeff.x *= sqrtN;
-		coeff.y *= sqrtN;
-		coeff.z *= sqrtN;
-		coeff.w *= sqrtN;
 
-		// d eps_v / dv was given;
-		// We want d (sqrtN eps_v / dv) because we still make a proposed regressor for moving v.
-
-#endif
 		memcpy(&(eqns[4 * EQNS_TOTAL*(iOurEqn*4) + 4 * iOurEqn]), &coeff, sizeof(double4));
 
 		// Contribs to y residual:
@@ -11183,19 +11238,15 @@ __global__ void kernelCreateEquations(
 			sizeof(double3)); // half a bus!
 		memcpy(&elecfluxcoeff3, &(p_elecmomflux[3 * EQNS_TOTAL*(iOurEqn*3+1) + 3 * iOurEqn]),
 			sizeof(double3));
+		
 		coeff.x = factor_i*ionfluxcoeff3.x + factor_e*elecfluxcoeff3.x;
 		coeff.y = factor_i*ionfluxcoeff3.y + factor_e*elecfluxcoeff3.y;
 		coeff.z = factor_i*ionfluxcoeff3.z;
 		coeff.w = factor_e*elecfluxcoeff3.z;
 		//Here add 1 :
-		coeff.y += 1.0;
+		coeff.y += sqrtN;
 
-#ifdef SQRTNV
-		coeff.x *= sqrtN;
-		coeff.y *= sqrtN;
-		coeff.z *= sqrtN;
-		coeff.w *= sqrtN;
-#endif
+
 		// Note that whereas ion flux was 3 dimensions contributing to 3 dimensions of flux,
 		// the equations are 4 dimensions contributing to 4 dimensions of residual.
 		memcpy(&(eqns[4 * EQNS_TOTAL*(iOurEqn*4 + 1) + 4 * iOurEqn]), &coeff, sizeof(double4));
@@ -11213,19 +11264,14 @@ __global__ void kernelCreateEquations(
 		memcpy(&ionfluxcoeff3, &(p_ionmomflux[3 * EQNS_TOTAL*(iOurEqn*3 + 2) + 3 * iOurEqn]),
 			sizeof(double3)); // half a bus!
 		// MAR_ion_z is whose derivative is populated in ionfluxcoeff3 WRT vx
-		coeff.x = minus_hsub_over_N*ionfluxcoeff3.x;
-		coeff.y = minus_hsub_over_N*ionfluxcoeff3.y;
-		coeff.z = minus_hsub_over_N*ionfluxcoeff3.z; 
+		coeff.x = ROC_i*ionfluxcoeff3.x;
+		coeff.y = ROC_i*ionfluxcoeff3.y;
+		coeff.z = ROC_i*ionfluxcoeff3.z; 
 		// z component is viz -> eps iz , there is no vez->eps iz
 		coeff.w = 0.0;
 		//Here add 1 or something;
-		coeff.z += 1.0;
-#ifdef SQRTNV
-		coeff.x *= sqrtN;
-		coeff.y *= sqrtN;
-		coeff.z *= sqrtN;
-		coeff.w *= sqrtN;
-#endif
+		coeff.z += sqrtN;
+
 		// Note that whereas ion flux was 3 dimensions contributing to 3 dimensions of flux,
 		// the equations are 4 dimensions contributing to 4 dimensions of residual.
 		memcpy(&(eqns[4 * EQNS_TOTAL*(iOurEqn*4 + 2) + 4 * iOurEqn]), &coeff, sizeof(double4));
@@ -11233,19 +11279,19 @@ __global__ void kernelCreateEquations(
 		// Contribs to ez residual:
 		memcpy(&elecfluxcoeff3, &(p_elecmomflux[3 * EQNS_TOTAL*(iOurEqn*3+2) + 3 * iOurEqn]),
 			sizeof(double3));
-		coeff.x = minus_hsub_over_N*elecfluxcoeff3.x;
-		coeff.y = minus_hsub_over_N*elecfluxcoeff3.y;
+		coeff.x = ROC_e*elecfluxcoeff3.x;
+		coeff.y = ROC_e*elecfluxcoeff3.y;
 		coeff.z = 0.0;
-		coeff.w = minus_hsub_over_N*elecfluxcoeff3.z; // z component is viz -> eps iz , there is no vez->eps iz
+		coeff.w = ROC_e*elecfluxcoeff3.z; // z component is viz -> eps iz , there is no vez->eps iz
 													 //Here add 1 or something;
-		coeff.w += 1.0;
-
-#ifdef SQRTNV
-		coeff.x *= sqrtN;
-		coeff.y *= sqrtN;
-		coeff.z *= sqrtN;
-		coeff.w *= sqrtN;
-#endif
+		coeff.w += sqrtN;
+//
+//#ifdef SQRTNV
+//		coeff.x *= sqrtN;
+//		coeff.y *= sqrtN;
+//		coeff.z *= sqrtN;
+//		coeff.w *= sqrtN;
+//#endif
 
 		// Note that whereas ion flux was 3 dimensions contributing to 3 dimensions of flux,
 		// the equations are 4 dimensions contributing to 4 dimensions of residual.
@@ -11277,13 +11323,13 @@ __global__ void kernelCreateEquations(
 				coeff.y = factor_i*ionfluxcoeff3.y + factor_e*elecfluxcoeff3.y;
 				coeff.z = factor_i*ionfluxcoeff3.z;
 				coeff.w = factor_e*elecfluxcoeff3.z;
-
-#ifdef SQRTNV
-				coeff.x *= sqrtN;
-				coeff.y *= sqrtN;
-				coeff.z *= sqrtN;
-				coeff.w *= sqrtN;
-#endif
+//
+//#ifdef SQRTNV
+//				coeff.x *= sqrtN;
+//				coeff.y *= sqrtN;
+//				coeff.z *= sqrtN;
+//				coeff.w *= sqrtN;
+//#endif
 				memcpy(&(eqns[4 * EQNS_TOTAL*iOurEqn*4 + 4 * iTheirIndex]), &coeff, sizeof(double4));
 
 				// The y residual:
@@ -11296,43 +11342,25 @@ __global__ void kernelCreateEquations(
 				coeff.z = factor_i*ionfluxcoeff3.z ;
 				coeff.w = factor_e*elecfluxcoeff3.z;
 
-#ifdef SQRTNV
-				coeff.x *= sqrtN;
-				coeff.y *= sqrtN;
-				coeff.z *= sqrtN;
-				coeff.w *= sqrtN;
-#endif
 				memcpy(&(eqns[4 * EQNS_TOTAL*(iOurEqn*4 + 1) + 4 * iTheirIndex]), &coeff, sizeof(double4));
 
 
 				memcpy(&ionfluxcoeff3, &(p_ionmomflux[3 * EQNS_TOTAL*(iOurEqn*3 + 2) + 3 * iTheirIndex]),
 					sizeof(double3)); // half a bus!
-				coeff.x = minus_hsub_over_N*ionfluxcoeff3.x;
-				coeff.y = minus_hsub_over_N*ionfluxcoeff3.y;
-				coeff.z = minus_hsub_over_N*ionfluxcoeff3.z;
+				coeff.x = ROC_i*ionfluxcoeff3.x;
+				coeff.y = ROC_i*ionfluxcoeff3.y;
+				coeff.z = ROC_i*ionfluxcoeff3.z;
 				coeff.w = 0.0;
 
-#ifdef SQRTNV
-				coeff.x *= sqrtN;
-				coeff.y *= sqrtN;
-				coeff.z *= sqrtN;
-				coeff.w *= sqrtN;
-#endif
 				memcpy(&(eqns[4 * EQNS_TOTAL*(iOurEqn*4 + 2) + 4 * iTheirIndex]), &coeff, sizeof(double4));
 				
 				memcpy(&elecfluxcoeff3, &(p_elecmomflux[3 * EQNS_TOTAL*(iOurEqn*3 + 2) + 3 * iTheirIndex]),
 					sizeof(double3));
-				coeff.x = minus_hsub_over_N*elecfluxcoeff3.x;
-				coeff.y = minus_hsub_over_N*elecfluxcoeff3.y;
+				coeff.x = ROC_e*elecfluxcoeff3.x;
+				coeff.y = ROC_e*elecfluxcoeff3.y;
 				coeff.z = 0.0;
-				coeff.w = minus_hsub_over_N*elecfluxcoeff3.z;
+				coeff.w = ROC_e*elecfluxcoeff3.z;
 
-#ifdef SQRTNV
-				coeff.x *= sqrtN;
-				coeff.y *= sqrtN;
-				coeff.z *= sqrtN;
-				coeff.w *= sqrtN;
-#endif
 				memcpy(&(eqns[4 * EQNS_TOTAL*(iOurEqn*4 + 3) + 4 * iTheirIndex]), &coeff, sizeof(double4));
 
 			} // was this neigh selected.
@@ -12969,8 +12997,8 @@ __global__ void kernelComputeCombinedDEpsByDBeta(
 	f64_vec3 * __restrict__ p_MAR_elec2,
 	nvals * __restrict__ p_n_minor,
 	f64 * __restrict__ p_AreaMinor,
-	f64 * __restrict__ p_nu_in_MT_minor,
-	f64 * __restrict__ p_nu_en_MT_minor,
+	f64 * __restrict__ p_ROC_i,
+	f64 * __restrict__ p_ROC_e,
 	f64_vec2 * __restrict__ p_Depsilon_xy,
 	f64 * __restrict__ p_Depsilon_iz,
 	f64 * __restrict__ p_Depsilon_ez
@@ -13002,7 +13030,6 @@ __global__ void kernelComputeCombinedDEpsByDBeta(
 #else
 		f64 sqrtN = sqrt(N);
 
-#if DECAY_IN_VISC_EQNS
 		// Now introduce decay factor.
 
 		// We want to anticipate that v will decay.
@@ -13010,32 +13037,18 @@ __global__ void kernelComputeCombinedDEpsByDBeta(
 		// Therefore take
 
 		// v_k+1 target = (v_k + h/N MAR(k+1) - vnk)/(1+h nu mn/(ms+mn) nn/ntot)+vnk
-		f64 nu_in_MT = p_nu_in_MT_minor[iMinor];
-		f64 nu_en_MT = p_nu_en_MT_minor[iMinor];
-
-		f64 ratio_nn_ntot = n_use.n_n / (n_use.n_n + n_use.n);
+		//f64 nu_in_MT = p_nu_in_MT_minor[iMinor];
+		//f64 nu_en_MT = p_nu_en_MT_minor[iMinor];
+		f64 ROC_i = p_ROC_i[iMinor];
+		f64 ROC_e = p_ROC_e[iMinor];
+		//f64 ratio_nn_ntot = n_use.n_n / (n_use.n_n + n_use.n);
 		
 		f64_vec2 putative = hsub*((MAR_ion.xypart()*m_ion + MAR_elec.xypart()*m_e) /
 			((m_ion + m_e)*N));
-		Depsilon.vxy = sqrtN*(
-			(regrxy - (putative) /
-			(1.0 + hsub*FACTOR_DECAY*0.5*nu_in_MT*ratio_nn_ntot)
-				));
-		Depsilon.viz = sqrtN*
-			(regriz - ( hsub*MAR_ion.z  ) /
-			(N + N*0.5*FACTOR_DECAY*hsub*nu_in_MT*ratio_nn_ntot)
-				);
-		Depsilon.vez = sqrtN*
-			(regrez - (hsub*(MAR_elec.z)) /
-			(N + N*hsub*FACTOR_DECAY*nu_en_MT*ratio_nn_ntot)
-				);
-#else
-		Depsilon.vxy = sqrtN*regrxy
-			- hsub*((MAR_ion.xypart()*m_ion + MAR_elec.xypart()*m_e) /
-			((m_ion + m_e)*sqrtN));
-		Depsilon.viz = sqrtN*regriz - hsub*(MAR_ion.z / sqrtN);
-		Depsilon.vez = sqrtN*regrez - hsub*(MAR_elec.z / sqrtN);
-#endif
+		Depsilon.vxy = sqrtN*regrxy + (putative)*ROC_i;
+		Depsilon.viz = sqrtN*regriz + MAR_ion.z*ROC_i;
+		Depsilon.vez = sqrtN*regrez + MAR_elec.z*ROC_e;
+
 #endif
 		//if ((iMinor == CHOSEN) && (DebugFlag))
 		//	printf("\nkernelCCdepsbydbeta %d regr.y %1.10E Depsilon.vxy.y %1.10E MAR_ion.y %1.10E MAR_elec.y %1.10E hsub/N %1.9E\n", CHOSEN, regrxy.y, Depsilon.vxy.y,
@@ -13067,8 +13080,8 @@ __global__ void kernelCreateDByDBetaCoeffmatrix(
 
 	nvals * __restrict__ p_n_minor,
 	f64 * __restrict__ p_AreaMinor,
-	f64 * __restrict__ p_nu_in_MT_minor,
-	f64 * __restrict__ p_nu_en_MT_minor,
+	f64 * __restrict__ p_ROC_i,
+	f64 * __restrict__ p_ROC_e,
 
 	f64_vec2 * __restrict__ p_epsxy,
 	f64 * __restrict__ p_epsiz,
@@ -13142,16 +13155,15 @@ __global__ void kernelCreateDByDBetaCoeffmatrix(
 		mat.xx = 1.0;
 		mat.yy = 1.0;
 
-		f64 factor = hsub / ((m_ion + m_e)*N);
-#if DECAY_IN_VISC_EQNS
+//		f64 factor = hsub / ((m_ion + m_e)*N);
 
-		f64 nu_in_MT = p_nu_in_MT_minor[iMinor];
-		f64 nu_en_MT = p_nu_en_MT_minor[iMinor];
-		f64 ratio_nn_ntot = n_use.n_n / (n_use.n_n + n_use.n);
+		f64 ROC_i = p_ROC_i[iMinor];
+		f64 ROC_e = p_ROC_e[iMinor];
+		//f64 ratio_nn_ntot = n_use.n_n / (n_use.n_n + n_use.n);
 
-		factor /= 1.0 + hsub*nu_in_MT*0.5*FACTOR_DECAY*ratio_nn_ntot;
+		//factor /= 1.0 + hsub*nu_in_MT*0.5*FACTOR_DECAY*ratio_nn_ntot;
 
-#endif
+		f64 factor = ROC_i / (m_ion + m_e);
 
 		mat.xx += -factor*((matxy1.xx*m_ion + matxy2.xx*m_e));
 		mat.xy += -factor*((matxy1.xy*m_ion + matxy2.xy*m_e));
@@ -13201,12 +13213,7 @@ __global__ void kernelCreateDByDBetaCoeffmatrix(
 		// Maybe need to write equations out. mat is meant to involve -hsub/N * 
 		// but why do we have the sharing m_i/(m_e+m_i).
 		// Meaning of it is vxy effect of viz? vxy is affected by momentum contribution from each species
-		f64 hsuboverN = hsub / N;
-#if DECAY_IN_VISC_EQNS
-
-		hsuboverN /= 1.0 + hsub*0.5*FACTOR_DECAY*nu_in_MT*ratio_nn_ntot;
-
-#endif
+		f64 hsuboverN = ROC_i;
 		// So xz means what? px that we get from viz.
 		f64 zzi = 1.0 - hsuboverN*p_coeffself_iz[iMinor];
 		xzyz_i.x *= -hsuboverN;
@@ -13214,11 +13221,8 @@ __global__ void kernelCreateDByDBetaCoeffmatrix(
 		xzyz_i.z *= -hsuboverN;
 		xzyz_i.w *= -hsuboverN;
 
-#if DECAY_IN_VISC_EQNS
-		hsuboverN = hsub / (N + N*hsub*FACTOR_DECAY*nu_en_MT*ratio_nn_ntot);
+		hsuboverN = ROC_e;
 		
-#endif
-
 		f64 zze = 1.0 - hsuboverN*p_coeffself_ez[iMinor];
 		
 		xzyz_e.x *= -hsuboverN;
@@ -13321,11 +13325,13 @@ __global__ void kernelCreateDByDBetaCoeffmatrix(
 		// epsilon = 0
 	};
 	
-	memcpy(&(p_invmatrix[iMinor]), &invmatrix, sizeof(Tensor2));
-	p_invcoeffselfviz[iMinor] = invcoeffselfviz;
-	p_invcoeffselfvez[iMinor] = invcoeffselfvez;
-	p_invcoeffselfx[iMinor] = invcoeffself_x;
-	p_invcoeffselfy[iMinor] = invcoeffself_y;
+	if (p_invmatrix != 0) {
+		memcpy(&(p_invmatrix[iMinor]), &invmatrix, sizeof(Tensor2));
+		p_invcoeffselfviz[iMinor] = invcoeffselfviz;
+		p_invcoeffselfvez[iMinor] = invcoeffselfvez;
+		p_invcoeffselfx[iMinor] = invcoeffself_x;
+		p_invcoeffselfy[iMinor] = invcoeffself_y;
+	};
 }
  
 
@@ -13344,6 +13350,8 @@ __global__ void kernelCreateDByDBetaCoeffmatrix2(
 
 	nvals * __restrict__ p_n_minor,
 	f64 * __restrict__ p_AreaMinor,
+	f64 * __restrict__ p_ROC_i,
+	f64 * __restrict__ p_ROC_e,
 
 	f64_vec2 * __restrict__ p_epsxy,
 	f64 * __restrict__ p_epsiz,
@@ -15019,6 +15027,50 @@ __global__ void kernelCreate_v_k_modified_with_fixed_flows(
 	};	
 }
 
+
+__global__ void kernelAssign_d_eps_by_dMAR(
+	f64 const hsub,
+	structural * __restrict__ p_info_minor,
+	nvals * __restrict__ p_n_minor,
+	f64 * __restrict__ p_AreaMinor,
+	f64 * __restrict__ p_nu_in_MT_minor,
+	f64 * __restrict__ p_nu_en_MT_minor,
+	f64 * __restrict__ p_ROC_i,
+	f64 * __restrict__ p_ROC_e,
+	int * __restrict__ p_Select
+) {
+	long const iMinor = blockDim.x * blockIdx.x + threadIdx.x;
+
+	if (p_Select[iMinor] == 0) return;
+
+	f64 ROC_e, ROC_i; 
+	nvals n_use = p_n_minor[iMinor];
+	f64 N = p_AreaMinor[iMinor] * n_use.n;
+	f64 sqrtN = sqrt(N);
+
+	// do not forget *sqrtN : this is how this factor is to be used.
+	
+	// epsilon.vez = sqrtN*(vie.vez - vie_k.vez) + ROC_e * MAR_elec.z;
+
+#if DECAY_IN_VISC_EQNS
+	
+	f64 nu_in_MT = p_nu_in_MT_minor[iMinor];
+	f64 nu_en_MT = p_nu_en_MT_minor[iMinor];
+
+	f64 ratio_nn_ntot = n_use.n_n / (n_use.n_n + n_use.n);
+
+	ROC_e = -hsub / (sqrtN + sqrtN*FACTOR_DECAY*hsub*nu_en_MT*ratio_nn_ntot);
+	ROC_i = -hsub / (sqrtN + sqrtN*0.5*FACTOR_DECAY*hsub*nu_in_MT*ratio_nn_ntot);
+#else
+	 ROC_e = -hsub / sqrtN;
+	 ROC_i = -hsub / sqrtN;
+#endif
+
+	 p_ROC_i[iMinor] = ROC_i;
+	 p_ROC_e[iMinor] = ROC_e;
+}
+
+
 __global__ void kernelCreateEpsilon_Visc(
 	f64 const hsub,
 	structural * __restrict__ p_info_minor,
@@ -15029,8 +15081,13 @@ __global__ void kernelCreateEpsilon_Visc(
 	f64_vec3 * __restrict__ p_MAR_elec__,
 	nvals * __restrict__ p_n_minor,
 	f64 * __restrict__ p_AreaMinor,
-	f64 * __restrict__ p_nu_in_MT_minor,
-	f64 * __restrict__ p_nu_en_MT_minor,
+
+
+	f64 * __restrict__ p_ROC_i,
+	f64 * __restrict__ p_ROC_e,
+
+	//f64 * __restrict__ p_nu_in_MT_minor,
+	//f64 * __restrict__ p_nu_en_MT_minor,
 
 	f64_vec2 * __restrict__ p_epsilon_xy,
 	f64 * __restrict__ p_epsilon_iz,
@@ -15071,57 +15128,48 @@ __global__ void kernelCreateEpsilon_Visc(
 
 		f64 sqrtN = sqrt(N);
 
-#if DECAY_IN_VISC_EQNS
-		// Now introduce decay factor.
-
 		// We want to anticipate that v will decay.
-
 		// Therefore take
 		f64_vec3 v_n_k = p_v_n_k[iMinor];
 		// v_k+1 target = (v_k + h/N MAR(k+1) - vnk)/(1+h nu mn/(ms+mn) nn/ntot)+vnk
-		f64 nu_in_MT = p_nu_in_MT_minor[iMinor];
-		f64 nu_en_MT = p_nu_en_MT_minor[iMinor];
+		//f64 nu_in_MT = p_nu_in_MT_minor[iMinor];
+		//f64 nu_en_MT = p_nu_en_MT_minor[iMinor];
 
-		f64 ratio_nn_ntot = n_use.n_n / (n_use.n_n + n_use.n);
+		//f64 ratio_nn_ntot = n_use.n_n / (n_use.n_n + n_use.n);
+
+		f64 ROC_i = p_ROC_i[iMinor];
+		f64 ROC_e = p_ROC_e[iMinor];
 
 		//epsilon.vez = sqrtN*(vie.vez - v_n_k.z - (vie_k.vez + hsub*(MAR_elec.z) / N - v_n_k.z) /
 		//	(1.0 + hsub*nu_en_MT*ratio_nn_ntot)
 		//	);
 
 
-
 		// Let's think about it
-
 		// We would like to involve v_n back in again. It works better without than by assuming vk would be crushed.
 		// But we can involve in a sophisticated way.
 
-		// 
+		// !! Note in document.
 
+		epsilon.vez = sqrtN*(vie.vez - vie_k.vez) + ROC_e * MAR_elec.z;
 
+		f64_vec2 putative = ((MAR_ion.xypart()*m_ion + MAR_elec.xypart()*m_e) /
+			(m_ion + m_e));
+			
+		//hsub*((MAR_ion.xypart()*m_ion + MAR_elec.xypart()*m_e) /
+		//((m_ion + m_e)*N));
 
-		epsilon.vez = sqrtN*(vie.vez - vie_k.vez - hsub*(MAR_elec.z)  /
-								(N + N*FACTOR_DECAY*hsub*nu_en_MT*ratio_nn_ntot)
-			);
-		f64_vec2 putative = hsub*((MAR_ion.xypart()*m_ion + MAR_elec.xypart()*m_e) /
-			((m_ion + m_e)*N));
 		epsilon.vxy = sqrtN*
-			(vie.vxy - vie_k.vxy - (putative) /
-								(1.0 + FACTOR_DECAY*0.5*hsub*nu_in_MT*ratio_nn_ntot)
-				);
-		epsilon.viz = sqrtN*
-			(vie.viz //- v_n_k.z
-				- vie_k.viz - hsub*MAR_ion.z /
-				(N + N*FACTOR_DECAY*0.5*hsub*nu_in_MT*ratio_nn_ntot)
-				); // 0.5 for m_n/(m_n+m_i)
-#else
+			(vie.vxy - vie_k.vxy) + putative*ROC_i;
+		
+		//-(putative) /	(1.0 + FACTOR_DECAY*0.5*hsub*nu_in_MT*ratio_nn_ntot)
+				
+		epsilon.viz = sqrtN* (vie.viz //- v_n_k.z
+						- vie_k.viz) + MAR_ion.z*ROC_i;
+			//- hsub*MAR_ion.z /
+			//	(N + N*FACTOR_DECAY*0.5*hsub*nu_in_MT*ratio_nn_ntot)
+				 // 0.5 for m_n/(m_n+m_i)
 
-		epsilon.vxy = sqrtN*(vie.vxy - vie_k.vxy
-			- hsub*((MAR_ion.xypart()*m_ion + MAR_elec.xypart()*m_e) /
-			((m_ion + m_e)*N)));
-		epsilon.viz = sqrtN*(vie.viz - vie_k.viz - hsub*(MAR_ion.z / N));
-		epsilon.vez = sqrtN*(vie.vez - vie_k.vez - hsub*(MAR_elec.z / N));
-
-#endif
 #endif
 
 	//	if (TEST_EPSILON_X_MINOR)
@@ -15222,24 +15270,149 @@ __global__ void kernelCreateEpsilon_Visc(
 #define FACTOR_C 1.0e13
 			// STEPPED UP FROM 1e12
 
-			if (epsilon.vxy.x*epsilon.vxy.x > RELPPN*hsub*hsub*mix.x*mix.x/N
-				+ FACTOR_C*hsub*FACTOR_C*hsub) bFail = true;
-			if (epsilon.vxy.y*epsilon.vxy.y > RELPPN*hsub*hsub*mix.y*mix.y/N
-				+ FACTOR_C*hsub*FACTOR_C*hsub) bFail = true;
+
+			// ie sqrtN putative/factor has to be close to sqrtN(vie-vie_k)
+
+			// OK -- did we ever take account of FACTOR_DECAY when we anticipated deps/dbeta? yes
+
+			// Now suppose v-v_k < 0
+			// We allow for any putative/factor that is between 0 and v-v_k
+			// That means epsilon < 0 as v-v_k is greater in magnitude
+			// But epsilon > sqrtN v-vk as putative < 0
+			// e.g. epsilon = -5 - (-3) = -2
+
+			// whereas if v-v_k > 0
+			// We allow for any putative/factor that is between 0 and v-v_k
+			// That means epsilon > 0 as v-v_k is greater in magnitude
+			// But epsilon < SQRTN v-vk as putation > 0
+			// So basically epsilon lies between 0 and sqrtN v-v_k
+
+			if ((epsilon.vxy.x*epsilon.vxy.x > RELPPN*hsub*hsub*mix.x*mix.x / N
+				+ FACTOR_C*hsub*FACTOR_C*hsub)
+			
+				&&			
+
+#ifdef LIBERALIZED_VISC_SOLVER
+			// We do not fail if we pass the liberalized test:
+			// Accept move if MAR is within where backward thinks it should be, and 0.
+
+				// Now suppose v-v_k < 0
+				// We allow for any putative/factor that is between 0 and v-v_k
+				// That means epsilon < 0 as v-v_k is greater in magnitude
+				// But epsilon > sqrtN v-vk as putative < 0
+				// e.g. epsilon = -5 - (-3) = -2
+				(
+					(
+				(vie.vxy.x > vie_k.vxy.x) && 					
+				((epsilon.vxy.x < 0.0) || (putative.x < 0.0))					
+					) || (
+				(vie.vxy.x < vie_k.vxy.x) &&
+				((epsilon.vxy.x > 0.0) || (putative.x > 0.0))
+					)
+				)
+#else 
+				(1)
+#endif
+				)
+				bFail = true;
+
+			if ((epsilon.vxy.y*epsilon.vxy.y > RELPPN*hsub*hsub*mix.y*mix.y/N
+				+ FACTOR_C*hsub*FACTOR_C*hsub)
+				&&
+#ifdef LIBERALIZED_VISC_SOLVER
+				// We do not fail if we pass the liberalized test:
+				// Accept move if MAR is within where backward thinks it should be, and 0.
+
+				// Now suppose v-v_k < 0
+				// We allow for any putative/factor that is between 0 and v-v_k
+				// That means epsilon < 0 as v-v_k is greater in magnitude
+				// But epsilon > sqrtN v-vk as putative < 0
+				// e.g. epsilon = -5 - (-3) = -2
+				(
+				(
+					(vie.vxy.y > vie_k.vxy.y) &&
+					((epsilon.vxy.y < 0.0) || (putative.y < 0.0))
+					) || (
+					(vie.vxy.y < vie_k.vxy.y) &&
+					((epsilon.vxy.y > 0.0) || (putative.y > 0.0))
+					)
+				)
+#else 
+				(1)
+#endif
+				)
+				bFail = true;
 
 			// whoa having to use braincells, could we just have put difference in sqrt N * 
 
-			if (epsilon.viz*epsilon.viz > RELPPN*hsub*hsub*MAR_ion.z*MAR_ion.z / N
-				+ FACTOR_C*hsub*FACTOR_C*hsub) bFail = true;
-			if (epsilon.vez*epsilon.vez > RELPPN*hsub*hsub*MAR_elec.z*MAR_elec.z/N
-				+ FACTOR_C*hsub*FACTOR_C*hsub) bFail = true;
+			if ( (epsilon.viz*epsilon.viz > RELPPN*hsub*hsub*MAR_ion.z*MAR_ion.z / N
+				+ FACTOR_C*hsub*FACTOR_C*hsub) 
+
+				&&
+
+#ifdef LIBERALIZED_VISC_SOLVER
+				// We do not fail if we pass the liberalized test:
+				// Accept move if MAR is within where backward thinks it should be, and 0.
+
+				// Now suppose v-v_k < 0
+				// We allow for any putative/factor that is between 0 and v-v_k
+				// That means epsilon < 0 as v-v_k is greater in magnitude
+				// But epsilon > sqrtN v-vk as putative < 0
+				// e.g. epsilon = -5 - (-3) = -2
+				(
+					(
+					(vie.viz > vie_k.viz) &&
+					((epsilon.viz < 0.0) || (MAR_ion.z < 0.0))
+					) || (
+					(vie.viz < vie_k.viz) &&
+					((epsilon.viz > 0.0) || (MAR_ion.z > 0.0))
+					)
+				)
+#else 
+				(1)
+#endif
+				)
+				bFail = true;
+
+			if ((epsilon.vez*epsilon.vez > RELPPN*hsub*hsub*MAR_elec.z*MAR_elec.z/N
+				+ FACTOR_C*hsub*FACTOR_C*hsub) 
+
+				&&
+
+#ifdef LIBERALIZED_VISC_SOLVER
+				// We do not fail if we pass the liberalized test:
+				// Accept move if MAR is within where backward thinks it should be, and 0.
+
+				// Now suppose v-v_k < 0
+				// We allow for any putative/factor that is between 0 and v-v_k
+				// That means epsilon < 0 as v-v_k is greater in magnitude
+				// But epsilon > sqrtN v-vk as putative < 0
+				// e.g. epsilon = -5 - (-3) = -2
+				(
+				(
+					(vie.vez > vie_k.vez) &&
+					((epsilon.vez < 0.0) || (MAR_elec.z < 0.0))
+					) || (
+					(vie.vez < vie_k.vez) &&
+					((epsilon.vez > 0.0) || (MAR_elec.z > 0.0))
+					)
+				)
+#else 
+				(1)
+#endif
+				)				
+				bFail = true;
 			
 			// we multiplied target by sqrtN*sqrtN.
 
-			if (epsmixz*epsmixz > RELPPN*hsub*hsub*mix.z*mix.z/N
-				+ FACTOR_C*hsub*FACTOR_C*hsub) bFail = true;
+		//	if (epsmixz*epsmixz > RELPPN*hsub*hsub*mix.z*mix.z/N
+		//		+ FACTOR_C*hsub*FACTOR_C*hsub) bFail = true;
+			// That serves no obvious purpose, we have fail tests for viz and vez individually.
+
+#ifndef LIBERALIZED_VISC_SOLVER
 			if (epsilon.vxy.dot(epsilon.vxy) > RELPPN*hsub*hsub*mix.dotxy(mix)/N
 				+ FACTOR_C*hsub*FACTOR_C*hsub) bFail = true;
+#endif
 			
 #endif
 			// We allow a 0.1-1% deviation from trajectory over time.
@@ -15480,14 +15653,62 @@ __global__ void kernelCreateEpsilon_NeutralVisc(
 			// after 1.0e-7 it's gained spuriously 1e2 cm/s. But not really because it's still a zero-sum when we do flows.
 
 			if (epsilon.x*epsilon.x > 0.0001*(hsub*hsub / (N*N))*MAR_neut.x*MAR_neut.x
-				+ ALLOWABLE_v_DRIFT_RATE*hsub*ALLOWABLE_v_DRIFT_RATE*hsub) bFail = true;
-			if (epsilon.y*epsilon.y > 0.0001*(hsub*hsub / (N*N))*MAR_neut.y*MAR_neut.y
-				+ ALLOWABLE_v_DRIFT_RATE*hsub*ALLOWABLE_v_DRIFT_RATE*hsub) bFail = true;
-			if (epsilon.z*epsilon.z > 0.0001*(hsub*hsub / (N*N))*MAR_neut.z*MAR_neut.z
-				+ ALLOWABLE_v_DRIFT_RATE*hsub*ALLOWABLE_v_DRIFT_RATE*hsub) bFail = true;
+				+ ALLOWABLE_v_DRIFT_RATE*hsub*ALLOWABLE_v_DRIFT_RATE*hsub) {
 
+#ifdef LIBERALIZED_VISC_SOLVER
+				if (
+					(	
+						((v_n.x > v_n_k.x) && 
+							((epsilon.x < 0.0) || (MAR_neut.x < 0.0))
+						)
+					) || (
+						((v_n.x < v_n_k.x) && 
+							((epsilon.x > 0.0) || (MAR_neut.x > 0.0))
+						)
+					)
+				   )
+#endif
+				bFail = true;
+			}
+			if (epsilon.y*epsilon.y > 0.0001*(hsub*hsub / (N*N))*MAR_neut.y*MAR_neut.y
+				+ ALLOWABLE_v_DRIFT_RATE*hsub*ALLOWABLE_v_DRIFT_RATE*hsub) {
+#ifdef LIBERALIZED_VISC_SOLVER
+				if (
+					(
+					((v_n.y > v_n_k.y) &&
+						((epsilon.y < 0.0) || (MAR_neut.y < 0.0))
+						)
+						) || (
+						((v_n.y < v_n_k.y) &&
+							((epsilon.y > 0.0) || (MAR_neut.y > 0.0))
+							)
+							)
+					)
+#endif
+				bFail = true;
+			};
+			if (epsilon.z*epsilon.z > 0.0001*(hsub*hsub / (N*N))*MAR_neut.z*MAR_neut.z
+				+ ALLOWABLE_v_DRIFT_RATE*hsub*ALLOWABLE_v_DRIFT_RATE*hsub) {
+#ifdef LIBERALIZED_VISC_SOLVER
+				if (
+					(
+					((v_n.z > v_n_k.z) &&
+						((epsilon.z < 0.0) || (MAR_neut.z < 0.0))
+						)
+						) || (
+						((v_n.z < v_n_k.z) &&
+							((epsilon.z > 0.0) || (MAR_neut.z > 0.0))
+							)
+							)
+					)
+#endif
+				bFail = true;
+			};
+
+#ifndef LIBERALIZED_VISC_SOLVER
 			if (epsilon.dot(epsilon) > (0.00001*(hsub*hsub / (N*N))*MAR_neut.dot(MAR_neut)
 				+ ALLOWABLE_v_DRIFT_RATE*hsub*ALLOWABLE_v_DRIFT_RATE*hsub)) bFail = true;
+#endif
 
 			if ((bFail) && (bSwitch)) printf("%d eps %1.8E %1.8E %1.8E h/N MAR %1.8E %1.8E %1.8E Thr %1.8E\n",
 				iMinor, epsilon.x, epsilon.y, epsilon.z,

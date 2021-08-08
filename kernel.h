@@ -320,6 +320,7 @@ kernelPopulateRegressors_from_iRing_RHS
 	f64 * __restrict__ p_solution,
 	int const whicRing);
 
+
 __global__ void kernelCreateEquations(
 	f64 const hsub,
 	structural * __restrict__ p_info_minor,
@@ -328,6 +329,8 @@ __global__ void kernelCreateEquations(
 
 	nvals * __restrict__ p_n_minor,
 	f64 * __restrict__ p_AreaMinor,
+	f64 * __restrict__ p_ROC_i,
+	f64 * __restrict__ p_ROC_e,
 
 	long * __restrict__ p_Indexneigh_tri,
 	long * __restrict__ p_izTri_vert,
@@ -339,7 +342,6 @@ __global__ void kernelCreateEquations(
 	f64 * __restrict__ p_eps_ez,
 	f64 * __restrict__ pRHS
 );
-
 
 __global__ void
 // __launch_bounds__(128) -- manual says that if max is less than 1 block, kernel launch will fail. Too bad huh.
@@ -420,8 +422,8 @@ __global__ void kernelCreateEpsilon_Visc(
 	f64_vec3 * __restrict__ p_MAR_elec__,
 	nvals * __restrict__ p_n_minor,
 	f64 * __restrict__ p_AreaMinor,
-	f64 * __restrict__ p_nu_in_MT_minor,
-	f64 * __restrict__ p_nu_en_MT_minor,
+	f64 * __restrict__ p_ROC_i,
+	f64 * __restrict__ p_ROC_e,
 
 	f64_vec2 * __restrict__ p_epsilon_xy,
 	f64 * __restrict__ p_epsilon_iz,
@@ -903,6 +905,18 @@ __global__ void kernelCreate_neutral_viscous_contrib_to_MAR_and_NT_Geometric(
 	NTrates * __restrict__ p_NT_addition_tri,
 	int * __restrict__ p_Select);
 
+__global__ void kernelAssign_d_eps_by_dMAR(
+	f64 const hsub,
+	structural * __restrict__ p_info_minor,
+	nvals * __restrict__ p_n_minor,
+	f64 * __restrict__ p_AreaMinor,
+	f64 * __restrict__ p_nu_in_MT_minor,
+	f64 * __restrict__ p_nu_en_MT_minor,
+	f64 * __restrict__ p_ROC_i,
+	f64 * __restrict__ p_ROC_e,
+	int * __restrict__ p_Select
+);
+
 __global__ void Multiply_components_xy // c=b-a
 (f64_vec2 * __restrict__ p_result,
 	f64_vec2 * __restrict__ p_multiplicand_1,
@@ -918,8 +932,8 @@ __global__ void kernelComputeCombinedDEpsByDBeta(
 	f64_vec3 * __restrict__ p_MAR_elec2,
 	nvals * __restrict__ p_n_minor,
 	f64 * __restrict__ p_AreaMinor,
-	f64 * __restrict__ p_nu_in_MT_minor,
-	f64 * __restrict__ p_nu_en_MT_minor,
+	f64 * __restrict__ p_ROC_i,
+	f64 * __restrict__ p_ROC_e,
 	f64_vec2 * __restrict__ p_Depsilon_xy,
 	f64 * __restrict__ p_Depsilon_iz,
 	f64 * __restrict__ p_Depsilon_ez
@@ -939,8 +953,8 @@ __global__ void kernelCreateDByDBetaCoeffmatrix(
 
 	nvals * __restrict__ p_n_minor,
 	f64 * __restrict__ p_AreaMinor,
-	f64 * __restrict__ p_nu_in_MT_minor,
-	f64 * __restrict__ p_nu_en_MT_minor,
+	f64 * __restrict__ p_ROC_i,
+	f64 * __restrict__ p_ROC_e,
 
 	f64_vec2 * __restrict__ p_epsxy,
 	f64 * __restrict__ p_epsiz,
@@ -2446,6 +2460,20 @@ __global__ void kernelCountNumberMoreThanZero(
 	int * __restrict__ p_thing2,
 	long * __restrict__ p_blocktot1,
 	long * __restrict__ p_blocktot2);
+
+__global__ void BreakDownT3(
+	f64 * __restrict__ p_Tn,
+	f64 * __restrict__ p_Ti,
+	f64 * __restrict__ p_Te,
+	T3 * __restrict__ p_Tmove);
+
+__global__ void kernelCombineEquations
+(
+	f64 * __restrict__ p_eqns_, 
+	f64 * __restrict__ p_RHS_,
+	f64 * __restrict__ p_eqns_big_, 
+	f64 * __restrict__ p_RHS_big_
+	);
 
 __global__ void ReportNaNs(v4 * __restrict__ p_v, bool * bAlert);
 __global__ void kernelDivideBySqrtN(

@@ -25,8 +25,8 @@ bool const bScrewPinch = false;
 int const NUMAVI = 9;
 #define FOLDER L"C:/outputs/"
 #define FOLDER2 "C:/outputs/"
-#define INITIALAVI "0.avi"		
-#define INITIALMP4 L"0.mp4"
+#define INITIALAVI "10250a.avi"		
+#define INITIALMP4 L"10250a.mp4"
 #define STORYFILE "temp.txt"
 #define STORYFILE2 "temp2.txt"
 

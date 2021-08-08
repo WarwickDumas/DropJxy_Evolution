@@ -4,23 +4,24 @@
  
 #pragma once     
 #include "switches.h" // defines AZCG
-  
 #include <cusolverDn.h>
-
+ 
 #define LAPACKE
 #define PRECISE_VISCOSITY 
 #define DEBUGTE               0
 #define SQRTNT           1
 #define SQRTNV 
+#define EQNS_TOTAL 1024
+#define INNER_EQNS 512   // half inside, half outside
+#define MAXRINGS    48
+#define MAXRINGLEN  1024  // Note that this is also the max # on the periphery.
 
-#define EQNS_TOTAL 256
- 
+
 #include <stdlib.h>
 #include <stdio.h> 
 #include <math.h>
 #include <time.h>
 #include <windows.h>  
-
 //#include "lapacke.h" 
 
 #include "mesh.h" 
@@ -50,7 +51,6 @@ extern TriMesh X4;
 #define CHOSEN 52233
 #define CHOSEN1 14332
 #define CHOSEN2 14334 
-
 
 #define VERTCHOSEN 26084
 // 17906  // 26081 // 22026 // 16196
@@ -118,6 +118,8 @@ long iHistoryVN = 0;
 long VERTS[3] = {15559, 15405, 15251};
 long iEquations[3];
   
+long iHistoricCounter = 0;
+
 extern long NumInnerFrills, FirstOuterFrill;
 __constant__ long NumInnerFrills_d, FirstOuterFrill_d;
 __constant__ long DebugFlag;
@@ -148,6 +150,8 @@ __constant__ f64 UNIFORM_n_d;
 __constant__ f64 cross_s_vals_viscosity_ni_d[10], cross_s_vals_viscosity_nn_d[10],
                  cross_T_vals_d[10], cross_s_vals_MT_ni_d[10];
 __constant__ f64 beta_n_c[32], beta_i_c[8], beta_e_c[8];
+__constant__ long iEqnsDevice, ActualInnerEqnsDevice;
+
 __constant__ bool bSwitch = false;
 __constant__ f64 recomb_coeffs[32][3][5];
 f64 recomb_coeffs_host[32][3][5];
@@ -178,6 +182,10 @@ extern cuSyst cuSyst_host;
 // This time around find another way to populate.
 // We do need a temporary such object in the routine where we populate the device one.
 // I guess as before we want an InvokeHost routine because of that.
+
+__device__ f64 * p_d_eps_by_d_MAR_i;
+__device__ f64 * p_d_eps_by_d_MAR_e;
+
 __device__ real * p_summands, *p_Iz0_summands, *p_Iz0_initial, *p_scratch_d;
 f64 * p_summands_host, *p_Iz0_summands_host, *p_Iz0_initial_host;
 __device__ f64 * p_temp1, *p_temp2, *p_temp3, *p_temp4,*p_temp5, *p_temp6, *p_denom_i, *p_denom_e, *p_coeff_of_vez_upon_viz, *p_beta_ie_z;
@@ -203,12 +211,17 @@ __device__ long * p_blockTotal1, long * p_blockTotal2;
 long *p_longtemphost2;
 int * p_inthost;
 
-__device__ v4 * p_historic_v_moves[NUM_HISTORIC+1]; 
+__device__ v4 * p_historic_v_moves[NUM_HISTORIC]; 
+__device__ f64_vec3 * p_historic_vn_moves[NUM_HISTORIC];
+__device__ f64 * p_historic_Tn_moves[NUM_HISTORIC];
+__device__ f64 * p_historic_Ti_moves[NUM_HISTORIC];
+__device__ f64 * p_historic_Te_moves[NUM_HISTORIC];
+
 __device__ f64 * p_nu_en_MT, *p_nu_in_MT;
 
-__device__ f64 * d_B, * p_eqns, * p_eqns2;
+__device__ f64 * d_B, * p_eqns, *p_eqns_big, * p_eqns2;
 __device__ int * d_Ipiv512, *d_info;
-__device__ f64 * p_RHS;
+__device__ f64 * p_RHS, * p_RHS_big;
 __device__ f64_vec2 * p_regrlc2;
 __device__ f64 * p_regrlc_iz;
 __device__ f64 * p_regrlc_ez;
@@ -4826,7 +4839,6 @@ int RunBwdRnLSForHeat(f64 * p_T_k, f64 * p_T, f64 hsub,
 		long iTile, i;
 
 		int iIteration = 0;
-
 		f64 tempdebug;
 		Vertex * pVertex;
 		long iVertex;
@@ -4838,8 +4850,7 @@ int RunBwdRnLSForHeat(f64 * p_T_k, f64 * p_T, f64 hsub,
 		if (species == 0) SetConsoleTextAttribute(hConsole, 14);
 		if (species == 1) SetConsoleTextAttribute(hConsole, 10);
 		if (species == 2) SetConsoleTextAttribute(hConsole, 15); // 12= red 11=cyan
-
-
+		
 		// We enter this routine with p_regressors + 7*NUMVERTICES already set up as a historic regressor.
 
 		// Hang on.
@@ -4850,7 +4861,6 @@ int RunBwdRnLSForHeat(f64 * p_T_k, f64 * p_T, f64 hsub,
 		CallMAC(cudaMemset(p_Ax, 0, sizeof(f64)*NUMVERTICES*REGRESSORS));
 		CallMAC(cudaMemset(p_epsilon, 0, sizeof(f64)*NUMVERTICES));
 		cudaMemset(zerovec1, 0, sizeof(f64)*NUMVERTICES);
-
 		printf("iEquations[%d] %d\n", species, iEquations[species]);
 
 		if (iEquations[species] <= REGRESSORS) {
@@ -4860,7 +4870,6 @@ int RunBwdRnLSForHeat(f64 * p_T_k, f64 * p_T, f64 hsub,
 
 			// CPU search for which elements and put them into a list.
 			long equationindex[REGRESSORS];
-
 			cudaMemcpy(p_boolhost, p_boolarray2 + species*NUMVERTICES, sizeof(bool)*NUMVERTICES, cudaMemcpyDeviceToHost);
 
 			long iCaret = 0;
@@ -4875,8 +4884,7 @@ int RunBwdRnLSForHeat(f64 * p_T_k, f64 * p_T, f64 hsub,
 			if (iCaret != iEquations[species]) {
 				printf("(iCaret != iEquations[species])\n");
 				getch(); getch(); getch(); getch(); getch(); return 1000;
-			}
-			else {
+			} else {
 				//	printf("iCaret %d iEquations[%d] %d \n", iCaret, species, iEquations[species]);
 			}
 
@@ -4885,16 +4893,10 @@ int RunBwdRnLSForHeat(f64 * p_T_k, f64 * p_T, f64 hsub,
 				cudaMemcpy(p_regressors + i*NUMVERTICES + equationindex[i], &one, sizeof(f64), cudaMemcpyHostToDevice);
 			};
 			// Then we want to fall out of branch into creating Ax.
-
 			// And we want to make sure we construct the matrix with ID & 0 RHS for the unused equations.
-
 			// Solution should be exact but then we can let it fall out of loop naturally?
-
 			// Leave this as done and just skip regressor creation.
-
-		} else {
-
-		};
+		} else {};
 		 
 		char buffer[256];
 		char o = '4';
@@ -5372,6 +5374,58 @@ int RunBwdRnLSForHeat(f64 * p_T_k, f64 * p_T, f64 hsub,
 						);
 					Call(cudaThreadSynchronize(), "cudaTS volley regressors");
 				};
+
+				// Historic seeds:
+				if ((iIteration == 0) && (iEquations[species] > REGRESSORS)) {
+
+					long j = (iHistoricCounter < REGRESSORS)?iHistoricCounter:REGRESSORS;
+					for (i = 0; i < j; i++)
+					{
+						if (species == 0) {
+							cudaMemcpy(p_regressors + (REGRESSORS - i - 1)*NUMVERTICES, p_historic_Tn_moves[i], sizeof(f64)*NUMVERTICES, cudaMemcpyDeviceToDevice);
+						};
+						if (species == 1) {
+							cudaMemcpy(p_regressors + (REGRESSORS - i - 1)*NUMVERTICES, p_historic_Ti_moves[i], sizeof(f64)*NUMVERTICES, cudaMemcpyDeviceToDevice);
+						};
+						if (species == 2) {
+							cudaMemcpy(p_regressors + (REGRESSORS - i - 1)*NUMVERTICES, p_historic_Te_moves[i], sizeof(f64)*NUMVERTICES, cudaMemcpyDeviceToDevice);
+						};
+						 
+						CallMAC(cudaMemset(p_Ax + (REGRESSORS - i - 1)*NUMVERTICES, 0, sizeof(f64)*NUMVERTICES));
+						kernelAccumulateDiffusiveHeatRateROC_wrt_regressor_1species_Geometric <<< numTilesMajorClever, threadsPerTileMajorClever >>>
+							(
+								pX_use->p_info,
+								pX_use->p_izNeigh_vert,
+								pX_use->p_szPBCneigh_vert,
+								pX_use->p_izTri_vert,
+								pX_use->p_szPBCtri_vert,
+								pX_use->p_cc,
+								pX_use->p_n_major,
+								p_T,  // evaluation point
+								hsub,
+								p_regressors + (REGRESSORS - i - 1)*NUMVERTICES, // proposed direction
+																//p_regressors + (i - 1)*NUMVERTICES, // input as T
+								pX_use->p_B + BEGINNING_OF_CENTRAL, // NEED POPULATED
+								p_kappa,
+								p_nu,
+								p_Ax + (REGRESSORS - i - 1)*NUMVERTICES, // output = deps/dbeta
+								pX_use->p_AreaMajor,
+								p_boolarray2 + NUMVERTICES*species,
+								p_boolarray_block,
+								bUseMask,
+								species);
+
+						//KillOutsideRegion()
+
+
+						// GOING TO NEED TO MAKE A CHANGE HERE TO BRING BACK MASKING.
+
+
+						// used for epsilon (T)
+						Call(cudaThreadSynchronize(), "cudaTS kernelAccumulateDiffusiveHeatRateROC_wrt_regressor_1species_Geometric ");
+					};					
+				};
+
 
 				if ((iEquations[species] <= REGRESSORS) || (bUseVolleys)) {
 					cudaMemset(p_Ax, 0, sizeof(f64)*NUMVERTICES*REGRESSORS);
@@ -8975,7 +9029,8 @@ void RunBackwardJLSForViscosity(v4 * p_vie_k, v4 * p_vie, f64 const hsub, cuSyst
 			p_MAR_ion2, p_MAR_elec2,
 
 			pX_use->p_n_minor,
-			pX_use->p_AreaMinor, p_nu_in_MT, p_nu_en_MT,
+			pX_use->p_AreaMinor, p_d_eps_by_d_MAR_i,
+			p_d_eps_by_d_MAR_e,
 
 			p_epsilon_xy, 
 			p_epsilon_iz, 
@@ -9072,7 +9127,8 @@ void RunBackwardJLSForViscosity(v4 * p_vie_k, v4 * p_vie, f64 const hsub, cuSyst
 
 			pX_use->p_n_minor,
 			pX_use->p_AreaMinor,
-
+			p_d_eps_by_d_MAR_i,
+			p_d_eps_by_d_MAR_e,
 			p_d_epsilon_xy_dbeta1,
 			p_d_epsilon_iz_dbeta1,
 			p_d_epsilon_ez_dbeta1,
@@ -9130,7 +9186,8 @@ void RunBackwardJLSForViscosity(v4 * p_vie_k, v4 * p_vie, f64 const hsub, cuSyst
 			p_MAR_ion3, 
 			p_MAR_elec3,
 			pX_use->p_n_minor,
-			pX_use->p_AreaMinor, p_nu_in_MT, p_nu_en_MT,
+			pX_use->p_AreaMinor, p_d_eps_by_d_MAR_i,
+			p_d_eps_by_d_MAR_e,
 			// It affects all 4 errors.
 			p_d_epsxy_by_d_beta_i,
 			p_d_eps_iz_by_d_beta_i,
@@ -9178,7 +9235,8 @@ void RunBackwardJLSForViscosity(v4 * p_vie_k, v4 * p_vie, f64 const hsub, cuSyst
 			p_MAR_ion3,
 			p_MAR_elec3,
 			pX_use->p_n_minor,
-			pX_use->p_AreaMinor, p_nu_in_MT, p_nu_en_MT,
+			pX_use->p_AreaMinor, p_d_eps_by_d_MAR_i,
+			p_d_eps_by_d_MAR_e,
 			// It affects all 4 errors.
 			p_d_epsxy_by_d_beta_e,
 			p_d_eps_iz_by_d_beta_e,
@@ -9852,7 +9910,8 @@ void RunBackwardR8LSForViscosity(v4 * p_vie_k, v4 * p_vie, f64 const hsub, cuSys
 		p_MAR_ion2, p_MAR_elec2,
 
 		pX_use->p_n_minor,
-		pX_use->p_AreaMinor, p_nu_in_MT, p_nu_en_MT,
+		pX_use->p_AreaMinor, p_d_eps_by_d_MAR_i,
+		p_d_eps_by_d_MAR_e,
 
 		p_epsilon_xy,
 		p_epsilon_iz,
@@ -10038,7 +10097,8 @@ void RunBackwardR8LSForViscosity(v4 * p_vie_k, v4 * p_vie, f64 const hsub, cuSys
 				p_MAR_ion2, p_MAR_elec2,
 
 				pX_use->p_n_minor,
-				pX_use->p_AreaMinor, p_nu_in_MT, p_nu_en_MT,
+				pX_use->p_AreaMinor, p_d_eps_by_d_MAR_i,
+				p_d_eps_by_d_MAR_e,
 
 				p_d_epsxy_by_d_beta_i + i*NMINOR,
 				p_d_eps_iz_by_d_beta_i + i*NMINOR,
@@ -10276,7 +10336,8 @@ void RunBackwardR8LSForViscosity(v4 * p_vie_k, v4 * p_vie, f64 const hsub, cuSys
 			pX_use->p_v_n, // will do for now
 			p_MAR_ion2, p_MAR_elec2,
 			pX_use->p_n_minor,
-			pX_use->p_AreaMinor, p_nu_in_MT, p_nu_en_MT,
+			pX_use->p_AreaMinor, p_d_eps_by_d_MAR_i,
+			p_d_eps_by_d_MAR_e,
 			p_epsilon_xy,
 			p_epsilon_iz,
 			p_epsilon_ez,
@@ -11546,49 +11607,10 @@ void RunBackward8LSForNeutralViscosity_Geometric(f64_vec3 * p_v_n_k, f64_vec3 * 
 			0, 1);// Z_ONLY
 			*/
 
-		if ((iHistoryNeutVisc > 1) || (iIteration > 1)) {
-
-			cudaMemcpy(p_regressors2 + NMINOR * 7, p_stored_move_neut_xy, sizeof(f64_vec2)*NMINOR, cudaMemcpyDeviceToDevice);
-			cudaMemcpy(p_regressors_iz + NMINOR * 7, p_stored_move_neut_z, sizeof(f64)*NMINOR, cudaMemcpyDeviceToDevice);
-			//cudaMemcpy(p_regressors2 + NMINOR * 6, p_stored_move_neut_xy, sizeof(f64_vec2)*NMINOR, cudaMemcpyDeviceToDevice);
-			//cudaMemcpy(p_regressors_iz + NMINOR * 7, p_stored_move_neut_z, sizeof(f64)*NMINOR, cudaMemcpyDeviceToDevice);
-			cudaMemcpy(p_regressors2 + NMINOR * 6, p_stored_move_neut_xy2, sizeof(f64_vec2)*NMINOR, cudaMemcpyDeviceToDevice);
-			cudaMemcpy(p_regressors_iz + NMINOR * 6, p_stored_move_neut_z2, sizeof(f64)*NMINOR, cudaMemcpyDeviceToDevice);
-
-			// Should not be necessary -- we killed already above where we broke it down.
-
-			KillOutsideRegion << <numTilesMinor, threadsPerTileMinor >> >
-				(p_regressors2 + NMINOR * 6, p_regressors_iz + NMINOR * 6, p_SelectflagNeut);
-			KillOutsideRegion << <numTilesMinor, threadsPerTileMinor >> >
-				(p_regressors2 + NMINOR * 7, p_regressors_iz + NMINOR * 7, p_SelectflagNeut);
-			Call(cudaThreadSynchronize(), "cudaTS KillOutsideRegion");
-
-
-			SubroutineComputeDbyDbetaNeutral(hsub, p_regressors2, p_regressors_iz, p_v_n, pX_use, 6,
-				1, 1);
-			SubroutineComputeDbyDbetaNeutral(hsub, p_regressors2, p_regressors_iz, p_v_n, pX_use, 7,
-				1, 1); 
-		} else {
-			if ((iHistoryNeutVisc == 1) || (iIteration == 1)){
-				// If we have been through the code before then p_stored_move_neut_xy is now populated.
-				// & If we have been through 1 iteration then p_stored_move_neut_xy is now populated.
-				cudaMemcpy(p_regressors2 + NMINOR * 6, p_stored_move_neut_xy, sizeof(f64_vec2)*NMINOR, cudaMemcpyDeviceToDevice);
-				cudaMemcpy(p_regressors_iz + NMINOR * 7, p_stored_move_neut_z, sizeof(f64)*NMINOR, cudaMemcpyDeviceToDevice);
-				SubroutineComputeDbyDbetaNeutral(hsub, p_regressors2, p_regressors_iz, p_v_n, pX_use, 6,
-					1, 0);// XY
-				SubroutineComputeDbyDbetaNeutral(hsub, p_regressors2, p_regressors_iz, p_v_n, pX_use, 7,
-					0, 1); // Z
+		if (iIteration == 0) {
+			if (iHistoricCounter == 0) {
+				// in this case let's start with just 2nd derivatives / any old rubbish:
 				
-				KillOutsideRegion << <numTilesMinor, threadsPerTileMinor >> >
-					(p_regressors2 + NMINOR * 6, p_regressors_iz + NMINOR*7, p_SelectflagNeut);
-				Call(cudaThreadSynchronize(), "cudaTS KillOutsideRegion");
-
-
-			} else {
-				// Just use more deps/dbeta as regressors on the first ever go:
-				//cudaMemcpy(p_regressors2 + NMINOR * 6, p_d_epsxy_by_d_beta_i + NMINOR * 4, sizeof(f64_vec2)*NMINOR, cudaMemcpyDeviceToDevice);
-				//cudaMemcpy(p_regressors_iz + NMINOR * 7, p_d_eps_iz_by_d_beta_i + NMINOR * 5, sizeof(f64)*NMINOR, cudaMemcpyDeviceToDevice);
-
 				cudaMemcpy(p_regressors2 + NMINOR * 6, p_regressors2 + NMINOR * 4, sizeof(f64_vec2)*NMINOR, cudaMemcpyDeviceToDevice);
 				kernelSquare2 << <numTilesMinor, threadsPerTileMinor >> > (p_regressors2 + NMINOR * 6);
 				Call(cudaThreadSynchronize(), "cudaTS kernelsquare2");
@@ -11601,8 +11623,133 @@ void RunBackward8LSForNeutralViscosity_Geometric(f64_vec3 * p_v_n_k, f64_vec3 * 
 					1, 0);// XY
 				SubroutineComputeDbyDbetaNeutral(hsub, p_regressors2, p_regressors_iz, p_v_n, pX_use, 7,
 					0, 1); // Z
+			} else {
+				if (iHistoricCounter == 1) {
+					// Historic move split into xy, izez :
+					// If we have been through the code before then p_stored_move_neut_xy is now populated.
+					// & If we have been through 1 iteration then p_stored_move_neut_xy is now populated.
+					cudaMemcpy(p_regressors2 + NMINOR * 6, p_stored_move_neut_xy, sizeof(f64_vec2)*NMINOR, cudaMemcpyDeviceToDevice);
+					cudaMemcpy(p_regressors_iz + NMINOR * 7, p_stored_move_neut_z, sizeof(f64)*NMINOR, cudaMemcpyDeviceToDevice);
+					SubroutineComputeDbyDbetaNeutral(hsub, p_regressors2, p_regressors_iz, p_v_n, pX_use, 6,
+						1, 0);// XY
+					SubroutineComputeDbyDbetaNeutral(hsub, p_regressors2, p_regressors_iz, p_v_n, pX_use, 7,
+						0, 1); // Z
+				} else {
+					// use historic:
+					// Note: NUM_HISTORIC == REGRESSORS, we need to get rid of it.
+					if (iHistoricCounter <= NUM_HISTORIC) {
+						// do the last iHistoricCounter regressors
+						for (i = 0; i < iHistoricCounter; i++) {
+							Vector3Breakdown << <numTilesMinor, threadsPerTileMinor >> > (
+								p_historic_vn_moves[i], p_regressors2 + NMINOR * (REGRESSORS - 1 - i), p_regressors_iz + NMINOR * (REGRESSORS - 1 - i),
+								p_SelectflagNeut);
+							Call(cudaThreadSynchronize(), "cudaTS Vector3Breakdown");
+							SubroutineComputeDbyDbetaNeutral(hsub, p_regressors2, p_regressors_iz, p_v_n, pX_use, REGRESSORS-1-i,
+								1, 1);
+						};						
+					} else {
+						// Overwrite back until we overwrite all 8 -- we must to do this to
+						// include previous move, even if we get rid of Jacobi that we created.:
+						for (i = 0; i < REGRESSORS; i++) {
+							Vector3Breakdown << <numTilesMinor, threadsPerTileMinor >> > (
+								p_historic_vn_moves[i], p_regressors2 + NMINOR * i, p_regressors_iz + NMINOR * i,
+								p_SelectflagNeut);
+							Call(cudaThreadSynchronize(), "cudaTS Vector3Breakdown");
+							SubroutineComputeDbyDbetaNeutral(hsub, p_regressors2, p_regressors_iz, p_v_n, pX_use, i,
+								1, 1);						
+						};
+					};
+				};
+			};
+		} else { // iIteration > 0
+			// Previous move split into xy, izez :
+			
+			if (iIteration == 1) {
+				// As for iHistoricCounter == 1 on 0th iteration.
+				cudaMemcpy(p_regressors2 + NMINOR * 6, p_stored_move_neut_xy, sizeof(f64_vec2)*NMINOR, cudaMemcpyDeviceToDevice);
+				cudaMemcpy(p_regressors_iz + NMINOR * 7, p_stored_move_neut_z, sizeof(f64)*NMINOR, cudaMemcpyDeviceToDevice);
+				SubroutineComputeDbyDbetaNeutral(hsub, p_regressors2, p_regressors_iz, p_v_n, pX_use, 6,
+					1, 0);// XY
+				SubroutineComputeDbyDbetaNeutral(hsub, p_regressors2, p_regressors_iz, p_v_n, pX_use, 7,
+					0, 1); // Z
+			} else {
+				cudaMemcpy(p_regressors2 + NMINOR * 7, p_stored_move_neut_xy, sizeof(f64_vec2)*NMINOR, cudaMemcpyDeviceToDevice);
+				cudaMemcpy(p_regressors_iz + NMINOR * 7, p_stored_move_neut_z, sizeof(f64)*NMINOR, cudaMemcpyDeviceToDevice);
+				cudaMemcpy(p_regressors2 + NMINOR * 6, p_stored_move_neut_xy2, sizeof(f64_vec2)*NMINOR, cudaMemcpyDeviceToDevice);
+				cudaMemcpy(p_regressors_iz + NMINOR * 6, p_stored_move_neut_z2, sizeof(f64)*NMINOR, cudaMemcpyDeviceToDevice);
+
+				// Should not be necessary -- we killed already above where we broke it down.
+
+				KillOutsideRegion << <numTilesMinor, threadsPerTileMinor >> >
+					(p_regressors2 + NMINOR * 6, p_regressors_iz + NMINOR * 6, p_SelectflagNeut);
+				KillOutsideRegion << <numTilesMinor, threadsPerTileMinor >> >
+					(p_regressors2 + NMINOR * 7, p_regressors_iz + NMINOR * 7, p_SelectflagNeut);
+				Call(cudaThreadSynchronize(), "cudaTS KillOutsideRegion");
+
+				SubroutineComputeDbyDbetaNeutral(hsub, p_regressors2, p_regressors_iz, p_v_n, pX_use, 6,
+					1, 1);
+				SubroutineComputeDbyDbetaNeutral(hsub, p_regressors2, p_regressors_iz, p_v_n, pX_use, 7,
+					1, 1);
 			};
 		};
+
+
+
+
+		//if ((iHistoryNeutVisc > 1) || (iIteration > 1)) {
+
+		//	cudaMemcpy(p_regressors2 + NMINOR * 7, p_stored_move_neut_xy, sizeof(f64_vec2)*NMINOR, cudaMemcpyDeviceToDevice);
+		//	cudaMemcpy(p_regressors_iz + NMINOR * 7, p_stored_move_neut_z, sizeof(f64)*NMINOR, cudaMemcpyDeviceToDevice);
+		//	cudaMemcpy(p_regressors2 + NMINOR * 6, p_stored_move_neut_xy2, sizeof(f64_vec2)*NMINOR, cudaMemcpyDeviceToDevice);
+		//	cudaMemcpy(p_regressors_iz + NMINOR * 6, p_stored_move_neut_z2, sizeof(f64)*NMINOR, cudaMemcpyDeviceToDevice);
+
+		//	// Should not be necessary -- we killed already above where we broke it down.
+
+		//	KillOutsideRegion << <numTilesMinor, threadsPerTileMinor >> >
+		//		(p_regressors2 + NMINOR * 6, p_regressors_iz + NMINOR * 6, p_SelectflagNeut);
+		//	KillOutsideRegion << <numTilesMinor, threadsPerTileMinor >> >
+		//		(p_regressors2 + NMINOR * 7, p_regressors_iz + NMINOR * 7, p_SelectflagNeut);
+		//	Call(cudaThreadSynchronize(), "cudaTS KillOutsideRegion");
+		//	
+		//	SubroutineComputeDbyDbetaNeutral(hsub, p_regressors2, p_regressors_iz, p_v_n, pX_use, 6,
+		//		1, 1);
+		//	SubroutineComputeDbyDbetaNeutral(hsub, p_regressors2, p_regressors_iz, p_v_n, pX_use, 7,
+		//		1, 1); 
+		//} else {
+		//	if ((iHistoryNeutVisc == 1) || (iIteration == 1)){
+		//		// If we have been through the code before then p_stored_move_neut_xy is now populated.
+		//		// & If we have been through 1 iteration then p_stored_move_neut_xy is now populated.
+		//		cudaMemcpy(p_regressors2 + NMINOR * 6, p_stored_move_neut_xy, sizeof(f64_vec2)*NMINOR, cudaMemcpyDeviceToDevice);
+		//		cudaMemcpy(p_regressors_iz + NMINOR * 7, p_stored_move_neut_z, sizeof(f64)*NMINOR, cudaMemcpyDeviceToDevice);
+		//		SubroutineComputeDbyDbetaNeutral(hsub, p_regressors2, p_regressors_iz, p_v_n, pX_use, 6,
+		//			1, 0);// XY
+		//		SubroutineComputeDbyDbetaNeutral(hsub, p_regressors2, p_regressors_iz, p_v_n, pX_use, 7,
+		//			0, 1); // Z
+		//		
+		//		KillOutsideRegion << <numTilesMinor, threadsPerTileMinor >> >
+		//			(p_regressors2 + NMINOR * 6, p_regressors_iz + NMINOR*7, p_SelectflagNeut);
+		//		Call(cudaThreadSynchronize(), "cudaTS KillOutsideRegion");
+
+
+		//	} else {
+		//		// Just use more deps/dbeta as regressors on the first ever go:
+		//		//cudaMemcpy(p_regressors2 + NMINOR * 6, p_d_epsxy_by_d_beta_i + NMINOR * 4, sizeof(f64_vec2)*NMINOR, cudaMemcpyDeviceToDevice);
+		//		//cudaMemcpy(p_regressors_iz + NMINOR * 7, p_d_eps_iz_by_d_beta_i + NMINOR * 5, sizeof(f64)*NMINOR, cudaMemcpyDeviceToDevice);
+
+		//		cudaMemcpy(p_regressors2 + NMINOR * 6, p_regressors2 + NMINOR * 4, sizeof(f64_vec2)*NMINOR, cudaMemcpyDeviceToDevice);
+		//		kernelSquare2 << <numTilesMinor, threadsPerTileMinor >> > (p_regressors2 + NMINOR * 6);
+		//		Call(cudaThreadSynchronize(), "cudaTS kernelsquare2");
+
+		//		cudaMemcpy(p_regressors_iz + NMINOR * 7, p_regressors_iz + NMINOR * 5, sizeof(f64)*NMINOR, cudaMemcpyDeviceToDevice);
+		//		kernelSquare << <numTilesMinor, threadsPerTileMinor >> > (p_regressors_iz + NMINOR * 7);
+		//		Call(cudaThreadSynchronize(), "cudaTS kernelsquare");
+
+		//		SubroutineComputeDbyDbetaNeutral(hsub, p_regressors2, p_regressors_iz, p_v_n, pX_use, 6,
+		//			1, 0);// XY
+		//		SubroutineComputeDbyDbetaNeutral(hsub, p_regressors2, p_regressors_iz, p_v_n, pX_use, 7,
+		//			0, 1); // Z
+		//	};
+		//};
 
 
 		// &&&&&&&&&&&&&&&&&&&&&&&&&&&&&
@@ -12298,13 +12445,13 @@ void PerformCUDA_Invoke_Populate(
 	{
 		for (int j = 0; j < 10; j++)
 			fscanf(fp, " %lf", &(ionize_temps_host[iV][j]));
-			// check format specifier
-		for (int iWhich = 0; iWhich < 5; iWhich++) 
+		// check format specifier
+		for (int iWhich = 0; iWhich < 5; iWhich++)
 			fscanf(fp, " %lf %lf %lf %lf %lf", &(ionize_coeffs_host[iV][iWhich][0]),
 				&(ionize_coeffs_host[iV][iWhich][1]),
 				&(ionize_coeffs_host[iV][iWhich][2]),
 				&(ionize_coeffs_host[iV][iWhich][3]),
-				&(ionize_coeffs_host[iV][iWhich][4]));		
+				&(ionize_coeffs_host[iV][iWhich][4]));
 	};
 	fclose(fp);
 	printf("fopen rec_coeffs\n");
@@ -12331,11 +12478,11 @@ void PerformCUDA_Invoke_Populate(
 	printf("ionize_coeffs[11][4][2] %1.14E \n", ionize_coeffs_host[11][4][2]);
 	printf("recomb_coeffs[28][1][3] %1.14E \n", recomb_coeffs_host[28][1][3]);
 	//getch(); // test what we loaded
-	Call(cudaMemcpyToSymbol(ionize_temps, ionize_temps_host, 32*10 * sizeof(f64)), 
+	Call(cudaMemcpyToSymbol(ionize_temps, ionize_temps_host, 32 * 10 * sizeof(f64)),
 		"cudaMemcpyToSymbol(ionize_temps)");
-	Call(cudaMemcpyToSymbol(ionize_coeffs, ionize_coeffs_host, 32 * 5*5 * sizeof(f64)),
+	Call(cudaMemcpyToSymbol(ionize_coeffs, ionize_coeffs_host, 32 * 5 * 5 * sizeof(f64)),
 		"cudaMemcpyToSymbol(ionize_coeffs)");
-	Call(cudaMemcpyToSymbol(recomb_coeffs, recomb_coeffs_host, 32 * 3*5 * sizeof(f64)),
+	Call(cudaMemcpyToSymbol(recomb_coeffs, recomb_coeffs_host, 32 * 3 * 5 * sizeof(f64)),
 		"cudaMemcpyToSymbol(recomb_coeffs)");
 
 
@@ -12361,7 +12508,7 @@ void PerformCUDA_Invoke_Populate(
 	Call(cudaMemcpy(T2address, &clock2, sizeof(f64_tens2), cudaMemcpyHostToDevice),
 		"cudaMemcpy( T2address, &clock2, sizeof(f64_tens2),cudaMemcpyHostToDevice) U");
 
-	Set_f64_constant(kB, kB_); 
+	Set_f64_constant(kB, kB_);
 	Set_f64_constant(c, c_);
 	Set_f64_constant(q, q_);
 	Set_f64_constant(m_e, m_e_);
@@ -12385,7 +12532,7 @@ void PerformCUDA_Invoke_Populate(
 	Set_f64_constant(NU_EI_FACTOR, NU_EI_FACTOR_);
 	Set_f64_constant(nu_eiBarconst, nu_eiBarconst_);
 	Set_f64_constant(Nu_ii_Factor, Nu_ii_Factor_);
-	
+
 	f64 M_i_over_in_ = m_i_ / (m_i_ + m_n_);
 	f64 M_e_over_en_ = m_e_ / (m_e_ + m_n_);
 	f64	M_n_over_ni_ = m_n_ / (m_i_ + m_n_);
@@ -12404,7 +12551,7 @@ void PerformCUDA_Invoke_Populate(
 	Set_f64_constant(M_ei, M_ei_);
 	Set_f64_constant(m_en, m_en_);
 	Set_f64_constant(m_ei, m_ei_);
-	
+
 	// We are seriously saying that the rate of heat transfer e-n and e-i is
 	// basically affected by factor m_e/m_n --- model document says so. ...
 
@@ -12426,18 +12573,18 @@ void PerformCUDA_Invoke_Populate(
 	//f64 UNIFORM_n_temp = UNIFORM_n;
 	Set_f64_constant(UNIFORM_n_d, UNIFORM_n);
 
-	Call(cudaGetSymbolAddress((void **)(&f64address), m_e ), 
-			"cudaGetSymbolAddress((void **)(&f64address), m_e )");
-	Call(cudaMemcpy( f64address, &m_e_, sizeof(f64),cudaMemcpyHostToDevice),
-			"cudaMemcpy( f64address, &m_e_, sizeof(f64),cudaMemcpyHostToDevice) src dest");
-						
+	Call(cudaGetSymbolAddress((void **)(&f64address), m_e),
+		"cudaGetSymbolAddress((void **)(&f64address), m_e )");
+	Call(cudaMemcpy(f64address, &m_e_, sizeof(f64), cudaMemcpyHostToDevice),
+		"cudaMemcpy( f64address, &m_e_, sizeof(f64),cudaMemcpyHostToDevice) src dest");
+
 	f64 value = 1.25;
 	f64 value2 = 1.5;
 	Call(cudaMemcpyToSymbol(billericay, &value, sizeof(f64)), "bill the bat.");
-	Call(cudaGetSymbolAddress((void **)(&f64address), billericay),"billericay1");
-	Call(cudaMemcpy(f64address, &value, sizeof(f64), cudaMemcpyHostToDevice),"can we");
-	Call(cudaMemcpy(&value2, f64address, sizeof(f64), cudaMemcpyDeviceToHost),"fdfdf");
-	printf("value2 = %f\n",value2); // = 1.25
+	Call(cudaGetSymbolAddress((void **)(&f64address), billericay), "billericay1");
+	Call(cudaMemcpy(f64address, &value, sizeof(f64), cudaMemcpyHostToDevice), "can we");
+	Call(cudaMemcpy(&value2, f64address, sizeof(f64), cudaMemcpyDeviceToHost), "fdfdf");
+	printf("value2 = %f\n", value2); // = 1.25
 
 	// So this stuff DOES work
 	// But debugger gives incorrect reading of everything as 0
@@ -12463,11 +12610,11 @@ void PerformCUDA_Invoke_Populate(
 		"cudaGetSymbolAddress((void **)(&longaddress), NumInnerFrills_d)");
 	Call(cudaMemcpy(longaddress, &NumInnerFrills, sizeof(long), cudaMemcpyHostToDevice),
 		"cudaMemcpy(longaddress, &NumInnerFrills, sizeof(long), cudaMemcpyHostToDevice)");
-//	Call(cudaGetSymbolAddress((void **)(&longaddress), FirstOuterFrill_d),
-//		"cudaGetSymbolAddress((void **)(&longaddress), FirstOuterFrill_d)");
-//	Call(cudaMemcpy(longaddress, &FirstOuterFrill, sizeof(long), cudaMemcpyHostToDevice),
-//		"cudaMemcpy(longaddress, &FirstOuterFrill, sizeof(long), cudaMemcpyHostToDevice)");
-// Cannot be used: FirstOuterFrill is not reliable with retiling.
+	//	Call(cudaGetSymbolAddress((void **)(&longaddress), FirstOuterFrill_d),
+	//		"cudaGetSymbolAddress((void **)(&longaddress), FirstOuterFrill_d)");
+	//	Call(cudaMemcpy(longaddress, &FirstOuterFrill, sizeof(long), cudaMemcpyHostToDevice),
+	//		"cudaMemcpy(longaddress, &FirstOuterFrill, sizeof(long), cudaMemcpyHostToDevice)");
+	// Cannot be used: FirstOuterFrill is not reliable with retiling.
 
 	Call(cudaMemcpyToSymbol(cross_T_vals_d, cross_T_vals, 10 * sizeof(f64)),
 		"cudaMemcpyToSymbol(cross_T_vals_d,cross_T_vals, 10*sizeof(f64))");
@@ -12500,21 +12647,25 @@ void PerformCUDA_Invoke_Populate(
 	CallMAC(cudaMalloc((void **)&p_nu_en_MT, NMINOR * sizeof(f64)));
 	CallMAC(cudaMalloc((void **)&p_nu_in_MT, NMINOR * sizeof(f64)));
 
-	for (i = 0; i < NUM_HISTORIC+1; i++)
+	for (i = 0; i < NUM_HISTORIC; i++)
+	{
 		CallMAC(cudaMalloc((void **)(&(p_historic_v_moves[i])), NMINOR * sizeof(v4)));
-
+		CallMAC(cudaMalloc((void **)(&(p_historic_vn_moves[i])), NMINOR * sizeof(f64_vec3)));
+		CallMAC(cudaMalloc((void **)(&(p_historic_Tn_moves[i])), NUMVERTICES * sizeof(f64_vec3)));
+		CallMAC(cudaMalloc((void **)(&(p_historic_Ti_moves[i])), NUMVERTICES * sizeof(f64_vec3)));
+		CallMAC(cudaMalloc((void **)(&(p_historic_Te_moves[i])), NUMVERTICES * sizeof(f64_vec3)));
+	};
 
 	CallMAC(cudaMalloc((void **)&p_sum_product_matrix3, numTilesMinor * sizeof(Symmetric3)));
-
 	CallMAC(cudaMalloc((void **)&p_storeviscmove, NMINOR * sizeof(v4)));
 	CallMAC(cudaMalloc((void **)&p_vie_modified_k, NMINOR * sizeof(v4)));
 	CallMAC(cudaMalloc((void **)&p_v_n_modified_k, NMINOR * sizeof(f64_vec3)));
-
 	CallMAC(cudaMalloc((void **)&p__invcoeffself_x, NMINOR * sizeof(f64_tens2)));
 	CallMAC(cudaMalloc((void **)&p__invcoeffself_y, NMINOR * sizeof(f64_tens2)));
-
 	CallMAC(cudaMalloc((void **)&p_eps_against_deps2, NMINOR * sizeof(f64)));
-
+	CallMAC(cudaMalloc((void **)&p_d_eps_by_d_MAR_i, NMINOR * sizeof(f64)));
+	CallMAC(cudaMalloc((void **)&p_d_eps_by_d_MAR_e, NMINOR * sizeof(f64)));
+	
 	CallMAC(cudaMalloc((void **)&p_blockTotal1, NMINOR * sizeof(long)));
 	CallMAC(cudaMalloc((void **)&p_blockTotal2, NMINOR * sizeof(long)));
 	CallMAC(cudaMalloc((void **)&p_MAR_ion4, NMINOR * sizeof(f64_vec3)));
@@ -12543,13 +12694,15 @@ void PerformCUDA_Invoke_Populate(
 
 	CallMAC(cudaMalloc((void **)&p_iRing, NMINOR * sizeof(int)));
 
-	CallMAC(cudaMalloc((void**)&ionmomflux_eqns, sizeof(double) * 3*3 * EQNS_TOTAL* EQNS_TOTAL));
-	CallMAC(cudaMalloc((void**)&elecmomflux_eqns, sizeof(double) * 3*3 * EQNS_TOTAL* EQNS_TOTAL));
+	CallMAC(cudaMalloc((void**)&ionmomflux_eqns, sizeof(double) * 3*3 * (EQNS_TOTAL + MAXRINGLEN)* (EQNS_TOTAL + MAXRINGLEN)));
+	CallMAC(cudaMalloc((void**)&elecmomflux_eqns, sizeof(double) *3*3 * (EQNS_TOTAL + MAXRINGLEN)* (EQNS_TOTAL + MAXRINGLEN)));
 	CallMAC(cudaMalloc((void**)&d_B, sizeof(double) * 4*EQNS_TOTAL));
 	CallMAC(cudaMalloc((void**)&d_Ipiv512, sizeof(int) * 4*EQNS_TOTAL));
 	CallMAC(cudaMalloc((void**)&p_RHS, sizeof(f64) * 4 * EQNS_TOTAL));
+	CallMAC(cudaMalloc((void**)&p_RHS_big, sizeof(f64) * 4 * (EQNS_TOTAL + MAXRINGLEN)));
 	CallMAC(cudaMalloc((void**)&d_info, sizeof(int) * 4 * EQNS_TOTAL));
 	CallMAC(cudaMalloc((void**)&p_eqns, sizeof(double) * 4 * EQNS_TOTAL * 4 * EQNS_TOTAL));
+	CallMAC(cudaMalloc((void**)&p_eqns_big, sizeof(double) * 4 * (EQNS_TOTAL + MAXRINGLEN)*4* (EQNS_TOTAL + MAXRINGLEN)));
 	CallMAC(cudaMalloc((void**)&p_eqns2, sizeof(double) * 4 * EQNS_TOTAL * 4 * EQNS_TOTAL));
 
 	CallMAC(cudaMalloc((void**)&p_selectflag, sizeof(bool)*NMINOR));
@@ -14913,7 +15066,7 @@ void cuSyst::PerformCUDA_Advance_noadvect(//const
 		SetConsoleTextAttribute(hConsole, 11);
 		RegressionSeedT_1species(
 			0.5*Timestep,
-			p_move1e,
+			p_move1e, // careful about this routine. Do we want it here?
 			p_Te,
 			p_Tek,
 			this,
@@ -14948,6 +15101,11 @@ void cuSyst::PerformCUDA_Advance_noadvect(//const
 			this->p_T_minor + BEGINNING_OF_CENTRAL);
 	Call(cudaThreadSynchronize(), "cudaTS subtractT3");
 	SetConsoleTextAttribute(hConsole, 15);
+
+	BreakDownT3 << <numTilesMajor, threadsPerTileMajor >> >
+		(p_historic_Tn_moves[iHistoricCounter % NUM_HISTORIC], p_historic_Ti_moves[iHistoricCounter % NUM_HISTORIC],
+			p_historic_Te_moves[iHistoricCounter % NUM_HISTORIC], p_store_T_move1);
+	Call(cudaThreadSynchronize(), "cudaTS BreakDownT3");
 
 	cudaMemcpy(&tempf64, &((pX_half->p_T_minor + BEGINNING_OF_CENTRAL + VERTCHOSEN)->Te), sizeof(f64), cudaMemcpyDeviceToHost);
 	printf("solved Te[%d]: %1.9E\n", VERTCHOSEN, tempf64);
@@ -15035,6 +15193,10 @@ void cuSyst::PerformCUDA_Advance_noadvect(//const
 	cudaMemcpy(NT_addition_rates_d_temp, NT_addition_rates_d, sizeof(NTrates)*NUMVERTICES, cudaMemcpyDeviceToDevice);
 	cudaMemset(p_boolarray, 0, sizeof(bool)*NUMVERTICES * 2); // initially allow all flows good
 //
+
+
+
+
 	//int iPass = 0;
 	//bool bContinue;
 	//do {
@@ -16149,9 +16311,14 @@ void cuSyst::PerformCUDA_Advance_noadvect(//const
 	// Ensure that we put the whole move into storage, but that when we use it, we select only the solved-for cells.	
 	Subtract_V4 << <numTilesMinor, threadsPerTileMinor >> >(p_stored_move4, this->p_vie, pX_half->p_vie);
 	Call(cudaThreadSynchronize(), "cudaTS Subtract_V4");
+		
 	SubtractVector3 << <numTilesMinor, threadsPerTileMinor >> >(p_stored_move3, this->p_v_n, pX_half->p_v_n);
 	Call(cudaThreadSynchronize(), "cudaTS subtract vector 3");
 
+	// Now save this into the historic array.
+	cudaMemcpy(p_historic_v_moves[iHistoricCounter % NUM_HISTORIC], p_stored_move4, sizeof(v4)*NMINOR, cudaMemcpyDeviceToDevice);
+	cudaMemcpy(p_historic_vn_moves[iHistoricCounter % NUM_HISTORIC], p_stored_move3, sizeof(f64_vec3)*NMINOR, cudaMemcpyDeviceToDevice);
+	iHistoricCounter++;
 	// NOTE: When we run whole step we save into p_stored_move3_2 instead.
 	
 	// Note that MAR and heating were already in use!
@@ -16833,6 +17000,12 @@ void cuSyst::PerformCUDA_Advance_noadvect(//const
 	SetConsoleTextAttribute(hConsole, 15);
 
 
+	BreakDownT3 << <numTilesMajor, threadsPerTileMajor >> >
+		(p_historic_Tn_moves[iHistoricCounter % NUM_HISTORIC], p_historic_Ti_moves[iHistoricCounter % NUM_HISTORIC],
+			p_historic_Te_moves[iHistoricCounter % NUM_HISTORIC], p_store_T_move2);
+	Call(cudaThreadSynchronize(), "cudaTS BreakDownT3");
+
+	
 	// Now create dNT from T_k+1/2 ! :
 	// ================================
 
@@ -18104,6 +18277,12 @@ void cuSyst::PerformCUDA_Advance_noadvect(//const
 	SubtractVector3 << <numTilesMinor, threadsPerTileMinor >> >(p_stored_move3_2, this->p_v_n, pX_target->p_v_n);
 	Call(cudaThreadSynchronize(), "cudaTS subtract vector 3");
 
+	// Now save this into the historic array.
+	cudaMemcpy(p_historic_v_moves[iHistoricCounter % NUM_HISTORIC], p_stored_move4, sizeof(v4)*NMINOR, cudaMemcpyDeviceToDevice);
+	cudaMemcpy(p_historic_vn_moves[iHistoricCounter % NUM_HISTORIC], p_stored_move3_2, sizeof(f64_vec3)*NMINOR, cudaMemcpyDeviceToDevice);
+	iHistoricCounter++;
+	// NOTE: When we run whole step we save into p_stored_move3_2 instead.
+
 	  // Now add the combined acceleration into the acceleration we use.
 	kernelAdd3 << <numTilesMinor, threadsPerTileMinor >> > (p_MAR_ion, p_MAR_ion2);
 	kernelAdd3 << <numTilesMinor, threadsPerTileMinor >> > (p_MAR_elec, p_MAR_elec2);
@@ -18932,8 +19111,14 @@ void PerformCUDA_Revoke()
 {
 	int i;
 	GlobalSuppressSuccessVerbosity = true;
-	for (i = 0; i < NUM_HISTORIC+1; i++)
+	for (i = 0; i < NUM_HISTORIC; i++)
 		CallMAC(cudaFree(p_historic_v_moves[i]));
+	for (i = 0; i < NUM_HISTORIC; i++) {
+		CallMAC(cudaFree(p_historic_vn_moves[i]));
+		CallMAC(cudaFree(p_historic_Tn_moves[i]));
+		CallMAC(cudaFree(p_historic_Ti_moves[i]));
+		CallMAC(cudaFree(p_historic_Te_moves[i]));
+	};
 	CallMAC(cudaFree(p_nu_in_MT));
 	CallMAC(cudaFree(p_nu_en_MT));
 	CallMAC(cudaFree(p_sum_product_matrix3));
@@ -19613,7 +19798,9 @@ void inline SubroutineComputeDbyDbeta(
 		p_ROCMAR1,
 		p_ROCMAR2,
 		pX_use->p_n_minor,
-		pX_use->p_AreaMinor, p_nu_in_MT, p_nu_en_MT,
+		pX_use->p_AreaMinor,
+		p_d_eps_by_d_MAR_i,
+		p_d_eps_by_d_MAR_e,
 		p_d_epsxy_by_d_beta_i + i*NMINOR,
 		p_d_eps_iz_by_d_beta_i + i*NMINOR,
 		p_d_eps_ez_by_d_beta_i + i*NMINOR
@@ -19630,7 +19817,7 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 	// Requires averaging of n,T to triangles first. & ita
 	// ***************************************************
 
-#define ITERGRAPH 500
+#define ITERGRAPH 900
 
 	static bool bHistoryVisc = false;
 	FILE * dbgfile,*fileptr;
@@ -19680,6 +19867,16 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 	if (bNaN) { while (1) getch(); };
 	//printf("press q\n");
 	//while (getch() != 'q');
+	kernelAssign_d_eps_by_dMAR<<<numTilesMinor, threadsPerTileMinor>>>(
+		hsub,
+		pX_use->p_info,
+		pX_use->p_n_minor,
+		pX_use->p_AreaMinor,
+		p_nu_in_MT, p_nu_en_MT,		
+		p_d_eps_by_d_MAR_i,
+		p_d_eps_by_d_MAR_e,
+		p_Selectflag);
+	Call(cudaThreadSynchronize(), "cudaTS kernelAssign_d_eps_by_dMAR");
 
 	cudaMemset(p_MAR_ion2, 0, sizeof(f64_vec3)*NMINOR);
 	cudaMemset(p_MAR_elec2, 0, sizeof(f64_vec3)*NMINOR);
@@ -19733,7 +19930,9 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 		pX_use->p_v_n, // will do for now
 		p_MAR_ion2, p_MAR_elec2,
 		pX_use->p_n_minor,
-		pX_use->p_AreaMinor, p_nu_in_MT, p_nu_en_MT,
+		pX_use->p_AreaMinor, 
+		p_d_eps_by_d_MAR_i,
+		p_d_eps_by_d_MAR_e,
 		p_epsilon_xy,
 		p_epsilon_iz,
 		p_epsilon_ez,
@@ -19873,7 +20072,8 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 			p__coeffself_iz, p__coeffself_ez,  // d MAR / d v
 			p__xzyzzxzy_i, p__xzyzzxzy_e,
 			pX_use->p_n_minor, pX_use->p_AreaMinor,
-			p_nu_in_MT,p_nu_en_MT,
+			p_d_eps_by_d_MAR_i,
+			p_d_eps_by_d_MAR_e,
 			p_epsilon_xy, p_epsilon_iz, p_epsilon_ez,
 			p_regressors2, p_regressors_iz, p_regressors_ez,
 			p__invmatrix, p__invcoeffselfviz, p__invcoeffselfvez,
@@ -19889,6 +20089,7 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 		cudaMemset(p_d_eps_iz_by_d_beta_i, 0, sizeof(f64)*NMINOR*REGRESSORS);
 		cudaMemset(p_d_eps_ez_by_d_beta_i, 0, sizeof(f64)*NMINOR*REGRESSORS);
 
+
 		// Type 3 move:
 		// Do everything:
 
@@ -19898,9 +20099,13 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 		printf("iMoveType %d : L2pes_ez + L2eps_iz %1.8E * 50 = %1.8E L2eps_xy %1.8E\n", iMoveType,
 			L2eps_ez + L2eps_iz, 50 * (L2eps_ez + L2eps_iz), L2eps_xy);
 
-		if ((iIteration >= 160) && (iIteration % 4 == 0))
-			iMoveType = 4;
-		
+		if ((iIteration >= 40) && (iIteration % 4 == 0))
+			iMoveType = 4; // Smash method.
+		if ((iIteration >= 40) && (iIteration % 4 == 0))
+			iMoveType = 5;
+		// Smoosh method.
+
+
 		// Probably the trigger should be
 	//	something more like --- L4 epsilon is large compared to L2, meaning errors are concentrated.
 
@@ -19921,16 +20126,19 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 
 		f64 prediction;
 		long iMinor, iMax = -1;
-		f64 epssq, maxepssq;
+		f64 epssq, maxepssq, maxeps;
 		long izNeighMinor[MAXNEIGH];
 		int ilengthprev;
-		long izArrayPrev[2048];
-		long izArray[2048];
+		//long izArrayPrev[2048];
+		long izArray[MAXRINGS][MAXRINGLEN];
+		int iRingLength[MAXRINGS];
+		long * izArrayPrev;
+
 		int whichRing, ilength, iEqns;
 		long j, jMinor;
 		short neigh_len;
 		FILE * fp;
-		long eqnlist[2048];
+		long eqnlist[EQNS_TOTAL + MAXRINGLEN ]; // this is the max; the +1 is for luck.
 
 		cusolverDnHandle_t cusolverH = NULL;
 		cudaStream_t stream = NULL;
@@ -19943,6 +20151,19 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 		const int m = 4 * EQNS_TOTAL;
 		const int lda = m;
 		const int ldb = m;
+
+		long ActualNumberOfEquations = 0; // can be < EQNS_TOTAL if we encountered end of contiguous unmasked points.
+		long ActualNumberOfInnerEquations = 0; // for smoosh move, how many in the inner rings that are solved exactly.
+		long ActualNumberOfOuterEquations = 0; // for smoosh move, how many acquired in the outer rings where we optimize RSS.
+		long ActualNumberOfOuterNeighbours = 0; // for smoosh move, make a final ring which is complete and consists of points whose equations are not included.
+		long StartOfOuterRings;
+		long iFinalRing;
+		int iSurroundedRing = 0;
+		bool bExhaustedUnmasked = false;
+		int iPrevRing;
+		bool bFoundExtraUnincludedNeighs;
+		f64 ResidualSqThreshold;
+
 		//			double A[lda*m] = { 1.0, 4.0, 7.0, 2.0, 5.0, 8.0, 3.0, 6.0, 10.0 };
 		//			double B[m] = { 1.0, 2.0, 3.0 };
 		//			double X[m]; /* X = A\B */
@@ -19967,10 +20188,11 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 			switch (iMoveType)
 			{
 			case 4:
-				// Smash move.
-				printf("case 4\n");
+			case 5: 
+				// Smash or smoosh move.
+				printf("case %d\n", iMoveType);
 
-				matLU.Invoke(4 * EQNS_TOTAL);
+				matLU.Invoke(4 * EQNS_TOTAL); // Amount of eqns we expect to solve.
 
 				//printf("Creating equation region.\n");
 				// 1. Identify highest residual point
@@ -19978,15 +20200,16 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 				cudaMemcpy(p_temphost1, p_epsilon_iz, sizeof(f64)*NMINOR, cudaMemcpyDeviceToHost);
 				cudaMemcpy(p_temphost2, p_epsilon_ez, sizeof(f64)*NMINOR, cudaMemcpyDeviceToHost);
 
-				maxepssq = 0.0;
+				maxeps = 0.0;
 				for (iMinor = 0; iMinor < NMINOR; iMinor++)
 				{
-					epssq = p_tempvec2_host[iMinor].dot(p_tempvec2_host[iMinor])
+					// eps mod:
+					p_temphost1[iMinor] = (p_tempvec2_host[iMinor].dot(p_tempvec2_host[iMinor])
 						+ p_temphost1[iMinor] * p_temphost1[iMinor]
-						+ p_temphost2[iMinor] * p_temphost2[iMinor];
-					if (epssq > maxepssq)
+						+ p_temphost2[iMinor] * p_temphost2[iMinor]);
+					if (p_temphost1[iMinor] > maxepssq)
 					{
-						maxepssq = epssq;
+						maxepssq = p_temphost1[iMinor];
 						iMax = iMinor;
 					};
 				};
@@ -20005,43 +20228,60 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 
 				memset(iRing, 0, sizeof(int)*NMINOR);
 				memset(bSelected, 0, sizeof(bool)*NMINOR);
+								
+				iRingLength[0] = 0;
+				iRingLength[1] = 1;
+				izArray[1][0] = iMax; 				
+				iRing[iMax] = 1; 
+				// Ring 1 is innermost ring because 0 means not in a ring.
 
 				ilengthprev = 1;
-				izArrayPrev[0] = iMax;
-				iRing[iMax] = 1; // ring 1 is innermost ring
 
 				bSelected[iMax] = true;
 				p_equation_index_host[iMax] = 0; // SHORT ARRAY
 				iEqns = 1;
 				eqnlist[0] = iMax;
+				ActualNumberOfEquations = 1;
+
+				// CASE 5 VERSION HERE:
+#define FACTOR0125  0.1
+
+
+				// Just 2 passes:
+				// First pass, collect only points that are above residual modulus threshold.
+				// Second pass, go over all rings again and look for members of a new "ring", with no residual modulus threshold.
+				// From then on all subsequent rings are formed the same way. But for brevity we can then add a ticker to say which
+				// rings are fully surrounded, and go from that ring up.
+
+				// Could we do this at each ring?
+				
 
 				whichRing = 2;
-				bUseUnselected = false;
+				// 1. What is threshold for 
+				ResidualSqThreshold = FACTOR0125*FACTOR0125*(maxepssq);
 				do {
 					ilength = 0;
 
-				label1:
-
+					bFoundExtraUnincludedNeighs = false;
+					ilengthprev = iRingLength[whichRing - 1];
+					izArrayPrev = izArray[whichRing-1];
 					// each point in previous ring of additions:
-					for (i = 0; ((i < ilengthprev) && (iEqns < EQNS_TOTAL) && (ilength < 2048)); i++)
+					for (i = 0; ((i < ilengthprev) && (iEqns < EQNS_TOTAL) && (ilength < MAXRINGLEN)); i++)
 					{
-						//printf("i %d ilengthprev %d iEqns %d izArrayPrev[i] %d\n", i, ilengthprev, iEqns, izArrayPrev[i]);
-
 						if (izArrayPrev[i] >= BEGINNING_OF_CENTRAL) {
 							// get izNeighMinor
 							long iVertex = izArrayPrev[i] - BEGINNING_OF_CENTRAL;
 							cudaMemcpy(izNeighMinor, &(pX_use->p_izTri_vert[iVertex * MAXNEIGH]),
 								sizeof(long) * MAXNEIGH, cudaMemcpyDeviceToHost);
 							neigh_len = cuSyst_host.p_info[izArrayPrev[i]].neigh_len;
-						}
-						else {
+						} else {
 							// get izTri as izNeighMinor
 							cudaMemcpy(izNeighMinor, &(pX_use->p_izNeigh_TriMinor[izArrayPrev[i] * 6]),
 								sizeof(long) * 6, cudaMemcpyDeviceToHost);
 							neigh_len = 6;
 						};
 
-						for (j = 0; ((j < neigh_len) && (iEqns < EQNS_TOTAL) && (ilength < 2048)); j++)
+						for (j = 0; ((j < neigh_len) && (iEqns < EQNS_TOTAL) && (ilength < MAXRINGLEN)); j++)
 						{
 							jMinor = izNeighMinor[j];
 							// For each neighbour:
@@ -20050,66 +20290,342 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 							// So we need to do position test as well as check what sort
 							// of flag.
 							if (
-								((cuSyst_host.p_info[jMinor].flag == DOMAIN_TRIANGLE)
+								(	(cuSyst_host.p_info[jMinor].flag == DOMAIN_TRIANGLE)
 									||
 									(cuSyst_host.p_info[jMinor].flag == DOMAIN_VERTEX)
 									||
 									((cuSyst_host.p_info[jMinor].flag == CROSSING_INS) &&
 										TestDomainPosHost(cuSyst_host.p_info[jMinor].pos))
 									)
-								&& (iRing[jMinor] == 0)
-								&& ((p_inthost[jMinor] != 0) || bUseUnselected) // exclude unselected equations
+								&& (iRing[jMinor] == 0) // hitherto not chosen for matrix
+								&& (p_inthost[jMinor] != 0) // exclude unselected equations
 								)
-							{
-								// . Add it to this ring
-								// . Tell it that it is in this ring
-								iRing[jMinor] = whichRing;
-								izArray[ilength] = jMinor;
-								ilength++;
-								if (ilength == 2048) {
-									printf("ilength == 2048\n");
-								}
-								//							iEqnArray[iEqns] = jMinor; // because we need a list of the equations?
-								//						printf("iEqnArray[%d] %d \n", iEqns, iEqnArray[iEqns]);
-								// Not sure we need such a list.
-								bSelected[jMinor] = true;
-								p_equation_index_host[jMinor] = iEqns;
-
-								eqnlist[iEqns] = jMinor;
-
-								iEqns++;
-								//		printf("iRing %d ilength %d index %d : iEqns %d selectflag %d\n", 
-								//					whichRing, ilength, jMinor, iEqns, p_inthost[jMinor]);
+							{								
+								if (p_temphost1[jMinor] < ResidualSqThreshold) {
+									bFoundExtraUnincludedNeighs = true;
+								} else {
+									// . Add it to this ring
+									// . Tell it that it is in this ring
+									iRing[jMinor] = whichRing;
+									izArray[whichRing][ilength] = jMinor;
+									ilength++;
+									if (ilength == MAXRINGLEN) printf("ilength == MAXRINGLEN : %d\n", MAXRINGLEN);
+									bSelected[jMinor] = true;
+									p_equation_index_host[jMinor] = iEqns;
+									eqnlist[iEqns] = jMinor;
+									iEqns++;
+									ActualNumberOfEquations++;
+								};
 							};
 						}; // next j in neighs
 					}; // next i in ring prev
-					   //	printf("ring %d ilength %d iEqns %d\n", whichRing, ilength, iEqns);
+
+					if (bFoundExtraUnincludedNeighs == false) {
+						if (iSurroundedRing == whichRing - 2) iSurroundedRing = whichRing - 1;
+						// Bear in mind we said central point lives in Ring 1, not in Ring 0.
+					};					   
 					if ((ilength == 0) && (iEqns < EQNS_TOTAL)) {
-						// go again, we ran out of selected points?
-						bUseUnselected = true;
-						goto label1;
-					}
+						bExhaustedUnmasked = true;
+					};
+					iRingLength[whichRing] = ilength;
+					printf("iRingLength[%d] = %d\n", whichRing, ilength);
 					++whichRing;
 					ilengthprev = ilength;
-					memcpy(izArrayPrev, izArray, sizeof(long)*ilength);
-				} while (iEqns < EQNS_TOTAL);
-				// let's say we make 1 extra ring outside those, in case we want it.
+					//memcpy(izArrayPrev, izArray, sizeof(long)*ilength);
+					
+				} while ((ActualNumberOfEquations < INNER_EQNS) && (!bExhaustedUnmasked));
+				
+			//	store_whichRing = whichRing;
+				printf("INNER_EQNS %d EQNS_TOTAL %d \n", INNER_EQNS, EQNS_TOTAL);
 
-				printf("iEqns = %d/n", iEqns);
-				// debug:
-				/*
-				cudaMemcpy(p_temphost1, p_epsilon_iz, sizeof(f64)*NMINOR, cudaMemcpyDeviceToHost);
-				cudaMemcpy(p_temphost2, p_epsilon_ez, sizeof(f64)*NMINOR, cudaMemcpyDeviceToHost);
-				cudaMemcpy(p_tempvec2_host, p_epsilon_xy, sizeof(f64_vec2)*NMINOR, cudaMemcpyDeviceToHost);
+				printf("1st pass: bExhaustedUnmasked = %d ; ActualNumberOfEquations = %d ; whichRing = %d; iSurroundedRing = %d\n",
+					(bExhaustedUnmasked ? 1 : 0), ActualNumberOfEquations, whichRing, iSurroundedRing);
 
-				for (i = 0; i < EQNS_TOTAL; i++)
-				{
-				printf("Eqn %d : %d : epsilon_iz %1.9E ez %1.9E x %1.9E y %1.9E\n",
-				i, eqnlist[i], p_temphost1[eqnlist[i]], p_temphost2[eqnlist[i]], p_tempvec2_host[eqnlist[i]].x, p_tempvec2_host[eqnlist[i]].y);
+				// _____________________________________________________________________________________
+
+				
+				// Note : maybe we reached iEqns == EQNS_TOTAL just as we used up all the unmasked.
+				// What happens in this case? The flag is not set. This will never happen though because EQNS_TOTAL >> INNER_EQNS.
+				
+
+				if (bExhaustedUnmasked == true) {
+					// Now deal with going beyond into where residuals are lower than 1/8 of the maximum residual.
+					// Bear in mind we just said ++whichRing but we actually found 0 things to add to that ring.
+					if (iSurroundedRing < whichRing - 2) {
+						// Not all previous rings were surrounded.
+						// repeat performance but this time go through all prev rings to populate each ring:
+
+						whichRing--;  // back to filling the one that scored zero.
+						bExhaustedUnmasked = false;
+						do {
+							ilength = 0;
+
+							// This time go through all prev rings from iSurrounded+1 through to the previous one.
+							for (iPrevRing = iSurroundedRing + 1; iPrevRing < whichRing; iPrevRing++) {
+								ilengthprev = iRingLength[iPrevRing];
+								izArrayPrev = izArray[iPrevRing];
+
+								// each point in previous ring of additions:
+								for (i = 0; ((i < ilengthprev) && (iEqns < EQNS_TOTAL) && (ilength < MAXRINGLEN)); i++)
+								{
+									if (izArray[iPrevRing][i] >= BEGINNING_OF_CENTRAL) {
+										// get izNeighMinor
+										long iVertex = izArray[iPrevRing][i] - BEGINNING_OF_CENTRAL;
+										cudaMemcpy(izNeighMinor, &(pX_use->p_izTri_vert[iVertex * MAXNEIGH]),
+											sizeof(long) * MAXNEIGH, cudaMemcpyDeviceToHost);
+										neigh_len = cuSyst_host.p_info[izArrayPrev[i]].neigh_len;
+									} else {
+										// get izTri as izNeighMinor
+										cudaMemcpy(izNeighMinor, &(pX_use->p_izNeigh_TriMinor[izArray[iPrevRing][i] * 6]),
+											sizeof(long) * 6, cudaMemcpyDeviceToHost);
+										neigh_len = 6;
+									};
+
+									for (j = 0; ((j < neigh_len) && (iEqns < EQNS_TOTAL) && (ilength < MAXRINGLEN)); j++)
+									{
+										jMinor = izNeighMinor[j];
+										// For each neighbour:
+										// . Is it within domain? && is it not already selected ?
+										// Not every CROSSING_INS should be included -- correct?
+										// So we need to do position test as well as check what sort
+										// of flag.
+										if ((iRing[jMinor] == 0) && // hitherto not chosen for matrix
+											(p_inthost[jMinor] != 0) && // exclude unselected equations
+											((cuSyst_host.p_info[jMinor].flag == DOMAIN_TRIANGLE)
+												||
+												(cuSyst_host.p_info[jMinor].flag == DOMAIN_VERTEX)
+												||
+												((cuSyst_host.p_info[jMinor].flag == CROSSING_INS) &&
+													TestDomainPosHost(cuSyst_host.p_info[jMinor].pos))
+												)						
+											)
+										{				
+											// . Add it to this ring
+											// . Tell it that it is in this ring
+											iRing[jMinor] = whichRing;
+											izArray[whichRing][ilength] = jMinor;
+											ilength++;
+											if (ilength == MAXRINGLEN) printf("ilength == %d\n", MAXRINGLEN);
+
+											bSelected[jMinor] = true;
+											p_equation_index_host[jMinor] = iEqns;
+											eqnlist[iEqns] = jMinor;
+											iEqns++;
+											ActualNumberOfEquations++;
+											
+										};
+									}; // next j in neighs
+								}; // next i in ring prev
+								if ((i == ilengthprev) && (iSurroundedRing < iPrevRing)) iSurroundedRing = iPrevRing;
+
+							};
+
+							if ((ilength == 0) && (iEqns < EQNS_TOTAL)) {
+								bExhaustedUnmasked = true;
+							};
+
+							iRingLength[whichRing] = ilength;
+							printf("iRingLength[%d] = %d\n", whichRing, ilength);
+							++whichRing;
+							ilengthprev = ilength;
+							//memcpy(izArrayPrev, izArray, sizeof(long)*ilength);
+
+						} while ((ActualNumberOfEquations < INNER_EQNS) && (!bExhaustedUnmasked));
+
+						printf("2nd pass: bExhaustedUnmasked = %d ; ActualNumberOfEquations = %d ; whichRing = %d; iSurroundedRing = %d\n",
+							(bExhaustedUnmasked ? 1 : 0), ActualNumberOfEquations, whichRing, iSurroundedRing);
+
+					} else { // whether there is room to add more neighbours around the existing matrix-chosen points.
+
+						printf("There was no need to add extra points with lower residuals.\n");
+					};
+				}; 
+
+				ActualNumberOfInnerEquations = ActualNumberOfEquations;
+				StartOfOuterRings = whichRing;
+
+				// Note : maybe we reached iEqns == EQNS_TOTAL just as we used up all the unmasked.
+				// What happens in this case? The flag is not set.
+				
+				if (bExhaustedUnmasked == false) {
+
+					// Now, add the optimizing layers.
+					//===================================================================
+
+					// Start from the last ring that was not surrounded.
+					// Go until we reach the last existing ring. Then go on to next 
+
+					do {
+						ilength = 0;
+						// This time go through all prev rings from iSurrounded+1 through to the previous one.
+						for (iPrevRing = iSurroundedRing + 1; iPrevRing < whichRing; iPrevRing++) {
+							ilengthprev = iRingLength[iPrevRing];
+							izArrayPrev = izArray[iPrevRing];
+							// each point in previous ring of additions:
+							for (i = 0; ((i < ilengthprev) && (iEqns < EQNS_TOTAL) && (ilength < MAXRINGLEN)); i++)
+							{
+								if (izArray[iPrevRing][i] >= BEGINNING_OF_CENTRAL) {
+									// get izNeighMinor
+									long iVertex = izArray[iPrevRing][i] - BEGINNING_OF_CENTRAL;
+									cudaMemcpy(izNeighMinor, &(pX_use->p_izTri_vert[iVertex * MAXNEIGH]),
+										sizeof(long) * MAXNEIGH, cudaMemcpyDeviceToHost);
+									neigh_len = cuSyst_host.p_info[izArrayPrev[i]].neigh_len;
+								}
+								else {
+									// get izTri as izNeighMinor
+									cudaMemcpy(izNeighMinor, &(pX_use->p_izNeigh_TriMinor[izArray[iPrevRing][i] * 6]),
+										sizeof(long) * 6, cudaMemcpyDeviceToHost);
+									neigh_len = 6;
+								};
+
+								for (j = 0; ((j < neigh_len) && (iEqns < EQNS_TOTAL) && (ilength < MAXRINGLEN)); j++)
+								{
+									jMinor = izNeighMinor[j];
+									// For each neighbour:
+									if ((iRing[jMinor] == 0) && // hitherto not chosen for matrix
+										(p_inthost[jMinor] != 0) && // exclude unselected equations
+										((cuSyst_host.p_info[jMinor].flag == DOMAIN_TRIANGLE)
+											||
+											(cuSyst_host.p_info[jMinor].flag == DOMAIN_VERTEX)
+											||
+											((cuSyst_host.p_info[jMinor].flag == CROSSING_INS) &&
+												TestDomainPosHost(cuSyst_host.p_info[jMinor].pos))
+											)
+										)
+									{
+										// . Add it to this ring
+										// . Tell it that it is in this ring
+										iRing[jMinor] = whichRing;
+										izArray[whichRing][ilength] = jMinor;
+										ilength++;
+										if (ilength == MAXRINGLEN) printf("ilength == %d\n", MAXRINGLEN);
+
+										bSelected[jMinor] = true;
+										p_equation_index_host[jMinor] = iEqns;
+										eqnlist[iEqns] = jMinor;
+										iEqns++;
+										ActualNumberOfEquations++;
+									};
+								}; // next j in neighs
+							}; // next i in ring prev
+							if ((i == ilengthprev) && (iSurroundedRing < iPrevRing)) iSurroundedRing = iPrevRing;
+						};
+
+						if ((ilength == 0) && (iEqns < EQNS_TOTAL)) {
+							bExhaustedUnmasked = true;
+						};
+
+						iRingLength[whichRing] = ilength;
+						printf("iRingLength[%d] = %d iEqns %d bExhaustedUnmasked %d ANOE %d\n", whichRing, ilength,
+							iEqns, (bExhaustedUnmasked ? 1 : 0), ActualNumberOfEquations);
+						++whichRing;
+						ilengthprev = ilength;
+						//memcpy(izArrayPrev, izArray, sizeof(long)*ilength);
+
+					} while ((ActualNumberOfEquations < EQNS_TOTAL) && (!bExhaustedUnmasked)); // more rings
+
+
+					printf("3rd pass: bExhaustedUnmasked = %d ; ActualNumberOfEquations = %d ; whichRing = %d; iSurroundedRing = %d\n",
+						(bExhaustedUnmasked ? 1 : 0), ActualNumberOfEquations, whichRing, iSurroundedRing);
+
+				} else {
+					printf("No 3rd pass for outer equations.\n");
+				};
+
+				iFinalRing = whichRing;
+				ActualNumberOfOuterEquations = ActualNumberOfEquations - ActualNumberOfInnerEquations;
+				ActualNumberOfOuterNeighbours = 0;
+				if (!bExhaustedUnmasked) {
+
+					// One more ring, which gives us ActualNumberOfNeighbours.
+					// These are included in the equations to collect.					
+
+					ilength = 0;
+					// This time go through all prev rings from iSurrounded+1 through to the previous one.
+					for (iPrevRing = iSurroundedRing + 1; iPrevRing < whichRing; iPrevRing++) {
+						ilengthprev = iRingLength[iPrevRing];
+						izArrayPrev = izArray[iPrevRing];
+						// each point in previous ring of additions:
+						for (i = 0; ((i < ilengthprev) && (ilength < MAXRINGLEN)); i++)
+						{
+							if (izArray[iPrevRing][i] >= BEGINNING_OF_CENTRAL) {
+								long iVertex = izArray[iPrevRing][i] - BEGINNING_OF_CENTRAL;
+								cudaMemcpy(izNeighMinor, &(pX_use->p_izTri_vert[iVertex * MAXNEIGH]),
+									sizeof(long) * MAXNEIGH, cudaMemcpyDeviceToHost);
+								neigh_len = cuSyst_host.p_info[izArrayPrev[i]].neigh_len;
+							}
+							else {
+								cudaMemcpy(izNeighMinor, &(pX_use->p_izNeigh_TriMinor[izArray[iPrevRing][i] * 6]),
+									sizeof(long) * 6, cudaMemcpyDeviceToHost);
+								neigh_len = 6;
+							};
+
+							for (j = 0; ((j < neigh_len) && (ilength < MAXRINGLEN)); j++)
+							{
+								jMinor = izNeighMinor[j];
+								// For each neighbour:
+								if ((iRing[jMinor] == 0) && // hitherto not chosen for matrix
+									(p_inthost[jMinor] != 0) && // exclude unselected equations
+									(   (cuSyst_host.p_info[jMinor].flag == DOMAIN_TRIANGLE)
+										||
+										(cuSyst_host.p_info[jMinor].flag == DOMAIN_VERTEX)
+										||
+										((cuSyst_host.p_info[jMinor].flag == CROSSING_INS) &&
+											TestDomainPosHost(cuSyst_host.p_info[jMinor].pos))
+										)
+									)
+								{
+									// . Add it to this ring
+									// . Tell it that it is in this ring
+									iRing[jMinor] = whichRing;
+									izArray[whichRing][ilength] = jMinor;
+									ilength++;
+									if (ilength == MAXRINGLEN) printf("ilength == %d\n", MAXRINGLEN);
+
+									bSelected[jMinor] = true; // collect equations
+									p_equation_index_host[jMinor] = iEqns;
+									eqnlist[iEqns] = jMinor;										
+									iEqns++; // these are still collectable equations
+									ActualNumberOfOuterNeighbours++;
+								};
+							}; // next j in neighs
+						}; // next i in ring prev
+						if ((i == ilengthprev) && (iSurroundedRing < iPrevRing)) iSurroundedRing = iPrevRing;
+					};
+
+
+					iRingLength[whichRing] = ilength;
+					printf("iRingLength[%d] = %d\n", whichRing, ilength);
+
+					printf("4th pass: ActualNumberOfOuterNeighbours = %d ; whichRing = %d; iSurroundedRing = %d\n",
+						ActualNumberOfOuterNeighbours, whichRing, iSurroundedRing);
+
+					// this result is suspish.
+
+				} else {
+					printf("No 4th pass for neighbours.\n");
 				}
+
+				printf("ActualNumberOfInnerEquations = %d\n", ActualNumberOfInnerEquations);
+				printf("ActualNumberOfOuterEquations = %d\n", ActualNumberOfOuterEquations);
+				printf("ActualNumberOfEquations = %d\n", ActualNumberOfEquations);
+				printf("ActualNumberOfOuterNeighbours = %d\n", ActualNumberOfOuterNeighbours);
+				printf("Total iEqns = %d\n", iEqns);
+				printf("Start of outer rings = %d ; last ring = %d", StartOfOuterRings, whichRing);
 				getch();
-				*/
-				printf("Creating equations.\n");
+
+
+				// ======================================================================================================
+				// debug:
+				//cudaMemcpy(p_temphost1, p_epsilon_iz, sizeof(f64)*NMINOR, cudaMemcpyDeviceToHost);
+				//cudaMemcpy(p_temphost2, p_epsilon_ez, sizeof(f64)*NMINOR, cudaMemcpyDeviceToHost);
+				//cudaMemcpy(p_tempvec2_host, p_epsilon_xy, sizeof(f64_vec2)*NMINOR, cudaMemcpyDeviceToHost);
+				//for (i = 0; i < EQNS_TOTAL; i++)
+				//{
+				//printf("Eqn %d : %d : epsilon_iz %1.9E ez %1.9E x %1.9E y %1.9E\n",
+				//i, eqnlist[i], p_temphost1[eqnlist[i]], p_temphost2[eqnlist[i]], p_tempvec2_host[eqnlist[i]].x, p_tempvec2_host[eqnlist[i]].y);
+				//}
+				
 				CallMAC(cudaMemcpy(p_selectflag, bSelected, sizeof(bool)*NMINOR, cudaMemcpyHostToDevice));
 				CallMAC(cudaMemcpy(p_equation_index, p_equation_index_host, sizeof(short)*NMINOR, cudaMemcpyHostToDevice));
 
@@ -20119,17 +20635,20 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 				// 3b. Get elec mom flux coefficients
 				// 3c. Combine to create equations for solving.
 
-				CallMAC(cudaMemset(ionmomflux_eqns, 0, sizeof(f64) * 3 * 3 * EQNS_TOTAL*EQNS_TOTAL));
-				CallMAC(cudaMemset(elecmomflux_eqns, 0, sizeof(f64) * 3 * 3 * EQNS_TOTAL*EQNS_TOTAL));
+
+				//. Dimension these arrays to be bigger.
+				//. Create p_RHS_big, p_eqns_big
+
+
+				CallMAC(cudaMemset(ionmomflux_eqns, 0, sizeof(f64) * 3 * 3 * iEqns*iEqns));
+				CallMAC(cudaMemset(elecmomflux_eqns, 0, sizeof(f64) * 3 * 3 * iEqns*iEqns));
 				kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species_effect_of_neighs_on_flux
 					<< <numTriTiles, threadsPerTileMinor >> > (
 						pX_use->p_info,
 						p_vie,
 						// For neutral it needs a different pointer.
 						pX_use->p_v_n, // not used				
-									   // structure of this:
-									   //  
-						ionmomflux_eqns, // say it is 256*3*256*3. Actually pretty big then. Try 128*128*3*3.				
+						ionmomflux_eqns, // 
 						p_selectflag, // whether it's in the smoosh to smash
 						p_equation_index, // each one assigned an equation index				
 						pX_use->p_izTri_vert,
@@ -20162,8 +20681,8 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 						);
 				Call(cudaThreadSynchronize(), "cudaTS kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species_effect_of_neighs_on_flux");
 
-				CallMAC(cudaMemset(p_eqns, 0, sizeof(f64) * 4 * 4 * EQNS_TOTAL*EQNS_TOTAL));
-				CallMAC(cudaMemset(p_RHS, 0, sizeof(f64) * 4 * EQNS_TOTAL));
+				CallMAC(cudaMemset(p_eqns_big, 0, sizeof(f64) * 4 * 4 * iEqns*iEqns));
+				CallMAC(cudaMemset(p_RHS_big, 0, sizeof(f64) * 4 * iEqns));
 				kernelCreateEquations << <numTilesMinor, threadsPerTileMinor >> > (
 					hsub,
 					pX_use->p_info,
@@ -20171,74 +20690,137 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 					elecmomflux_eqns,
 					pX_use->p_n_minor,
 					pX_use->p_AreaMinor,
+					p_d_eps_by_d_MAR_i,
+					p_d_eps_by_d_MAR_e,
+
 					pX_use->p_izNeigh_TriMinor,
 					pX_use->p_izTri_vert,
 					p_equation_index, // each one assigned an equation index
 					p_selectflag,
-					p_eqns, // 4 x EQNS_TOTAL x 4 x EQNS_TOTAL
+					p_eqns_big, // 4 x EQNS_TOTAL x 4 x EQNS_TOTAL   -- but now bigger
 					p_epsilon_xy,
 					p_epsilon_iz,
 					p_epsilon_ez,
-					p_RHS // --- just minus epsilon in an unbundled list.
-						  // maybe need _ on variables
+					p_RHS_big // --- just minus epsilon in an unbundled list.
 					);
 				Call(cudaThreadSynchronize(), "cudaTS kernelCreateEquations");
+				
+
+				// Need to run CreateEquations for everything out to neighs of the solving region, for smoosh method.
+				
+				if ((iMoveType == 5) && (iEqns > EQNS_TOTAL)) {
+
+					// add equations together.
+					
+					// each of 512 threads now goes to gather the equations to add, puts them together into a new set
+					// called p_eqns and p_RHS
+
+					// We have to watch out:
+
+			//		a. If iEqns <= EQNS_TOTAL then this step does not apply at all
+			//		b. In the < case we need to modify what else follows.
+			//			Just ensure that it and RHS are 0 for the unwanted equations.
+					long * longaddress;
+
+					Call(cudaGetSymbolAddress((void **)(&longaddress), iEqnsDevice),
+						"cudaGetSymbolAddress((void **)(&longaddress), iEqnsDevice)");
+					Call(cudaMemcpy(longaddress, &iEqns, sizeof(long), cudaMemcpyHostToDevice),
+						"cudaMemcpy(longaddress, &iEqns, sizeof(long), cudaMemcpyHostToDevice)");
+					Call(cudaGetSymbolAddress((void **)(&longaddress), ActualInnerEqnsDevice),
+						"cudaGetSymbolAddress((void **)(&longaddress), ActualInnerEqnsDevice)");
+					Call(cudaMemcpy(longaddress, &ActualNumberOfInnerEquations, sizeof(long), cudaMemcpyHostToDevice),
+						"cudaMemcpy(longaddress, &ActualNumberOfInnerEquations, sizeof(long), cudaMemcpyHostToDevice)");
+					
+
+					cudaMemset(p_eqns, 0, sizeof(f64) * 4 * 4 * EQNS_TOTAL*EQNS_TOTAL);
+					cudaMemset(p_RHS, 0, sizeof(f64) * 4 * EQNS_TOTAL);
+
+					kernelCombineEquations << < EQNS_TOTAL / 16, 64 >> >
+						( 	p_eqns, p_RHS,
+							p_eqns_big, p_RHS_big
+							);
+					Call(cudaThreadSynchronize(), "cudaTS kernelCombineEquations");
+
+					printf("Ran kernelCombineEquations\n");
+
+					// Idea. Load our own coefficients into memory; but it's deps_j/dvi
+					// could we have a thread for each (i,j)? Too difficult with atomic add need.
+					// Stick to one thread per eqn being assembled i, loop through j.
+					// There will be many redundant threads, as we do nothing if within INNER_EQNS,
+					// except copy p_eqns_big to p_eqns.
+				} else {
+					//else copy from big to eqns and solve them exactly.
+					for (i = 0; i < iEqns; i++)
+						cudaMemcpy(&(p_eqns[4*EQNS_TOTAL*i]), &(p_eqns_big[4 * (EQNS_TOTAL+MAXRINGLEN)*i]),
+							sizeof(f64)*4*EQNS_TOTAL, cudaMemcpyDeviceToDevice);
+					cudaMemcpy(p_RHS, p_RHS_big, sizeof(f64)*iEqns, cudaMemcpyDeviceToDevice);
+					
+				};
+				
+
+
 
 				if (0) {
-					cudaMemcpy(p_eqns_host, p_eqns, 4 * EQNS_TOTAL * 4 * EQNS_TOTAL * sizeof(f64),
+					cudaMemcpy(p_eqns_host, p_eqns, 4 * iEqns * 4 * iEqns * sizeof(f64),
 						cudaMemcpyDeviceToHost);
-					cudaMemcpy(p_temphost5, p_RHS, 4 * EQNS_TOTAL * sizeof(f64), cudaMemcpyDeviceToHost);
+					cudaMemcpy(p_temphost5, p_RHS, 4 * iEqns * sizeof(f64), cudaMemcpyDeviceToHost);
 
 					fp = fopen("eqnmatrix1.txt", "w");
-					for (i = 0; i < 4 * EQNS_TOTAL; i++) {
-						for (j = 0; j < 4 * EQNS_TOTAL; j++)
+					for (i = 0; i < 4 * iEqns; i++) {
+						for (j = 0; j < 4 * iEqns; j++)
 						{
-							fprintf(fp, "%1.14E ", p_eqns_host[i * 4 * EQNS_TOTAL + j]);
+							fprintf(fp, "%1.14E ", p_eqns_host[i * 4 * iEqns + j]);
 						};
 						fprintf(fp, "  |  %1.14E \n", p_temphost5[i]);
 					}
 					fclose(fp);
-					cudaMemcpy(p_eqns_host, ionmomflux_eqns, 3 * EQNS_TOTAL * 3 * EQNS_TOTAL * sizeof(f64),
+					cudaMemcpy(p_eqns_host, ionmomflux_eqns, 3 * iEqns * 3 * iEqns * sizeof(f64),
 						cudaMemcpyDeviceToHost);
 					fp = fopen("ionmatrix1.txt", "w");
-					for (i = 0; i < 3 * EQNS_TOTAL; i++) {
-						for (j = 0; j < 3 * EQNS_TOTAL; j++)
+					for (i = 0; i < 3 * iEqns; i++) {
+						for (j = 0; j < 3 * iEqns; j++)
 						{
-							fprintf(fp, "%1.14E ", p_eqns_host[i * 3 * EQNS_TOTAL + j]);
+							fprintf(fp, "%1.14E ", p_eqns_host[i * 3 * iEqns + j]);
 						};
 						fprintf(fp, "\n");
 					}
 					fclose(fp);
-					cudaMemcpy(p_eqns_host, elecmomflux_eqns, 3 * EQNS_TOTAL * 3 * EQNS_TOTAL * sizeof(f64),
+					cudaMemcpy(p_eqns_host, elecmomflux_eqns, 3 * iEqns * 3 * iEqns * sizeof(f64),
 						cudaMemcpyDeviceToHost);
 					fp = fopen("elecmatrix1.txt", "w");
-					for (i = 0; i < 3 * EQNS_TOTAL; i++) {
-						for (j = 0; j < 3 * EQNS_TOTAL; j++)
+					for (i = 0; i < 3 * iEqns; i++) {
+						for (j = 0; j < 3 * iEqns; j++)
 						{
-							fprintf(fp, "%1.14E ", p_eqns_host[i * 3 * EQNS_TOTAL + j]);
+							fprintf(fp, "%1.14E ", p_eqns_host[i * 3 * iEqns + j]);
 						};
 						fprintf(fp, "\n");
 					}
 					fclose(fp);
 					printf("outputted elecmatrix.txt");
-
-
+					
 					cudaMemoryTest();
 				};
 				
-				printf("send to host\n");
-
 				cudaMemcpy(p_eqns_host, p_eqns, 4 * EQNS_TOTAL * 4 * EQNS_TOTAL * sizeof(f64),
 					cudaMemcpyDeviceToHost);
 				cudaMemcpy(p_temphost5, p_RHS, 4 * EQNS_TOTAL * sizeof(f64), cudaMemcpyDeviceToHost);
 
 				printf("Solving equations.\n");
+				
 				for (int i = 0; i < 4 * EQNS_TOTAL; i++)
 					memcpy(&(matLU.LU[i][0]), &(p_eqns_host[i * 4 * EQNS_TOTAL]), sizeof(f64) * 4 * EQNS_TOTAL);
+				int unused;
+				unused = 0;
+				for (int i = 0; i < 4 * EQNS_TOTAL; i++)
+					if (matLU.LU[i][i] == 0.0) {
+						matLU.LU[i][i] == 1.0; // unused equation
+						p_temphost5[i] = 0.0;
+						unused++;
+					};
+
 				matLU.LUdecomp();
 				matLU.LUSolve(p_temphost5, result); // solving Ax = b and it's (b, x).
-				printf("Done LU. Dimension was %d.\n", 4 * EQNS_TOTAL);
-
+				printf("Done LU. Dimension was %d. Unused %d\n", 4 * EQNS_TOTAL, unused);
 				cudaMemcpy(p_RHS, result, sizeof(f64) * 4 * EQNS_TOTAL, cudaMemcpyHostToDevice);
 				if (0) {
 					fp = fopen("soln1.txt", "w");
@@ -20503,10 +21085,9 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 				// or set the others zero.
 
 				//iRing[jMinor] = whichRing; // Don't see why this belongs here. If anything it's whichRing we want to set.
-
 				// Assign different coefficient to last 2 rings.
 				// Remember if whichRing is now at 11 then whichRing == 9 or 10 is where we put different coefficient.
-
+				
 				CallMAC(cudaMemcpy(p_iRing, iRing, sizeof(int)*NMINOR, cudaMemcpyHostToDevice));
 
 				// Clear the 1st regressor because we set it above to be Jacobi.
@@ -20528,6 +21109,9 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 						p_iRing,
 						p_RHS,
 						whichRing);
+
+				// (ring < whicRing - 3) == regressor 0
+
 				Call(cudaThreadSynchronize(), "cudaTS PopulateRegressors");
 				SubroutineComputeDbyDbeta(hsub, p_regressors2, p_regressors_iz, p_regressors_ez, p_vie, pX_use, 0,
 					1, 1, 1);
@@ -20536,8 +21120,13 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 				SubroutineComputeDbyDbeta(hsub, p_regressors2, p_regressors_iz, p_regressors_ez, p_vie, pX_use, 2,
 					1, 1, 1);
 
+
+
+
+
+
 				// For now let's do without Jacobi, to experiment.
-								
+
 
 				if (0) {//iIteration == 401) {
 
@@ -20601,6 +21190,8 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 						elecmomflux_eqns,
 						pX_use->p_n_minor,
 						pX_use->p_AreaMinor,
+						p_d_eps_by_d_MAR_i,
+						p_d_eps_by_d_MAR_e,
 						pX_use->p_izNeigh_TriMinor, pX_use->p_izTri_vert,
 						p_equation_index, // each one assigned an equation index
 						p_selectflag,
@@ -20855,43 +21446,46 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 
 				printf("Done Heun.\n");
 #endif
+				if (iMoveType == 4) {
+					for (i = 3; i < REGRESSORS; i++)
+					{
+						kernelCreateJacobiRegressorz << <numTilesMinor, threadsPerTileMinor >> >
+							(p_regressors_iz + NMINOR * i,
+								p_d_eps_iz_by_d_beta_i + NMINOR * (i - 1),
+								p__invcoeffselfviz);
+						Call(cudaThreadSynchronize(), "cudaTS Jacobi iz");
+						kernelCreateJacobiRegressorz << <numTilesMinor, threadsPerTileMinor >> >
+							(p_regressors_ez + NMINOR * i,
+								p_d_eps_ez_by_d_beta_i + NMINOR * (i - 1),
+								p__invcoeffselfvez);
+						Call(cudaThreadSynchronize(), "cudaTS Jacobi ez");
+						kernelCreateJacobiRegressorxy << <numTilesMinor, threadsPerTileMinor >> >
+							(p_regressors2 + NMINOR * i,
+								p_d_epsxy_by_d_beta_i + NMINOR * (i - 1),
+								p__invmatrix);
+						Call(cudaThreadSynchronize(), "cudaTS Jacobi xy");
+						kernelZeroWithinRings << <numTilesMinor, threadsPerTileMinor >> > (
+							p_regressors_ez + NMINOR * i,
+							p_selectflag
+							);
+						Call(cudaThreadSynchronize(), "cudaTS ZeroWithin");
+						kernelZeroWithinRings << <numTilesMinor, threadsPerTileMinor >> > (
+							p_regressors_iz + NMINOR * i,
+							p_selectflag
+							);
+						Call(cudaThreadSynchronize(), "cudaTS ZeroWithin");
+						kernelZeroWithinRings2 << <numTilesMinor, threadsPerTileMinor >> > (
+							p_regressors2 + NMINOR * i,
+							p_selectflag
+							);
+						Call(cudaThreadSynchronize(), "cudaTS ZeroWithin");
+						SubroutineComputeDbyDbeta(hsub, p_regressors2, p_regressors_iz, p_regressors_ez, p_vie, pX_use, i,
+							1, 1, 1);
+					};
+				} else {
+					// Do nothing because we already set regressors and Ax to 0.
 
-				for (i = 3; i < REGRESSORS; i++)
-				{
-					kernelCreateJacobiRegressorz << <numTilesMinor, threadsPerTileMinor >> >
-						(p_regressors_iz + NMINOR * i,
-							p_d_eps_iz_by_d_beta_i + NMINOR * (i - 1),
-							p__invcoeffselfviz);
-					Call(cudaThreadSynchronize(), "cudaTS Jacobi iz");
-					kernelCreateJacobiRegressorz << <numTilesMinor, threadsPerTileMinor >> >
-						(p_regressors_ez + NMINOR * i,
-							p_d_eps_ez_by_d_beta_i + NMINOR * (i - 1),
-							p__invcoeffselfvez);
-					Call(cudaThreadSynchronize(), "cudaTS Jacobi ez");
-					kernelCreateJacobiRegressorxy << <numTilesMinor, threadsPerTileMinor >> >
-						(p_regressors2 + NMINOR * i,
-							p_d_epsxy_by_d_beta_i + NMINOR * (i - 1),
-							p__invmatrix);
-					Call(cudaThreadSynchronize(), "cudaTS Jacobi xy");
-					kernelZeroWithinRings << <numTilesMinor, threadsPerTileMinor >> > (
-						p_regressors_ez + NMINOR * i,
-						p_selectflag
-						);
-					Call(cudaThreadSynchronize(), "cudaTS ZeroWithin");
-					kernelZeroWithinRings << <numTilesMinor, threadsPerTileMinor >> > (
-						p_regressors_iz + NMINOR * i,
-						p_selectflag
-						);
-					Call(cudaThreadSynchronize(), "cudaTS ZeroWithin");
-					kernelZeroWithinRings2 << <numTilesMinor, threadsPerTileMinor >> > (
-						p_regressors2 + NMINOR * i,
-						p_selectflag
-						);
-					Call(cudaThreadSynchronize(), "cudaTS ZeroWithin");
-					SubroutineComputeDbyDbeta(hsub, p_regressors2, p_regressors_iz, p_regressors_ez, p_vie, pX_use, i,
-						1, 1, 1);
-				};
-
+				}
 				//	Careful of autocorrelation. Is there a way to reduce it?
 				/*
 				// Now spit out regressors for the 4 values:
@@ -20944,13 +21538,11 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 				//		p_epsilon_xy,
 				//		p__invmatrix);
 				//Call(cudaThreadSynchronize(), "cudaTS Jacobi xy");
-
 				//kernelCreateJacobiRegressorz << <numTilesMinor, threadsPerTileMinor >> >
 				//	(p_regressors_iz + NMINOR,
 				//		p_epsilon_iz,
 				//		p__invcoeffselfviz);
 				//Call(cudaThreadSynchronize(), "cudaTS Jacobi iz");
-
 				//kernelCreateJacobiRegressorz << <numTilesMinor, threadsPerTileMinor >> >
 				//	(p_regressors_ez + NMINOR * 2,
 				//		p_epsilon_ez,
@@ -21014,35 +21606,59 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 				SubroutineComputeDbyDbeta(hsub, p_regressors2, p_regressors_iz, p_regressors_ez, p_vie, pX_use, 4,
 					1, 1, 1);
 				
-
 				// Regressor 5:
 				// We could call kernelCreateDByDBetaCoeffmatrix again to create another 4D Jacobi if we want.
 				// For now make do.
 				
-				kernelCreateDByDBetaCoeffmatrix2 << <numTilesMinor, threadsPerTileMinor >> >(
+				// Actually creates Jacobi:
+				kernelCreateDByDBetaCoeffmatrix << <numTilesMinor, threadsPerTileMinor >> >(
 					hsub,
 					pX_use->p_info,
-					p__matrix_xy_i, p__matrix_xy_e,	   // given
-					p__coeffself_iz, p__coeffself_ez,  // d MAR / dv -- -given
-					p__xzyzzxzy_i, p__xzyzzxzy_e,      // given
+					p__matrix_xy_i, p__matrix_xy_e,
+					p__coeffself_iz, p__coeffself_ez,  // d MAR / d v
+					p__xzyzzxzy_i, p__xzyzzxzy_e,
 					pX_use->p_n_minor, pX_use->p_AreaMinor,
+					p_d_eps_by_d_MAR_i,
+					p_d_eps_by_d_MAR_e,
 
-					p_d_epsxy_by_d_beta_i, 
-					p_d_eps_iz_by_d_beta_i + NMINOR, 
-					p_d_eps_ez_by_d_beta_i + NMINOR*2,
-						
+					p_d_epsxy_by_d_beta_i,
+					p_d_eps_iz_by_d_beta_i + NMINOR,
+					p_d_eps_ez_by_d_beta_i + NMINOR * 2,
+
 					p_regressors2 + NMINOR * 5,
 					p_regressors_iz + NMINOR * 5,
-					p_regressors_ez + NMINOR * 5
-					
-//					p__invmatrix, p__invcoeffselfviz, p__invcoeffselfvez,
-//					p__invcoeffself_x, p__invcoeffself_y // new variables
+					p_regressors_ez + NMINOR * 5,
+
+					0,0,0,0,0
 					);
 				Call(cudaThreadSynchronize(), "cudaTS CreateDByDBetaCoeffmatrix");
 
-				SubroutineComputeDbyDbeta(hsub, p_regressors2, p_regressors_iz, p_regressors_ez, p_vie, pX_use, 5,
-					1, 1, 1);
-				/*
+
+//
+//				kernelCreateDByDBetaCoeffmatrix2 << <numTilesMinor, threadsPerTileMinor >> >(
+//					hsub,
+//					pX_use->p_info,
+//					p__matrix_xy_i, p__matrix_xy_e,	   // given
+//					p__coeffself_iz, p__coeffself_ez,  // d MAR / dv -- -given
+//					p__xzyzzxzy_i, p__xzyzzxzy_e,      // given
+//					pX_use->p_n_minor, pX_use->p_AreaMinor,
+//
+//					p_d_epsxy_by_d_beta_i, 
+//					p_d_eps_iz_by_d_beta_i + NMINOR, 
+//					p_d_eps_ez_by_d_beta_i + NMINOR*2,
+//						
+//					p_regressors2 + NMINOR * 5,
+//					p_regressors_iz + NMINOR * 5,
+//					p_regressors_ez + NMINOR * 5
+//					
+////					p__invmatrix, p__invcoeffselfviz, p__invcoeffselfvez,
+////					p__invcoeffself_x, p__invcoeffself_y // new variables
+//					);
+//				Call(cudaThreadSynchronize(), "cudaTS CreateDByDBetaCoeffmatrix");
+//
+//				SubroutineComputeDbyDbeta(hsub, p_regressors2, p_regressors_iz, p_regressors_ez, p_vie, pX_use, 5,
+//					1, 1, 1);
+//				/*
 //
 				kernelCreateDByDBetaCoeffmatrix2 << <numTilesMinor, threadsPerTileMinor >> >(
 					hsub,
@@ -21065,60 +21681,9 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 					);
 				Call(cudaThreadSynchronize(), "cudaTS CreateDByDBetaCoeffmatrix");
 
-//				Richardson_Divide_by_sqrtsqrtN << <numTilesMinor, threadsPerTileMinor >> >(
-//					pX_use->p_info,
-//					p_regressors2 + NMINOR * 5,
-//					p_regressors_iz + NMINOR * 5,
-//					p_regressors_ez + NMINOR * 5,
-//					p_regressors2,
-//					p_regressors_iz + NMINOR,
-//					p_regressors_ez + NMINOR * 2,
-//					pX_use->p_n_minor, pX_use->p_AreaMinor
-//					);
-//				Call(cudaThreadSynchronize(), "cudaTS Divide Jac");
-
-
-//
-//				kernelCreateJacobiRegressorxy << <numTilesMinor, threadsPerTileMinor >> >
-//					(p_regressors2 + NMINOR * 5,
-//						p_d_epsxy_by_d_beta_i + NMINOR,
-//						p__invmatrix);
-//				Call(cudaThreadSynchronize(), "cudaTS Jacobi xy");
-//				kernelCreateJacobiRegressorz << <numTilesMinor, threadsPerTileMinor >> >
-//					(p_regressors_iz + NMINOR * 5,
-//						p_epsilon_iz,
-//						p__invcoeffselfviz);
-//				Call(cudaThreadSynchronize(), "cudaTS Jacobi iz");
-//				kernelCreateJacobiRegressorz << <numTilesMinor, threadsPerTileMinor >> >
-//					(p_regressors_ez + NMINOR * 5,
-//						p_epsilon_ez,
-//						p__invcoeffselfvez);
-//				Call(cudaThreadSynchronize(), "cudaTS Jacobi ez");
-
-				
-
-
-
-
-				//Subtract_xy << <numTilesMinor, threadsPerTileMinor >> >
-				//	(p_regressors2 + NMINOR * 4, p_d_epsxy_by_d_beta_i, p_regressors2);
-				//Call(cudaThreadSynchronize(), "cudaTS Subtract_xy");
-				//Subtract << <numTilesMinor, threadsPerTileMinor >> >
-				//	(p_regressors_iz + NMINOR * 5, p_d_eps_iz_by_d_beta_i + NMINOR, p_regressors_iz + NMINOR);
-				//Call(cudaThreadSynchronize(), "cudaTS Subtract z");
-				//Subtract << <numTilesMinor, threadsPerTileMinor >> >
-				//	(p_regressors_ez + NMINOR * 5, p_d_eps_ez_by_d_beta_i + NMINOR * 2, p_regressors_ez + NMINOR * 2);
-				//Call(cudaThreadSynchronize(), "cudaTS Subtract z");
-
-				////cudaMemcpy(p_regressors2 + NMINOR * 4, p_d_epsxy_by_d_beta_i, sizeof(f64_vec2)*NMINOR, cudaMemcpyDeviceToDevice);
-				//// Regressor 6:
-				////cudaMemcpy(p_regressors_iz + NMINOR * 5, p_d_eps_iz_by_d_beta_i + NMINOR, sizeof(f64)*NMINOR, cudaMemcpyDeviceToDevice);
-				////cudaMemcpy(p_regressors_ez + NMINOR * 5, p_d_eps_ez_by_d_beta_i + NMINOR*2, sizeof(f64)*NMINOR, cudaMemcpyDeviceToDevice);
-
 				SubroutineComputeDbyDbeta(hsub, p_regressors2, p_regressors_iz, p_regressors_ez, p_vie, pX_use, 5,
 					1, 1, 1);
-				//SubroutineComputeDbyDbeta(hsub, p_regressors2, p_regressors_iz, p_regressors_ez, p_vie, pX_use, 6,
-				//	0, 1, 1); // all apply
+
 
 							  // 7 = previous xy move, or historic xy move
 							  // 8 = previous iz and ez moves, or historic.
@@ -21129,42 +21694,6 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 				// We overwrote what used to be, splitting out the xy prev component into slot 6.
 
 
-
-				// Compressed prev components: try to include 3rd Jacobi:
-
-
-				*/
-
-
-				if (iIteration == 0) {
-					if (bHistoryVisc == 0) {
-						// in this case let's start with just 2nd derivatives / any old rubbish:
-						cudaMemcpy(p_regressors2 + NMINOR * 6, p_d_epsxy_by_d_beta_i + 3 * NMINOR, sizeof(f64_vec2)*NMINOR, cudaMemcpyDeviceToDevice);
-						cudaMemcpy(p_regressors_iz + NMINOR * 7, p_d_eps_iz_by_d_beta_i + 4 * NMINOR, sizeof(f64)*NMINOR, cudaMemcpyDeviceToDevice);
-						cudaMemcpy(p_regressors_ez + NMINOR * 7, p_d_eps_ez_by_d_beta_i + 4 * NMINOR, sizeof(f64)*NMINOR, cudaMemcpyDeviceToDevice);
-
-					} else {
-						// Historic move split into xy, izez :
-						SplitVector4 << <numTilesMinor, threadsPerTileMinor >> > (
-							p_regressors2 + NMINOR * 6, p_regressors_iz + NMINOR * 7, p_regressors_ez + NMINOR * 7,
-							p_stored_move4, p_Selectflag
-							);
-						Call(cudaThreadSynchronize(), "cudaTS SplitVector4");
-					};
-				}
-				else {
-					// Previous move split into xy, izez :
-					SplitVector4 << < numTilesMinor, threadsPerTileMinor >> > (
-						p_regressors2 + NMINOR * 6, p_regressors_iz + NMINOR * 7, p_regressors_ez + NMINOR * 7,
-						p_stored_move4, p_Selectflag
-						);
-					Call(cudaThreadSynchronize(), "cudaTS SplitVector4");
-				};
-
-				SubroutineComputeDbyDbeta(hsub, p_regressors2, p_regressors_iz, p_regressors_ez, p_vie, pX_use, 6,
-					1, 0, 0);
-				SubroutineComputeDbyDbeta(hsub, p_regressors2, p_regressors_iz, p_regressors_ez, p_vie, pX_use, 7,
-					0, 1, 1);
 
 				break;
 			case 1:
@@ -21214,10 +21743,7 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 				Call(cudaThreadSynchronize(), "cudaTS Richardson");
 				cudaMemset(p_regressors2 + NMINOR * 2, 0, sizeof(f64_vec2)*NMINOR); // wipe out after
 #endif
-
 				
-
-
 				// Collect deps/dbeta for first 3 regressors:
 				// ===================================================
 
@@ -21261,24 +21787,10 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 
 				// Coeff on 1, 3, 4, 5 all come out TINY.
 
-
-				SplitVector4 << < numTilesMinor, threadsPerTileMinor >> > (
-					p_d_epsxy_by_d_beta_e, // DISCARD
-					p_regressors_iz + NMINOR * 6, p_regressors_ez + NMINOR * 7,
-					p_stored_move4, p_Selectflag
-					);
-				Call(cudaThreadSynchronize(), "cudaTS SplitVector4");
-
-				SubroutineComputeDbyDbeta(hsub, p_regressors2, p_regressors_iz, p_regressors_ez, p_vie, pX_use, 6,
-					0, 1, 0);
-				SubroutineComputeDbyDbeta(hsub, p_regressors2, p_regressors_iz, p_regressors_ez, p_vie, pX_use, 7,
-					0, 0, 1); // all apply
-				
 							  // "If this method isn't effective then we need to swap out the 'correcting' xy regressors
 							  // or combine them into 1 and combine prev directions into 1
 							  // and use more derivatives in the regression.
 							  // That is almost certainly going to turn out to be a good idea."
-
 				break;
 
 			case 2:
@@ -21293,7 +21805,6 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 				// 6: J_iz,ez(change due to beta 0)
 				// 7: previous xy -- maybe we need more previous terms
 				
-
 				// Keep 0th = Jacobi 4D.
 
 				// Bear in mind high collinearity here.
@@ -21360,8 +21871,7 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 				// 0 = 4D Jacobi
 				// 1,2 = Extra Jacobi, Richardson
 				// 3,4,5 = Iterated Jacobi 
-
-
+				
 				kernelCreateJacobiRegressorxy << <numTilesMinor, threadsPerTileMinor >> >
 					(p_regressors2 + NMINOR * 3,
 						p_d_epsxy_by_d_beta_i,
@@ -21387,89 +21897,83 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 					0, 1, 0);
 				SubroutineComputeDbyDbeta(hsub, p_regressors2, p_regressors_iz, p_regressors_ez, p_vie, pX_use, 5,
 					0, 0, 1); 
-
-				
-				SplitVector4 << < numTilesMinor, threadsPerTileMinor >> > (
-					p_regressors2 + NMINOR * 6, 
-					p_regressors_iz + NMINOR * 7, p_regressors_ez + NMINOR * 7,
-					p_stored_move4, p_Selectflag
-					);
-				Call(cudaThreadSynchronize(), "cudaTS SplitVector4");
-
-				SubroutineComputeDbyDbeta(hsub, p_regressors2, p_regressors_iz, p_regressors_ez, p_vie, pX_use, 6,
-					1, 0, 0);
-				SubroutineComputeDbyDbeta(hsub, p_regressors2, p_regressors_iz, p_regressors_ez, p_vie, pX_use, 7,
-					0, 1, 1); // all apply
-
-
-
-
-
-
-
-
-
-
-
-
-
-				////Subtract_xy << <numTilesMinor, threadsPerTileMinor >> > // c=b-a
-				////	(p_regressors2 + NMINOR * 4, p_d_epsxy_by_d_beta_i + (0) * NMINOR, p_regressors2 + (0)*NMINOR);
-				////Call(cudaThreadSynchronize(), "cudaTS Subtract_xy");
-
-				////Multiply_components_xy << <numTilesMinor, threadsPerTileMinor >> > // c=ba
-				////	(p_regressors2 + NMINOR * 5, p_d_epsxy_by_d_beta_i + 0 * NMINOR, p_epsilon_xy);
-				////Call(cudaThreadSynchronize(), "cudaTS Multiply_components_xy");
-
-				////SubroutineComputeDbyDbeta(hsub, p_regressors2, p_regressors_iz, p_regressors_ez, p_vie, pX_use, 4,
-				////	1, 0, 0);
-				////SubroutineComputeDbyDbeta(hsub, p_regressors2, p_regressors_iz, p_regressors_ez, p_vie, pX_use, 5,
-				////	1, 0, 0);
-
-				//////Subtract_xy << <numTilesMinor, threadsPerTileMinor >> > // c=b-a
-				//////	(p_regressors2 + NMINOR * 4, p_d_epsxy_by_d_beta_i + 1 * NMINOR, p_regressors2 + 1*NMINOR);
-				//////Call(cudaThreadSynchronize(), "cudaTS Subtract_xy");
-
-				//////SubroutineComputeDbyDbeta(hsub, p_regressors2, p_regressors_iz, p_regressors_ez, p_vie, pX_use, 4,
-				//////	1, 0, 0);
-
-				//////Subtract_xy << <numTilesMinor, threadsPerTileMinor >> > // c=b-a
-				//////	(p_regressors2 + NMINOR * 5, p_d_epsxy_by_d_beta_i + 4 * NMINOR, p_regressors2 +4*NMINOR);
-				//////Call(cudaThreadSynchronize(), "cudaTS Subtract_xy");
-
-				//////SubroutineComputeDbyDbeta(hsub, p_regressors2, p_regressors_iz, p_regressors_ez, p_vie, pX_use, 5,
-				//////	1, 0, 0);
-
-				//kernelCreateJacobiRegressorz << <numTilesMinor, threadsPerTileMinor >> >
-				//	(p_regressors_iz + NMINOR * 6,
-				//		p_d_eps_iz_by_d_beta_i,
-				//		p__invcoeffselfviz);
-				//Call(cudaThreadSynchronize(), "cudaTS Jacobi iz");
-
-				//kernelCreateJacobiRegressorz << <numTilesMinor, threadsPerTileMinor >> >
-				//	(p_regressors_ez + NMINOR * 6,
-				//		p_d_eps_ez_by_d_beta_i,
-				//		p__invcoeffselfvez);
-				//Call(cudaThreadSynchronize(), "cudaTS Jacobi ez");
-
-				//SubroutineComputeDbyDbeta(hsub, p_regressors2, p_regressors_iz, p_regressors_ez, p_vie, pX_use, 6,
-				//	0, 1, 1);
-
-				//SplitVector4 << < numTilesMinor, threadsPerTileMinor >> > (
-				//	p_regressors2 + NMINOR * 7,
-				//	p_dump, p_dump2,
-				//	p_stored_move4, p_Selectflag
-				//	);
-				//Call(cudaThreadSynchronize(), "cudaTS Jacobi ez");
-
-				//SubroutineComputeDbyDbeta(hsub, p_regressors2, p_regressors_iz, p_regressors_ez, p_vie, pX_use, 7,
-				//	1, 0, 0);
-
+								
 				break;
-			}
+			};
+			
+			// Now fill in the final 2-8 regressors: same in every case.
+			
+			if (iIteration == 0) {
+				if (iHistoricCounter == 0) {
+					// in this case let's start with just 2nd derivatives / any old rubbish:
+					cudaMemcpy(p_regressors2 + NMINOR * 6, p_d_epsxy_by_d_beta_i + 3 * NMINOR, sizeof(f64_vec2)*NMINOR, cudaMemcpyDeviceToDevice);
+					cudaMemcpy(p_regressors_iz + NMINOR * 7, p_d_eps_iz_by_d_beta_i + 4 * NMINOR, sizeof(f64)*NMINOR, cudaMemcpyDeviceToDevice);
+					cudaMemcpy(p_regressors_ez + NMINOR * 7, p_d_eps_ez_by_d_beta_i + 4 * NMINOR, sizeof(f64)*NMINOR, cudaMemcpyDeviceToDevice);
+
+					SubroutineComputeDbyDbeta(hsub, p_regressors2, p_regressors_iz, p_regressors_ez, p_vie, pX_use, 6,
+						1, 0, 0);
+					SubroutineComputeDbyDbeta(hsub, p_regressors2, p_regressors_iz, p_regressors_ez, p_vie, pX_use, 7,
+						0, 1, 1);
+				} else {
+					if (iHistoricCounter == 1) {
+						// Historic move split into xy, izez :
+						SplitVector4 << <numTilesMinor, threadsPerTileMinor >> > (
+							p_regressors2 + NMINOR * 6, p_regressors_iz + NMINOR * 7, p_regressors_ez + NMINOR * 7,
+							p_stored_move4, p_Selectflag
+							);
+						Call(cudaThreadSynchronize(), "cudaTS SplitVector4");
+					}
+					else {
+						// use historic:
+						// Note: NUM_HISTORIC == REGRESSORS, we need to get rid of it.
+						if (iHistoricCounter <= NUM_HISTORIC) {
+
+							// do the last iHistoricCounter regressors
+							for (i = 0; i < iHistoricCounter; i++) {
+								SplitVector4 << <numTilesMinor, threadsPerTileMinor >> > (
+									p_regressors2 + NMINOR * (REGRESSORS - 1 - i), p_regressors_iz + NMINOR * (REGRESSORS - 1 - i), p_regressors_ez + NMINOR * (REGRESSORS - 1 - i),
+									p_historic_v_moves[i], p_Selectflag
+									); // Good -- p_Selectflag zeroes outside region
+								Call(cudaThreadSynchronize(), "cudaTS SplitVector4");
+								SubroutineComputeDbyDbeta(hsub, p_regressors2, p_regressors_iz, p_regressors_ez, p_vie, pX_use, (REGRESSORS - 1 - i),
+									1, 1, 1);
+							};
+
+						} else {
+							// Overwrite back until we overwrite all 8 -- we must to do this to
+							// include previous move, even if we get rid of Jacobi that we created.:
+							for (i = 0; i < REGRESSORS; i++) {
+								SplitVector4 << <numTilesMinor, threadsPerTileMinor >> > (
+									p_regressors2 + NMINOR * i, p_regressors_iz + NMINOR * i, p_regressors_ez + NMINOR * i,
+									p_historic_v_moves[i], p_Selectflag
+									);
+								Call(cudaThreadSynchronize(), "cudaTS SplitVector4");
+								SubroutineComputeDbyDbeta(hsub, p_regressors2, p_regressors_iz, p_regressors_ez, p_vie, pX_use, i,
+									1, 1, 1);
+							};
+						};
+					};
+				};
+			} else {
+
+				// Do not introduce this for smoosh move.
+
+				if (iMoveType < 5) {
+					// Previous move split into xy, izez :
+					SplitVector4 << < numTilesMinor, threadsPerTileMinor >> > (
+						p_regressors2 + NMINOR * 6, p_regressors_iz + NMINOR * 7, p_regressors_ez + NMINOR * 7,
+						p_stored_move4, p_Selectflag
+						);
+					Call(cudaThreadSynchronize(), "cudaTS SplitVector4");
+
+					SubroutineComputeDbyDbeta(hsub, p_regressors2, p_regressors_iz, p_regressors_ez, p_vie, pX_use, 6,
+						1, 0, 0);
+					SubroutineComputeDbyDbeta(hsub, p_regressors2, p_regressors_iz, p_regressors_ez, p_vie, pX_use, 7,
+						0, 1, 1);
+				};
+			};
 		} // scoping brace for matLU
-
-
+		
 		  /*// Normalize regressor: divide by L2 norm.
 		  // ___________________________________________:
 		  kernelAccumulateSumOfSquares_4 << <numTilesMinor, threadsPerTileMinor >> >
@@ -21556,8 +22060,7 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 		  //cudaMemcpy(p_tempvec2_host3, p_d_epsxy_by_d_beta_i, sizeof(f64_vec2)*NMINOR*REGRESSORS, cudaMemcpyDeviceToHost);
 		  //cudaMemcpy(p_temphost5, p_d_eps_iz_by_d_beta_i, sizeof(f64)*NMINOR*REGRESSORS, cudaMemcpyDeviceToHost);
 		  //cudaMemcpy(p_temphost6, p_d_eps_ez_by_d_beta_i, sizeof(f64)*NMINOR*REGRESSORS, cudaMemcpyDeviceToHost);
-
-
+		
 		  //dbgfile = fopen("debug.txt", "w");
 		  //for (long iMinor = 0; iMinor < NMINOR; iMinor++)
 		  //{
@@ -21592,7 +22095,6 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 			GlobalCutaway = false;
 
 			// 1.  Represent epsilon xy as xy velocity
-
 			cudaMemcpy(p_tempvec2_host, p_epsilon_xy, sizeof(f64_vec2)*NMINOR, cudaMemcpyDeviceToHost);
 			f64 maxx = 0.0, minx = 0.0, miny = 0.0, maxy = 0.0;
 			long iMin = 0, iMax = 0, iMiy = 0, iMay = 0;
@@ -21618,7 +22120,6 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 			printf("Results of prev move: epsilon\n");
 			printf("maxx %1.9E at %d ; minx %1.9E at %d\n", maxx, iMax, minx, iMin);
 			printf("maxy %1.9E at %d ; miny %1.9E at %d\n", maxy, iMay, miny, iMiy);
-
 
 			// 2.  epsilon ez graph
 			cudaMemcpy(p_temphost1, p_epsilon_ez, sizeof(f64)*NMINOR, cudaMemcpyDeviceToHost);
@@ -21848,183 +22349,188 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 		// collect eps deps and sum-product matrix
 		// ===============================================
 
-		//if (iMoveType != 4) {
-
-		cudaMemset(p_eps_against_d_eps, 0, sizeof(f64)*REGRESSORS * numTilesMinor);
-		cudaMemset(p_sum_product_matrix, 0, sizeof(f64) * REGRESSORS*REGRESSORS* numTilesMinor);
-		kernelAccumulateSummandsVisc << <numTilesMinor, threadsPerTileMinor / 4 >> > (
-			p_epsilon_xy, // 
-			p_epsilon_iz,
-			p_epsilon_ez,
-			p_d_epsxy_by_d_beta_i, // f64_vec2
-			p_d_eps_iz_by_d_beta_i,
-			p_d_eps_ez_by_d_beta_i,
-
-			p_eps_against_d_eps,  // 1x8 for each tile
-			p_sum_product_matrix // this is 8x8 for each tile
-			);
-		Call(cudaThreadSynchronize(), "cudaTS AccumulateSummands visc2");
-
-		cudaMemcpy(p_eps_against_d_eps_host, p_eps_against_d_eps, sizeof(f64) * REGRESSORS * numTilesMinor, cudaMemcpyDeviceToHost);
-		cudaMemcpy(p_sum_product_matrix_host, p_sum_product_matrix, sizeof(f64) * REGRESSORS*REGRESSORS * numTilesMinor, cudaMemcpyDeviceToHost);
-
 		f64 eps_deps[REGRESSORS];
 		f64 sum_product_matrix[REGRESSORS*REGRESSORS];
 		memset(eps_deps, 0, sizeof(f64) * REGRESSORS);
 		memset(sum_product_matrix, 0, sizeof(f64) * REGRESSORS*REGRESSORS);
-		for (iTile = 0; iTile < numTilesMinor; iTile++)
-		{
-			for (i = 0; i < REGRESSORS; i++)
-				eps_deps[i] -= p_eps_against_d_eps_host[iTile *REGRESSORS + i];
-
-			// Note minus, to get beta already negated.
-
-			for (i = 0; i < REGRESSORS*REGRESSORS; i++)
-				sum_product_matrix[i] += p_sum_product_matrix_host[iTile *REGRESSORS*REGRESSORS + i];
-		};
-		// Try this:
-		for (i = 0; i < REGRESSORS; i++)
-			if ((sum_product_matrix[REGRESSORS*i + i] == 0.0) && (eps_deps[i] == 0.0))
-				sum_product_matrix[REGRESSORS*i + i] = 1.0;
-
-
-		if ((!GlobalSuppressSuccessVerbosity) || (iIteration >= ITERGRAPH))
-		{
-			printf("\n");
-			for (i = 0; i < REGRESSORS; i++) {
-				for (int j = 0; j < REGRESSORS; j++)
-					printf("ei %1.9E ", sum_product_matrix[i*REGRESSORS + j]);
-				printf(" |  %1.9E \n", eps_deps[i]);
-			}
-			printf("\n");
-		}
-		// Note that file 1041-Krylov.pdf claims that simple factorization for LS is an
-		// unstable method and that is why the complications of GMRES are needed.
-
-		// now we need the LAPACKE dgesv code to solve the 8x8 linear equation.
-		f64 storeRHS[REGRESSORS];
-		f64 storemat[REGRESSORS*REGRESSORS];
-		memcpy(storeRHS, eps_deps, sizeof(f64)*REGRESSORS);
-		memcpy(storemat, sum_product_matrix, sizeof(f64)*REGRESSORS*REGRESSORS);
-
-		Matrix_real matLU;
-		matLU.Invoke(REGRESSORS);
-		for (i = 0; i < REGRESSORS; i++)
-			for (int j = 0; j < REGRESSORS; j++)
-				matLU.LU[i][j] = sum_product_matrix[i*REGRESSORS + j];
-		matLU.LUdecomp();
-		matLU.LUSolve(eps_deps, beta);
-
-		SetConsoleTextAttribute(hConsole, 13);
-		printf("\nbeta: ");
-		for (i = 0; i < REGRESSORS; i++)
-			printf(" %1.8E ", beta[i]);
-		printf("\n");
-		SetConsoleTextAttribute(hConsole, 15);
 
 		char o;
-		if ((iIteration == ITERGRAPH) || (bDebug)) {
-			printf("reset beta? y/n\n");
-			do {
-				o = getch();
-			} while ((o != 'y') && (o != 'n'));
-			if (o == 'y') {
-				if (iMoveType == 4) {
-					beta[0] = 0.5;
-					beta[1] = 0.5;
-					beta[2] = 0.5;
-					beta[3] = 0.0;
-					beta[4] = 0.0;
-					beta[5] = 0.0;
-					beta[6] = 0.0;
-					beta[7] = 0.0;
+		if (iMoveType != 5) {
+
+			cudaMemset(p_eps_against_d_eps, 0, sizeof(f64)*REGRESSORS * numTilesMinor);
+			cudaMemset(p_sum_product_matrix, 0, sizeof(f64) * REGRESSORS*REGRESSORS* numTilesMinor);
+			kernelAccumulateSummandsVisc << <numTilesMinor, threadsPerTileMinor / 4 >> > (
+				p_epsilon_xy, // 
+				p_epsilon_iz,
+				p_epsilon_ez,
+				p_d_epsxy_by_d_beta_i, // f64_vec2
+				p_d_eps_iz_by_d_beta_i,
+				p_d_eps_ez_by_d_beta_i,
+
+				p_eps_against_d_eps,  // 1x8 for each tile
+				p_sum_product_matrix // this is 8x8 for each tile
+				);
+			Call(cudaThreadSynchronize(), "cudaTS AccumulateSummands visc2");
+
+			cudaMemcpy(p_eps_against_d_eps_host, p_eps_against_d_eps, sizeof(f64) * REGRESSORS * numTilesMinor, cudaMemcpyDeviceToHost);
+			cudaMemcpy(p_sum_product_matrix_host, p_sum_product_matrix, sizeof(f64) * REGRESSORS*REGRESSORS * numTilesMinor, cudaMemcpyDeviceToHost);
+
+			for (iTile = 0; iTile < numTilesMinor; iTile++)
+			{
+				for (i = 0; i < REGRESSORS; i++)
+					eps_deps[i] -= p_eps_against_d_eps_host[iTile *REGRESSORS + i];
+				// Note minus, to get beta already negated.
+				for (i = 0; i < REGRESSORS*REGRESSORS; i++)
+					sum_product_matrix[i] += p_sum_product_matrix_host[iTile *REGRESSORS*REGRESSORS + i];
+			};
+			// Try this:
+			for (i = 0; i < REGRESSORS; i++)
+				if ((sum_product_matrix[REGRESSORS*i + i] == 0.0) && (eps_deps[i] == 0.0))
+					sum_product_matrix[REGRESSORS*i + i] = 1.0;
+
+
+			if ((!GlobalSuppressSuccessVerbosity) || (iIteration >= ITERGRAPH))
+			{
+				printf("\n");
+				for (i = 0; i < REGRESSORS; i++) {
+					for (int j = 0; j < REGRESSORS; j++)
+						printf("ei %1.9E ", sum_product_matrix[i*REGRESSORS + j]);
+					printf(" |  %1.9E \n", eps_deps[i]);
 				}
-				else {
-					beta[0] = -0.7;
-					if (iMoveType == 3) {
-						beta[1] = -0.7;
-						beta[2] = -0.7;
+				printf("\n");
+			}
+			// Note that file 1041-Krylov.pdf claims that simple factorization for LS is an
+			// unstable method and that is why the complications of GMRES are needed.
+
+			// now we need the LAPACKE dgesv code to solve the 8x8 linear equation.
+			f64 storeRHS[REGRESSORS];
+			f64 storemat[REGRESSORS*REGRESSORS];
+			memcpy(storeRHS, eps_deps, sizeof(f64)*REGRESSORS);
+			memcpy(storemat, sum_product_matrix, sizeof(f64)*REGRESSORS*REGRESSORS);
+
+			Matrix_real matLU;
+			matLU.Invoke(REGRESSORS);
+			for (i = 0; i < REGRESSORS; i++)
+				for (int j = 0; j < REGRESSORS; j++)
+					matLU.LU[i][j] = sum_product_matrix[i*REGRESSORS + j];
+			matLU.LUdecomp();
+			matLU.LUSolve(eps_deps, beta);
+
+			SetConsoleTextAttribute(hConsole, 13);
+			printf("\nbeta: ");
+			for (i = 0; i < REGRESSORS; i++)
+				printf(" %1.8E ", beta[i]);
+			printf("\n");
+			SetConsoleTextAttribute(hConsole, 15);
+
+			if ((iIteration == ITERGRAPH) || (bDebug)) {
+				printf("reset beta? y/n\n");
+				do {
+					o = getch();
+				} while ((o != 'y') && (o != 'n'));
+				if (o == 'y') {
+					if (iMoveType == 4) {
+						beta[0] = 0.5;
+						beta[1] = 0.5;
+						beta[2] = 0.5;
+						beta[3] = 0.0;
+						beta[4] = 0.0;
+						beta[5] = 0.0;
+						beta[6] = 0.0;
+						beta[7] = 0.0;
 					}
 					else {
-						beta[1] = 0.0; beta[2] = 0.0;
-					}
-					beta[3] = 0.0;
-					beta[4] = 0.0;
-					beta[5] = 0.0;
-					beta[6] = 0.0;
-					beta[7] = 0.0;
-				};
+						beta[0] = -0.7;
+						if (iMoveType == 3) {
+							beta[1] = -0.7;
+							beta[2] = -0.7;
+						}
+						else {
+							beta[1] = 0.0; beta[2] = 0.0;
+						}
+						beta[3] = 0.0;
+						beta[4] = 0.0;
+						beta[5] = 0.0;
+						beta[6] = 0.0;
+						beta[7] = 0.0;
+					};
+				}
+				printf("%c\n", o);
+				// If it is inaccurate at 1% then does that mean reassessment at 1% gives accurate estimate?
+
 			}
-			printf("%c\n", o);
-			// If it is inaccurate at 1% then does that mean reassessment at 1% gives accurate estimate?
-
-		}
-		////
-		//		beta[0] = 0.0;
-		//		beta[1] = 0.0;
-		//		beta[4] = 0.0;
-		//		beta[5] = 0.0;
-		//		beta[6] = 0.0;
-		//		beta[7] = 0.0;
+			////
+			//		beta[0] = 0.0;
+			//		beta[1] = 0.0;
+			//		beta[4] = 0.0;
+			//		beta[5] = 0.0;
+			//		beta[6] = 0.0;
+			//		beta[7] = 0.0;
 
 
-		//	beta[0] = -1.0;
-		//	beta[1] = -1.0;
-		//	beta[2] = -1.0;
-		/*
+			//	beta[0] = -1.0;
+			//	beta[1] = -1.0;
+			//	beta[2] = -1.0;
+			/*
 
-		#ifdef LAPACKE
-		lapack_int ipiv[REGRESSORS];
-		lapack_int Nrows = REGRESSORS,
-		Ncols = REGRESSORS,  // lda
-		Nrhscols = 1, // ldb
-		Nrhsrows = REGRESSORS, info;
+			#ifdef LAPACKE
+			lapack_int ipiv[REGRESSORS];
+			lapack_int Nrows = REGRESSORS,
+			Ncols = REGRESSORS,  // lda
+			Nrhscols = 1, // ldb
+			Nrhsrows = REGRESSORS, info;
 
-		//	for (i = 0; i < REGRESSORS; i++) {
-		//		for (int j = 0; j < REGRESSORS; j++)
-		//			printf("%1.8E ", sum_product_matrix[i*REGRESSORS + j]);
-		//		printf(" ] [ %1.8E ]\n", eps_deps[i]);
-		//	};
+			//	for (i = 0; i < REGRESSORS; i++) {
+			//		for (int j = 0; j < REGRESSORS; j++)
+			//			printf("%1.8E ", sum_product_matrix[i*REGRESSORS + j]);
+			//		printf(" ] [ %1.8E ]\n", eps_deps[i]);
+			//	};
 
-		 
 
-		//	printf("LAPACKE_dgesv Results\n");
-		// Solve the equations A*X = B
-		info = LAPACKE_dgesv(LAPACK_ROW_MAJOR,
-		Nrows, 1, sum_product_matrix, Ncols, ipiv, eps_deps, Nrhscols);
-		// Check for the exact singularity :
 
-		if (info > 0) {
-		printf("The diagonal element of the triangular factor of A,\n");
-		printf("U(%i,%i) is zero, so that A is singular;\n", info, info);
-		printf("the solution could not be computed.\n");
-		printf("press c\n");
-		while (getch() != 'c');
-		}
-		else {
-		if (info == 0) {
-		memcpy(beta, eps_deps, REGRESSORS * sizeof(f64)); // that's where LAPACKE saves the result apparently.
+			//	printf("LAPACKE_dgesv Results\n");
+			// Solve the equations A*X = B
+			info = LAPACKE_dgesv(LAPACK_ROW_MAJOR,
+			Nrows, 1, sum_product_matrix, Ncols, ipiv, eps_deps, Nrhscols);
+			// Check for the exact singularity :
+
+			if (info > 0) {
+			printf("The diagonal element of the triangular factor of A,\n");
+			printf("U(%i,%i) is zero, so that A is singular;\n", info, info);
+			printf("the solution could not be computed.\n");
+			printf("press c\n");
+			while (getch() != 'c');
+			}
+			else {
+			if (info == 0) {
+			memcpy(beta, eps_deps, REGRESSORS * sizeof(f64)); // that's where LAPACKE saves the result apparently.
+			};
+			}
+			#endif
+			*/
+			// Debug:
+			//printf("a = dummy1, s = dummy2, d = dummy3; other = continue\n");
+			//char o = getch();
+			//if ((o == 'a') || (o == 's') || (o == 'd') || (o == 'f') || (o == 'g') || (o == 'h') || (o == 'j') || (o == 'k') ) 
+			//{ 
+			//	memset(beta,0,sizeof(f64)*REGRESSORS);
+			//	if (o == 'a') beta[0] = 100.0;
+			//	if (o == 's') beta[1] = 100.0;
+			//	if (o == 'd') beta[2] = 100.0;
+			//	if (o == 'f') beta[3] = 100.0;
+			//	if (o == 'g') beta[4] = 100.0;
+			//	if (o == 'h') beta[5] = 100.0;
+			//	if (o == 'j') beta[6] = 100.0;
+			//	if (o == 'k') beta[7] = 100.0;
+			//}
+			// 
+		} else {
+
+			beta[0] = 1.0;
+			beta[1] = 1.0;
+			beta[2] = 1.0;
+			memset(&(beta[3]), 0, sizeof(f64) * 5);
 		};
-		}
-		#endif
-		*/
-		// Debug:
-		//printf("a = dummy1, s = dummy2, d = dummy3; other = continue\n");
-		//char o = getch();
-		//if ((o == 'a') || (o == 's') || (o == 'd') || (o == 'f') || (o == 'g') || (o == 'h') || (o == 'j') || (o == 'k') ) 
-		//{ 
-		//	memset(beta,0,sizeof(f64)*REGRESSORS);
-		//	if (o == 'a') beta[0] = 100.0;
-		//	if (o == 's') beta[1] = 100.0;
-		//	if (o == 'd') beta[2] = 100.0;
-		//	if (o == 'f') beta[3] = 100.0;
-		//	if (o == 'g') beta[4] = 100.0;
-		//	if (o == 'h') beta[5] = 100.0;
-		//	if (o == 'j') beta[6] = 100.0;
-		//	if (o == 'k') beta[7] = 100.0;
-		//}
-		// 
-
 		// Now beta[8] is the set of coefficients for x
 		// Move to the new value: add lc of regressors to proposal vector.
 
@@ -22186,7 +22692,7 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 		bool condition = true;
 		bool bGiveUp = false;
 
-		if (o == 'y') {
+		if ((o == 'y') || (iMoveType == 5)){
 			bGiveUp = true;
 			printf("Skipping most of lambda loop!\n");
 		};
@@ -22194,7 +22700,7 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 		while (condition) {
 
 			SetConsoleTextAttribute(hConsole, 12);
-			printf("Loop: lambda = %1.9E \n", lambda);
+			printf("iMoveType %d : Loop: lambda = %1.9E \n", iMoveType, lambda);
 			SetConsoleTextAttribute(hConsole, 15);
 
 			// 1. Find RSS(lambda) and if not accepted, dRSS(lambda); call this dRSS1.
@@ -22238,7 +22744,8 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 				pX_use->p_v_n,
 				p_MAR_ion2, p_MAR_elec2,
 				pX_use->p_n_minor, pX_use->p_AreaMinor,
-				p_nu_in_MT, p_nu_en_MT,
+				p_d_eps_by_d_MAR_i,
+				p_d_eps_by_d_MAR_e,
 				p_epsilon_xy, p_epsilon_iz, p_epsilon_ez,
 				p_bFailed,
 				p_Selectflag
@@ -22660,6 +23167,8 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 				SetConsoleTextAttribute(hConsole, 15);
 			};
 
+			if (lambda < 1.0e-11) bGiveUp = true;
+
 			if (bGiveUp) {
 				condition = false;
 				//printf("condition == false and go to skip.\n");
@@ -22841,16 +23350,26 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 
 		skip:
 
-			if ((lambda < 0.1) && (iMoveType == 4) && (condition == false))
+			if ((lambda < 0.16) && (iMoveType == 4) && (condition == false) && (iIteration > 100)
+				&& (iIteration % 12 == 0)) // stubborn residuals
 			{
-
 				// If we think we are accepted lambda < 0.1 then think again.
 
-				printf("((lambda < 0.1) && (iMoveType == 4)) so restore coeffs to {1/2,1/2,1/2,0,0,0,0,0}\n");
+				// Note, this doesn't do anything if the linear regression already decided
+				// that the coefficients were small.
+
+
+				// Which is what happens.
+				
+
+
+				printf("((lambda < 0.16) && (iMoveType == 4)) so restore coeffs to {0.16 beta,ditto,0,0,0,0,0}\n");
 				// Go again:
-				beta[0] = 0.5;
-				beta[1] = 0.5;
-				beta[2] = 0.5;
+				// This trick worked!
+
+				beta[0] = min(beta[0], max(1.0, beta[0])*0.16);
+				beta[1] = min(beta[1], max(1.0, beta[1])*0.16);
+				beta[2] = min(beta[2], max(1.0, beta[2])*0.16);
 				beta[3] = 0.0;
 				beta[4] = 0.0;
 				beta[5] = 0.0;
@@ -22863,6 +23382,8 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 					(p_vie, p_regressors2, p_regressors_iz, p_regressors_ez, p_stored_move4);
 				Call(cudaThreadSynchronize(), "cudaTS AddLCtoVector4");
 
+				// stored_move4 is now the previous move we made in this solve.
+
 				lambda = 1.0;
 				bGiveUp = true;
 				condition = true;
@@ -22874,7 +23395,7 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 		oldRSS = RSS_xy + RSS_iz + RSS_ez;
 
 
-		fileptr = fopen("perf.txt", "a");
+		fileptr = fopen("perf_ii.txt", "a");
 		fprintf(fileptr, "iIteration %d iMoveType %d beta ", iIteration, iMoveType);
 		for (i = 0; i < REGRESSORS; i++)
 			fprintf(fileptr, "%1.12E ", beta[i]);
