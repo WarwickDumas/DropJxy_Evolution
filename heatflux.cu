@@ -80,14 +80,12 @@ __global__ void kernelCombineEquations(
 	f64 * __restrict__ p_eqns_big_,
 	f64 * __restrict__ p_RHS_big_)
 {
+	// Launch 1 thread for each equation in destination matrix.
 	long const iEqn = blockDim.x*blockIdx.x + threadIdx.x;
 
-	if (iEqn < ActualInnerEqnsDevice) {
-	
-		// If we never reached EQNS_TOTAL
+	if (iEqn < ActualInnerEqnsDevice*4) {
 
-		// Try removing these lines:
-		
+		// If we never reached EQNS_TOTAL
 		// just copy over the line for eqn.
 		memcpy(&(p_eqns_[4 * EQNS_TOTAL*iEqn]),
 			&(p_eqns_big_[4 * (EQNS_TOTAL+MAXRINGLEN)*iEqn]),
@@ -95,13 +93,11 @@ __global__ void kernelCombineEquations(
 		p_RHS_[iEqn] = p_RHS_big_[iEqn];
 
 	} else {
-
 		// go through and look for ones to add.
 
 		// Can we say that the effects are always reciprocal
 		// so that element (i,j) is nonzero iff (j,i) is nonzero?
 		// Fair assumption?!
-
 		// Read our own equation into memory: (?!)
 
 		// How much mem does it take?
@@ -110,26 +106,28 @@ __global__ void kernelCombineEquations(
 		// Say there is 48K memory. Only 12 threads/processor.
 		// Not much good.
 
-
 		// Best speedup is to load sections of the row at a time.
 		// e.g. 96 doubles/thread says keep it down to 64.
-		f64 coefficient;
-		
+		f64 coefficient;		
 		//Need to bear in mind we may not have populated full set of neighs to be affected.
 		//We get to end of neighs or end of unmasked without reaching MAXRINGLEN.
 		
-		for (int j = 0; j < iEqnsDevice; j++) {
+		for (int j = ActualInnerEqnsDevice*4; j < iEqnsDevice*4; j++) {
 			coefficient = p_eqns_big_[4 * (EQNS_TOTAL + MAXRINGLEN)*j + iEqn];
 			// deps_j/dv_i
+
+			// Okay, we only want to include equations
+			// whose eqn number is greater than ActualInnerEqnsDevice.
 
 			if (coefficient != 0.0) {
 				// add eqn j multiplied by coefficient
 				for (int caret = 0; caret < 4 * EQNS_TOTAL; caret++)
 					p_eqns_[4 * EQNS_TOTAL*iEqn + caret] +=
 					coefficient*p_eqns_big_[4 * (EQNS_TOTAL+MAXRINGLEN)*j + caret];
-				// Try removing this line:
-				// Triggers illegal memory access.				
 				p_RHS_[iEqn] += coefficient*p_RHS_big_[j];
+
+			//	if (iEqn == 48) printf("Row 48: j = %d coeff = %1.5E RHS+= %1.5E\n",
+			//		j, coefficient, coefficient*p_RHS_big_[j]);
 			};
 		};
 	};
@@ -9765,6 +9763,7 @@ kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species_effect_of_neighs_o
 
 				iEqnOurs = p_mapping_to_array[iVertex + BEGINNING_OF_CENTRAL];
 				// We are losing energy if there is viscosity into OUTERMOST.
+			//	if (iEqnOurs == 0) printf("iEqnOurs 0 found (vertex)\n");
 
 				memcpy(izTri, p_izTri + iVertex*MAXNEIGH_d, MAXNEIGH_d * sizeof(long));
 				memcpy(szPBC, p_szPBC + iVertex*MAXNEIGH_d, MAXNEIGH_d * sizeof(char));
@@ -10159,17 +10158,17 @@ kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species_effect_of_neighs_o
 											if (iDimension < 2) {
 												if (iDimension == 0) {
 													// x->x
-													eqns[(iEqnOurs * 3 + 0) * 3 * EQNS_TOTAL + iEqnTheirs * 3 + 0] += visc_contrib.z;
+													eqns[(iEqnOurs * 3 + 0) * 3 * (EQNS_TOTAL + MAXRINGLEN) + iEqnTheirs * 3 + 0] += visc_contrib.z;
 													// x->y
-													eqns[(iEqnOurs * 3 + 1) * 3 * EQNS_TOTAL + iEqnTheirs * 3 + 0] += visc_contrib.z;
+													eqns[(iEqnOurs * 3 + 1) * 3 * (EQNS_TOTAL + MAXRINGLEN) + iEqnTheirs * 3 + 0] += visc_contrib.z;
 												} else {
 													// y->x
-													eqns[(iEqnOurs * 3 + 0) * 3 * EQNS_TOTAL + iEqnTheirs * 3 + 1] += visc_contrib.z;
+													eqns[(iEqnOurs * 3 + 0) * 3 * (EQNS_TOTAL + MAXRINGLEN) + iEqnTheirs * 3 + 1] += visc_contrib.z;
 													// y->y
-													eqns[(iEqnOurs * 3 + 1) * 3 * EQNS_TOTAL + iEqnTheirs * 3 + 1] += visc_contrib.z;
+													eqns[(iEqnOurs * 3 + 1) * 3 * (EQNS_TOTAL + MAXRINGLEN) + iEqnTheirs * 3 + 1] += visc_contrib.z;
 												};
 											} else {
-												eqns[(iEqnOurs * 3 + 2) * 3 * EQNS_TOTAL + iEqnTheirs * 3 + 2] += visc_contrib.z;
+												eqns[(iEqnOurs * 3 + 2) * 3 * (EQNS_TOTAL + MAXRINGLEN) + iEqnTheirs * 3 + 2] += visc_contrib.z;
 											};
 										}
 										else {
@@ -10318,9 +10317,13 @@ kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species_effect_of_neighs_o
 											// Dimension 1 = change in y in EqnTheirs, effect on xyz of EqnOurs.
 											// Probably won't need to analyze this.
 
-											eqns[(iEqnOurs * 3 + 0) * 3 * EQNS_TOTAL + iEqnTheirs * 3 + iDimension] += visc_contrib.x;
-											eqns[(iEqnOurs * 3 + 1) * 3 * EQNS_TOTAL + iEqnTheirs * 3 + iDimension] += visc_contrib.y; // contrib vz -> eps_y
-											eqns[(iEqnOurs * 3 + 2) * 3 * EQNS_TOTAL + iEqnTheirs * 3 + iDimension] += visc_contrib.z;
+											// DEBUG:
+									//		if (iEqnOurs == 0) printf("outputting to matrix! iEqnOurs 0 iEqnTheirs %d iDim %d %1.9E %1.9E %1.9E\n", iEqnTheirs, iDimension,
+									//			visc_contrib.x, visc_contrib.y, visc_contrib.z);
+
+											eqns[(iEqnOurs * 3 + 0) * 3 * (EQNS_TOTAL + MAXRINGLEN) + iEqnTheirs * 3 + iDimension] += visc_contrib.x;
+											eqns[(iEqnOurs * 3 + 1) * 3 * (EQNS_TOTAL + MAXRINGLEN) + iEqnTheirs * 3 + iDimension] += visc_contrib.y; // contrib vz -> eps_y
+											eqns[(iEqnOurs * 3 + 2) * 3 * (EQNS_TOTAL + MAXRINGLEN) + iEqnTheirs * 3 + iDimension] += visc_contrib.z;
 
 											//if (0) // (iVertex == VERTCHOSEN)) 
 											//{
@@ -10363,7 +10366,7 @@ kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species_effect_of_neighs_o
 				long iEqnOurs, iEqnTheirs;
 
 				iEqnOurs = p_mapping_to_array[iMinor];
-
+			//	if (iEqnOurs == 0) printf("iEqnOurs 0 found (minor) %d\n", iMinor);
 				memcpy(izNeighMinor, p_izNeighMinor + iMinor * 6, sizeof(long) * 6);
 				memcpy(szPBC, p_szPBCtriminor + iMinor * 6, sizeof(char) * 6);
 			
@@ -10846,15 +10849,15 @@ kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species_effect_of_neighs_o
 												printf("CHOSEN unmag visc_contrib.z %1.8E \n", visc_contrib.z);
 #endif
 											if (iDimension == 0) {
-												eqns[(iEqnOurs * 3 + 0) * 3 * EQNS_TOTAL + iEqnTheirs * 3 + 0] += visc_contrib.x;
-												eqns[(iEqnOurs * 3 + 1) * 3 * EQNS_TOTAL + iEqnTheirs * 3 + 0] += visc_contrib.y;
+												eqns[(iEqnOurs * 3 + 0) * 3 * (EQNS_TOTAL + MAXRINGLEN) + iEqnTheirs * 3 + 0] += visc_contrib.x;
+												eqns[(iEqnOurs * 3 + 1) * 3 * (EQNS_TOTAL + MAXRINGLEN) + iEqnTheirs * 3 + 0] += visc_contrib.y;
 											};
 											if (iDimension == 1) {
-												eqns[(iEqnOurs * 3 + 0) * 3 * EQNS_TOTAL + iEqnTheirs * 3 + 1] += visc_contrib.x;
-												eqns[(iEqnOurs * 3 + 1) * 3 * EQNS_TOTAL + iEqnTheirs * 3 + 1] += visc_contrib.y;
+												eqns[(iEqnOurs * 3 + 0) * 3 * (EQNS_TOTAL + MAXRINGLEN) + iEqnTheirs * 3 + 1] += visc_contrib.x;
+												eqns[(iEqnOurs * 3 + 1) * 3 * (EQNS_TOTAL + MAXRINGLEN) + iEqnTheirs * 3 + 1] += visc_contrib.y;
 											};
 											if (iDimension == 2)
-												eqns[(iEqnOurs * 3 + 2) * 3 * EQNS_TOTAL + iEqnTheirs * 3 + 2] += visc_contrib.z;
+												eqns[(iEqnOurs * 3 + 2) * 3 * (EQNS_TOTAL + MAXRINGLEN) + iEqnTheirs * 3 + 2] += visc_contrib.z;
 
 											//if (TESTVISCCOEFFS) printf("38295: iEqnOurs %d iEqnTheirs %d filling in %d with %1.8E \n",
 											//	iEqnOurs, iEqnTheirs, (iEqnOurs * 3 + 2) * 3 * EQNS_TOTAL + iEqnTheirs * 3 + 2, visc_contribz);
@@ -11023,28 +11026,13 @@ kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species_effect_of_neighs_o
 											visc_contrib.z = over_m_s*(unit_b.z*momflux_b + unit_perp.z*momflux_perp + unit_Hall.z*momflux_Hall);
 
 											// Mostly want to know own impact on self.
+							//				if (iEqnOurs == 0) printf("to matrix! iEqnOurs 0 iEqnTheirs %d iTri %d iDim %d %1.9E %1.9E %1.9E\n", iEqnTheirs, iTri, iDimension,
+							//					visc_contrib.x, visc_contrib.y, visc_contrib.z);
 
-											eqns[(iEqnOurs * 3 + 0) * 3 * EQNS_TOTAL + iEqnTheirs * 3 + iDimension] += visc_contrib.x;
-											eqns[(iEqnOurs * 3 + 1) * 3 * EQNS_TOTAL + iEqnTheirs * 3 + iDimension] += visc_contrib.y; // contrib vz -> eps_y
-											eqns[(iEqnOurs * 3 + 2) * 3 * EQNS_TOTAL + iEqnTheirs * 3 + iDimension] += visc_contrib.z;
+											eqns[(iEqnOurs * 3 + 0) * 3 * (EQNS_TOTAL + MAXRINGLEN) + iEqnTheirs * 3 + iDimension] += visc_contrib.x;
+											eqns[(iEqnOurs * 3 + 1) * 3 * (EQNS_TOTAL + MAXRINGLEN) + iEqnTheirs * 3 + iDimension] += visc_contrib.y; // contrib vz -> eps_y
+											eqns[(iEqnOurs * 3 + 2) * 3 * (EQNS_TOTAL + MAXRINGLEN) + iEqnTheirs * 3 + iDimension] += visc_contrib.z;
 											
-											// For some reason we are not obtaining 
-										//	if ((iEqnOurs * 3 + 0) * 3 * EQNS_TOTAL + iEqnTheirs * 3 + iDimension == 97) {
-										//		printf("Element 97 augmented: eqns[97] %1.10E : added visc_contrib.x %1.10E\n",
-										//			eqns[97], visc_contrib.x);}
-
-											
-											//if (iMinor == 38295)
-											//{
-											//	printf("38295: iEqnOurs %d iEqnTheirs %d filling in %d with %1.8E (x) \n",
-											//		iEqnOurs, iEqnTheirs, (iEqnOurs*3 + 0) * 3 * EQNS_TOTAL + iEqnTheirs * 3 + 2, visc_contrib.x);
-											//	printf("38295: iEqnOurs %d iEqnTheirs %d filling in %d with %1.8E (y) \n",
-											//		iEqnOurs, iEqnTheirs, (iEqnOurs*3 + 1) * 3 * EQNS_TOTAL + iEqnTheirs * 3 + 2, visc_contrib.y); 
-											//	printf("38295: iEqnOurs %d iEqnTheirs %d filling in %d with %1.8E (z) \n",
-											//			iEqnOurs, iEqnTheirs, (iEqnOurs*3 + 2) * 3 * EQNS_TOTAL + iEqnTheirs * 3 + 2, visc_contrib.z);
-											//};
-
-											// Missing a *3
 											// This way of organizing really sucked --- but ultimately we have to spit out a matrix, that's the problem.
 											// Would be better if we could have had matrix of vectors and written a 3-vector here.
 										};
@@ -11209,10 +11197,10 @@ __global__ void kernelCreateEquations(
 			// Can we explain why it's 3 and not 4 ? -- oops
 			// Our own effect:
 			// contribution to x residual:
-		memcpy(&ionfluxcoeff3, &(p_ionmomflux[3 * EQNS_TOTAL*(iOurEqn*3) + 3 * iOurEqn]),
+		memcpy(&ionfluxcoeff3, &(p_ionmomflux[3 * (EQNS_TOTAL + MAXRINGLEN)*(iOurEqn*3) + 3 * iOurEqn]),
 			sizeof(double3)); // half a bus!
 		// 3*EQNS_TOTAL*(iOurEqn*3) is the start of row of our epsilon_x.
-		memcpy(&elecfluxcoeff3, &(p_elecmomflux[3 * EQNS_TOTAL*(iOurEqn*3) + 3 * iOurEqn]),
+		memcpy(&elecfluxcoeff3, &(p_elecmomflux[3 * (EQNS_TOTAL + MAXRINGLEN)*(iOurEqn*3) + 3 * iOurEqn]),
 			sizeof(double3));
 
 		//Think carefully about meanings. We propose a change in vy. This changes
@@ -11231,12 +11219,12 @@ __global__ void kernelCreateEquations(
 		// the equations are 4 dimensions contributing to 4 dimensions of residual.
 
 
-		memcpy(&(eqns[4 * EQNS_TOTAL*(iOurEqn*4) + 4 * iOurEqn]), &coeff, sizeof(double4));
+		memcpy(&(eqns[4 * (EQNS_TOTAL + MAXRINGLEN)*(iOurEqn*4) + 4 * iOurEqn]), &coeff, sizeof(double4));
 
 		// Contribs to y residual:
-		memcpy(&ionfluxcoeff3, &(p_ionmomflux[3 * EQNS_TOTAL*(iOurEqn*3 + 1) + 3 * iOurEqn]),
+		memcpy(&ionfluxcoeff3, &(p_ionmomflux[3 * (EQNS_TOTAL + MAXRINGLEN)*(iOurEqn*3 + 1) + 3 * iOurEqn]),
 			sizeof(double3)); // half a bus!
-		memcpy(&elecfluxcoeff3, &(p_elecmomflux[3 * EQNS_TOTAL*(iOurEqn*3+1) + 3 * iOurEqn]),
+		memcpy(&elecfluxcoeff3, &(p_elecmomflux[3 * (EQNS_TOTAL + MAXRINGLEN)*(iOurEqn*3+1) + 3 * iOurEqn]),
 			sizeof(double3));
 		
 		coeff.x = factor_i*ionfluxcoeff3.x + factor_e*elecfluxcoeff3.x;
@@ -11249,7 +11237,7 @@ __global__ void kernelCreateEquations(
 
 		// Note that whereas ion flux was 3 dimensions contributing to 3 dimensions of flux,
 		// the equations are 4 dimensions contributing to 4 dimensions of residual.
-		memcpy(&(eqns[4 * EQNS_TOTAL*(iOurEqn*4 + 1) + 4 * iOurEqn]), &coeff, sizeof(double4));
+		memcpy(&(eqns[4 * (EQNS_TOTAL + MAXRINGLEN)*(iOurEqn*4 + 1) + 4 * iOurEqn]), &coeff, sizeof(double4));
 
 		//if (TEST_EPSILON_Y_IMINOR) printf("%d y->y coeff.y %1.14E ionfluxcoeff3.y %1.14E elecfluxcoeff3.y %1.13E factor_i %1.11E factor_e %1.11E\n",
 		//	iMinor, coeff.y, ionfluxcoeff3.y, elecfluxcoeff3.y, 
@@ -11261,7 +11249,7 @@ __global__ void kernelCreateEquations(
 		//);
 
 		// Contribs to iz residual:
-		memcpy(&ionfluxcoeff3, &(p_ionmomflux[3 * EQNS_TOTAL*(iOurEqn*3 + 2) + 3 * iOurEqn]),
+		memcpy(&ionfluxcoeff3, &(p_ionmomflux[3 * (EQNS_TOTAL + MAXRINGLEN)*(iOurEqn*3 + 2) + 3 * iOurEqn]),
 			sizeof(double3)); // half a bus!
 		// MAR_ion_z is whose derivative is populated in ionfluxcoeff3 WRT vx
 		coeff.x = ROC_i*ionfluxcoeff3.x;
@@ -11274,10 +11262,10 @@ __global__ void kernelCreateEquations(
 
 		// Note that whereas ion flux was 3 dimensions contributing to 3 dimensions of flux,
 		// the equations are 4 dimensions contributing to 4 dimensions of residual.
-		memcpy(&(eqns[4 * EQNS_TOTAL*(iOurEqn*4 + 2) + 4 * iOurEqn]), &coeff, sizeof(double4));
+		memcpy(&(eqns[4 * (EQNS_TOTAL + MAXRINGLEN)*(iOurEqn*4 + 2) + 4 * iOurEqn]), &coeff, sizeof(double4));
 
 		// Contribs to ez residual:
-		memcpy(&elecfluxcoeff3, &(p_elecmomflux[3 * EQNS_TOTAL*(iOurEqn*3+2) + 3 * iOurEqn]),
+		memcpy(&elecfluxcoeff3, &(p_elecmomflux[3 * (EQNS_TOTAL + MAXRINGLEN)*(iOurEqn*3+2) + 3 * iOurEqn]),
 			sizeof(double3));
 		coeff.x = ROC_e*elecfluxcoeff3.x;
 		coeff.y = ROC_e*elecfluxcoeff3.y;
@@ -11295,7 +11283,7 @@ __global__ void kernelCreateEquations(
 
 		// Note that whereas ion flux was 3 dimensions contributing to 3 dimensions of flux,
 		// the equations are 4 dimensions contributing to 4 dimensions of residual.
-		memcpy(&(eqns[4 * EQNS_TOTAL*(iOurEqn*4 + 3) + 4 * iOurEqn]), &coeff, sizeof(double4));
+		memcpy(&(eqns[4 * (EQNS_TOTAL + MAXRINGLEN)*(iOurEqn*4 + 3) + 4 * iOurEqn]), &coeff, sizeof(double4));
 
 		if (iMinor < BEGINNING_OF_CENTRAL) {
 			memcpy(izNeigh, p_Indexneigh_tri + 6 * iMinor, sizeof(long) * 6);
@@ -11315,9 +11303,9 @@ __global__ void kernelCreateEquations(
 				iTheirIndex = p_eqn_index[iNeigh];
 
 				// contribution to x residual:
-				memcpy(&ionfluxcoeff3, &(p_ionmomflux[3 * EQNS_TOTAL*(iOurEqn*3) + 3 * iTheirIndex]),
+				memcpy(&ionfluxcoeff3, &(p_ionmomflux[3 * (EQNS_TOTAL + MAXRINGLEN)*(iOurEqn*3) + 3 * iTheirIndex]),
 					sizeof(double3)); // half a bus!
-				memcpy(&elecfluxcoeff3, &(p_elecmomflux[3 * EQNS_TOTAL*(iOurEqn*3) + 3 * iTheirIndex]),
+				memcpy(&elecfluxcoeff3, &(p_elecmomflux[3 * (EQNS_TOTAL + MAXRINGLEN)*(iOurEqn*3) + 3 * iTheirIndex]),
 					sizeof(double3));
 				coeff.x = factor_i*ionfluxcoeff3.x + factor_e*elecfluxcoeff3.x;
 				coeff.y = factor_i*ionfluxcoeff3.y + factor_e*elecfluxcoeff3.y;
@@ -11330,54 +11318,42 @@ __global__ void kernelCreateEquations(
 //				coeff.z *= sqrtN;
 //				coeff.w *= sqrtN;
 //#endif
-				memcpy(&(eqns[4 * EQNS_TOTAL*iOurEqn*4 + 4 * iTheirIndex]), &coeff, sizeof(double4));
+				memcpy(&(eqns[4 * (EQNS_TOTAL + MAXRINGLEN)*iOurEqn*4 + 4 * iTheirIndex]), &coeff, sizeof(double4));
 
 				// The y residual:
-				memcpy(&ionfluxcoeff3, &(p_ionmomflux[3 * EQNS_TOTAL*(iOurEqn*3 + 1) + 3 * iTheirIndex]),
+				memcpy(&ionfluxcoeff3, &(p_ionmomflux[3 * (EQNS_TOTAL + MAXRINGLEN)*(iOurEqn*3 + 1) + 3 * iTheirIndex]),
 					sizeof(double3)); // half a bus!
-				memcpy(&elecfluxcoeff3, &(p_elecmomflux[3 * EQNS_TOTAL*(iOurEqn*3 + 1) + 3 * iTheirIndex]),
+				memcpy(&elecfluxcoeff3, &(p_elecmomflux[3 * (EQNS_TOTAL + MAXRINGLEN)*(iOurEqn*3 + 1) + 3 * iTheirIndex]),
 					sizeof(double3));
 				coeff.x = factor_i*ionfluxcoeff3.x + factor_e*elecfluxcoeff3.x;
 				coeff.y = factor_i*ionfluxcoeff3.y + factor_e*elecfluxcoeff3.y;
 				coeff.z = factor_i*ionfluxcoeff3.z ;
 				coeff.w = factor_e*elecfluxcoeff3.z;
 
-				memcpy(&(eqns[4 * EQNS_TOTAL*(iOurEqn*4 + 1) + 4 * iTheirIndex]), &coeff, sizeof(double4));
+				memcpy(&(eqns[4 * (EQNS_TOTAL + MAXRINGLEN)*(iOurEqn*4 + 1) + 4 * iTheirIndex]), &coeff, sizeof(double4));
 
 
-				memcpy(&ionfluxcoeff3, &(p_ionmomflux[3 * EQNS_TOTAL*(iOurEqn*3 + 2) + 3 * iTheirIndex]),
+				memcpy(&ionfluxcoeff3, &(p_ionmomflux[3 * (EQNS_TOTAL + MAXRINGLEN)*(iOurEqn*3 + 2) + 3 * iTheirIndex]),
 					sizeof(double3)); // half a bus!
 				coeff.x = ROC_i*ionfluxcoeff3.x;
 				coeff.y = ROC_i*ionfluxcoeff3.y;
 				coeff.z = ROC_i*ionfluxcoeff3.z;
 				coeff.w = 0.0;
 
-				memcpy(&(eqns[4 * EQNS_TOTAL*(iOurEqn*4 + 2) + 4 * iTheirIndex]), &coeff, sizeof(double4));
+				memcpy(&(eqns[4 * (EQNS_TOTAL + MAXRINGLEN)*(iOurEqn*4 + 2) + 4 * iTheirIndex]), &coeff, sizeof(double4));
 				
-				memcpy(&elecfluxcoeff3, &(p_elecmomflux[3 * EQNS_TOTAL*(iOurEqn*3 + 2) + 3 * iTheirIndex]),
+				memcpy(&elecfluxcoeff3, &(p_elecmomflux[3 * (EQNS_TOTAL + MAXRINGLEN)*(iOurEqn*3 + 2) + 3 * iTheirIndex]),
 					sizeof(double3));
 				coeff.x = ROC_e*elecfluxcoeff3.x;
 				coeff.y = ROC_e*elecfluxcoeff3.y;
 				coeff.z = 0.0;
 				coeff.w = ROC_e*elecfluxcoeff3.z;
 
-				memcpy(&(eqns[4 * EQNS_TOTAL*(iOurEqn*4 + 3) + 4 * iTheirIndex]), &coeff, sizeof(double4));
+				memcpy(&(eqns[4 * (EQNS_TOTAL + MAXRINGLEN)*(iOurEqn*4 + 3) + 4 * iTheirIndex]), &coeff, sizeof(double4));
 
 			} // was this neigh selected.
 		}; // next j
-	}; // bSelect
-//
-//
-//	Alternative: could do least squares for our own and surrounding
-//		by including more eqns ..
-//		think then we always might as well populate coeffs;
-//				 the choice is, do we want to leave outer coeffs = 0
-//					 just because they affect things outside
-//
-//			I think stick with the plan where we've got a square matrix.
-//			And post-hoc a regression.
-//
-		
+	}; // bSelect		
 } 
 
 __global__ void Richardson_Divide_by_sqrtsqrtN(
@@ -13043,8 +13019,8 @@ __global__ void kernelComputeCombinedDEpsByDBeta(
 		f64 ROC_e = p_ROC_e[iMinor];
 		//f64 ratio_nn_ntot = n_use.n_n / (n_use.n_n + n_use.n);
 		
-		f64_vec2 putative = hsub*((MAR_ion.xypart()*m_ion + MAR_elec.xypart()*m_e) /
-			((m_ion + m_e)*N));
+		f64_vec2 putative = ((MAR_ion.xypart()*m_ion + MAR_elec.xypart()*m_e) /
+			((m_ion + m_e)));
 		Depsilon.vxy = sqrtN*regrxy + (putative)*ROC_i;
 		Depsilon.viz = sqrtN*regriz + MAR_ion.z*ROC_i;
 		Depsilon.vez = sqrtN*regrez + MAR_elec.z*ROC_e;
@@ -13805,6 +13781,8 @@ __global__ void Multiply_components_xy // c=b-a
 	result.y = in1.y*in2.y;
 	p_result[index] = result;
 }
+
+
 __global__ void
 kernelPopulateRegressors_from_iRing_RHS
 (f64_vec2 * __restrict__ p_regr2,
@@ -13820,37 +13798,41 @@ kernelPopulateRegressors_from_iRing_RHS
 	short * __restrict__ p_eqn_index,
 	int * __restrict__ p_Ring,
 	f64 * __restrict__ p_solution,
-	int const whicRing)
+	int const whicRing,
+	long const numEqnsUsed)
 {
 	long const index = blockDim.x * blockIdx.x + threadIdx.x;
-
 	if (p_selected[index]) {
 		int ring = p_Ring[index];
 		short eqnindex = p_eqn_index[index];
-		double4 jillium;
-		memcpy(&jillium, &(p_solution[4*eqnindex]), sizeof(f64) * 4);
+		if (eqnindex < numEqnsUsed) {
+			double4 jillium;
+			memcpy(&jillium, &(p_solution[4 * eqnindex]), sizeof(f64) * 4);
 
-		// Important:
-		// regressor 2 corresponds to whichRing-1, whichRing-2
-		
-		if (ring < whicRing - 3)
-		{
-			p_regr2[index].x = jillium.x;
-			p_regr2[index].y = jillium.y;
-			p_regr_iz[index] = jillium.z;
-			p_regr_ez[index] = jillium.w; // don't get them wrong way round.
-		} else {
-			if (ring == whicRing - 3) // whichRing-1 and whichRing-2 are the last two rings.
+			// Important:
+			// regressor 2 corresponds to whichRing-1, whichRing-2
+
+			if (ring < whicRing - 3)
 			{
-				p_regr2_1[index].x = jillium.x;
-				p_regr2_1[index].y = jillium.y;
-				p_regr_iz_1[index] = jillium.z;
-				p_regr_ez_1[index] = jillium.w;
-			} else {
-				p_regr2_2[index].x = jillium.x; // whichRing-1, whichRing-2
-				p_regr2_2[index].y = jillium.y;
-				p_regr_iz_2[index] = jillium.z;
-				p_regr_ez_2[index] = jillium.w;
+				p_regr2[index].x = jillium.x;
+				p_regr2[index].y = jillium.y;
+				p_regr_iz[index] = jillium.z;
+				p_regr_ez[index] = jillium.w; // don't get them wrong way round.
+			}
+			else {
+				if (ring == whicRing - 3) // whichRing-1 and whichRing-2 are the last two rings.
+				{
+					p_regr2_1[index].x = jillium.x;
+					p_regr2_1[index].y = jillium.y;
+					p_regr_iz_1[index] = jillium.z;
+					p_regr_ez_1[index] = jillium.w;
+				}
+				else {
+					p_regr2_2[index].x = jillium.x; // whichRing-1, whichRing-2
+					p_regr2_2[index].y = jillium.y;
+					p_regr_iz_2[index] = jillium.z;
+					p_regr_ez_2[index] = jillium.w;
+				};
 			};
 		};
 	} else {

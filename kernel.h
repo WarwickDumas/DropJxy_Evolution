@@ -318,7 +318,8 @@ kernelPopulateRegressors_from_iRing_RHS
 	short * __restrict__ p_eqn_index,
 	int * __restrict__ p_Ring,
 	f64 * __restrict__ p_solution,
-	int const whicRing);
+	int const whicRing,
+	long const numEqnsUsed);
 
 
 __global__ void kernelCreateEquations(
