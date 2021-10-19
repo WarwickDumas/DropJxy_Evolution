@@ -221,22 +221,20 @@ __global__ void kernelCalculate_ita_visc(
 		f64 nu_elec_minor = (0.3*0.87 + 0.6)*nu_eiBar + 0.6*nu_en_visc;
 		if (T.Te <= 0.0) printf("ita calc: Negative Te encountered iMinor = %d /n", index);
 
-		if ((our_n.n < 1.0e11) && (nu_elec_minor < 5.0e13)) {
+#define MAX_N_INTERFERENCE 1.0e11
+
+		if ((our_n.n < MAX_N_INTERFERENCE) && (nu_elec_minor < 5.0e13)) {
 			// Inflate to reach 5e13 at n=1.0e10
 			if (our_n.n < 1.0e10) {
 				nu_elec_minor = 5.0e13;
 			}
 			else {
 				// tween towards it
-				f64 lambda = (1.0e11 - our_n.n) / (0.9e11);
+				f64 lambda = (MAX_N_INTERFERENCE - our_n.n) / (MAX_N_INTERFERENCE -1.0e10);
 				nu_elec_minor += lambda*(5.0e13 - nu_elec_minor);
 			};
 		}
 		p_nu_elec_minor[index] = nu_elec_minor;
-
-
-
-
 
 
 
@@ -256,6 +254,9 @@ __global__ void kernelCalculate_ita_visc(
 		nu_ii = our_n.n*kB_to_3halves*Get_lnLambda_ion_d(our_n.n, T.Ti) *Nu_ii_Factor / (sqrt_T*T.Ti);
 
 
+
+
+
 		if (Selected_ie == 0) {
 			p_ita_par_ion_minor[index] = 0.0;
 		}
@@ -267,15 +268,15 @@ __global__ void kernelCalculate_ita_visc(
 
 		// The only use of nu_ion_minor is in omega/nu, and here we inflate it so that we do not get
 		// to have to deal with magnetism much when n is low:
-		if ((our_n.n < 1.0e11) && (nu_ion_minor < 1.5e10)) {
+		if ((our_n.n < MAX_N_INTERFERENCE) && (nu_ion_minor < 1.5e10)) {
 			// Inflate to reach 5e13 at n=1.0e10
 			if (our_n.n < 1.0e10) {
 				nu_ion_minor = 1.5e10;
 			}
 			else {
 				// tween towards it
-				f64 lambda = (1.0e11 - our_n.n) / (0.9e11);
-				nu_ion_minor += lambda*(1.5e10 - nu_elec_minor);
+				f64 lambda = (MAX_N_INTERFERENCE - our_n.n) / (MAX_N_INTERFERENCE -1.0e10);
+				nu_ion_minor += lambda*(1.5e10 - nu_ion_minor);
 			};
 		}
 		p_nu_ion_minor[index] = nu_ion_minor;
@@ -15249,8 +15250,10 @@ __global__ void kernelCreateEpsilon_Visc(
 #else
 
 #define RELPPN 1.0e-7
+#define LARGEPPN 1.0e-4
+#define FACTOR_D 8.0e14
 #define FACTOR_C 1.0e13
-			// STEPPED UP FROM 1e12
+			// FACTOR_C STEPPED UP FROM 1e12
 
 
 			// ie sqrtN putative/factor has to be close to sqrtN(vie-vie_k)
@@ -15269,6 +15272,20 @@ __global__ void kernelCreateEpsilon_Visc(
 			// But epsilon < SQRTN v-vk as putation > 0
 			// So basically epsilon lies between 0 and sqrtN v-v_k
 
+
+
+			// Fail :
+			// You are too far away on the perfect backward test
+			//    &&
+			// You are not in the robust region.
+
+			// We want to say 
+			//   You are too far away on perfect bwd test  
+			//     AND
+			// EITHER you are NOT in the robust region
+			// OR you also fail a pansified test
+
+
 			if ((epsilon.vxy.x*epsilon.vxy.x > RELPPN*hsub*hsub*mix.x*mix.x / N
 				+ FACTOR_C*hsub*FACTOR_C*hsub)
 			
@@ -15283,7 +15300,7 @@ __global__ void kernelCreateEpsilon_Visc(
 				// That means epsilon < 0 as v-v_k is greater in magnitude
 				// But epsilon > sqrtN v-vk as putative < 0
 				// e.g. epsilon = -5 - (-3) = -2
-				(
+			(	(
 					(
 				(vie.vxy.x > vie_k.vxy.x) && 					
 				((epsilon.vxy.x < 0.0) || (putative.x < 0.0))					
@@ -15292,6 +15309,10 @@ __global__ void kernelCreateEpsilon_Visc(
 				((epsilon.vxy.x > 0.0) || (putative.x > 0.0))
 					)
 				)
+				||
+				((epsilon.vxy.x*epsilon.vxy.x > LARGEPPN*hsub*hsub*mix.x*mix.x / N
+					+ FACTOR_D*hsub*FACTOR_D*hsub))
+			)
 #else 
 				(1)
 #endif
@@ -15310,7 +15331,7 @@ __global__ void kernelCreateEpsilon_Visc(
 				// That means epsilon < 0 as v-v_k is greater in magnitude
 				// But epsilon > sqrtN v-vk as putative < 0
 				// e.g. epsilon = -5 - (-3) = -2
-				(
+			(	(
 				(
 					(vie.vxy.y > vie_k.vxy.y) &&
 					((epsilon.vxy.y < 0.0) || (putative.y < 0.0))
@@ -15318,7 +15339,10 @@ __global__ void kernelCreateEpsilon_Visc(
 					(vie.vxy.y < vie_k.vxy.y) &&
 					((epsilon.vxy.y > 0.0) || (putative.y > 0.0))
 					)
-				)
+				) ||
+				(epsilon.vxy.y*epsilon.vxy.y > LARGEPPN*hsub*hsub*mix.y*mix.y / N
+					+ FACTOR_D*hsub*FACTOR_D*hsub)
+			)
 #else 
 				(1)
 #endif
@@ -15326,6 +15350,10 @@ __global__ void kernelCreateEpsilon_Visc(
 				bFail = true;
 
 			// whoa having to use braincells, could we just have put difference in sqrt N * 
+
+
+			// Why do we not have 2 goes of RELPPN?
+		
 
 			if ( (epsilon.viz*epsilon.viz > RELPPN*hsub*hsub*MAR_ion.z*MAR_ion.z / N
 				+ FACTOR_C*hsub*FACTOR_C*hsub) 
@@ -15341,7 +15369,7 @@ __global__ void kernelCreateEpsilon_Visc(
 				// That means epsilon < 0 as v-v_k is greater in magnitude
 				// But epsilon > sqrtN v-vk as putative < 0
 				// e.g. epsilon = -5 - (-3) = -2
-				(
+			(	(
 					(
 					(vie.viz > vie_k.viz) &&
 					((epsilon.viz < 0.0) || (MAR_ion.z < 0.0))
@@ -15349,7 +15377,10 @@ __global__ void kernelCreateEpsilon_Visc(
 					(vie.viz < vie_k.viz) &&
 					((epsilon.viz > 0.0) || (MAR_ion.z > 0.0))
 					)
-				)
+				) || 
+				(epsilon.viz*epsilon.viz > LARGEPPN*hsub*hsub*MAR_ion.z*MAR_ion.z / N
+					+ FACTOR_D*hsub*FACTOR_D*hsub)
+			)
 #else 
 				(1)
 #endif
@@ -15370,7 +15401,7 @@ __global__ void kernelCreateEpsilon_Visc(
 				// That means epsilon < 0 as v-v_k is greater in magnitude
 				// But epsilon > sqrtN v-vk as putative < 0
 				// e.g. epsilon = -5 - (-3) = -2
-				(
+			(	(
 				(
 					(vie.vez > vie_k.vez) &&
 					((epsilon.vez < 0.0) || (MAR_elec.z < 0.0))
@@ -15379,6 +15410,9 @@ __global__ void kernelCreateEpsilon_Visc(
 					((epsilon.vez > 0.0) || (MAR_elec.z > 0.0))
 					)
 				)
+				|| ((epsilon.vez*epsilon.vez > LARGEPPN*hsub*hsub*MAR_elec.z*MAR_elec.z / N
+					+ FACTOR_D*hsub*FACTOR_D*hsub))
+			)
 #else 
 				(1)
 #endif
@@ -15638,7 +15672,7 @@ __global__ void kernelCreateEpsilon_NeutralVisc(
 				+ ALLOWABLE_v_DRIFT_RATE*hsub*ALLOWABLE_v_DRIFT_RATE*hsub) {
 
 #ifdef LIBERALIZED_VISC_SOLVER
-				if (
+				if ((
 					(	
 						((v_n.x > v_n_k.x) && 
 							((epsilon.x < 0.0) || (MAR_neut.x < 0.0))
@@ -15648,14 +15682,16 @@ __global__ void kernelCreateEpsilon_NeutralVisc(
 							((epsilon.x > 0.0) || (MAR_neut.x > 0.0))
 						)
 					)
-				   )
+				   ) ||
+					(epsilon.x*epsilon.x > 0.001*(hsub*hsub / (N*N))*MAR_neut.x*MAR_neut.x
+						+ 80.0*80.0*ALLOWABLE_v_DRIFT_RATE*hsub*ALLOWABLE_v_DRIFT_RATE*hsub))
 #endif
 				bFail = true;
 			}
 			if (epsilon.y*epsilon.y > 0.0001*(hsub*hsub / (N*N))*MAR_neut.y*MAR_neut.y
 				+ ALLOWABLE_v_DRIFT_RATE*hsub*ALLOWABLE_v_DRIFT_RATE*hsub) {
 #ifdef LIBERALIZED_VISC_SOLVER
-				if (
+				if ((
 					(
 					((v_n.y > v_n_k.y) &&
 						((epsilon.y < 0.0) || (MAR_neut.y < 0.0))
@@ -15665,14 +15701,15 @@ __global__ void kernelCreateEpsilon_NeutralVisc(
 							((epsilon.y > 0.0) || (MAR_neut.y > 0.0))
 							)
 							)
-					)
+					) || ((epsilon.y*epsilon.y > 0.001*(hsub*hsub / (N*N))*MAR_neut.y*MAR_neut.y
+						+ 80.0*80.0*ALLOWABLE_v_DRIFT_RATE*hsub*ALLOWABLE_v_DRIFT_RATE*hsub)))
 #endif
 				bFail = true;
 			};
 			if (epsilon.z*epsilon.z > 0.0001*(hsub*hsub / (N*N))*MAR_neut.z*MAR_neut.z
 				+ ALLOWABLE_v_DRIFT_RATE*hsub*ALLOWABLE_v_DRIFT_RATE*hsub) {
 #ifdef LIBERALIZED_VISC_SOLVER
-				if (
+				if ( (
 					(
 					((v_n.z > v_n_k.z) &&
 						((epsilon.z < 0.0) || (MAR_neut.z < 0.0))
@@ -15682,7 +15719,8 @@ __global__ void kernelCreateEpsilon_NeutralVisc(
 							((epsilon.z > 0.0) || (MAR_neut.z > 0.0))
 							)
 							)
-					)
+					) || (epsilon.z*epsilon.z > 0.001*(hsub*hsub / (N*N))*MAR_neut.z*MAR_neut.z
+						+ 80.0*80.0*ALLOWABLE_v_DRIFT_RATE*hsub*ALLOWABLE_v_DRIFT_RATE*hsub))
 #endif
 				bFail = true;
 			};

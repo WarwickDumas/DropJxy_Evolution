@@ -16,6 +16,7 @@
 #define MAXRINGS    96
 #define MAXRINGLEN  512  // Note that this is also the max # on the periphery.
 
+#define LIBERALIZED_VISC_SOLVER
 
 #include <stdlib.h>
 #include <stdio.h> 
@@ -20080,16 +20081,15 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 			p__invcoeffself_x, p__invcoeffself_y // new variables
 			);
 		Call(cudaThreadSynchronize(), "cudaTS CreateDByDBetaCoeffmatrix");
-
+		 
 		// 2. Create set of 7 or 8 regressors, starting with epsilon3 normalized,
 		// and deps/dbeta for each one.
 		// The 8th is usually either for the initial seed regressor (prev move) or comes from previous iteration
-
+		 
 		cudaMemset(p_d_epsxy_by_d_beta_i, 0, sizeof(f64_vec2)*NMINOR*REGRESSORS);
 		cudaMemset(p_d_eps_iz_by_d_beta_i, 0, sizeof(f64)*NMINOR*REGRESSORS);
 		cudaMemset(p_d_eps_ez_by_d_beta_i, 0, sizeof(f64)*NMINOR*REGRESSORS);
-
-
+		 
 		// Type 3 move:
 		// Do everything:
 
@@ -20098,7 +20098,7 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 		else { if (L2eps_xy > 50.0*(L2eps_ez + L2eps_iz)) { iMoveType = 2; }; };
 		printf("iMoveType %d : L2pes_ez + L2eps_iz %1.8E * 50 = %1.8E L2eps_xy %1.8E\n", iMoveType,
 			L2eps_ez + L2eps_iz, 50 * (L2eps_ez + L2eps_iz), L2eps_xy);
-
+		 
 		if ((iIteration >= 64) && (iIteration % 16 == 0))
 			iMoveType = 4; // Smash method.
 		if ((iIteration >= 64) && (iIteration % 16 == 0))

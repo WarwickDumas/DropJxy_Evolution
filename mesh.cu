@@ -1,9 +1,10 @@
 
-#include "basics.cpp"
-
 #define TRIS_TO_TRIS             0
 #define TRI_AND_WEDGE_TO_WEDGES  1
 #define WEDGES_TO_WEDGE_AND_TRI  2
+
+#include "mesh.h"
+#include "globals.h"
 
 extern long steps_remaining;
 
@@ -11,6 +12,7 @@ extern long steps_remaining;
 
 int GlobalWedgeSwitch; 
 smartlong GlobalAffectedTriIndexList;
+bool bGlobalAffectedTriArray = false;
 extern bool flaglist[NMINOR];
 
 	TriMesh::TriMesh()
@@ -1840,6 +1842,135 @@ bool TriMesh::DebugTestForOverlaps()
 }
 
 
+long TriMesh::Flips(long Trilist[], short num)
+{
+	long iTri2;
+	Triangle * pTri2, * pTri;
+	Vertex * pVertq;
+	Vector2 cc;
+	real pdistsq;
+	real qdistx,qdisty;//,pdistx,pdisty;
+	long flips;
+	int side;
+	Vertex tempV;
+	Vector2 nearest;
+	int c1,c2;
+	int iprev, inext;
+	Vertex * pVertex1, * pVertex2, *pUnsh;
+	ShardData shard_data1, shard_data2;
+	Vector2 corner1,corner2,centre,projected, diff1, diff2;
+	bool to_flip,perflag;
+	Triangle newtri;
+
+	static real const REL_TOLERANCE = 1.0e-11; 
+	// 5e-13 does not seem to avoid back-and-forward flips due to rounding.
+
+	long flip_tri_to_tri = 0;
+	long highflip_tri_to_wedge = 0;
+	long highflip_wedge_to_tri = 0;
+	long lowflip_tri_to_wedge = 0;
+	long lowflip_wedge_to_tri = 0;
+
+	static real const COS60 = 0.5;
+	long iTri;
+	// whereas cos 90 = 0
+	int iTriCaret;
+
+	memset(flaglist, 0, sizeof(bool)*NMINOR);
+	
+	//printf("in flips routine.. line 1881  ");
+
+	long totalflips = 0;	
+	do
+	{
+		flips = 0;
+		pTri = T;
+		for (iTriCaret = 0; iTriCaret < num; ++iTriCaret)
+		{
+			// calculate circumcenter first....
+			pTri = T + Trilist[iTriCaret];
+		//	printf("@ %d ", Trilist[iTriCaret]);
+			pTri->CalculateCircumcenter(cc, &pdistsq);
+					
+			for (int iNeigh = 0; iNeigh < 3; iNeigh++)
+			{
+				pTri2 = pTri->neighbours[iNeigh];
+				// Is it in the list?
+		//		printf("pTri %d : %d %d %d  : pTri2 %d : %d %d %d\n"
+		//			"%1.8E %1.8E %1.8E %1.8E %1.8E %1.8E | %1.8E %1.8E %1.8E %1.8E %1.8E %1.8E\n",
+		//			pTri - T, pTri->cornerptr[0] - X, pTri->cornerptr[1] - X, pTri->cornerptr[2] - X,
+		//			pTri2 - T, pTri2->cornerptr[0] - X, pTri2->cornerptr[1] - X, pTri2->cornerptr[2] - X,
+		//			pTri->cornerptr[0]->pos.x, pTri->cornerptr[0]->pos.y, pTri->cornerptr[1]->pos.x, pTri->cornerptr[1]->pos.y,
+		//			pTri->cornerptr[2]->pos.x, pTri->cornerptr[2]->pos.y, pTri2->cornerptr[0]->pos.x, pTri2->cornerptr[0]->pos.y,
+		//			pTri2->cornerptr[1]->pos.x, pTri2->cornerptr[1]->pos.y, pTri2->cornerptr[2]->pos.x, pTri2->cornerptr[2]->pos.y
+//				);
+
+				bool bother = false;
+				for (int ii = 0; ii < num; ii++)
+					if (Trilist[ii] == pTri2-T) bother = true;
+						
+			//	printf("bother = %d\n", (bother ? 1 : 0));
+
+				if (bother) {
+					if (	(pTri2 != pTri) 
+						// Edit 04/04/19: change the following line to && to make life easier.
+						// Flipping with tris within ins shouldn't be strictly necessary since we do not have
+						// points inside but close to the insulator. It does stop us from being Delaunay if we do not do this though.
+						&& (
+								((pTri2->u8domain_flag == DOMAIN_TRIANGLE) || (pTri2->u8domain_flag == CROSSING_INS)) && 
+								((pTri->u8domain_flag == DOMAIN_TRIANGLE) || (pTri->u8domain_flag == CROSSING_INS)) )
+						&& (pTri2->cornerptr[0]->flags != OUTERMOST)
+						&& (pTri2->cornerptr[1]->flags != OUTERMOST)
+						&& (pTri2->cornerptr[2]->flags != OUTERMOST)
+						)
+					{
+			//			printf("got here 1\n");
+
+						pVertq = pTri2->ReturnUnsharedVertex(pTri);
+							// we compare two triangles							
+						real qdistsq = GetPossiblyPeriodicDistSq(pVertq->pos,cc); // less elegant but should still work.
+						if (qdistsq < pdistsq-pdistsq*REL_TOLERANCE)
+						{
+							++flips;
+							++flip_tri_to_tri;
+							
+			//				printf("pTri %d : %d %d %d --vs-- pTri2 %d : %d %d %d pVertq %d pdistsq %1.9E qdistsq %1.9E\n",
+			//					pTri - T, pTri->cornerptr[0] - X, pTri->cornerptr[1] - X, pTri->cornerptr[2] - X,
+			//					pTri2 - T, pTri2->cornerptr[0] - X, pTri2->cornerptr[1] - X, pTri2->cornerptr[2] - X,
+			//					pVertq-X, pdistsq, qdistsq);
+							
+							Flip(pTri, pTri2, -1);		
+
+						//	printf("DONE : pTri %d : %d %d %d  pTri2 %d : %d %d %d\n",
+						//		pTri - T, pTri->cornerptr[0] - X, pTri->cornerptr[1] - X, pTri->cornerptr[2] - X,
+						//		pTri2 - T, pTri2->cornerptr[0] - X, pTri2->cornerptr[1] - X, pTri2->cornerptr[2] - X);
+
+					//		DebugTestWrongNumberTrisPerEdge();
+							
+							iNeigh = 4; // Skip out of loop.
+						};
+					}; // whether an edge worth looking through, vs, going off the domain
+				}; // is it in the list
+			}; // next neighbour			
+		};
+		// printf("Flips: %d \n", flips);	
+		// Vertex::flags does not need to be changed as a result of this routine.
+
+		totalflips += flips;
+	} while ((flips > 0));
+
+	//printf("ended Redelaunerize. totalflips: %d \n",totalflips);	
+	// Checked that
+	// 1. vertex neighs do not need to be maintained during Delaunay routines.
+	// 2. Flip does actually maintain lists, but not order of tris or vertices.
+	// Therefore, we must maintain afterwards.
+
+//	DebugTestWrongNumberTrisPerEdge();
+
+	return totalflips;
+}
+
+
 long TriMesh::Redelaunerize(bool exhaustion, bool bReplace)
 {
 	long iTri2;
@@ -1903,10 +2034,7 @@ long TriMesh::Redelaunerize(bool exhaustion, bool bReplace)
 					
 				for (int iNeigh = 0; iNeigh < 3; iNeigh++)
 				{
-					if (iTri == CHOSEN) {
-						iNeigh = iNeigh;
-					}
-
+					
 					pTri2 = pTri->neighbours[iNeigh];
 					
 					if (	(pTri2 != pTri) 
@@ -1938,7 +2066,6 @@ long TriMesh::Redelaunerize(bool exhaustion, bool bReplace)
 								// need to do even if it's just AZ
 
 								plasma_data data_tri1, data_tri2, data_vert;
-								//data_unsh1, data_unsh2, data_sh1, data_sh2;
 
 								memcpy(&data_tri1, &(pData[pTri - T]), sizeof(plasma_data));
 								memcpy(&data_tri2, &(pData[pTri2 - T]), sizeof(plasma_data));
@@ -2008,8 +2135,7 @@ long TriMesh::Redelaunerize(bool exhaustion, bool bReplace)
 									temp.vxy = 0.5*(data_tri1.vxy + data_tri2.vxy);
 									temp.vez = 0.5*(data_tri1.vez + data_tri2.vez);
 									temp.viz = 0.5*(data_tri1.viz + data_tri2.viz);
-								}
-								else {
+								} else {
 									temp.n = THIRD*(data_vert.n + data_tri1.n + data_tri2.n);
 									temp.n_n = THIRD*(data_vert.n_n + data_tri1.n_n + data_tri2.n_n);
 									temp.Tn = THIRD*(data_vert.Tn + data_tri1.Tn + data_tri2.Tn);
@@ -2112,18 +2238,13 @@ long TriMesh::Redelaunerize(bool exhaustion, bool bReplace)
 
 									*/
 							} else {
-
 								Flip(pTri, pTri2, -1);
-
-							}
-							
+							};							
 							iNeigh = 4; // Skip out of loop.
 						};
 					}; // whether an edge worth looking through, vs, going off the domain
 				}; // next neighbour
-			};
-		
-			
+			};		
 		};
 
 		printf("Flips: %d \n", flips);
@@ -3074,10 +3195,12 @@ void TriMesh::Flip(Triangle * pTri1, Triangle * pTri2, int iLevel)
 	Vertex * pVertex_unshared1, * pVertex_unshared2;
 
 	if (iLevel == -1) {
-		GlobalAffectedTriIndexList.add(pTri1-T); 
-		GlobalAffectedTriIndexList.add(pTri2-T);
+		if (bGlobalAffectedTriArray) {
+			GlobalAffectedTriIndexList.add(pTri1 - T);
+			GlobalAffectedTriIndexList.add(pTri2 - T);
+		};
 
-		printf("iTri1 %d iTri2 %d \n",pTri1-T,pTri2-T);
+	//	printf("iTri1 %d iTri2 %d \n",pTri1-T,pTri2-T);
 	};
 
 	pVertex_unshared1 = pTri1->ReturnUnsharedVertex(pTri2, &which);
@@ -3407,12 +3530,12 @@ void TriMesh::DebugTestWrongNumberTrisPerEdge(void)
 							// give it a pass
 						} else {
 
-							printf("Value %d appears %d times at vertex %d. flags %d %d \n",neighs.ptr[iii],count,pVert-X,pVert->flags,pVert2->flags);
+							printf("Value %d appears in %d tris at vertex %d. flags %d %d \n",neighs.ptr[iii],count,pVert-X,pVert->flags,pVert2->flags);
 							count = count;
 							getch();
 						};
 					} else {
-						printf("Value %d appears %d times at vertex %d.\n",neighs.ptr[iii],count,pVert-X);
+						printf("Value %d appears in %d tris at vertex %d.\n",neighs.ptr[iii],count,pVert-X);
 
 						count = count;
 						getch();
@@ -3449,7 +3572,7 @@ void TriMesh::DebugTestWrongNumberTrisPerEdge(void)
 		};
 	};
 }
-
+ 
 
 void TriMesh::ShiftVertexPositionsEquanimity()
 {

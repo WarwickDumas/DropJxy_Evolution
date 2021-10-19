@@ -1,4 +1,6 @@
 
+#include "switches.h"
+
 #include "cuda_runtime.h"
 #include "device_launch_parameters.h"
 
@@ -11,12 +13,15 @@
 #include <stdlib.h>
 #include <stdio.h>
 //#include "lapacke.h"  
-
+ 
 extern void print_matrix(char* desc, int m, int n, double* a, int lda);
 extern void print_int_vector(char* desc, int n, int* a);
 
 extern void Go_visit_the_other_file();
 extern void Setup_residual_array();
+
+
+
 
 #include "headers.h"
 #include "cuda_runtime.h"
@@ -78,14 +83,22 @@ extern f64 * p_graphdata1_host, *p_graphdata2_host, *p_graphdata3_host, *p_graph
 extern f64 * p_Tgraph_host[9];
 extern f64 * p_accelgraph_host[12];
 extern f64 * p_Ohmsgraph_host[20];
-extern f64 * p_arelz_graph_host[12];
+extern f64 * p_arelz_graph_host[12]; 
+
+extern __device__ ShardModel *p_n_shards, *p_n_shards_n;
 
 // Global variables:
 // =================
 //extern f64_vec3 * p_B_host;
 extern f64 EzStrength_;
 extern cuSyst cuSyst1, cuSyst2, cuSyst3;
+#ifndef NOGRAPHICS
 extern D3D Direct3D;
+#endif 
+
+extern three_vec3 AdditionalMomRates[NMINOR];
+extern f64_vec2 p_v[NMINOR];
+
 extern f64 * p_temphost1, *p_temphost2,
 *p_temphost3, *p_temphost4, *p_temphost5, *p_temphost6;
 
@@ -94,6 +107,7 @@ extern __device__ f64 * p_temp1;
 extern __device__ long * p_longtemp;
 extern __device__ f64 * p_Az, *p_LapAz;
 
+extern bool bDebugReorder;
 
 float xzscale;
 
@@ -123,8 +137,12 @@ GlobalPlanLookat2, GlobalEye2, GlobalLookat2;
 
 D3DXVECTOR3 newEye;
 D3DXVECTOR3 newLookat;
+#ifndef NOGRAPHICS
 
 IDirect3DSurface9* p_backbuffer_surface;
+
+#endif
+
 
 long steps_remaining, GlobalStepsCounter, steps_remaining_CPU;
 real evaltime, h;
@@ -157,10 +175,13 @@ bool boolGlobalHistory, GlobalboolDisplayMeshWireframe;
 //HAVI hAvi[NUMAVI + 1]; // does it work without OHMSLAW? //  OHMSLAW,
 int const GraphFlags[NUMAVI] = { SPECIES_ION, OVERALL, JZAZBXYEZ, ONE_D, IONIZEGRAPH,
 DTGRAPH, ACCELGRAPHS, OHMS2, ARELZ };
-
+#ifdef OSCILLATE_IZ
 WCHAR szmp4[NUMAVI][128] = { L"oElec",L"oTotal",L"oJzAzBxy",L"oTest",
-L"oIonize", L"odT", L"oAccel",	L"oOhms", L"oarelz" };
-
+L"oIonize", L"odT", L"oAccel", L"oOhms", L"oarelz" };
+#else
+WCHAR szmp4[NUMAVI][128] = { L"Elec",L"Total",L"JzAzBxy",L"Test",
+L"Ionize", L"dT", L"Accel",	L"Ohms", L"arelz" };
+#endif
 //AVICOMPRESSOPTIONS opts;
 int counter;
 HBITMAP surfbit, dib;
@@ -224,7 +245,7 @@ f64 GetTriangleArea(f64_vec2 pos0, f64_vec2 pos1, f64_vec2 pos2)
 //const UINT32 VIDEO_HEIGHT = 480;
 const UINT32 VIDEO_FPS = 40; // 50 would be 1 ns/s. We aim to record 400ns so 400s. 600s = 10 minutes.
 const UINT64 VIDEO_FRAME_DURATION = 10 * 1000 * 1000 / VIDEO_FPS; // ? yes it really is in units of 1e-7 s
-const UINT32 VIDEO_BIT_RATE = 4096000;
+const UINT32 VIDEO_BIT_RATE = 6144000; // 6e6 is a high bit rate according to the interwebs.
 const UINT32 VIDEO_PELS = VIDEO_WIDTH * VIDEO_HEIGHT;
 const UINT32 VIDEO_FRAME_COUNT = AVI_FILE_PINCHOFF_FREQUENCY;
 // with 50 frames per nanosecond and 30 nanoseconds in file, it's 1500
@@ -496,7 +517,6 @@ void TriMesh::Setup_J()
 	++pVertex;
 	}*/
 }
-
 void surfacegraph::DrawSurface(const char * szname,
 	const int heightflag,
 	const real * var_ptr_0,
@@ -582,6 +602,7 @@ void surfacegraph::DrawSurface(const char * szname,
 
 }
 
+#ifndef NOGRAPHICS
 void Draw1Dgraph(int iWhichGraph, int flag)
 {
 	float const MAXX = 11.0f;
@@ -719,6 +740,7 @@ void Draw1Dgraph(int iWhichGraph, int flag)
 
 	Graph[iWhichGraph].SetEyeAndLookat(newEye, newLookat); // sets matView not matProj
 	printf("Eye %f %f %f\n", newEye.x, newEye.y, newEye.z);
+	
 	Direct3D.pd3dDevice->SetViewport(&(Graph[iWhichGraph].vp));
 
 	D3DXMatrixIdentity(&matWorld);
@@ -869,6 +891,7 @@ void Draw1Dgraph(int iWhichGraph, int flag)
 		getch();
 	}
 }
+#endif
 
 void Create1DGraphingData(TriMesh * pX, bool bTdata = false, bool bAcceldata = false,
 	bool bOhmsData = false, bool b_arelz_data = false)
@@ -1196,6 +1219,7 @@ void Create1DGraphingData(TriMesh * pX, bool bTdata = false, bool bAcceldata = f
 void RefreshGraphs(TriMesh & X, // only not const because of such as Reset_vertex_nvT
 	const int iGraphsFlag)
 {
+#ifndef NOGRAPHICS
 	D3DXMATRIXA16 matWorld;
 	Vertex * pVertex;
 	long iVertex;
@@ -2769,15 +2793,14 @@ void RefreshGraphs(TriMesh & X, // only not const because of such as Reset_verte
 		break;
 	}
 	printf("End of Refreshgraphs\n");
+#endif
 
 }
 
 int main()
 {
 
-	printf("hello\n");
-
-
+	cudaError_t cudaStatus;
 	HINSTANCE hInstance = GetModuleHandle(NULL);
 	HWND hwndConsole = GetConsoleWindow();
 	WCHAR szInitialFilenameAvi[512];
@@ -2893,17 +2916,15 @@ int main()
 	X3.Recalculate_TriCentroids_VertexCellAreas_And_Centroids();
 	X3.EnsureAnticlockwiseTriangleCornerSequences_SetupTriMinorNeighboursLists();
 	X3.SetupMajorPBCTriArrays();
-	printf("Got to here 4\n");
 	X1.InitialPopulate();
 	X2.InitialPopulate();
 	X3.InitialPopulate();
 
 	X1.Create4Volleys();
-	X2.Create4Volleys();
+	X2.Create4Volleys();  // so it does what? each num is for each volley.
 	X3.Create4Volleys();
 
 	pTriMesh = &X1;
-
 	pX = &X1;
 	pXnew = &X2;
 
@@ -2952,8 +2973,8 @@ int main()
 	hwndGraphics = hWnd;
 
 	xzscale = 2.0 / 0.1; // very zoomed in. Now what?
-
-	DXChk(Direct3D.Initialise(hWnd, hInstance, VIDEO_WIDTH, VIDEO_HEIGHT));
+#ifndef NOGRAPHICS
+	DXChk(Direct3D.Initialise(hWnd, hInstance, VIDEO_WIDTH, VIDEO_HEIGHT), 10450);
 
 	// With Field Of View = PI/4 used this:
 	/*
@@ -3012,8 +3033,9 @@ int main()
 	newLookat.y = 0.0f;
 	newLookat.z = 72.0f;
 
+	printf("got to here 5.\n");
+
 	// Add vectors in parallel.
-	cudaError_t cudaStatus;
 
 	if (DXChk(Graph[0].InitialiseWithoutBuffers(0, 0, GRAPH_WIDTH, GRAPH_HEIGHT, GlobalEye, GlobalLookat)) +
 		DXChk(Graph[0].InitialiseBuffers(X1))
@@ -3078,6 +3100,8 @@ int main()
 	Graph[6].bDisplayTimestamp = true;
 	Graph[7].bDisplayTimestamp = false;
 
+	printf("got to here 6.\n");
+
 	Direct3D.pd3dDevice->GetBackBuffer(0, 0, D3DBACKBUFFER_TYPE_MONO, &p_backbuffer_surface);
 
 	if (DXChk(p_backbuffer_surface->GetDC(&surfdc), 1000))
@@ -3086,6 +3110,7 @@ int main()
 	surfbit = CreateCompatibleBitmap(surfdc, VIDEO_WIDTH, VIDEO_HEIGHT); // EXTRAHEIGHT = 90
 	SelectObject(surfdc, surfbit);
 	dibdc = CreateCompatibleDC(surfdc);
+
 
 	long VideoWidth = VIDEO_WIDTH;
 	long VideoHeight = VIDEO_HEIGHT;
@@ -3134,7 +3159,18 @@ int main()
 	};
 
 	printf("got to here: Initialized SinkWriters \n");
-	getch();
+	
+	// DEBUG:
+	long izNeigh[MAXNEIGH];
+	long number = X1.X[26090].GetNeighIndexArray(izNeigh);
+	printf("X1.X[26090].neigh_len = %d", number); 
+	number = X2.X[26090].GetNeighIndexArray(izNeigh);
+	printf("X2.X[26090].neigh_len = %d", number);
+	number = X3.X[26090].GetNeighIndexArray(izNeigh);
+	printf("X3.X[26090].neigh_len = %d", number);
+	number = X4.X[26090].GetNeighIndexArray(izNeigh);
+	printf("X4.X[26090].neigh_len = %d", number);
+
 	
 
 	// 1000/25 = 40
@@ -3152,7 +3188,6 @@ int main()
 	//	};
 	//};
 
-	counter = 0;
 	//ReleaseDC(hWnd,surfdc);
 	p_backbuffer_surface->ReleaseDC(surfdc);
 	GlobalCutaway = true; // dies if true
@@ -3161,7 +3196,9 @@ int main()
 
 	Direct3D.pd3dDevice->Present(NULL, NULL, NULL, NULL);
 
+#endif
 
+	counter = 0;
 	// Main message loop:
 	memset(&msg, 0, sizeof(MSG));
 	while (msg.message != WM_QUIT)
@@ -3172,7 +3209,9 @@ int main()
 			DispatchMessage(&msg);
 		}
 		else {
+#ifndef NOGRAPHICS
 			Direct3D.pd3dDevice->Present(NULL, NULL, NULL, NULL);
+#endif
 		};
 	};
 
@@ -3180,6 +3219,7 @@ int main()
 
 	// cudaDeviceReset must be called before exiting in order for profiling and
 	// tracing tools such as Nsight and Visual Profiler to show complete traces.
+
 	cudaStatus = cudaDeviceReset();
 	if (cudaStatus != cudaSuccess) {
 		fprintf(stderr, "cudaDeviceReset failed!");
@@ -3256,10 +3296,12 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 	char buffer[256];
 	HRESULT hr;
 	TriMesh * temp;
+	long number;
 
 	static const real XCENTRE2 = DEVICE_RADIUS_INITIAL_FILAMENT_CENTRE * sin(PI / 32.0);
 	static const real XCENTRE1 = -XCENTRE2;
 	static const real YCENTRE = DEVICE_RADIUS_INITIAL_FILAMENT_CENTRE * cos(PI / 32.0);
+	static bool bRanTimer = false;
 
 	switch (message)
 	{
@@ -3281,6 +3323,82 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 		switch (wmId)
 		{
 
+		case ID_RUN_RESPRINKLE:
+			number = X1.X[26090].GetNeighIndexArray(izNeigh);
+			printf("X1.X[26090].neigh_len = %d", number);
+			number = X2.X[26090].GetNeighIndexArray(izNeigh);
+			printf("X2.X[26090].neigh_len = %d", number);
+			number = pX->X[26090].GetNeighIndexArray(izNeigh);
+			printf("pX->X[26090].neigh_len = %d", number); // 6
+
+
+			if (!bRanTimer) MessageBox(hWnd, "You should probably not click this without running steps,\n not sure if everything populated.\n", "", MB_OK);
+
+			RefreshGraphs(*pX, SPECIES_ION);
+			Direct3D.pd3dDevice->Present(NULL, NULL, NULL, NULL);
+
+			printf("Ready to run resprinkle\n");
+			printf("Press k\n");
+			while (getch() != 'k');
+
+			// Dimension list, listtri.
+			pXnew->Resprinkle(pX, &X3); // pX = source, X3 = auxiliary.
+			// pX and pXnew are X1 and X2, or X2 and X1.
+			
+			// Really we want to move the integrating part out of Resprinkle routine.
+
+			pXnew->Integrate_using_iScratch(pX);
+			
+			// Now switch:										
+			temp = pX;
+			pX = pXnew;
+			pXnew = temp;			
+			
+			// Now do this:
+			pX->CopyMesh(pXnew);
+			// Going to need to copy data as well.
+
+
+
+
+
+
+
+			// Refresh things like major PBCtri list, indexNeighMinor for pXnew !!
+			pXnew->Recalculate_TriCentroids_VertexCellAreas_And_Centroids();
+			pXnew->EnsureAnticlockwiseTriangleCornerSequences_SetupTriMinorNeighboursLists();
+			pXnew->SetupMajorPBCTriArrays();
+			// pXnew->Create4Volleys(); // -- ?
+			
+			RefreshGraphs(*pX, SPECIES_ION);
+			Direct3D.pd3dDevice->Present(NULL, NULL, NULL, NULL);
+
+			printf("Press o\n");
+			while (getch() != 'o');
+
+			
+
+
+
+
+			// Part II:
+			// ==========
+			
+			//	Maybe it would be good to finish with a mapping-on integrals procedure but we know we don't have time now.
+			
+			pXnew->SwimMesh(pX);
+
+			// update density etc after each small swim.
+			
+			// Explain why needed to do: mean free path too great in low density region and other fixes not enough to overcome. Slow sim.
+
+			// A one-off fix which we don't expect to run again quickly. Maybe every 120 ns.
+			// We then turn back on the vertex motion so that the wave can track with the fluid bulk motion.
+
+
+			break;
+
+#ifndef NOGRAPHICS
 		case ID_DISPLAY_ONE_D:
 			// printf("\a\n");
 			// Don't know why resource.h is not working;
@@ -3366,13 +3484,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			Direct3D.pd3dDevice->Present(NULL, NULL, NULL, NULL);
 			break;
 
-		case ID_HELP_ABOUT:
-			DialogBox(hInst, MAKEINTRESOURCE(IDD_ABOUTBOX), hWnd, About);
-			break;
-		case ID_FILE_EXIT:
-			DestroyWindow(hWnd);
-			break;
-
 		case ID_FILE_SAVECAMERA:
 			ZeroMemory(&ofn, sizeof(ofn));
 			ofn.lStructSize = sizeof(ofn);
@@ -3447,11 +3558,19 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 				RefreshGraphs(*pX, GlobalSpeciesToGraph); // sends data to graphs AND renders them
 				Direct3D.pd3dDevice->Present(NULL, NULL, NULL, NULL);
 
-			}
-			else {
+			} else {
 				printf("file error camera\n");
 			};
+			break; 
+#endif
+
+		case ID_HELP_ABOUT:
+			DialogBox(hInst, MAKEINTRESOURCE(IDD_ABOUTBOX), hWnd, About);
 			break;
+		case ID_FILE_EXIT:
+			DestroyWindow(hWnd);
+			break;
+
 		case ID_FILE_LOADGPU:
 
 			// Initialize OPENFILENAME:
@@ -3560,8 +3679,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
 			printf("pX->X[VERTCHOSEN].flags %d \n", pX->X[VERTCHOSEN].flags);
 
-
-
 			// Debug: redelaun on load:
 			pX->RefreshVertexNeighboursOfVerticesOrdered();
 			//		pX->Redelaunerize(true, true);
@@ -3594,6 +3711,13 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			printf("%d info: flag %d tri_len %d  \n",VERTCHOSEN, info.flag, info.neigh_len);
 
 			printf("sent back re-delaunerized system\n");
+			
+			number = X1.X[26090].GetNeighIndexArray(izNeigh);
+			printf("X1.X[26090].neigh_len = %d", number);
+			number = X2.X[26090].GetNeighIndexArray(izNeigh);
+			printf("X2.X[26090].neigh_len = %d", number);
+
+
 
 			break;
 		case ID_FILE_SAVEBINARY:
@@ -3711,10 +3835,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
 			Zap_the_back();
 			printf("done");
-
+#ifndef NOGRAPHICS
 			RefreshGraphs(*pX, GlobalSpeciesToGraph); // sends data to graphs AND renders them
 			Direct3D.pd3dDevice->Present(NULL, NULL, NULL, NULL);
-
+#endif
 
 			break;
 
@@ -3732,6 +3856,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 		break;
 
 	case WM_TIMER:
+
+		bRanTimer = true;
 
 		KillTimer(hWnd, wParam);
 		report_time(0);
@@ -3765,7 +3891,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 					pX->OutermostFrillCentroidRadius,
 					pX->numStartZCurrentTriangles,
 					pX->numEndZCurrentTriangles);
-			}
+			} 
 
 			// Run 1 step:
 			printf("evaltime %1.9E\n", evaltime);
@@ -3788,7 +3914,12 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 				// SAVE cuSyst:
 				cuSyst_host.Save(szFile);
 			}
-
+			if (GlobalStepsCounter % VERTDATA_SAVE_FREQUENCY == 0)
+			{
+				sprintf(szFile, VERTAUTOSAVENAME "%d.dat", GlobalStepsCounter);
+				// SAVE cuSyst:
+				cuSyst_host.SaveGraphs(szFile);
+			}
 			// even number of steps should lead us back to pX having it
 			steps_remaining--;
 			GlobalStepsCounter++;
@@ -3808,7 +3939,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			temp = pX;
 			pX = pXnew;
 			pXnew = temp;
-
+			
 			steps_remaining_CPU--;
 			GSCCPU++;
 			printf("Done steps CPU: %d   ||   Remaining this run: %d\n\n", GSCCPU, steps_remaining_CPU);
@@ -3818,7 +3949,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			printf("saved as %s\n", buf1001);
 		};
 		printf("%s\n", report_time(1));
-
+#ifndef NOGRAPHICS
 		if (GlobalStepsCounter % GRAPHICS_FREQUENCY == 0)
 		{
 			
@@ -3891,6 +4022,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
 		RefreshGraphs(*pX, GlobalSpeciesToGraph); // sends data to graphs AND renders them
 		Direct3D.pd3dDevice->Present(NULL, NULL, NULL, NULL);
+#endif
 
 		if (GlobalStepsCounter % REDELAUN_FREQUENCY == 0)
 		{
@@ -4191,23 +4323,27 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 		};
 
 		//PlanViewGraphs1(*pX);
-
+#ifndef NOGRAPHICS
 		RefreshGraphs(*pX, GlobalSpeciesToGraph); // sends data to graphs AND renders them
 		Direct3D.pd3dDevice->Present(NULL, NULL, NULL, NULL);
+#endif
 
 		break;
 	case WM_PAINT:
 		// Not sure, do we want to do this?
 		//	RefreshGraphs(*pX,); // sends data to graphs AND renders them
 		GetUpdateRect(hWnd, &rect, FALSE);
+#ifndef NOGRAPHICS
 		if (Direct3D.pd3dDevice != NULL)
 			Direct3D.pd3dDevice->Present(&rect, &rect, NULL, NULL);
-
+#endif
 		ValidateRect(hWnd, NULL);
 		break;
 	case WM_DESTROY:
+#ifndef NOGRAPHICS
 		DeleteObject(dib);
 		DeleteDC(dibdc);
+		
 		printf("Finalize video Sinkwriters: ");
 		for (i = 0; i < NUMAVI; i++)
 		{
@@ -4215,6 +4351,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			SafeRelease(&(pSinkWriter[i]));
 			printf("%d ok ", i);
 		}
+#endif
+
 		// CloseAvi(hAvi[i]);
 		printf("\nDelete CUDA objects:\n");
 		//  _controlfp_s(0, cw, _MCW_EM); // Line A
@@ -4308,4 +4446,1511 @@ INT_PTR CALLBACK SetupBox(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
 	return (INT_PTR)FALSE;
 }
 
+
+
+
+void TriMesh::Resprinkle(TriMesh * pX_src, TriMesh * pX_aux)
+{
+	short len, trilen;
+	long * listtri, *list;
+	Triangle * pTri;
+	Vertex * pVertex, *pNeigh;
+	int i, iVolley;
+	f64 * FOMarray1, *FOMarray_vert;
+	long izNeigh[MAXNEIGH];
+	long iNeigh, iCaret, iVertex, iTri1, iTri2;
+	long izTri[MAXNEIGH];
+	long izNeighDebug[MAXNEIGH];
+	long izTriDebug[MAXNEIGH];
+
+	int listlen, iCorner;
+	long trilist[128];
+	int neigh_len, tri_len;
+	Vertex * p0, *p1, *p2;
+	species3 addheat;
+	f64 addmom_viz, addmom_vez;
+	f64_vec2 addmom_vxy;
+	f64_vec3 addmom_v_n;
+	nvals mass;
+	long iTriCaret, iTriDest, TriArrayLen, VertexArrayLen;
+	bool *used;
+	long iMoved = 0;
+
+	used = new bool[NMINOR];
+	listtri = new long[NUMTRIANGLES];
+	FOMarray1 = new f64[NUMTRIANGLES];
+	FOMarray_vert = new f64[NUMVERTICES];
+	list = new long[NUMVERTICES];
+
+	HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
+	// Here's the problem. We will end up with going down the list and adding exactly 1 point in each triangle, even where density is 10 times less.
+	// This would be better avoided so we should probably re-do the triangle list after each volley.
+	pX_src->CopyMesh(this);
+
+	this->Recalculate_TriCentroids_VertexCellAreas_And_Centroids();
+	// NUM_COARSE_LEVELS+1 = NUMVOLLEYS
+	
+	printf("Worried in general that we do not correct tri neighs or tri centroids following flips in Redelaun;\n"
+		"Correcting tri neighs depends on vertex tris;\n");
+	getch();
+
+#define TEST (iVertex == 18156)
+	
+	FILE * fpdbg = fopen("tridbg4.txt", "wt");
+	for (iVolley = 0; iVolley < NUM_COARSE_LEVELS + 1; iVolley++)
+	{
+		// Repopulate AreaMinorArray:
+		Create_momflux_integral_grad_nT_and_gradA_LapA_CurlA_on_minors(p_v, AdditionalMomRates);
+
+		pTri = T;
+		iTriCaret = 0;
+		for (i = 0; i < NUMTRIANGLES; i++)
+		{
+			if ((pTri->u8domain_flag == DOMAIN_TRIANGLE) && (this->pData[i].n > 0.0)
+				&& (pTri->cent.dot(pTri->cent) < START_SPREADING_OUT_RADIUS*START_SPREADING_OUT_RADIUS))
+				// Available destinations only within radius 4.24.
+			{
+				listtri[iTriCaret] = i;
+				FOMarray1[iTriCaret] = sqrt(this->pData[i].n + this->pData[i].n_n)*this->AreaMinorArray[i];
+				if (   ((pTri->cent.dot(pTri->cent) > 3.75*3.75) && (pTri->cent.dot(pTri->cent) < 3.755*3.755) && (pTri->cent.x > 0.0))
+					|| (AreaMinorArray[i] < 0.8e-5)   )
+				{
+					printf("iVolley %d : %d : pos %1.10E %1.10E : FOM %1.9E Area %1.8E\n",
+						iVolley, i, pTri->cent.x, pTri->cent.y, FOMarray1[iTriCaret], this->AreaMinorArray[i]
+					);
+					fprintf(fpdbg,"iVolley %d : iTri %d : list index %d pos %1.10E %1.10E : FOM %1.12E n %1.10E nn %1.10E Area %1.10E\n",
+						iVolley, i, iTriCaret, pTri->cent.x, pTri->cent.y, FOMarray1[iTriCaret],
+						pData[i].n, pData[i].n_n,
+						this->AreaMinorArray[i]
+					);
+				};
+				iTriCaret++;
+			};
+			++pTri;
+		}; // AreaMinorArray populated if we came back from GPU step.
+
+		TriArrayLen = iTriCaret;
+		QuickSort(listtri, FOMarray1, 0, TriArrayLen-1);
+
+		for (iTriCaret = 0; iTriCaret < TriArrayLen; iTriCaret++)
+		{
+			pTri = &(T[listtri[iTriCaret]]);
+			if ((AreaMinorArray[listtri[iTriCaret]] < 0.8e-5) ||
+				(
+				((pTri->cent.dot(pTri->cent) > 3.75*3.75) && (pTri->cent.dot(pTri->cent) < 3.755*3.755) && (pTri->cent.x > 0.0))
+					))				
+				
+				fprintf(fpdbg, "position in sorted list %d : %d FOM %1.12E Area %1.10E \n",
+				iTriCaret, listtri[iTriCaret], FOMarray1[iTriCaret], AreaMinorArray[listtri[iTriCaret]]);
+
+			//Ask:
+			// Why do we disfavour the dense places in the filament rather than the blast radius?
+		}
+		
+		
+		//SetConsoleTextAttribute(hConsole, 13);
+		//pTri = T;
+		//for (i = 0; i < NUMTRIANGLES; i++)
+		//{
+		//	if ((pTri->u8domain_flag == DOMAIN_TRIANGLE) && (this->pData[i].n > 0.0)
+		//		&& (pTri->cent.dot(pTri->cent) < START_SPREADING_OUT_RADIUS*START_SPREADING_OUT_RADIUS))
+		//		// Available destinations only within radius 4.24.
+		//	{
+		//		if (this->)
+
+		//	};
+		//	++pTri;
+		//};
+		//SetConsoleTextAttribute(hConsole, 15);
+
+		printf("sorted tri list. iVolley = %d Tris %d\n", iVolley, TriArrayLen);
+		iCaret = 0;
+		pVertex = X;
+		for (i = 0; i < NUMVERTICES; i++)
+		{
+			pVertex->iScratch = i + BEGINNING_OF_CENTRAL; // mapback longs
+
+			if (pVertex->flags == DOMAIN_VERTEX) {
+				list[iCaret] = i;
+				// Only domain vertices are allowed.
+				FOMarray_vert[iCaret] = sqrt(this->pData[i + BEGINNING_OF_CENTRAL].n + this->pData[i + BEGINNING_OF_CENTRAL].n_n)*this->X[i].AreaCell;
+				iCaret++;
+			};
+			++pVertex;
+		};
+		VertexArrayLen = iCaret;
+		QuickSort(list, FOMarray_vert, 0, VertexArrayLen - 1);
+		printf("sorted vertex list. iVolley = %d numVerts %d\n", iVolley, VertexArrayLen);
+
+		memset(used, 0, sizeof(bool)*NMINOR);
+
+		iTriCaret = TriArrayLen - 1;
+		// Go down and up the lists:
+
+		// Magic to stop it before it breaks down:
+
+		for (iCaret = 0; iCaret < ((iVolley < 3)?VertexArrayLen:428);  iCaret++)
+		{
+			// printf("iCaret %d FOM %1.8E %d %1.8E -- ", iCaret, FOMarray_vert[iCaret], X[iCaret].iVolley,
+			//	FOMarray1[iTriCaret]);
+
+			// Are we going the right way? Lowest = best
+
+			if (X[iCaret].iVolley == iVolley) {
+				f64 FOMcompare = FOMarray1[iTriCaret];
+
+				// LyX file shows logic of comparison: we actually move iff the AreaMinor*ndest > AreaMajor*nsrc.
+#define CONSERVATIVE_FACTOR  0.5
+
+				if (FOMarray_vert[iCaret] < CONSERVATIVE_FACTOR*FOMcompare) {
+					
+					iVertex = list[iCaret];
+					iTriDest = listtri[iTriCaret];
+
+					pVertex = X + iVertex;
+
+					printf("iVertex %d iTriDest %d vertpos %f %f tri %f %f; root %1.2E area %1.2E ", iVertex, iTriDest, pVertex->pos.x, pVertex->pos.y,
+						T[iTriDest].cent.x, T[iTriDest].cent.y, 
+						sqrt(this->pData[iVertex + BEGINNING_OF_CENTRAL].n + this->pData[iVertex + BEGINNING_OF_CENTRAL].n_n),
+						this->X[iVertex].AreaCell
+						);
+
+					// Bug: never recalculated Vertex->AreaCell. Is that OK because we never reuse vertices?
+
+
+					// Move vertex to centre of triangle:
+					//_____________________________________
+					// Note: we never remove a point which already has min dist to neighbour > 0.05cm. 
+					neigh_len = pVertex->GetNeighLen();
+					tri_len = pVertex->GetTriLen();
+
+					SetConsoleTextAttribute(hConsole, 11);
+			//		printf("neigh_len = %d tri_len = %d ; ", neigh_len, tri_len);
+
+					pVertex->GetNeighIndexArray(izNeigh);
+					pVertex->GetTriIndexArray(izTri);
+
+			//		for (i = 0; i < neigh_len; i++)
+			//			printf("%d neigh %d : %d\n", iVertex, i, izNeigh[i]);
+
+					SetConsoleTextAttribute(hConsole, 15);
+#define MAXDISTSQ 0.06*0.06
+
+					f64_vec2 pos1, pos2;
+					f64 distsq, distsq1, distsq2;
+					int iStart, iNext, iNext2;
+					Vector2 position[MAXNEIGH];
+					bool bUse = false;
+					for (i = 0; i < neigh_len; i++) {						
+						// which is nearer -- anti or clock image of pVertex->pos?
+						pNeigh = X + izNeigh[i];
+
+						Vector2 pos = pNeigh->pos;
+
+						pos1 = Anticlockwise*pos;
+						pos2 = Clockwise*pos;
+						distsq = (pVertex->pos - pos).dot(pVertex->pos - pos);
+						distsq1 = (pos1 - pVertex->pos).dot(pos1 - pVertex->pos);
+						distsq2 = (pos2 - pVertex->pos).dot(pos2 - pVertex->pos);
+						if (TEST) printf("%d : pos %1.10E %1.10E pos1 %1.10E %1.10E pos2 %1.10E %1.10E\n"
+							"distsq %1.9E %1.9E %1.9E\n",
+							izNeigh[i],
+							pos.x, pos.y, pos1.x, pos1.y, pos2.x, pos2.y,
+							distsq, distsq1, distsq2);
+
+						if (distsq < distsq1) {
+							if (distsq < distsq2) {
+								position[i] = pos;
+								if (distsq < MAXDISTSQ) bUse = true;
+							} else {
+								position[i] = pos2;
+								if (distsq2 < MAXDISTSQ) bUse = true;
+							}
+						} else {
+							if (distsq1 < distsq2) {
+								position[i] = pos1;
+								//if (izNeigh[i] == 1590) {
+								//	printf("%d Anticlockwise 1590: %1.9E %1.9E | Anticlockwise %1.8E %1.8E %1.8E %1.8E | result %1.9E %1.9E\n",
+								//		iVertex, pos.x, pos.y, Anticlockwise.xx, Anticlockwise.xy, Anticlockwise.yx, Anticlockwise.yy, pos1.x, pos1.y);
+								//	getch(); 
+								//};
+								if (distsq1 < MAXDISTSQ) bUse = true;
+							} else {
+								position[i] = pos2;
+							//	if (izNeigh[i] == 1590) {
+							//		printf("%d Clockwise 1590: %1.9E %1.9E | Clockwise matrix %1.8E %1.8E %1.8E %1.8E | result %1.9E %1.9E\n",
+							//			iVertex, pos.x, pos.y, Clockwise.xx, Clockwise.xy, Clockwise.yx, Clockwise.yy, pos2.x, pos2.y);
+							//		getch(); 
+							//	};
+								if (distsq2 < MAXDISTSQ) bUse = true;
+							}
+						};
+					};
+
+					// You cannot move to one of your own neighbour triangles:
+					if (bUse) {
+						for (i = 0; i < tri_len; i++)
+							if (izTri[i] == iTriDest) bUse = false;						
+					};
+
+					if (bUse) {
+						// check if there are too many corner neighs at destination tri?
+						int l = T[iTriDest].cornerptr[0]->GetNeighLen();
+						if (l >= MAXNEIGH - 1) bUse = false;
+						l = T[iTriDest].cornerptr[1]->GetNeighLen();
+						if (l >= MAXNEIGH - 1) bUse = false;
+						l = T[iTriDest].cornerptr[2]->GetNeighLen();
+						if (l >= MAXNEIGH - 1) bUse = false;
+						if (bUse == false) iTriCaret--; // will skip fwd in vertex array too though
+					};
+
+					// all points too far away => cancel removal.
+
+					if (bUse == false) printf("\n");
+					if (bUse) {
+						// Structural changes for vertex:
+						// +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+						// Rebuild triangles around neighbour array:
+						
+					//	SetConsoleTextAttribute(hConsole, 13);
+					//	bool bStop = false;
+					//	long len = X[18014].GetNeighIndexArray(izNeighDebug);
+					//	long trilen = X[18014].GetTriIndexArray(izTriDebug);
+					//	for (i = 0; i < len; i++)
+					//	{
+					//		printf("18014 : Neigh %d %d : %1.10E %1.10E \n", i, izNeighDebug[i],
+					//			X[izNeighDebug[i]].pos.x, X[izNeighDebug[i]].pos.y
+					//			);		
+					//	};
+					//	for (i = 0; i < len; i++)
+					//		for (int j = 0; j < len; j++)
+					//			if ((izNeighDebug[i] == izNeighDebug[j]) && (i != j))
+					//			{
+					//				printf("Duplicate neigh detected.\n");
+					//				bStop = true;
+					//			};
+					//	for (i = 0; i < trilen; i++)
+					//	{
+					//		printf("18014 : Tri %d %d : %d %d %d %1.9E %1.9E\n", i, izTriDebug[i],
+					//			T[izTriDebug[i]].cornerptr[0] - X,
+					//			T[izTriDebug[i]].cornerptr[1] - X,
+					//			T[izTriDebug[i]].cornerptr[2] - X,
+					//			T[izTriDebug[i]].cent.x, T[izTriDebug[i]].cent.y
+					//			);
+					//	};
+					//	if (bStop == true) {
+					//		getch(); getch();
+					//	};	
+					//	SetConsoleTextAttribute(hConsole, 15);
+
+
+					//	for (i = 0; i < trilen; i++)
+					//	{
+					//		printf("21971 : Tri %d %d : %d %d %d\n", i, izTriDebug[i],
+					//			T[izTriDebug[i]].cornerptr[0] - X,
+					//			T[izTriDebug[i]].cornerptr[1] - X,
+					//			T[izTriDebug[i]].cornerptr[2] - X);
+					//	};
+					//	
+					//	SetConsoleTextAttribute(hConsole, 14);
+					//	short len = X[13796].GetNeighIndexArray(izNeighDebug);
+					//	short trilen = X[13796].GetTriIndexArray(izTriDebug);
+					//	for (i = 0; i < len; i++)
+					//	{
+					//		printf("13796 : Neigh %d %d %1.9E %1.9E\n", i, izNeighDebug[i],
+					//			X[izNeighDebug[i]].pos.x, X[izNeighDebug[i]].pos.y);
+					//	};
+					//	for (i = 0; i < trilen; i++)
+					//	{
+					//		printf("13796 : Tri %d %d : %d %d %d %1.9E %1.9E\n", i, izTriDebug[i],
+					//			T[izTriDebug[i]].cornerptr[0] - X,
+					//			T[izTriDebug[i]].cornerptr[1] - X,
+					//			T[izTriDebug[i]].cornerptr[2] - X,
+					//			T[izTriDebug[i]].cent.x, T[izTriDebug[i]].cent.y
+					//			);
+					//	};
+					//	SetConsoleTextAttribute(hConsole, 15);
+									
+						printf("iVol %d iCt %d iTriCt %d FOM %1.8E %1.8E\n",
+							iVolley, iCaret, iTriCaret, FOMarray_vert[iCaret], FOMcompare);
+
+						//if (iVertex == 18140) {
+						//	printf("Vertex 18140 iTriDest %d T[iTridest].area %1.10E corners %1.8E %1.8E  %1.8E %1.8E  %1.8E %1.8E ntot %1.9E\n\n", 
+						//		iTriDest,
+						//		AreaMinorArray[iTriDest],
+						//		T[iTriDest].cornerptr[0]->pos.x, T[iTriDest].cornerptr[0]->pos.y,
+						//		T[iTriDest].cornerptr[1]->pos.x, T[iTriDest].cornerptr[1]->pos.y,
+						//		T[iTriDest].cornerptr[2]->pos.x, T[iTriDest].cornerptr[2]->pos.y,
+						//		this->pData[iTriDest].n + this->pData[iTriDest].n_n
+						//		);
+						//};
+					
+						// Change neighbours according to what has this triangle?
+						// Neigh 0 has now all points as neighbours; delete original vertex it did have.
+						// The rest just lost our vertex:						
+						//printf("neigh0 len %d neigh_len %d\n", X[izNeigh[0]].GetNeighLen(), neigh_len);
+
+						//// spit iVertex and iNeighs
+					//	SetConsoleTextAttribute(hConsole, 10);
+					//	for (i = 0; i < neigh_len; i++)
+					//		printf("iVertex %d iNeigh %d izTri %d \n", iVertex, izNeigh[i], izTri[i]);
+					//	printf("iTriDest %d cornerptr-X %d %d %d\n",
+					//		iTriDest, T[iTriDest].cornerptr[0] - X, T[iTriDest].cornerptr[1] - X, T[iTriDest].cornerptr[2] - X);
+					//	SetConsoleTextAttribute(hConsole, 15);
+
+						// Check for dups?
+						for (i = 0; i < neigh_len; i++)
+							for (int j = 0; j < neigh_len; j++)
+								if ((izNeigh[i] == izNeigh[j]) && (i != j))
+								{
+									printf("Duplicate neigh detected.\n");
+									while (1) getch();
+								};
+						
+						// Vertex triangle lists: against, around source.
+						for (i = 0; i < neigh_len; i++) {
+							pNeigh = X + izNeigh[i];
+							for (int ii = 0; ii < tri_len; ii++)
+							{
+								pNeigh->RemoveTriIndexIfExists(izTri[ii]);
+							};
+						};
+						for (i = 0; i < neigh_len; i++)
+						{
+							pNeigh = X + izNeigh[i];
+							pNeigh->RemoveNeighIndexIfExists(iVertex);
+						};
+
+
+						// Version: Around in a circle.
+						// We mapped positions to nearest tranche.
+
+						iStart = 0;
+						int numremaining = neigh_len;
+						bool use_point[MAXNEIGH];
+						for (i = 0; i < neigh_len; i++) use_point[i] = 1;
+						int iTriCursor = 0;
+						while (numremaining >= 3)
+						{
+							if (TEST) printf("iStart %d ", iStart);
+							iNext = iStart + 1;
+							if (iNext == neigh_len) iNext = 0;
+							while (use_point[iNext] == 0) {
+								iNext++;
+								if (iNext == neigh_len) iNext = 0;
+							}
+							if (TEST) printf("iNext %d ", iNext);
+							iNext2 = iNext + 1;
+							if (iNext2 == neigh_len) iNext2 = 0;
+							while (use_point[iNext2] == 0) {
+								iNext2++;
+								if (iNext2 == neigh_len) iNext2 = 0;
+							}
+							if (TEST) printf("iNext2 %d \n", iNext2);
+
+							Vector2 perp;
+							perp.x = (position[iStart].y - position[iNext2].y);
+							perp.y = (position[iNext2].x - position[iStart].x);
+							f64 towards_old = (pVertex->pos-position[iStart]).dot(perp);
+							f64 towards_mid = (position[iNext]-position[iStart]).dot(perp);
+
+							if ((numremaining > 3) && (towards_old*towards_mid >= 0.0)) {
+								// skip onwards as this is a concave part of the polygon.
+						//		printf("concave %d: %d %d %d | %d %d %d | %1.8E %1.8E | %1.8E %1.8E | %1.8E %1.8E | %1.8E %1.8E |\n",
+						//			iVertex, iStart, iNext, iNext2,
+						//			izNeigh[iStart], izNeigh[iNext], izNeigh[iNext2],
+						//			position[iStart].x, position[iStart].y,
+						//			position[iNext].x, position[iNext].y,
+						//			position[iNext2].x, position[iNext2].y,
+						//			pVertex->pos.x, pVertex->pos.y);
+						//		printf("perp %1.8E %1.8E towards_old %1.8E = ( %1.8E %1.8E ).perp towards_mid %1.8E = ( %1.8E %1.8E ).perp\n",
+						//			perp.x, perp.y, towards_old, (pVertex->pos.x - position[iStart].x),
+						//			(pVertex->pos.y - position[iStart].y),
+						//			towards_mid, position[iNext].x-position[iStart].x, position[iNext].y-position[iStart].y
+						//			);
+								iStart = iNext;
+						//		if (TEST) getch();
+
+							} else {				
+
+								// triangle placement:
+								pTri = T + izTri[iTriCursor];
+								pTri->cornerptr[0] = X + izNeigh[iStart];
+								pTri->cornerptr[1] = X + izNeigh[iNext];
+								pTri->cornerptr[2] = X + izNeigh[iNext2];
+
+								X[izNeigh[iStart]].AddUniqueNeighbourIndex(izNeigh[iNext]); 
+								X[izNeigh[iStart]].AddUniqueNeighbourIndex(izNeigh[iNext2]);								
+								X[izNeigh[iNext]].AddUniqueNeighbourIndex(izNeigh[iStart]);
+								X[izNeigh[iNext]].AddUniqueNeighbourIndex(izNeigh[iNext2]);
+								X[izNeigh[iNext2]].AddUniqueNeighbourIndex(izNeigh[iStart]);
+								X[izNeigh[iNext2]].AddUniqueNeighbourIndex(izNeigh[iNext]);
+
+								X[izNeigh[iStart]].AddTriIndex(izTri[iTriCursor]);
+								X[izNeigh[iNext]].AddTriIndex(izTri[iTriCursor]);
+								X[izNeigh[iNext2]].AddTriIndex(izTri[iTriCursor]);
+
+							//	printf("triangle placed %d: %d %d %d\n", pTri-T,
+							//		izNeigh[iStart], izNeigh[iNext], izNeigh[iNext2]);
+
+								if (izNeigh[iStart] == izNeigh[iNext2]) {
+									printf("uh oh\n"
+										"iStart = %d iNext = %d iNext2 = %d\n"
+										"numremaining %d \n",
+										iStart, iNext, iNext2,
+										numremaining
+										);
+									getch(); getch(); getch();
+								}
+
+								iTriCursor++;
+								use_point[iNext] = 0;
+								iStart = iNext2;
+								numremaining--; // point cut out of list
+							};
+
+						}; // wend
+
+						for (i = 0; i < tri_len - 2; i++)
+						{
+							pTri = T + izTri[i];
+							ResetTriangleNeighbours(pTri); // check it
+
+					//		printf("%d : Neighbours %d %d %d \n", izTri[i], pTri->neighbours[0] - T,
+					//			pTri->neighbours[1] - T, pTri->neighbours[2] - T);
+
+							pTri->GuessPeriodic();
+							// It needs to also apply for each of the neighbouring triangles too.
+							if (ResetTriangleNeighbours(pTri->neighbours[0])) {
+								printf("iVertex %d izTri[%d] %d : %d %d %d", iVertex, i, pTri->neighbours[0]-T,
+									pTri->neighbours[0]->cornerptr[0] - X, 
+									pTri->neighbours[0]->cornerptr[1] - X,
+									pTri->neighbours[0]->cornerptr[2] - X);
+								while (1) getch();
+							}
+							if (ResetTriangleNeighbours(pTri->neighbours[1])) {
+								printf("iVertex %d izTri[%d] %d : %d %d %d", iVertex, i, pTri->neighbours[1] - T,
+									pTri->neighbours[1]->cornerptr[0] - X, 
+									pTri->neighbours[1]->cornerptr[1] - X, 
+									pTri->neighbours[1]->cornerptr[2] - X);
+								while (1) getch();
+							};
+							if (ResetTriangleNeighbours(pTri->neighbours[2])) {
+								printf("iVertex %d izTri[%d] %d : %d %d %d", iVertex, i, pTri->neighbours[2] - T,
+									pTri->neighbours[2]->cornerptr[0] - X, 
+									pTri->neighbours[2]->cornerptr[1] - X, 
+									pTri->neighbours[2]->cornerptr[2] - X);
+								while (1) getch();
+							};
+						};
+
+						if (iTriCursor != tri_len - 2) printf("iTriCursor %d tri_len %d : error\n\n", iTriCursor, tri_len);
+			//			printf("got to here AAA\n");
+
+						if (0) {
+							// Alternative version:
+							// All around neighbour 0:
+
+							// Now add them back:
+							// Triangle corners for tris around the source:
+							// And triangles in lists.
+							for (i = 0; i < tri_len - 2; i++)
+							{
+								// first tri is 0,1,2
+								// second tri is 0,2,3
+								pTri = T + izTri[i];
+								pTri->cornerptr[0] = X + izNeigh[0];
+								pTri->cornerptr[1] = X + izNeigh[i + 1];
+								pTri->cornerptr[2] = X + izNeigh[i + 2];
+								pTri->cornerptr[0]->AddTriIndex(izTri[i]);
+								pTri->cornerptr[1]->AddTriIndex(izTri[i]);
+								pTri->cornerptr[2]->AddTriIndex(izTri[i]);
+							};
+							for (i = 0; i < neigh_len; i++)
+							{
+								pNeigh = X + izNeigh[i];
+								if (i > 0) {
+									X[izNeigh[0]].AddUniqueNeighbourIndex(izNeigh[i]);
+									pNeigh->AddUniqueNeighbourIndex(izNeigh[0]);
+								};
+
+							};
+						};
+
+						// This assumed that izNeigh were arranged anticlockwise.
+						// But we have not ensured this -- we need to correct it as we go.
+						
+						// Done: VERTEX NEIGHBOURS (SRC), VERT TRI LISTS (SRC), TRI CORNERS(SRC)
+						
+						// Suggested remedy : now seek to do Delaunay flips within these triangles only.
+						
+						pVertex->ClearNeighs();
+						pVertex->ClearTris();
+
+						if (TEST) DebugTestWrongNumberTrisPerEdge();
+						//if (0) {
+						//	len = X[18014].GetNeighIndexArray(izNeighDebug);
+						//	trilen = X[18014].GetTriIndexArray(izTriDebug);
+						//	for (i = 0; i < len; i++)
+						//	{
+						//		printf("18014 : %d tri %d Neigh %d %d : %1.10E %1.10E | %1.10E %1.10E\n", i, 
+						//			trilen, izTriDebug[i],
+						//			izNeighDebug[i],
+						//			X[izNeighDebug[i]].pos.x, X[izNeighDebug[i]].pos.y,
+						//			position[i].x, position[i].y
+						//		);
+						//	};
+						//	for (i = 0; i < len; i++)
+						//		for (int j = 0; j < len; j++)
+						//			if ((izNeighDebug[i] == izNeighDebug[j]) && (i != j))
+						//			{
+						//				printf("Duplicate neigh detected.\n");
+						//				bStop = true;
+						//			};
+						//	if (bStop == true) {
+						//		getch(); getch();
+						//	};
+
+						//};
+
+				//		printf("Do flips:\n");
+						this->Flips(izTri, tri_len - 2);
+
+						for (i = 0; i < tri_len-2; i++) {
+							pTri = T + izTri[i];
+							pTri->MakeSureCornersAnticlockwise(); // WILL USE Vertex->pos
+							pTri->RecalculateCentroid();
+						};
+
+						if (TEST) printf("Reorder lists: ");
+						// ASSUMES TRI CENTROIDS ARE SET:
+						for (i = 0; i < neigh_len; i++) {
+							pNeigh = X + izNeigh[i];
+							if (TEST) printf("ReorderTriAndNeighLists %d:\n", izNeigh[i]);
+							bDebugReorder = false;
+						//	if (izNeigh[i] == 13796) bDebugReorder = true;
+							ReorderTriAndNeighLists(pNeigh);							
+						};
+						if (TEST) printf("DONE\n");
+
+						bDebugReorder = false;
+						// Looks like RVNOVO always relied on tri corners being sorted first.
+
+						if (TEST) printf("Reset tri neighs again: ");
+						for (i = 0; i < tri_len - 2; i++)
+						{
+							pTri = T + izTri[i];
+							ResetTriangleNeighbours(pTri); // check it
+							pTri->GuessPeriodic();
+							// It needs to also apply for each of the neighbouring triangles too.
+							ResetTriangleNeighbours(pTri->neighbours[0]);
+							ResetTriangleNeighbours(pTri->neighbours[1]);
+							ResetTriangleNeighbours(pTri->neighbours[2]);
+						};
+						if (TEST) printf("DONE\n");
+
+
+						// Done: TRI NEIGHBOURS(SRC).
+
+						if (TEST) {
+
+							SetConsoleTextAttribute(hConsole, 14);
+							len = X[13796].GetNeighIndexArray(izNeighDebug);
+							trilen = X[13796].GetTriIndexArray(izTriDebug);
+							for (i = 0; i < len; i++)
+							{
+								printf("13796 : Neigh %d %d %1.9E %1.9E\n", i, izNeighDebug[i],
+									X[izNeighDebug[i]].pos.x, X[izNeighDebug[i]].pos.y);
+							};
+							for (i = 0; i < trilen; i++)
+							{
+								printf("13796 : Tri %d %d : %d %d %d %1.9E %1.9E\n", i, izTriDebug[i],
+									T[izTriDebug[i]].cornerptr[0] - X,
+									T[izTriDebug[i]].cornerptr[1] - X,
+									T[izTriDebug[i]].cornerptr[2] - X,
+									T[izTriDebug[i]].cent.x, T[izTriDebug[i]].cent.y
+								);
+							};
+							SetConsoleTextAttribute(hConsole, 15);
+						};
+						
+
+						// DESTINATION:
+						// ============
+						printf("Destination.:\n");
+						// Now vertex neighbours in destination:
+						// They still have each other but each has this one additionally.
+						
+					//	pVertex->ClearNeighs();
+						pTri = T+iTriDest;
+						for (i = 0; i < 3; i++) {
+							if (iVolley > 0) printf("Add %d to %d : pTri-T %d \n", iVertex, pTri->cornerptr[i] - X, pTri-T);
+							pTri->cornerptr[i]->AddNeighbourIndex(iVertex);
+							if (iVolley > 0) printf("Add %d to %d\n", pTri->cornerptr[i] - X, iVertex);
+							pVertex->AddNeighbourIndex(pTri->cornerptr[i]-X);
+						};
+						// DONE: vertex neighbours
+
+						pVertex->iScratch = iTriDest; // mapback...
+
+						iTri1 = izTri[tri_len - 2];
+						iTri2 = izTri[tri_len - 1];
+						
+						// If we do this we won't overwrite izTri which is local.
+					//	pVertex->ClearTris();
+						pVertex->AddTriIndex(pTri - T); // dest tri
+						pVertex->AddTriIndex(iTri1);
+						pVertex->AddTriIndex(iTri2);
+
+						// ---------------------------------------------------------------------------------
+						// Take last two triangles and redefine:
+						p0 = pTri->cornerptr[0];
+						p1 = pTri->cornerptr[1];
+						p2 = pTri->cornerptr[2];
+						pTri->cornerptr[2] = pVertex;
+
+						pTri = T + izTri[tri_len-2];
+						pTri->cornerptr[0] = p0;
+						pTri->cornerptr[1] = p2;
+						pTri->cornerptr[2] = pVertex; // anticlockwise coords of a triangle? don't know
+						
+						pTri = T + izTri[tri_len-1];
+						pTri->cornerptr[0] = p1;
+						pTri->cornerptr[1] = p2;
+						pTri->cornerptr[2] = pVertex; 
+						
+						// Thus get tri list modifications:
+						p2->RemoveTriIndexIfExists(iTriDest);
+						p2->AddTriIndex(iTri1);
+						p2->AddTriIndex(iTri2);
+						p1->AddTriIndex(iTri2);
+						p0->AddTriIndex(iTri1);
+
+						//SetConsoleTextAttribute(hConsole, 13);
+						//printf("35905: %d %d %d %1.8E %1.8E %1.8E %1.8E %1.8E %1.8E\n",
+						//	T[35905].cornerptr[0] - X, T[35905].cornerptr[1] - X, T[35905].cornerptr[2] - X,
+						//	T[35905].cornerptr[0]->pos.x, T[35905].cornerptr[0]->pos.y,
+						//	T[35905].cornerptr[1]->pos.x, T[35905].cornerptr[1]->pos.y,
+						//	T[35905].cornerptr[2]->pos.x, T[35905].cornerptr[2]->pos.y
+						//);
+						//if ((T[35905].cornerptr[0]->pos.x == 0.0) && (T[35905].cornerptr[1]->pos.x == 0.0) && (T[35905].cornerptr[2]->pos.x == 0.0))
+						//{
+						//	printf("stop.\n");
+						//	while (1) getch();
+						//}
+						//SetConsoleTextAttribute(hConsole, 15);
+
+						// Done: VERTEX NEIGHBOURS (DEST), VERT TRI LISTS (DEST), TRI CORNERS(DEST)
+						pVertex->pos = T[iTriDest].cent;
+						pData[iVertex + BEGINNING_OF_CENTRAL].pos = pVertex->pos;
+						// Looks like problem was that pData is not something that ever gets updated.
+						
+						/*Worried in general that we do not correct tri neighs or tri centroids following flips in Redelaun;
+						Correcting tri neighs depends on vertex tris;
+
+						At the moment it stops at 1700 points because of too_many_neighs. Not sure if there is a fix
+						may be better now to stop at 0,1,2 volleys, swish the points around a bit.
+						This could be 1 day's work to finish off.
+
+*/
+
+						for (i = 0; i < tri_len; i++)
+						{
+							pTri = T + izTri[i];
+							int ins = 0;
+							if (pTri->cornerptr[0]->pos.dot(pTri->cornerptr[0]->pos) < DEVICE_RADIUS_INSULATOR_OUTER*DEVICE_RADIUS_INSULATOR_OUTER)
+								ins++;
+							if (pTri->cornerptr[1]->pos.dot(pTri->cornerptr[1]->pos) < DEVICE_RADIUS_INSULATOR_OUTER*DEVICE_RADIUS_INSULATOR_OUTER)
+								ins++;
+							if (pTri->cornerptr[2]->pos.dot(pTri->cornerptr[2]->pos) < DEVICE_RADIUS_INSULATOR_OUTER*DEVICE_RADIUS_INSULATOR_OUTER)
+								ins++;
+							if (ins == 0) {
+								pTri->u8domain_flag = DOMAIN_TRIANGLE;
+							}
+							else {
+								if (ins < 3) {
+									pTri->u8domain_flag = CROSSING_INS;
+								} else {
+									pTri->u8domain_flag = OUT_OF_DOMAIN;
+								};
+							};
+						};
+						// DONE: Triangle flags update. We could be moving ins tris. And tris could become ins tris.
+
+					//	if (iVolley > 0) printf("Tri corner seq\n");
+						T[iTriDest].MakeSureCornersAnticlockwise(); // needs vertex->pos
+						T[izTri[tri_len - 2]].MakeSureCornersAnticlockwise();
+						T[izTri[tri_len - 1]].MakeSureCornersAnticlockwise();
+
+						T[iTriDest].RecalculateCentroid();
+						T[izTri[tri_len - 2]].RecalculateCentroid();
+						T[izTri[tri_len - 1]].RecalculateCentroid();
+
+					//	if (iVolley > 0) printf("Tri neighbours\n");
+						pTri = T + iTriDest;
+						pTri->GuessPeriodic();
+						ResetTriangleNeighbours(pTri);
+
+						pTri = T + izTri[tri_len - 2];
+						pTri->GuessPeriodic();
+						ResetTriangleNeighbours(pTri); // check it -- what info it uses?
+						for (i = 0; i < 3; i++)
+							ResetTriangleNeighbours(pTri->neighbours[i]);
+
+						pTri = T + izTri[tri_len - 1];
+						pTri->GuessPeriodic();
+						ResetTriangleNeighbours(pTri); // check it
+						for (i = 0; i < 3; i++)
+							ResetTriangleNeighbours(pTri->neighbours[i]);
+
+					//	if (iVolley > 0) printf("trilist\n");
+						pTri = T + iTriDest;
+						// assemble list:
+						trilist[0] = iTriDest;
+						listlen = 1;
+						for (iCorner = 0; iCorner < 3; iCorner++)
+							if (used[pTri->neighbours[iCorner] - T]) {
+								trilist[listlen] = pTri->neighbours[iCorner] - T;
+								listlen++;
+						};
+						trilist[listlen] = izTri[tri_len-2];
+						pTri = T + izTri[tri_len - 2];
+						listlen++;
+						for (iCorner = 0; iCorner < 3; iCorner++)
+							if (used[pTri->neighbours[iCorner] - T]) {
+								trilist[listlen] = pTri->neighbours[iCorner] - T;
+								listlen++;
+							};
+						trilist[listlen] = izTri[tri_len - 1];
+						pTri = T + izTri[tri_len - 1];
+						listlen++;
+						for (iCorner = 0; iCorner < 3; iCorner++)
+							if (used[pTri->neighbours[iCorner] - T]) {
+								trilist[listlen] = pTri->neighbours[iCorner] - T;
+								listlen++;
+							};
+
+						//bStop = false;
+						//len = X[46644].GetNeighIndexArray(izNeighDebug);
+						//for (i = 0; i < len; i++)
+						//{
+						//	if (izNeighDebug[i] == 1590) bStop = true;
+						//};
+						//if (bStop == true) {
+						//	for (i = 0; i < len; i++)
+						//		printf("46644 : Neigh %d %d : %1.10E %1.10E\n", i, izNeighDebug[i],
+						//			X[izNeighDebug[i]].pos.x, X[izNeighDebug[i]].pos.y);
+						//	getch();
+						//};
+					//	printf("Do flips:\n");
+
+						//if (iVolley > 0) 
+						{
+					//		printf("iVolley %d Do flips: listlen %d \n", iVolley, listlen);
+					//		for (i = 0; i < listlen; i++)
+					//			printf("%d -- ", trilist[i]);
+						}
+						SetConsoleTextAttribute(hConsole, 11);
+						
+						SetConsoleTextAttribute(hConsole, 15);
+
+
+						Flips(trilist, listlen);
+					//	printf("done flips\n");
+
+
+
+				//		printf("Set used flags: ");
+						// finally, set used flags:
+						used[iTriDest] = true;
+						used[izTri[tri_len - 2]] = true;
+						used[izTri[tri_len - 1]] = true;
+
+				//		if (iVolley > 0) printf("Anticlock seq tri corners: ");
+					//	printf("Make sure corners anticlockwise: ");
+
+						for (i = 0; i < listlen; i++)
+						{
+							pTri = T + trilist[i];
+							pTri->MakeSureCornersAnticlockwise(); // WILL USE Vertex->pos
+							pTri->RecalculateCentroid();
+						}
+						//pTri = T + iTriDest;
+						//pTri->MakeSureCornersAnticlockwise(); // WILL USE Vertex->pos
+						//pTri->RecalculateCentroid();
+						//pTri = T + izTri[tri_len - 2];
+						//pTri->MakeSureCornersAnticlockwise(); // WILL USE Vertex->pos
+						//pTri->RecalculateCentroid();
+						//pTri = T + izTri[tri_len - 1];
+						//pTri->MakeSureCornersAnticlockwise(); // WILL USE Vertex->pos
+						//pTri->RecalculateCentroid();
+
+
+					//	if (iVolley > 0) printf("ReorderTriAndNeighLists: ");
+						// Assumes tri centroids set:
+						// Now reset anticlockwise order around vertex, because we used it above.
+						
+					//	printf("%d %d %d %d \n", pVertex - X, p0 - X, p1 - X, p2 - X);
+						ReorderTriAndNeighLists(pVertex);
+						ReorderTriAndNeighLists(p0);
+						ReorderTriAndNeighLists(p1);
+						ReorderTriAndNeighLists(p2);
+						
+				//		SetConsoleTextAttribute(hConsole, 14);
+				//		len = X[18014].GetNeighIndexArray(izNeighDebug);
+				//		trilen = X[18014].GetTriIndexArray(izTriDebug);
+				//		for (i = 0; i < len; i++)
+				//		{
+				//			printf("18014 : %d tri %d Neigh %d %d : %1.10E %1.10E | %1.10E %1.10E\n", i,
+				//				trilen, izTriDebug[i],
+				//				izNeighDebug[i],
+				//				X[izNeighDebug[i]].pos.x, X[izNeighDebug[i]].pos.y,
+				//				position[i].x, position[i].y
+				//			);
+				//		};
+				//		for (i = 0; i < len; i++)
+				//			for (int j = 0; j < len; j++)
+				//				if ((izNeighDebug[i] == izNeighDebug[j]) && (i != j))
+				//				{
+				//					printf("Duplicate neigh detected.\n");
+				//					bStop = true;
+				//				};
+				//		if (bStop == true) {
+				//			getch(); getch();
+				//		};
+				//		SetConsoleTextAttribute(hConsole, 15);
+
+
+				//		if (iVolley > 0) printf("ResetTriNeighs: \n");
+						//// Looks like RVNOVO always relied on tri corners being sorted first.
+						pTri = T + iTriDest;
+						ResetTriangleNeighbours(pTri); // check it
+						pTri->GuessPeriodic();
+						// It needs to also apply for each of the neighbouring triangles too.
+						ResetTriangleNeighbours(pTri->neighbours[0]);
+						ResetTriangleNeighbours(pTri->neighbours[1]);
+						ResetTriangleNeighbours(pTri->neighbours[2]);
+
+						pTri = T + izTri[tri_len - 2];
+						ResetTriangleNeighbours(pTri); // check it
+						pTri->GuessPeriodic();
+						// It needs to also apply for each of the neighbouring triangles too.
+						ResetTriangleNeighbours(pTri->neighbours[0]);
+						ResetTriangleNeighbours(pTri->neighbours[1]);
+						ResetTriangleNeighbours(pTri->neighbours[2]);
+
+						pTri = T + izTri[tri_len - 1];
+						ResetTriangleNeighbours(pTri); // check it
+						pTri->GuessPeriodic();
+						// It needs to also apply for each of the neighbouring triangles too.
+						ResetTriangleNeighbours(pTri->neighbours[0]);
+						ResetTriangleNeighbours(pTri->neighbours[1]);
+						ResetTriangleNeighbours(pTri->neighbours[2]);
+						// Relies on the triangle list that has been maintained by the corners.
+
+
+						// Oh dear:
+
+						//	4. We also need to be prepared to move some points from out of domain so that we
+						//	e.g.keep down the number of neighbours.
+						//	* We need the mesh to look sensible from a Laplacian point of view.;
+
+						// ====================================================================================
+
+						// Where we remove a point, distribute its mass, heat, mom locally, assuming equal shares of its vertcell.
+						// Take care of A, Adot: generate new values at the new location.
+						// This is the big hurdle and once crossed, with all structural vars restored, we are a good part of the way there.
+			//			if (iVolley > 0) printf("DATA : \n");
+						f64 newmass, newmass_n;
+						f64 area_add = X[iVertex].AreaCell / (f64)neigh_len;
+						mass.n = (pData[iVertex + BEGINNING_OF_CENTRAL].n)*area_add;
+						mass.n_n = (pData[iVertex + BEGINNING_OF_CENTRAL].n_n)*area_add;
+						addheat.n = (pData[iVertex + BEGINNING_OF_CENTRAL].Tn*pData[iVertex + BEGINNING_OF_CENTRAL].n_n)*area_add;
+						addheat.i = (pData[iVertex + BEGINNING_OF_CENTRAL].Ti*pData[iVertex + BEGINNING_OF_CENTRAL].n)*area_add;
+						addheat.e = (pData[iVertex + BEGINNING_OF_CENTRAL].Te*pData[iVertex + BEGINNING_OF_CENTRAL].n)*area_add;
+						addmom_viz = (pData[iVertex + BEGINNING_OF_CENTRAL].viz*pData[iVertex + BEGINNING_OF_CENTRAL].n)*area_add;
+						addmom_vez = (pData[iVertex + BEGINNING_OF_CENTRAL].vez*pData[iVertex + BEGINNING_OF_CENTRAL].n)*area_add;
+						addmom_vxy = (pData[iVertex + BEGINNING_OF_CENTRAL].vxy*pData[iVertex + BEGINNING_OF_CENTRAL].n)*area_add;
+						addmom_v_n = (pData[iVertex + BEGINNING_OF_CENTRAL].v_n*pData[iVertex + BEGINNING_OF_CENTRAL].n_n)*area_add;
+						
+						for (i = 0; i < neigh_len; i++) {
+							iNeigh = izNeigh[i];
+							newmass = (pData[iNeigh + BEGINNING_OF_CENTRAL].n*X[iNeigh].AreaCell + mass.n);
+							newmass_n = (pData[iNeigh + BEGINNING_OF_CENTRAL].n_n*X[iNeigh].AreaCell + mass.n_n);
+							
+							pData[iNeigh + BEGINNING_OF_CENTRAL].n =
+								newmass / (X[iNeigh].AreaCell + area_add);
+							pData[iNeigh + BEGINNING_OF_CENTRAL].n_n =
+								newmass_n /	(X[iNeigh].AreaCell + area_add); // Tick.
+							pData[iNeigh + BEGINNING_OF_CENTRAL].Tn =
+								(pData[iNeigh + BEGINNING_OF_CENTRAL].Tn*pData[iNeigh + BEGINNING_OF_CENTRAL].n_n
+									*X[iNeigh].AreaCell + addheat.n) /	(newmass_n);
+							pData[iNeigh + BEGINNING_OF_CENTRAL].Ti =
+								(pData[iNeigh + BEGINNING_OF_CENTRAL].Ti*pData[iNeigh + BEGINNING_OF_CENTRAL].n
+									*X[iNeigh].AreaCell + addheat.i) /	(newmass);
+							pData[iNeigh + BEGINNING_OF_CENTRAL].Te =
+								(pData[iNeigh + BEGINNING_OF_CENTRAL].Te*pData[iNeigh + BEGINNING_OF_CENTRAL].n
+									*X[iNeigh].AreaCell + addheat.e) /	(newmass);
+							pData[iNeigh + BEGINNING_OF_CENTRAL].viz =
+								(pData[iNeigh + BEGINNING_OF_CENTRAL].viz*pData[iNeigh + BEGINNING_OF_CENTRAL].n
+									*X[iNeigh].AreaCell + addmom_viz) / (newmass);
+							pData[iNeigh + BEGINNING_OF_CENTRAL].vez =
+								(pData[iNeigh + BEGINNING_OF_CENTRAL].vez*pData[iNeigh + BEGINNING_OF_CENTRAL].n
+									*X[iNeigh].AreaCell + addmom_vez) / (newmass);
+							pData[iNeigh + BEGINNING_OF_CENTRAL].vxy =
+								(pData[iNeigh + BEGINNING_OF_CENTRAL].vxy*pData[iNeigh + BEGINNING_OF_CENTRAL].n
+									*X[iNeigh].AreaCell + addmom_vxy) / (newmass);
+							pData[iNeigh + BEGINNING_OF_CENTRAL].v_n =
+								(pData[iNeigh + BEGINNING_OF_CENTRAL].v_n*pData[iNeigh + BEGINNING_OF_CENTRAL].n_n
+									*X[iNeigh].AreaCell + addmom_v_n) / (newmass_n);
+
+							// Slapdash! Have to do!
+						}
+
+						// Now overwrite plasma data at new vertex position:
+						memcpy(&(pData[iVertex + BEGINNING_OF_CENTRAL]), &(pData[iTriDest]), sizeof(plasma_data));
+				//		printf("DONE\n");
+
+						// Now flag these triangles for data recalc by simple average:
+						// Or just do it.:						
+
+						plasma_data pData0, pData1, pData2;
+						long iTri;
+						for (i = 0; i < tri_len+1; i++)
+						{
+							if (i == tri_len) {
+								pTri = T+iTriDest;
+								iTri = iTriDest;
+							} else {
+								pTri = T + izTri[i];
+								iTri = izTri[i];
+							};
+
+							memcpy(&pData0, &(pData[pTri->cornerptr[0] - X + BEGINNING_OF_CENTRAL]), sizeof(plasma_data));
+							memcpy(&pData1, &(pData[pTri->cornerptr[1] - X + BEGINNING_OF_CENTRAL]), sizeof(plasma_data));
+							memcpy(&pData2, &(pData[pTri->cornerptr[2] - X + BEGINNING_OF_CENTRAL]), sizeof(plasma_data));
+
+							pData[iTri].Az = THIRD*(pData0.Az + pData1.Az + pData2.Az);
+							pData[iTri].Azdot = THIRD*(pData0.Azdot + pData1.Azdot + pData2.Azdot);
+							pData[iTri].B = THIRD*(pData0.B + pData1.B + pData2.B);
+							pData[iTri].pos = THIRD*(pData0.pos + pData1.pos + pData2.pos); 
+														
+							if (pData0.n == 0.0) {
+
+								pData[iTri].n = 0.5*(pData1.n + pData2.n);
+								pData[iTri].n_n = 0.5*(pData1.n_n + pData2.n_n);
+								pData[iTri].Te = 0.5*(pData1.Te + pData2.Te);
+								pData[iTri].Ti = 0.5*(pData1.Ti + pData2.Ti);
+								pData[iTri].Tn = 0.5*(pData1.Tn + pData2.Tn);
+								pData[iTri].vez = 0.5*(pData1.vez + pData2.vez);
+								pData[iTri].viz = 0.5*(pData1.viz + pData2.viz);
+								pData[iTri].vxy = 0.5*(pData1.vxy + pData2.vxy);
+								pData[iTri].v_n = 0.5*(pData1.v_n + pData2.v_n);
+							} else {
+								if (pData1.n == 0.0) {
+
+									pData[iTri].n = 0.5*(pData0.n + pData2.n);
+									pData[iTri].n_n = 0.5*(pData0.n_n + pData2.n_n);
+									pData[iTri].Te = 0.5*(pData0.Te + pData2.Te);
+									pData[iTri].Ti = 0.5*(pData0.Ti + pData2.Ti);
+									pData[iTri].Tn = 0.5*(pData0.Tn + pData2.Tn);
+									pData[iTri].vez = 0.5*(pData0.vez + pData2.vez);
+									pData[iTri].viz = 0.5*(pData0.viz + pData2.viz);
+									pData[iTri].vxy = 0.5*(pData0.vxy + pData2.vxy);
+									pData[iTri].v_n = 0.5*(pData0.v_n + pData2.v_n);
+								} else {
+									if (pData2.n == 0.0) {
+										pData[iTri].n = 0.5*(pData0.n + pData1.n);
+										pData[iTri].n_n = 0.5*(pData0.n_n + pData1.n_n);
+										pData[iTri].Te = 0.5*(pData0.Te + pData1.Te);
+										pData[iTri].Ti = 0.5*(pData0.Ti + pData1.Ti);
+										pData[iTri].Tn = 0.5*(pData0.Tn + pData1.Tn);
+										pData[iTri].vez = 0.5*(pData0.vez + pData1.vez);
+										pData[iTri].viz = 0.5*(pData0.viz + pData1.viz);
+										pData[iTri].vxy = 0.5*(pData0.vxy + pData1.vxy);
+										pData[iTri].v_n = 0.5*(pData0.v_n + pData1.v_n);
+									} else {
+										pData[iTri].n = THIRD*(pData0.n + pData1.n + pData2.n);
+										pData[iTri].n_n = THIRD*(pData0.n_n + pData1.n_n + pData2.n_n);
+										pData[iTri].Te = THIRD*(pData0.Te + pData1.Te + pData2.Te);
+										pData[iTri].Ti = THIRD*(pData0.Ti + pData1.Ti + pData2.Ti);
+										pData[iTri].Tn = THIRD*(pData0.Tn + pData1.Tn + pData2.Tn);
+										pData[iTri].vez = THIRD*(pData0.vez + pData1.vez + pData2.vez);
+										pData[iTri].viz = THIRD*(pData0.viz + pData1.viz + pData2.viz);
+										pData[iTri].vxy = THIRD*(pData0.vxy + pData1.vxy + pData2.vxy);
+										pData[iTri].v_n = THIRD*(pData0.v_n + pData1.v_n + pData2.v_n);
+									}
+								}
+							};
+							
+						};
+						iTriCaret--;
+						iMoved++;
+					};
+				};
+			};
+		};
+		printf("Volley %d : moved %d \n", iVolley, iMoved);
+		
+		// Get tri order right:
+		EnsureAnticlockwiseTriangleCornerSequences_SetupTriMinorNeighboursLists();
+				
+		this->RefreshVertexNeighboursOfVerticesOrdered();		// is it called by Redelaunerize?
+				 				
+		this->Redelaunerize(true, true); // what will flip? Worth doing in case it makes areas more sensible somehow, I suppose.
+		this->Recalculate_TriCentroids_VertexCellAreas_And_Centroids();	// use areas next pass.
+		
+	};
+	fclose(fpdbg);
+
+	delete[] listtri;
+	delete[] list;
+	delete[] FOMarray1;
+	delete[] FOMarray_vert;
+	delete[] used;
+
+	// Each vertex to carry a long that indicates its source vertex or triangle, and a bool.
+	// pVertex->iScratch = ?
+	// Can we update it above if the vertex gets moved to centre of a triangle.
+	// Those which are never moved will stay on vertex mapping so
+	// that provides us that flag.
+	//i)
+	//.. Those that were moved to a triangle, may need that source tri shifting as
+	//flips may have got it shunted about ? Or moved to a tri that was not in the source.
+	printf("\nFinding source triangles of moved points...");
+
+	pVertex = X;
+	for (iVertex = 0; iVertex < NUMVERTICES; iVertex++)
+	{
+		// Is it where we think it is?
+		if (pVertex->iScratch < BEGINNING_OF_CENTRAL) {
+			// Otherwise it's correct.
+
+			pTri = pX_src->T + pVertex->iScratch;
+			bool bOutside = false;
+			do {
+				// First see whether this point lies inside this triangle. If it's a periodic triangle
+				// then we need to test on both sides.
+				Vector2 u0, u1, u2;
+				pos = pVertex->pos;
+
+				pTri->MapLeftIfNecessary(u0, u1, u2);
+
+				// Test on this u0,u1,u2 :
+				perp.x = u0.y - u1.y;	perp.y = u1.x - u0.x;
+				temp1 = perp.dot(u2 - u0); temp2 = perp.dot(pos - u0);
+				if (temp1*temp2 < 0.0) bOutside = true;
+				perp.x = u2.y - u1.y;	perp.y = u1.x - u2.x;
+				temp1 = perp.dot(u0 - u1); temp2 = perp.dot(pos - u1);
+				if (temp1*temp2 < 0.0) bOutside = true;
+				perp.x = u2.y - u0.y;	perp.y = u0.x - u2.x;
+				temp1 = perp.dot(u1 - u0); temp2 = perp.dot(pos - u0);
+				if (temp1*temp2 < 0.0) bOutside = true;
+
+				if (pTri->periodic != 0)
+				{					
+					if (bOutside) {
+						bOutside = false;
+						// test again on right hand side.
+						u0 = Clockwise*u0;
+						u1 = Clockwise*u1;
+						u2 = Clockwise*u2;						
+
+						perp.x = u0.y - u1.y;	perp.y = u1.x - u0.x;
+						temp1 = perp.dot(u2 - u0); temp2 = perp.dot(pos - u0);
+						if (temp1*temp2 < 0.0) bOutside = true;
+						perp.x = u2.y - u1.y;	perp.y = u1.x - u2.x;
+						temp1 = perp.dot(u0 - u1); temp2 = perp.dot(pos - u1);
+						if (temp1*temp2 < 0.0) bOutside = true;
+						perp.x = u2.y - u0.y;	perp.y = u0.x - u2.x;
+						temp1 = perp.dot(u1 - u0); temp2 = perp.dot(pos - u0);
+						if (temp1*temp2 < 0.0) bOutside = true;
+					};
+					if (bOutside) {
+						// It's periodic tri but outside of both...
+						// Use the side which corresponds to pos
+						if (pos.x < 0.0) pTri->MapLeftIfNecessary(u0, u1, u2);
+					}
+				};
+
+				if (bOutside) {
+					// Move triangles, in the direction in which the nearest image of the point is the farthest distance
+					// away on the vector normal to the edge.
+					// If this is a periodic triangle then instead choose the side where the point lives.
+
+					pos_use = pos;
+					if (pTri->periodic == 0) {
+						// allow that another image could be closer.
+						pos2 = Clockwise*pos;
+						pos3 = Anticlockwise*pos;
+
+						// Is pTri->cent populated?
+						distsq = (pos - pTri->cent).dot(pos - pTri->cent);
+						distsq2 = (pos2 - pTri->cent).dot(pos2 - pTri->cent);
+						distsq3 = (pos3 - pTri->cent).dot(pos3 - pTri->cent);
+
+						if (distsq2 < distsq) {
+							if (distsq3 < distsq2) {
+								// distsq3
+								pos_use = pos3;
+							} else {
+								// distsq2
+								pos_use = pos2;
+							};
+						} else {
+							if (distsq3 < distsq) {
+								// distsq3
+								pos_use = pos3;
+							} else {
+								// distsq
+								pos_use = pos;
+							};
+						};
+					};
+
+					// Now test which direction is the closest.
+
+					dist2 = 0.0; dist1 = 0.0; dist0 = 0.0;
+					perp.x = u0.y - u1.y;	perp.y = u1.x - u0.x;
+					temp1 = perp.dot(u2 - u0); temp2 = perp.dot(pos_use - u0);
+					if (temp1*temp2 < 0.0) {
+						bOutside = true;
+						moddy = perp.modulus();
+						perp /= moddy;
+						dist2 = perp.dot(pos_use - u0);
+					};
+					perp.x = u2.y - u1.y;	perp.y = u1.x - u2.x;
+					temp1 = perp.dot(u0 - u2); temp2 = perp.dot(pos_use - u2);
+					if (temp1*temp2 < 0.0) {
+						bOutside = true;
+						moddy = perp.modulus();
+						perp /= moddy;
+						dist0 = perp.dot(pos_use - u2);
+					};
+					perp.x = u0.y - u2.y;	perp.y = u2.x - u0.x;
+					temp1 = perp.dot(u1 - u2); temp2 = perp.dot(pos_use - u2);
+					if (temp1*temp2 < 0.0) {
+						bOutside = true;
+						moddy = perp.modulus();
+						perp /= moddy;
+						dist1 = perp.dot(pos_use - u2);
+					};
+					// Maximum modulus = most negative:
+					if (dist0 < dist1) {
+						if (dist2 < dist0) {
+							// move in direction "2"
+							pTri = pTri->neighbours[2];
+						} else {
+							pTri = pTri->neighbours[0];
+						};
+					} else {
+						if (dist2 < dist1) {
+							pTri = pTri->neighbours[2];
+						} else {
+							pTri = pTri->neighbours[1];
+						};
+					};
+				};
+				
+			} while (bOutside);
+			// This algorithm should always succeed.
+			pVertex->iScratch = pTri - pX_src->T;
+
+		};
+		++pVertex;
+	}
+	printf("done ");
+	printf("\c\n", getch());
+	
+	printf("Resequence !!!!!!!!!!!!!!!!!!!!!!!!\n");
+	this->CreateTilingAndResequence_with_data(pX_aux);	
+	// copies iScratch
+	pX_aux->CopyMesh(this); // copy back over.
+	
+	printf("done ");
+	printf("\c\n", getch());
+
+	SetupMajorPBCTriArrays(); // they've been destroyed by resequencing.
+	Recalculate_TriCentroids_VertexCellAreas_And_Centroids();
+	EnsureAnticlockwiseTriangleCornerSequences_SetupTriMinorNeighboursLists();	
+	Create4Volleys(); // destroyed in resequencing.
+
+	// . Is it true that in general, we have restored seqs and tri neighs after Delaunay flips?
+
+
+	// Then we have a useful list of the source positions which we can use
+	// to do picking and find what maps to our vertex.
+
+
+
+}
+
+//Tasks here:
+//======================================
+//1. Add data send to reseq routine.
+//
+//2. Copy mesh routine -- as complete as possible.
+//
+//3. Ensure we follow up call to this routine with copying over pXnew. Ensure we copy to GPU (!)
+
+void TriMesh::Integrate_using_iScratch(TriMesh * pX_src)
+{
+	printf("Send to device and make shardmodel:\n");
+
+	//Send System to Device.;
+	cuSyst1.PopulateFromTriMesh(pX_src);
+		
+	// Create Shardmodel on device system:
+	kernelCreateShardModelOfDensities_And_SetMajorArea << <numTilesMajor, threadsPerTileMajor >> > (
+		cuSyst1.p_info,
+		cuSyst1.p_n_major,
+		cuSyst1.p_n_minor,
+		cuSyst1.p_izTri_vert,
+		cuSyst1.p_szPBCtri_vert,
+		cuSyst1.p_cc,
+		p_n_shards,
+		p_n_shards_n,
+		cuSyst1.p_AreaMajor,
+		false
+		);
+	Call(cudaThreadSynchronize(), "cudaTS CreateShardModel");
+
+	// Copy shardmodel to host shardmodel:
+
+	.Problem: we could get here before we have invoked.
+		What to do about that ? Can we change where invocation occurs ? ;
+
+	shardmodel_host_i = (ShardModel *)malloc(NUMVERTICES * sizeof(ShardModel));
+	shardmodel_host_n = (ShardModel *)malloc(NUMVERTICES * sizeof(ShardModel));
+
+	cudaMemcpy(shardmodel_host_i, p_n_shards, NUMVERTICES * sizeof(ShardModel), cudaMemcpyDeviceToHost);
+	cudaMemcpy(shardmodel_host_n, p_n_shards_n, NUMVERTICES * sizeof(ShardModel), cudaMemcpyDeviceToHost);
+
+	printf("done ");
+	printf("\c\n", getch());
+	
+
+	// ==========================================================
+	// This now gave us the wherewithal to do integrals in space:
+
+	f64 IntegralMass, IntegralHeat_n, IntegralHeat_i, IntegralHeat_e;
+	Vertex * pVertex, *pVertSrc, *pNeigh;
+	long izTri[MAXNEIGH];
+	long izTri2[MAXNEIGH];
+	long izNeigh2[MAXNEIGH];
+	int ii;
+	short tri_len, tri_len2;
+	f64 distsq, distsq1, distsq2;
+	
+	short iCycle[1024]; // never going to depth 1024...!
+	long izNeigh3[MAXNEIGH];
+	short maxCycle[1024];
+	Vertex * pPivot[1024];
+
+	bool * p_flagarray = (bool *)malloc(NUMVERTICES * sizeof(bool));
+
+
+	pVertex = X; // is *this the destination? okay.
+	for (iVertex = 0; iVertex < NUMVERTICES; iVertex++)
+	{
+		
+		if (pVertex->flags == DOMAIN_VERTEX) {
+
+			IntegralMass = 0.0;
+
+			ConvexPolygon cp, cp2, cpIntersection;
+
+			tri_len = pVertex->GetTriIndexArray(izTri);
+			for (ii = 0; ii < tri_len; ii++) {
+				pos = T[izTri[ii]].cent;
+				// Take the image that lies closest to pVertex->pos.
+				distsq = (pos - pVertex->pos).dot(pos - pVertex->pos);
+				pos1 = Anticlockwise*pos;
+				distsq1 = (pos1 - pVertex->pos).dot(pos1 - pVertex->pos);
+				pos2 = Clockwise*pos;
+				distsq2 = (pos2 - pVertex->pos).dot(pos2 - pVertex->pos);
+				if (distsq1 < distsq) pos = pos1;
+				if (distsq2 < distsq) pos = pos2;
+				cp.add(pos);
+			};
+			// ______________________________________________________ Polygon defined.
+			
+			// The idea is, go to the picked iScratch, find a definite overlap first.
+			// work outwards recursively to find all overlaps and accumulate integral.
+
+			// Make sure iScratch does have overlap; if not, search for one nearby.
+			// _____________________________________________________________________
+			
+			pVertSrc = pX_src->X[pVertex->iScratch];
+			
+			do {
+
+				cp2.Clear();
+				tri_len2 = pVertSrc->GetTriIndexArray(izTri2);
+				for (ii = 0; ii < tri_len2; ii++) {
+					pos = pX_src->T[izTri2[ii]].cent;
+					// Take the image that lies closest to pVertex->pos.
+					distsq = (pos - pVertex->pos).dot(pos - pVertex->pos);
+					pos1 = Anticlockwise*pos;
+					distsq1 = (pos1 - pVertex->pos).dot(pos1 - pVertex->pos);
+					pos2 = Clockwise*pos;
+					distsq2 = (pos2 - pVertex->pos).dot(pos2 - pVertex->pos);
+					if (distsq1 < distsq) pos = pos1;
+					if (distsq2 < distsq) pos = pos2;
+					cp2.add(pos);
+				};
+				// Need to allow that pVertSrc could be across PB from pVertex:
+				// Just do it by setting the above coords to be close to pVertex instead of pVertSrc.
+
+				bIntersect = cp2.GetIntersectionWithPolygon(&cp, &cpIntersection);
+
+				if (bIntersect == false) {
+					neigh_len2 = pVertSrc->GetNeighIndexArray(izNeigh2);
+					for (iii = 0; ((iii < neigh_len2) && (bIntersect == false)); iii++) {
+						pNeigh = &(pX_src->X[izNeigh2[iii]]);
+						
+						cp2.Clear();
+						tri_len2 = pNeigh->GetTriIndexArray(izTri2);
+						for (ii = 0; ii < tri_len2; ii++) {
+							pos = pX_src->T[izTri2[ii]].cent;
+							// Take the image that lies closest to pNeigh->pos.
+							distsq = (pos - pNeigh->pos).dot(pos - pNeigh->pos);
+							pos1 = Anticlockwise*pos;
+							distsq1 = (pos1 - pNeigh->pos).dot(pos1 - pNeigh->pos);
+							pos2 = Clockwise*pos;
+							distsq2 = (pos2 - pNeigh->pos).dot(pos2 - pNeigh->pos);
+							if (distsq1 < distsq) pos = pos1;
+							if (distsq2 < distsq) pos = pos2;
+							cp2.add(pos);
+						};
+
+						bIntersect = cp2.GetIntersectionWithPolygon(&cp, &cpIntersection);
+						if (bIntersect == true) pVertex->iScratch = pNeigh - pX_src->X; // this one can count as the usable source point.
+					};
+				};
+
+				if (bIntersect == false) {
+					printf("No overlaps found! iVertex %d.\n", iVertex);
+					// We have to be able to handle this by moving towards the nearest image of our destination point until
+					// we do attain an overlap.
+					// --> Which of the neighs of the point which did not generate overlap, are closer to the target?
+					// IF none of them, and we already searched neighbour ring, GIVE UP completely!
+
+					f64 distsq0 = GetPossiblyPeriodicDistSq(pVertSrc->pos, pVertex->pos);
+					distsq = distsq0;
+					int iWhich = -1;
+					for (iii = 0; iii < neigh_len2; iii++)
+					{
+						pNeigh = &(pX_src->X[izNeigh2[iii]]);
+						distsq1 = GetPossiblyPeriodicDistSq(pNeigh->pos, pVertex->pos);
+						if (distsq1 < distsq) {
+							distsq = distsq1; iWhich = iii;
+						};
+					};
+					if (iWhich == -1) {
+						// absolute fail
+						printf("iVertex %d iVertSrc %d : Stopping as no neighbour is closer and nothing had an overlap.\n"
+							"iVertex position %1.8E %1.8E iVertSrc position %1.8E %1.8E\n",
+							iVertex, iVertSrc, pVertex->pos.x, pVertex->pos.y, pVertSrc->pos.x, pVertSrc->pos.y);
+						while (1) getch();
+ 					} else {
+						pVertSrc = pX_src->X[izNeigh2[iWhich]];
+						iVertSrc = pVertSrc - X;
+						printf("iVertex %d : had to move to source proposal %d\n",
+							iVertex, iVertSrc);
+					};
+				};
+			} while (bIntersect == false);
+			// If no overlaps found, flag an error.
+
+
+			// ======================================================================
+			// Recursion:
+
+			found_overlap = true; // to trigger getneighs
+			pVertSrc = pX_src->X[pVertex->iScratch];
+
+			// Need to dimension above..
+
+			memset(p_flagarray, 0, sizeof(bool)*NUMVERTICES);
+
+			int r = 0;
+			iCycle[0] = 0;
+			pPivot[0] = pVertSrc;
+			// Make sure we count the thing itself?
+			// !
+
+			bOverlap = cp.GetIntersectionWithPolygon(cp2, cpIntersection);
+			p_flagarray[iVertUse] = true; // checked, either way.
+										  // Add integral:
+			IntegralMass_i += cpIntersection.IntegrateMacroscopicPlanarTriangle;
+			IntegralMass_n += cpIntersection;
+			IntegralHeat_i += cpIntersection;
+			IntegralHeat_n += cpIntersection;
+			IntegralHeat_e += cpIntersection;
+
+			do {
+				if (iCycle[r] == 0) {
+					// Get Neighbours at this level:
+					maxCycle[r] = pPivot[r]->GetNeighIndexArray(izNeigh3);
+				};
+
+				iVertUse = izNeigh3[iCycle[r]];
+				pVertUse = pX_src->X[iVertUse];
+				if (!p_flagarray[iVertUse]) // not already looked at before
+				{
+					// Look for overlap at neighbour i:
+
+					cp2.Clear();
+					tri_len2 = pVertSrc->GetTriIndexArray(izTri2);
+					for (ii = 0; ii < tri_len2; ii++) {
+						pos = pX_src->T[izTri2[ii]].cent;
+						// Take the image that lies closest to pVertex->pos.
+						distsq = (pos - pVertex->pos).dot(pos - pVertex->pos);
+						pos1 = Anticlockwise*pos;
+						distsq1 = (pos1 - pVertex->pos).dot(pos1 - pVertex->pos);
+						pos2 = Clockwise*pos;
+						distsq2 = (pos2 - pVertex->pos).dot(pos2 - pVertex->pos);
+						if (distsq1 < distsq) pos = pos1;
+						if (distsq2 < distsq) pos = pos2;
+						cp2.add(pos);
+					};
+
+					bOverlap = cp.GetIntersectionWithPolygon(cp2, cpIntersection);
+					p_flagarray[iVertUse] = true; // checked, either way.
+
+					if (bOverlap) {
+
+						// Add integral:
+						IntegralMass_i += cpIntersection.IntegrateMacroscopicPlanarTriangle;
+						IntegralMass_n += cpIntersection;
+						IntegralHeat_i += cpIntersection;
+						IntegralHeat_n += cpIntersection;
+						IntegralHeat_e += cpIntersection;
+
+						// (((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((
+
+						// Now must go up to neighbours.
+						r++;
+						pPivot[r] = pVertUse;
+						iCycle[r] = 0;
+					} else {
+						iCycle[r]++;
+
+						while (iCycle[r] == maxCycle[r]) {
+							r--;
+							if (r >= 0) iCycle[r]++; // we do not move on when we go up a level
+						};
+					};
+				}; // if (!p_flagarray[iVertUse]) 		
+			} while (r > -1);
+
+			Mass_i[iVertex] = IntegralMass_i;
+			Mass_n[iVertex] = IntegralMass_n;
+		};
+
+		pVertex++;
+	};
+	free(p_flagarray);
+}
 

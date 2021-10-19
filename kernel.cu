@@ -1645,6 +1645,91 @@ __global__ void kernelCalc_Matrices_for_Jacobi_Viscosity(
 
 
 
+
+__global__ void kernelCollectIntegralsMajorCells_FromSrcSyst(
+
+	structural * __restrict__ p_info,
+	long * __restrict__ p__triguess, // guess at tri where the point lies
+	LONG3 * __restrict__ p_tri_corner_index, // guess at tri where the point lies
+	LONG3 * __restrict__ p_tri_neigh_index, // guess at tri where the point lies
+
+	bool * __restrict__ p__b_moved,
+	Shardmodel * __restrict__ p_shards, // data to integrate
+	)
+{
+	// Think carefully about how this is to be done.
+	// We need to send a chuffload of data to GPU in order to run this on GPU.
+	// It can be done though.
+	
+	long const iVertex = threadIdx.x + blockIdx.x * blockDim.x; // iMinor OF VERTEX
+
+	// Target vertex where we do integrals.
+	// This is for n and T.
+	
+	// We want a slim routine which stores the correct tri location when it is found, AND, only integrates mass.
+	
+	// What about when we come to integrate momentum on minors? Separate routine but still use linear model of nv on shards.
+	
+	// Defy all.
+	long Src_start_point;
+	if (p__b_moved[iVertex]) {
+
+		// 1. Find src triangle containing dest point.
+
+		// Get corner positions --> which half-planes is it outside? Can we end up scrolling tris indefinitely? iirc yes
+
+		. Pick closest rotated image of dest, to move towards. If we keep moving triangles then we will land on the other side of the PB.
+
+		. If we are in more than 1 clipping half-plane, choose the direction where dest is farther from the clip line in the orthogonal direction.
+		
+		// 2. Having found triangle where it lives, identify which corner to use : it must be true that we are within the shards of at least one of the 
+			// corners of the containing triangle.
+
+		// Set Src_start_point. Be prepared to hit no intersection.
+
+	} else {
+		// it is co-located with previous position; so work outwards from the one that we know maps.
+
+		Src_start_point = iVertex;
+	}
+
+	// Carry on and seek intersection in each of the neighbours.
+
+	// We come unstuck because we cannot store a long list of additional places we must visit to accumulate integral.
+
+
+
+
+
+	// We found somewhere with nonzero intersection.
+
+	cpDest.GetIntersectionWithTriangle(cpIntersection);
+
+	cpIntersection.IntegrateMass(shard corners, shard values of n, &result);
+
+	Area_accum += cpIntersection.GetArea(); // We stop when this is 100% of total.
+
+	mass_integral += result;
+
+
+	if (Area_accum > 0.9999999*Total_dest_area) // we got em!
+	{
+		// can save off the accumulated sum of mass in the dest
+
+		n = accum_mass / Area_accum;
+		write to global memory.
+	} else {
+		// keep looking , but how?
+
+
+
+	};
+
+	To do on GPU is actually too difficult, can't make a dynamic list.
+}
+
+
+
 __global__ void kernelAverage_n_T_x_to_tris(
 	nvals * __restrict__ p_n_minor,
 	nvals * __restrict__ p_n_major,
