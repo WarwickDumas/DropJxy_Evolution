@@ -31,6 +31,9 @@
 #include "flags.h"
 #include "kernel.h"
 #include "matrix_real.h"
+#include "globals.h"
+#include "headers.h"
+
 
 #ifdef LAPACKE  
 // Auxiliary routines prototypes 
@@ -64,7 +67,6 @@ extern TriMesh X4;
 #define NUM_HISTORIC  8 // 8 historic moves -- makes sense all things considered. 
 
 // This is the file for CUDA host code.
-#include "simulation.cu"
 
 #define p_sqrtDN_Tn p_NnTn
 #define p_sqrtDN_Ti p_NTi
@@ -12911,6 +12913,9 @@ void PerformCUDA_Invoke_Populate(
 	CallMAC(cudaMalloc((void **)&p_nu_e, NMINOR * sizeof(f64)));
 
 	CallMAC(cudaMalloc((void **)&p_n_shards, NUMVERTICES * sizeof(ShardModel)));
+
+
+
 	CallMAC(cudaMalloc((void **)&p_n_shards_n, NUMVERTICES * sizeof(ShardModel)));
 	CallMAC(cudaMalloc((void **)&NT_addition_rates_d, NMINOR * sizeof(NTrates)));
 	CallMAC(cudaMalloc((void **)&NT_addition_tri_d, 3* NMINOR * sizeof(NTrates)));

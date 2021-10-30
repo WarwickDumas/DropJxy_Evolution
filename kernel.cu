@@ -1645,89 +1645,89 @@ __global__ void kernelCalc_Matrices_for_Jacobi_Viscosity(
 
 
 
-
-__global__ void kernelCollectIntegralsMajorCells_FromSrcSyst(
-
-	structural * __restrict__ p_info,
-	long * __restrict__ p__triguess, // guess at tri where the point lies
-	LONG3 * __restrict__ p_tri_corner_index, // guess at tri where the point lies
-	LONG3 * __restrict__ p_tri_neigh_index, // guess at tri where the point lies
-
-	bool * __restrict__ p__b_moved,
-	Shardmodel * __restrict__ p_shards, // data to integrate
-	)
-{
-	// Think carefully about how this is to be done.
-	// We need to send a chuffload of data to GPU in order to run this on GPU.
-	// It can be done though.
-	
-	long const iVertex = threadIdx.x + blockIdx.x * blockDim.x; // iMinor OF VERTEX
-
-	// Target vertex where we do integrals.
-	// This is for n and T.
-	
-	// We want a slim routine which stores the correct tri location when it is found, AND, only integrates mass.
-	
-	// What about when we come to integrate momentum on minors? Separate routine but still use linear model of nv on shards.
-	
-	// Defy all.
-	long Src_start_point;
-	if (p__b_moved[iVertex]) {
-
-		// 1. Find src triangle containing dest point.
-
-		// Get corner positions --> which half-planes is it outside? Can we end up scrolling tris indefinitely? iirc yes
-
-		. Pick closest rotated image of dest, to move towards. If we keep moving triangles then we will land on the other side of the PB.
-
-		. If we are in more than 1 clipping half-plane, choose the direction where dest is farther from the clip line in the orthogonal direction.
-		
-		// 2. Having found triangle where it lives, identify which corner to use : it must be true that we are within the shards of at least one of the 
-			// corners of the containing triangle.
-
-		// Set Src_start_point. Be prepared to hit no intersection.
-
-	} else {
-		// it is co-located with previous position; so work outwards from the one that we know maps.
-
-		Src_start_point = iVertex;
-	}
-
-	// Carry on and seek intersection in each of the neighbours.
-
-	// We come unstuck because we cannot store a long list of additional places we must visit to accumulate integral.
-
-
-
-
-
-	// We found somewhere with nonzero intersection.
-
-	cpDest.GetIntersectionWithTriangle(cpIntersection);
-
-	cpIntersection.IntegrateMass(shard corners, shard values of n, &result);
-
-	Area_accum += cpIntersection.GetArea(); // We stop when this is 100% of total.
-
-	mass_integral += result;
-
-
-	if (Area_accum > 0.9999999*Total_dest_area) // we got em!
-	{
-		// can save off the accumulated sum of mass in the dest
-
-		n = accum_mass / Area_accum;
-		write to global memory.
-	} else {
-		// keep looking , but how?
-
-
-
-	};
-
-	To do on GPU is actually too difficult, can't make a dynamic list.
-}
-
+//
+//__global__ void kernelCollectIntegralsMajorCells_FromSrcSyst(
+//
+//	structural * __restrict__ p_info,
+//	long * __restrict__ p__triguess, // guess at tri where the point lies
+//	LONG3 * __restrict__ p_tri_corner_index, // guess at tri where the point lies
+//	LONG3 * __restrict__ p_tri_neigh_index, // guess at tri where the point lies
+//
+//	bool * __restrict__ p__b_moved,
+//	Shardmodel * __restrict__ p_shards, // data to integrate
+//	)
+//{
+//	// Think carefully about how this is to be done.
+//	// We need to send a chuffload of data to GPU in order to run this on GPU.
+//	// It can be done though.
+//	
+//	long const iVertex = threadIdx.x + blockIdx.x * blockDim.x; // iMinor OF VERTEX
+//
+//	// Target vertex where we do integrals.
+//	// This is for n and T.
+//	
+//	// We want a slim routine which stores the correct tri location when it is found, AND, only integrates mass.
+//	
+//	// What about when we come to integrate momentum on minors? Separate routine but still use linear model of nv on shards.
+//	
+//	// Defy all.
+//	long Src_start_point;
+//	if (p__b_moved[iVertex]) {
+//
+//		// 1. Find src triangle containing dest point.
+//
+//		// Get corner positions --> which half-planes is it outside? Can we end up scrolling tris indefinitely? iirc yes
+//
+//		. Pick closest rotated image of dest, to move towards. If we keep moving triangles then we will land on the other side of the PB.
+//
+//		. If we are in more than 1 clipping half-plane, choose the direction where dest is farther from the clip line in the orthogonal direction.
+//		
+//		// 2. Having found triangle where it lives, identify which corner to use : it must be true that we are within the shards of at least one of the 
+//			// corners of the containing triangle.
+//
+//		// Set Src_start_point. Be prepared to hit no intersection.
+//
+//	} else {
+//		// it is co-located with previous position; so work outwards from the one that we know maps.
+//
+//		Src_start_point = iVertex;
+//	}
+//
+//	// Carry on and seek intersection in each of the neighbours.
+//
+//	// We come unstuck because we cannot store a long list of additional places we must visit to accumulate integral.
+//
+//
+//
+//
+//
+//	// We found somewhere with nonzero intersection.
+//
+//	cpDest.GetIntersectionWithTriangle(cpIntersection);
+//
+//	cpIntersection.IntegrateMass(shard corners, shard values of n, &result);
+//
+//	Area_accum += cpIntersection.GetArea(); // We stop when this is 100% of total.
+//
+//	mass_integral += result;
+//
+//
+//	if (Area_accum > 0.9999999*Total_dest_area) // we got em!
+//	{
+//		// can save off the accumulated sum of mass in the dest
+//
+//		n = accum_mass / Area_accum;
+//		write to global memory.
+//	} else {
+//		// keep looking , but how?
+//
+//
+//
+//	};
+//
+//	To do on GPU is actually too difficult, can't make a dynamic list.
+//}
+//
 
 
 __global__ void kernelAverage_n_T_x_to_tris(
@@ -2238,7 +2238,7 @@ __global__ void kernelAverage_n_T_x_to_tris(
 
 __global__ void kernelCreateShardModelOfDensities_And_SetMajorArea(
 	structural * __restrict__ p_info_minor,
-	nvals * __restrict__ p_n_major, 
+	nvals * __restrict__ p_n_major,
 	nvals * __restrict__ p_n_minor,
 	long * __restrict__ p_izTri_vert,
 	char * __restrict__ p_szPBCtri_vert,
@@ -2249,7 +2249,7 @@ __global__ void kernelCreateShardModelOfDensities_And_SetMajorArea(
 	//	long * __restrict__ Tri_n_n_lists	,
 	f64 * __restrict__ p_AreaMajor,
 	bool bUseCircumcenter
-	)// sets n_shards_n, n_shards, Tri_n_n_lists, Tri_n_lists
+)// sets n_shards_n, n_shards, Tri_n_n_lists, Tri_n_lists
 {
 	// called for major tile
 	// Interpolation to Tri_n_lists, Tri_n_n_lists is not yet implemented. But this would be output.
@@ -2272,7 +2272,7 @@ __global__ void kernelCreateShardModelOfDensities_And_SetMajorArea(
 	// Choosing to store n_n while doing n which is not necessary.
 
 	ShardModel n_; // to be populated
-	
+
 	int iNeigh, tri_len;
 	f64 N_n, N, interpolated_n, interpolated_n_n;
 	long i, inext, o1, o2;
@@ -2287,11 +2287,12 @@ __global__ void kernelCreateShardModelOfDensities_And_SetMajorArea(
 		memcpy(info2, p_info_minor + blockIdx.x*threadsPerTileMinor + 2 * threadIdx.x, sizeof(structural) * 2);
 		shared_pos[2 * threadIdx.x] = info2[0].pos;
 		shared_pos[2 * threadIdx.x + 1] = info2[1].pos;
-	} else {
+	}
+	else {
 		memcpy(&(shared_pos[2 * threadIdx.x]), p_cc + blockIdx.x*threadsPerTileMinor + 2 * threadIdx.x, sizeof(f64_vec2) * 2);
 	}
 	memcpy(&(shared_n[2 * threadIdx.x]), p_n_minor + blockIdx.x*threadsPerTileMinor + 2 * threadIdx.x, sizeof(nvals) * 2);
-		
+
 	__syncthreads();
 
 	long const StartMinor = blockIdx.x*threadsPerTileMinor; // vertex index
@@ -2321,7 +2322,8 @@ __global__ void kernelCreateShardModelOfDensities_And_SetMajorArea(
 		else {
 			if (bUseCircumcenter) {
 				pos0 = p_cc[izTri[0]];
-			} else {
+			}
+			else {
 				pos0 = p_info_minor[izTri[0]].pos;
 			} // there exists a more elegant way than this!!!
 
@@ -2347,10 +2349,12 @@ __global__ void kernelCreateShardModelOfDensities_And_SetMajorArea(
 			if ((izTri[inext] >= StartMinor) && (izTri[inext] < EndMinor)) {
 				pos1 = shared_pos[izTri[inext] - StartMinor];
 				ndesire1 = shared_n[izTri[inext] - StartMinor].n;
-			} else {
+			}
+			else {
 				if (bUseCircumcenter) {
 					pos1 = p_cc[izTri[inext]];
-				} else {
+				}
+				else {
 					pos1 = p_info_minor[izTri[inext]].pos;
 				}
 				ndesire1 = p_n_minor[izTri[inext]].n;
@@ -2385,7 +2389,7 @@ __global__ void kernelCreateShardModelOfDensities_And_SetMajorArea(
 		// This is not the typical case.
 
 		p_AreaMajor[iVertex] = AreaMajor;
-		
+
 		if ((n_avg > high_n) || (n_avg < low_n)) {
 #pragma unroll MAXNEIGH
 			for (i = 0; i < info.neigh_len; i++)
@@ -2394,9 +2398,10 @@ __global__ void kernelCreateShardModelOfDensities_And_SetMajorArea(
 
 
 			if (TEST1) printf("VERTCHOSEN (n_avg > high_n) || (n_avg < low_n) \n");
-	//		if (iVertex == CHOSEN) printf("CHOSEN : Switch1 n_avg %1.12E \n",n_avg);
+			//		if (iVertex == CHOSEN) printf("CHOSEN : Switch1 n_avg %1.12E \n",n_avg);
 
-		} else {
+		}
+		else {
 			real n_C_need = (n_avg*AreaMajor - N0) / coeffcent;
 
 			if ((n_C_need > low_n) && (n_C_need < high_n)) {
@@ -2404,12 +2409,12 @@ __global__ void kernelCreateShardModelOfDensities_And_SetMajorArea(
 
 				if (TEST1) printf("VERTCHOSEN ((n_C_need > low_n) && (n_C_need < high_n)) \n");
 
-	//			if (iVertex == CHOSEN) printf("CHOSEN : Switch2 n_C_need %1.12E low_n %1.12E high_n %1.12E\n", n_C_need,low_n,high_n);
+				//			if (iVertex == CHOSEN) printf("CHOSEN : Switch2 n_C_need %1.12E low_n %1.12E high_n %1.12E\n", n_C_need,low_n,high_n);
 
 			}
 			else {
 				// The laborious case.
-	//			if (iVertex == CHOSEN) printf("Laborious case...\n");
+				//			if (iVertex == CHOSEN) printf("Laborious case...\n");
 
 				if (TEST1) printf("VERTCHOSEN  The laborious case. n_avg %1.10E n_C_need %1.10E low_n %1.10E high_n %1.10E\n",
 					n_avg, n_C_need, low_n, high_n);
@@ -2424,7 +2429,7 @@ __global__ void kernelCreateShardModelOfDensities_And_SetMajorArea(
 					// let them attain n_desire, and fix n_C = low_n.
 					// Then we'll see how high we can go with n_acceptable.
 
-	//				if (iVertex == CHOSEN) printf("(n_C_need < low_n)\n");
+					//				if (iVertex == CHOSEN) printf("(n_C_need < low_n)\n");
 
 					n_C = low_n;
 					n_acceptable = (n_avg*AreaMajor - coeffcent*n_C) / (AreaMajor - THIRD*AreaMajor);
@@ -2453,9 +2458,9 @@ __global__ void kernelCreateShardModelOfDensities_And_SetMajorArea(
 								else {
 									ndesire = p_n_minor[izTri[i]].n;
 								};
-								
-		//						if (iVertex == CHOSEN) printf("CHOSEN : ndesire %1.14E n_acceptable %1.14E\n", ndesire,n_acceptable);
-								
+
+								//						if (iVertex == CHOSEN) printf("CHOSEN : ndesire %1.14E n_acceptable %1.14E\n", ndesire,n_acceptable);
+
 								if (ndesire < n_acceptable) { // yes, use ndesire[i] ...
 									fixed[i] = true;
 									n_.n[i] = ndesire;
@@ -2478,10 +2483,11 @@ __global__ void kernelCreateShardModelOfDensities_And_SetMajorArea(
 							// The value to which we have to set the remaining
 							// n values.
 						};
-	//					if (iVertex == CHOSEN) printf("---\n");
+						//					if (iVertex == CHOSEN) printf("---\n");
 					} while (found != 0);
 
-				} else {
+				}
+				else {
 					n_C = high_n;
 					n_acceptable = (n_avg*AreaMajor - coeffcent*n_C) / (AreaMajor - THIRD*AreaMajor);
 					bool found = 0;
@@ -2498,12 +2504,13 @@ __global__ void kernelCreateShardModelOfDensities_And_SetMajorArea(
 								if ((izTri[i] >= StartMinor) && (izTri[i] < EndMinor))
 								{
 									ndesire = shared_n[izTri[i] - StartMinor].n;
-								} else {
+								}
+								else {
 									ndesire = p_n_minor[izTri[i]].n;
 								};
-								
 
-	//							if (iVertex == CHOSEN) printf("CHOSEN : ndesire %1.14E n_acceptable %1.14E\n", ndesire, n_acceptable);
+
+								//							if (iVertex == CHOSEN) printf("CHOSEN : ndesire %1.14E n_acceptable %1.14E\n", ndesire, n_acceptable);
 
 
 								if (ndesire > n_acceptable) {
@@ -2512,10 +2519,12 @@ __global__ void kernelCreateShardModelOfDensities_And_SetMajorArea(
 									n_.n[i] = ndesire;
 									N_attained += n_.n[i] * coeff[i];
 									found = true;
-								} else {
+								}
+								else {
 									coeffremain += coeff[i];
 								};
-							} else {
+							}
+							else {
 								N_attained += n_.n[i] * coeff[i];
 							};
 						};
@@ -2523,8 +2532,8 @@ __global__ void kernelCreateShardModelOfDensities_And_SetMajorArea(
 							n_acceptable = (n_avg*AreaMajor - N_attained) / coeffremain;
 						};
 
-	//					if (iVertex == CHOSEN) printf("@@@ \n");
-						
+						//					if (iVertex == CHOSEN) printf("@@@ \n");
+
 					} while (found != 0);
 				};
 				// Now we should set the remaining values to n_acceptable
@@ -2536,7 +2545,7 @@ __global__ void kernelCreateShardModelOfDensities_And_SetMajorArea(
 					if (TEST1) printf("n[%d]: %1.10E\n", i, n_.n[i]);
 				};
 				n_.n_cent = n_C;
-				
+
 				if (TEST1) {
 					for (i = 0; i < info.neigh_len; i++)
 					{
@@ -2544,7 +2553,7 @@ __global__ void kernelCreateShardModelOfDensities_And_SetMajorArea(
 					}
 					printf("\nn_cent %1.14E \n\n", n_.n_cent);
 				};
-				
+
 			};
 		};
 
@@ -2561,10 +2570,12 @@ __global__ void kernelCreateShardModelOfDensities_And_SetMajorArea(
 		if ((izTri[0] >= StartMinor) && (izTri[0] < EndMinor)) {
 			pos0 = shared_pos[izTri[0] - StartMinor];
 			ndesire0 = shared_n[izTri[0] - StartMinor].n_n;
-		} else {
+		}
+		else {
 			if (bUseCircumcenter) {
 				pos0 = p_cc[izTri[0]];
-			} else {
+			}
+			else {
 				pos0 = p_info_minor[izTri[0]].pos;
 			};
 			ndesire0 = p_n_minor[izTri[0]].n_n;
@@ -2588,10 +2599,12 @@ __global__ void kernelCreateShardModelOfDensities_And_SetMajorArea(
 			if ((izTri[inext] >= StartMinor) && (izTri[inext] < EndMinor)) {
 				pos1 = shared_pos[izTri[inext] - StartMinor];
 				ndesire1 = shared_n[izTri[inext] - StartMinor].n_n;
-			} else {
+			}
+			else {
 				if (bUseCircumcenter) {
-					pos1 = p_cc[izTri[inext]]; 
-				} else {
+					pos1 = p_cc[izTri[inext]];
+				}
+				else {
 					pos1 = p_info_minor[izTri[inext]].pos;
 				}
 				ndesire1 = p_n_minor[izTri[inext]].n_n;
@@ -2626,13 +2639,15 @@ __global__ void kernelCreateShardModelOfDensities_And_SetMajorArea(
 			n_.n_cent = n_avg;
 
 
-		} else {
+		}
+		else {
 			real n_C_need = (n_avg*AreaMajor - N0) / coeffcent;
 
 			if ((n_C_need > low_n) && (n_C_need < high_n)) {
 				n_.n_cent = n_C_need; // accept desired values
 
-			} else {
+			}
+			else {
 				// The laborious case.
 
 
@@ -2757,8 +2772,9 @@ __global__ void kernelCreateShardModelOfDensities_And_SetMajorArea(
 
 		// Now done both species.
 
-	} else { // NOT DOMAIN_VERTEX
-		
+	}
+	else { // NOT DOMAIN_VERTEX
+
 		if (info.flag == OUTERMOST) {
 			n_.n_cent = p_n_major[iVertex].n;
 			for (i = 0; i < MAXNEIGH; i++)
@@ -2776,16 +2792,17 @@ __global__ void kernelCreateShardModelOfDensities_And_SetMajorArea(
 			f64 AreaTotal = PPN_CIRCLE*M_PI*(DOMAIN_OUTER_RADIUS*DOMAIN_OUTER_RADIUS -
 				INNER_A_BOUNDARY*INNER_A_BOUNDARY);
 			p_AreaMajor[iVertex] = AreaTotal / (real)(numTilesMajor*threadsPerTileMajor); // ?
-			// Setting area of outermost to average vertcell area
-			// ...
+																						  // Setting area of outermost to average vertcell area
+																						  // ...
 
-			// Watch out for this when we make OUTERMOST FEWER
+																						  // Watch out for this when we make OUTERMOST FEWER
 
 
-		} else {
+		}
+		else {
 			memset(&(p_n_shards[iVertex]), 0, sizeof(ShardModel));
 			memset(&(p_n_n_shards[iVertex]), 0, sizeof(ShardModel));
-			
+
 			p_AreaMajor[iVertex] = 0.0; // NOTE BENE
 		};
 	};
@@ -2826,6 +2843,104 @@ __global__ void kernelCreateShardModelOfDensities_And_SetMajorArea(
 	Tri_n_n_lists[izTri[inext]][o2 * 2 + 1] = interpolated_n_n;
 	Tri_n_n_lists[izTri[i]][o1 * 2] = interpolated_n_n;
 	};*/
+
+}
+__global__ void kernelCreateShardModelOfDensities_And_SetMajorAreaDEBUG(
+	structural * __restrict__ p_info_minor,
+	nvals * __restrict__ p_n_major, 
+	nvals * __restrict__ p_n_minor,
+	long * __restrict__ p_izTri_vert,
+	char * __restrict__ p_szPBCtri_vert,
+	f64_vec2 * __restrict__ p_cc,
+	ShardModel * __restrict__ p_n_shards,
+	ShardModel * __restrict__ p_n_n_shards,
+	//	long * __restrict__ Tri_n_lists,
+	//	long * __restrict__ Tri_n_n_lists	,
+	f64 * __restrict__ p_AreaMajor,
+	bool bUseCircumcenter
+	)// sets n_shards_n, n_shards, Tri_n_n_lists, Tri_n_lists
+{
+	// called for major tile
+	// Interpolation to Tri_n_lists, Tri_n_n_lists is not yet implemented. But this would be output.
+
+	// Inputs:
+	// n, pTri->cent,  izTri,  pTri->periodic, pVertex->pos
+
+	// Outputs:
+	// pVertex->AreaCell
+	// n_shards[iVertex]
+	// Tri_n_n_lists[izTri[i]][o1 * 2] <--- 0 if not set by domain vertex
+
+	// CALL AVERAGE OF n TO TRIANGLES - WANT QUADRATIC AVERAGE - BEFORE WE BEGIN
+	// MUST ALSO POPULATE pVertex->AreaCell with major cell area
+
+	__shared__ f64_vec2 shared_pos[threadsPerTileMinor];
+	__shared__ nvals shared_n[threadsPerTileMinor];
+
+	// Here 4 doubles/minor. In 16*1024, 4 double*8 bytes*512 minor. 256 major. 
+	// Choosing to store n_n while doing n which is not necessary.
+
+	ShardModel n_; // to be populated
+	
+	int iNeigh, tri_len;
+	f64 N_n, N, interpolated_n, interpolated_n_n;
+	long i, inext, o1, o2;
+
+	long const StartMinor = blockIdx.x*threadsPerTileMinor; // vertex index
+	long const EndMinor = StartMinor + threadsPerTileMinor;
+	// To fit in Tri_n_n_lists stuff we should first let coeff[] go out of scope.
+	long const iVertex = threadIdx.x + blockIdx.x * blockDim.x; // INDEX OF VERTEX
+	structural info = p_info_minor[BEGINNING_OF_CENTRAL + iVertex];
+
+	if (info.flag == DOMAIN_VERTEX) {
+
+	} else { // NOT DOMAIN_VERTEX
+		
+		if (info.flag == OUTERMOST) {
+			
+		//	f64 AreaTotal = PPN_CIRCLE*M_PI*(DOMAIN_OUTER_RADIUS*DOMAIN_OUTER_RADIUS -
+		//		INNER_A_BOUNDARY*INNER_A_BOUNDARY);
+		//	p_AreaMajor[iVertex] = AreaTotal; 
+			// commented 2
+
+
+			// Setting area of outermost to average vertcell area
+			// ...
+
+			// Watch out for this when we make OUTERMOST FEWER
+
+
+		} else {
+
+			memset(&(p_n_shards[iVertex]), 0, sizeof(ShardModel));
+
+			// This alone kills it.
+
+			// Checking that it still dies when we scrap the first part.
+
+			// If this really kills then try doing cudaMemset and see if that dies.
+
+			// Good - still dies.
+
+
+
+
+
+
+			// 3 : Try get rid of this one:
+			// memset(&(p_n_n_shards[iVertex]), 0, sizeof(ShardModel));
+			// is this what kills it?
+			
+			// YES! Surprisingly.
+
+
+		//	p_AreaMajor[iVertex] = 0.0; // NOTE BENE
+			// ?
+
+		};
+		
+		// COMMENTED 1
+	};
 
 }
 

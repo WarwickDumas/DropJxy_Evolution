@@ -20,7 +20,7 @@ extern void print_int_vector(char* desc, int n, int* a);
 extern void Go_visit_the_other_file();
 extern void Setup_residual_array();
 
-
+extern bool bSpit;
 
 
 #include "headers.h"
@@ -66,6 +66,17 @@ if (*ppT)
 }
 }
 
+f64_vec2 RotateClosest(f64_vec2 pos, f64_vec2 prox)
+{
+	f64	distsq = (pos - prox).dot(pos - prox);
+	f64_vec2 pos1 = Anticlockwise*pos;
+	f64 distsq1 = (pos1 - prox).dot(pos1 - prox);
+	f64_vec2 pos2 = Clockwise*pos;
+	f64 distsq2 = (pos2 - prox).dot(pos2 - prox);
+	if (distsq1 < distsq) pos = pos1;
+	if (distsq2 < distsq) pos = pos2;
+	return pos;
+}
 
 //=======================================================
 // Declarations of functions:
@@ -86,6 +97,7 @@ extern f64 * p_Ohmsgraph_host[20];
 extern f64 * p_arelz_graph_host[12]; 
 
 extern __device__ ShardModel *p_n_shards, *p_n_shards_n;
+__device__ ShardModel *p_n_shards_II, *p_n_shards_n_II;
 
 // Global variables:
 // =================
@@ -108,6 +120,8 @@ extern __device__ long * p_longtemp;
 extern __device__ f64 * p_Az, *p_LapAz;
 
 extern bool bDebugReorder;
+
+bool bInvoked_cuSyst = false;
 
 float xzscale;
 
@@ -2928,6 +2942,11 @@ int main()
 	pX = &X1;
 	pXnew = &X2;
 
+	long izTri[MAXNEIGH];
+	pXnew->X[0].GetTriIndexArray(izTri);
+	printf("X2 Tri list %d %d %d \n", izTri[0], izTri[1], izTri[2]);
+	getch();
+
 	GlobalBothSystemsInUse = 0;
 
 	printf(report_time(1));
@@ -3269,7 +3288,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
 	long izTri[128];
 
-	static bool bInvoked_cuSyst = false;
 	static long GSCCPU = 0;
 	int iAntiskips;
 	int wmId, wmEvent;
@@ -3341,11 +3359,70 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			printf("Press k\n");
 			while (getch() != 'k');
 
+
+			// Why is pXnew tri lists not populated??
+
+			pXnew->X[0].GetTriIndexArray(izTri);
+			printf("pXnew Tri list %d %d %d \n", izTri[0], izTri[1], izTri[2]);
+			getch();
+			// it came out okay
+
+			pX->X[0].GetTriIndexArray(izTri);
+			printf("pX Tri list %d %d %d \n", izTri[0], izTri[1], izTri[2]);
+			getch();
+
 			// Dimension list, listtri.
 			pXnew->Resprinkle(pX, &X3); // pX = source, X3 = auxiliary.
 			// pX and pXnew are X1 and X2, or X2 and X1.
 			
 			// Really we want to move the integrating part out of Resprinkle routine.
+			printf("done resprinkle... graphs presented\n");
+
+
+			SetActiveWindow(hwndGraphics);
+			ShowWindow(hwndGraphics, SW_HIDE);
+			ShowWindow(hwndGraphics, SW_SHOW);
+			RefreshGraphs(X1, SPECIES_ION);
+			Direct3D.pd3dDevice->Present(NULL, NULL, NULL, NULL);
+			UpdateWindow(hwndGraphics);
+			printf("Graphed X1. press c\n");
+			while (getch() != 'c');
+			SetActiveWindow(hwndGraphics);
+			ShowWindow(hwndGraphics, SW_HIDE);
+			ShowWindow(hwndGraphics, SW_SHOW);
+			RefreshGraphs(X2, SPECIES_NEUTRAL);
+			Direct3D.pd3dDevice->Present(NULL, NULL, NULL, NULL);
+			UpdateWindow(hwndGraphics);
+			printf("Graphed X2. press f\n");
+			while (getch() != 'f');
+			
+			SetActiveWindow(hwndGraphics);
+			ShowWindow(hwndGraphics, SW_HIDE);
+			ShowWindow(hwndGraphics, SW_SHOW);
+			RefreshGraphs(X3, SPECIES_NEUTRAL);
+			Direct3D.pd3dDevice->Present(NULL, NULL, NULL, NULL);
+			UpdateWindow(hwndGraphics);
+			printf("Graphed X3. press d\n");
+			while (getch() != 'd');
+
+			SetActiveWindow(hwndGraphics);
+			ShowWindow(hwndGraphics, SW_HIDE);
+			ShowWindow(hwndGraphics, SW_SHOW);
+			RefreshGraphs(*pXnew, SPECIES_ION);
+			Direct3D.pd3dDevice->Present(NULL, NULL, NULL, NULL);
+			UpdateWindow(hwndGraphics);
+			printf("Graphed pXnew. press e\n");
+			printf("pXnew-&X1 %llu pXnew-&X2 %llu pXnew-&X3 %llu \n",
+				(UINT64)(pXnew - &X1), (UINT64)(pXnew - &X2), (UINT64)(pXnew - &X3));
+			while (getch() != 'e');
+
+
+			// The last one actually worked. what the hell?
+			
+
+			pXnew->Recalculate_TriCentroids_VertexCellAreas_And_Centroids();
+			pXnew->EnsureAnticlockwiseTriangleCornerSequences_SetupTriMinorNeighboursLists();
+			pXnew->SetupMajorPBCTriArrays();
 
 			pXnew->Integrate_using_iScratch(pX);
 			
@@ -3358,11 +3435,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			pX->CopyMesh(pXnew);
 			// Going to need to copy data as well.
 
-
-
-
-
-
+			// don't know why but it never presents new data until later on.
 
 			// Refresh things like major PBCtri list, indexNeighMinor for pXnew !!
 			pXnew->Recalculate_TriCentroids_VertexCellAreas_And_Centroids();
@@ -3370,13 +3443,28 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			pXnew->SetupMajorPBCTriArrays();
 			// pXnew->Create4Volleys(); // -- ?
 			
+			RefreshGraphs(X1, SPECIES_ION);
+			Direct3D.pd3dDevice->Present(NULL, NULL, NULL, NULL);
+			printf("Graphed X1. press c\n");
+			while (getch() != 'c');
+			RefreshGraphs(X2, SPECIES_ION);
+			Direct3D.pd3dDevice->Present(NULL, NULL, NULL, NULL);
+			printf("Graphed X2. press f\n");
+			while (getch() != 'f');
+			RefreshGraphs(X3, SPECIES_ION);
+			Direct3D.pd3dDevice->Present(NULL, NULL, NULL, NULL);
+			printf("Graphed X3. press d\n");
+			while (getch() != 'd');			
 			RefreshGraphs(*pX, SPECIES_ION);
 			Direct3D.pd3dDevice->Present(NULL, NULL, NULL, NULL);
-
-			printf("Press o\n");
-			while (getch() != 'o');
+			printf("Graphed pX. Press g\n");
+			while (getch() != 'g');
+			
 
 			
+
+
+
 
 
 
@@ -3386,7 +3474,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			
 			//	Maybe it would be good to finish with a mapping-on integrals procedure but we know we don't have time now.
 			
-			pXnew->SwimMesh(pX);
+			// pXnew->SwimMesh(pX);
 
 			// update density etc after each small swim.
 			
@@ -3862,7 +3950,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 		KillTimer(hWnd, wParam);
 		report_time(0);
 		if (wParam == 1)
-		{
+		{ 
 			if (bInvoked_cuSyst == false) {
 				bInvoked_cuSyst = true;
 
@@ -4486,21 +4574,42 @@ void TriMesh::Resprinkle(TriMesh * pX_src, TriMesh * pX_aux)
 	// Here's the problem. We will end up with going down the list and adding exactly 1 point in each triangle, even where density is 10 times less.
 	// This would be better avoided so we should probably re-do the triangle list after each volley.
 	pX_src->CopyMesh(this);
+	
 
 	this->Recalculate_TriCentroids_VertexCellAreas_And_Centroids();
 	// NUM_COARSE_LEVELS+1 = NUMVOLLEYS
 	
 	printf("Worried in general that we do not correct tri neighs or tri centroids following flips in Redelaun;\n"
 		"Correcting tri neighs depends on vertex tris;\n");
-	getch();
-
+	 
 #define TEST (iVertex == 18156)
 	
-	FILE * fpdbg = fopen("tridbg4.txt", "wt");
+	FILE * fpdbg = fopen("bollox.txt", "wt");
 	for (iVolley = 0; iVolley < NUM_COARSE_LEVELS + 1; iVolley++)
 	{
 		// Repopulate AreaMinorArray:
+		printf("iVolley %d, running Create_momflux .. ", iVolley); 
+
+		this->X[0].GetTriIndexArray(izTri);
+		printf("this Tri list %d %d %d \n", izTri[0], izTri[1], izTri[2]);
+		getch();
+
 		Create_momflux_integral_grad_nT_and_gradA_LapA_CurlA_on_minors(p_v, AdditionalMomRates);
+		printf("done\n");
+
+
+		// Issue:
+		// For *this, apparently tri lists are not populated??
+
+
+
+
+
+
+
+
+
+
 
 		pTri = T;
 		iTriCaret = 0;
@@ -5519,6 +5628,9 @@ void TriMesh::Resprinkle(TriMesh * pX_src, TriMesh * pX_aux)
 	//flips may have got it shunted about ? Or moved to a tri that was not in the source.
 	printf("\nFinding source triangles of moved points...");
 
+	f64_vec2 pos,perp, pos_use, pos2, pos3;
+	f64 temp1, temp2, distsq, dist0, dist1, dist2, moddy;
+
 	pVertex = X;
 	for (iVertex = 0; iVertex < NUMVERTICES; iVertex++)
 	{
@@ -5580,32 +5692,7 @@ void TriMesh::Resprinkle(TriMesh * pX_src, TriMesh * pX_aux)
 
 					pos_use = pos;
 					if (pTri->periodic == 0) {
-						// allow that another image could be closer.
-						pos2 = Clockwise*pos;
-						pos3 = Anticlockwise*pos;
-
-						// Is pTri->cent populated?
-						distsq = (pos - pTri->cent).dot(pos - pTri->cent);
-						distsq2 = (pos2 - pTri->cent).dot(pos2 - pTri->cent);
-						distsq3 = (pos3 - pTri->cent).dot(pos3 - pTri->cent);
-
-						if (distsq2 < distsq) {
-							if (distsq3 < distsq2) {
-								// distsq3
-								pos_use = pos3;
-							} else {
-								// distsq2
-								pos_use = pos2;
-							};
-						} else {
-							if (distsq3 < distsq) {
-								// distsq3
-								pos_use = pos3;
-							} else {
-								// distsq
-								pos_use = pos;
-							};
-						};
+						pos_use = RotateClosest(pos, pTri->cent);
 					};
 
 					// Now test which direction is the closest.
@@ -5681,10 +5768,10 @@ void TriMesh::Resprinkle(TriMesh * pX_src, TriMesh * pX_aux)
 	// Then we have a useful list of the source positions which we can use
 	// to do picking and find what maps to our vertex.
 
-
+	 
 
 }
-
+ 
 //Tasks here:
 //======================================
 //1. Add data send to reseq routine.
@@ -5692,15 +5779,58 @@ void TriMesh::Resprinkle(TriMesh * pX_src, TriMesh * pX_aux)
 //2. Copy mesh routine -- as complete as possible.
 //
 //3. Ensure we follow up call to this routine with copying over pXnew. Ensure we copy to GPU (!)
-
+ 
 void TriMesh::Integrate_using_iScratch(TriMesh * pX_src)
 {
-	printf("Send to device and make shardmodel:\n");
+	f64 * Mass_i, *Mass_n;
+	printf("Send to device and make shardmodel: \n");
 
+	if (bInvoked_cuSyst == false) {
+		printf("bInvoked_cuSyst == false. error.\n"); while (1) getch();
+	};
+	
 	//Send System to Device.;
-	cuSyst1.PopulateFromTriMesh(pX_src);
-		
+	cuSyst_host.PopulateFromTriMesh(pX_src);		
+	cuSyst_host.SendToDevice(cuSyst1);
+	
+	printf("Done send to cuSyst1\n");
 	// Create Shardmodel on device system:
+	
+	// Test some of this :
+
+	f64 tempf;
+	long templong;
+
+	cudaMemcpy(&tempf, &(cuSyst1.p_n_major[10000].n), sizeof(double), cudaMemcpyDeviceToHost);
+	printf("p_n_major[10000].n %1.10E\n", tempf);
+	cudaMemcpy(&tempf, &(cuSyst1.p_n_minor[20000].n), sizeof(double), cudaMemcpyDeviceToHost);
+	printf("p_n_minor[20000].n %1.10E\n", tempf);
+	cudaMemcpy(&templong, &(cuSyst1.p_izTri_vert[20000*MAXNEIGH+5]), sizeof(double), cudaMemcpyDeviceToHost);
+	printf("tri %d\n", templong);
+	cudaMemcpy(&templong, &(cuSyst1.p_izTri_vert[40000 * MAXNEIGH + 5]), sizeof(double), cudaMemcpyDeviceToHost);
+	printf("tri %d\n", templong);
+	//cudaMemcpy(&tempf, &(p_n_shards[12000].n_cent), sizeof(double), cudaMemcpyDeviceToHost);
+	//printf("n_hash. n %1.10E\n", tempf);
+	//cudaMemcpy(&tempf, &(p_n_shards_n[12000].n_cent), sizeof(double), cudaMemcpyDeviceToHost);
+	//printf("ajsdadsjioasd %1.10E\n", tempf);
+	
+	//n_hash.n       1.3235970028E+16
+	// ajsdadsjioasd 1.3235970028E+16
+
+	// Is it because they just both have rubbish in at this point?
+
+	cudaMemcpy(&tempf, &(cuSyst1.p_AreaMajor[12000]), sizeof(double), cudaMemcpyDeviceToHost);
+	printf("Area 12000 %1.10E\n", tempf);
+	
+
+	CallMAC(cudaMalloc((void **)&p_n_shards_II, NUMVERTICES * sizeof(ShardModel)));
+	CallMAC(cudaMalloc((void **)&p_n_shards_n_II, NUMVERTICES * sizeof(ShardModel)));
+
+	printf("Done cudaMalloc\n");
+
+	Call(cudaMemset(p_n_shards_II, 0, sizeof(ShardModel)*NUMVERTICES),
+		"cudaMemset(p_n_shards_II, 0, sizeof(ShardModel)*NUMVERTICES)");
+	
 	kernelCreateShardModelOfDensities_And_SetMajorArea << <numTilesMajor, threadsPerTileMajor >> > (
 		cuSyst1.p_info,
 		cuSyst1.p_n_major,
@@ -5708,27 +5838,29 @@ void TriMesh::Integrate_using_iScratch(TriMesh * pX_src)
 		cuSyst1.p_izTri_vert,
 		cuSyst1.p_szPBCtri_vert,
 		cuSyst1.p_cc,
-		p_n_shards,
-		p_n_shards_n,
+		p_n_shards_II,
+		p_n_shards_n_II,
 		cuSyst1.p_AreaMajor,
 		false
 		);
 	Call(cudaThreadSynchronize(), "cudaTS CreateShardModel");
+	
+	printf("Done call to CreateShardModel\n");
 
-	// Copy shardmodel to host shardmodel:
-
-	.Problem: we could get here before we have invoked.
-		What to do about that ? Can we change where invocation occurs ? ;
-
+	ShardModel * shardmodel_host_i, * shardmodel_host_n;
 	shardmodel_host_i = (ShardModel *)malloc(NUMVERTICES * sizeof(ShardModel));
 	shardmodel_host_n = (ShardModel *)malloc(NUMVERTICES * sizeof(ShardModel));
 
-	cudaMemcpy(shardmodel_host_i, p_n_shards, NUMVERTICES * sizeof(ShardModel), cudaMemcpyDeviceToHost);
-	cudaMemcpy(shardmodel_host_n, p_n_shards_n, NUMVERTICES * sizeof(ShardModel), cudaMemcpyDeviceToHost);
+	printf("Done malloc\n");
 
-	printf("done ");
+	cudaMemcpy(shardmodel_host_i, p_n_shards_II, NUMVERTICES * sizeof(ShardModel), cudaMemcpyDeviceToHost);
+	cudaMemcpy(shardmodel_host_n, p_n_shards_n_II, NUMVERTICES * sizeof(ShardModel), cudaMemcpyDeviceToHost);
+
+	printf("done cudaMemcpy ");
 	printf("\c\n", getch());
-	
+
+	Mass_i = (f64 *)malloc(NUMVERTICES * sizeof(f64));
+	Mass_n = (f64 *)malloc(NUMVERTICES * sizeof(f64));
 
 	// ==========================================================
 	// This now gave us the wherewithal to do integrals in space:
@@ -5738,39 +5870,37 @@ void TriMesh::Integrate_using_iScratch(TriMesh * pX_src)
 	long izTri[MAXNEIGH];
 	long izTri2[MAXNEIGH];
 	long izNeigh2[MAXNEIGH];
-	int ii;
-	short tri_len, tri_len2;
+	bool bIntersect, bOverlap;
+	int ii, iii;
+	short tri_len, tri_len2, neigh_len2, neigh_len3;
 	f64 distsq, distsq1, distsq2;
-	
+	f64_vec2 pos;
+	long iVertex, iVertSrc;
 	short iCycle[1024]; // never going to depth 1024...!
 	long izNeigh3[MAXNEIGH];
 	short maxCycle[1024];
 	Vertex * pPivot[1024];
 
 	bool * p_flagarray = (bool *)malloc(NUMVERTICES * sizeof(bool));
-
+	
+	printf("Integrate at each dest vertex : ");
 
 	pVertex = X; // is *this the destination? okay.
 	for (iVertex = 0; iVertex < NUMVERTICES; iVertex++)
 	{
-		
+	//	printf("Vertex %d\n", iVertex);
+
 		if (pVertex->flags == DOMAIN_VERTEX) {
 
-			IntegralMass = 0.0;
+			f64 IntegralMass_i = 0.0;
+			f64 IntegralMass_n = 0.0;
 
 			ConvexPolygon cp, cp2, cpIntersection;
 
 			tri_len = pVertex->GetTriIndexArray(izTri);
 			for (ii = 0; ii < tri_len; ii++) {
-				pos = T[izTri[ii]].cent;
+				pos = RotateClosest(T[izTri[ii]].cent, pVertex->pos);
 				// Take the image that lies closest to pVertex->pos.
-				distsq = (pos - pVertex->pos).dot(pos - pVertex->pos);
-				pos1 = Anticlockwise*pos;
-				distsq1 = (pos1 - pVertex->pos).dot(pos1 - pVertex->pos);
-				pos2 = Clockwise*pos;
-				distsq2 = (pos2 - pVertex->pos).dot(pos2 - pVertex->pos);
-				if (distsq1 < distsq) pos = pos1;
-				if (distsq2 < distsq) pos = pos2;
 				cp.add(pos);
 			};
 			// ______________________________________________________ Polygon defined.
@@ -5781,28 +5911,56 @@ void TriMesh::Integrate_using_iScratch(TriMesh * pX_src)
 			// Make sure iScratch does have overlap; if not, search for one nearby.
 			// _____________________________________________________________________
 			
-			pVertSrc = pX_src->X[pVertex->iScratch];
-			
+	//		printf("tri_len %d  ", tri_len);
+
+			//iScratch is one that doesn't exist.
+			//	It refers to a triangle.
+				
+			if (pVertex->iScratch < BEGINNING_OF_CENTRAL) {
+				pVertSrc = pX_src->T[pVertex->iScratch].cornerptr[0];
+				// Now will move around to find overlap with neighbour.
+			} else {
+				pVertSrc = &(pX_src->X[pVertex->iScratch-BEGINNING_OF_CENTRAL]);
+				iVertSrc = pVertex->iScratch - BEGINNING_OF_CENTRAL;
+			};
+
+	//		printf("iVertSrc %d ;; ", iVertSrc);
+
+			// It never gets anywhere after this, but really? 99810 |-> 1503 ?? The very first domain vertex?
+	//		printf("NUMVERTICES %d  ", NUMVERTICES);
+	//		printf("pVertSrc->pos %1.9E %1.9E  ", pVertSrc->pos.x, pVertSrc->pos.y);
+	//		printf("pVertex->pos %1.9E %1.9E\n", pVertex->pos.x, pVertex->pos.y);
+
 			do {
 
 				cp2.Clear();
 				tri_len2 = pVertSrc->GetTriIndexArray(izTri2);
 				for (ii = 0; ii < tri_len2; ii++) {
-					pos = pX_src->T[izTri2[ii]].cent;
+					pos = RotateClosest(pX_src->T[izTri2[ii]].cent, pVertex->pos);
 					// Take the image that lies closest to pVertex->pos.
-					distsq = (pos - pVertex->pos).dot(pos - pVertex->pos);
-					pos1 = Anticlockwise*pos;
-					distsq1 = (pos1 - pVertex->pos).dot(pos1 - pVertex->pos);
-					pos2 = Clockwise*pos;
-					distsq2 = (pos2 - pVertex->pos).dot(pos2 - pVertex->pos);
-					if (distsq1 < distsq) pos = pos1;
-					if (distsq2 < distsq) pos = pos2;
 					cp2.add(pos);
 				};
 				// Need to allow that pVertSrc could be across PB from pVertex:
 				// Just do it by setting the above coords to be close to pVertex instead of pVertSrc.
 
-				bIntersect = cp2.GetIntersectionWithPolygon(&cp, &cpIntersection);
+		//		if (iVertex == 14533) {
+		//			bSpit = true;
+		//		} else {
+		//			bSpit = false;
+		//		}
+				bIntersect = cp2.GetIntersectionWithPolygon(&cpIntersection, &cp);
+
+		//		printf("bIntersect %d ", (bIntersect ? 1 : 0));
+
+		//		if (bIntersect == false) {
+		//			printf("\n");
+					// spit out the two that did not intersect. What gives?
+		//			for (ii = 0; ii < cp.numCoords; ii++)
+		//				printf("cp.coord[%d] %1.8E %1.8E \n", ii, cp.coord[ii].x, cp.coord[ii].y);
+		//			for (ii = 0; ii < cp2.numCoords; ii++)
+		//				printf("cp2.coord[%d] %1.8E %1.8E \n", ii, cp2.coord[ii].x, cp2.coord[ii].y);
+		//			printf("bIntersect == false.\n\n");
+		//		};
 
 				if (bIntersect == false) {
 					neigh_len2 = pVertSrc->GetNeighIndexArray(izNeigh2);
@@ -5812,23 +5970,21 @@ void TriMesh::Integrate_using_iScratch(TriMesh * pX_src)
 						cp2.Clear();
 						tri_len2 = pNeigh->GetTriIndexArray(izTri2);
 						for (ii = 0; ii < tri_len2; ii++) {
-							pos = pX_src->T[izTri2[ii]].cent;
+							pos = RotateClosest(pX_src->T[izTri2[ii]].cent, pNeigh->pos);
 							// Take the image that lies closest to pNeigh->pos.
-							distsq = (pos - pNeigh->pos).dot(pos - pNeigh->pos);
-							pos1 = Anticlockwise*pos;
-							distsq1 = (pos1 - pNeigh->pos).dot(pos1 - pNeigh->pos);
-							pos2 = Clockwise*pos;
-							distsq2 = (pos2 - pNeigh->pos).dot(pos2 - pNeigh->pos);
-							if (distsq1 < distsq) pos = pos1;
-							if (distsq2 < distsq) pos = pos2;
 							cp2.add(pos);
 						};
 
-						bIntersect = cp2.GetIntersectionWithPolygon(&cp, &cpIntersection);
-						if (bIntersect == true) pVertex->iScratch = pNeigh - pX_src->X; // this one can count as the usable source point.
+						bIntersect = cp2.GetIntersectionWithPolygon(&cpIntersection, &cp);
+						if (bIntersect == true) {
+							pVertex->iScratch = pNeigh - pX_src->X + BEGINNING_OF_CENTRAL; // this one can count as the usable source point.
+							pVertSrc = pNeigh;
+							iVertSrc = pVertSrc - pX_src->X;
+						};
 					};
 				};
-
+			//	printf("bIntersect %d ", (bIntersect ? 1 : 0));
+				
 				if (bIntersect == false) {
 					printf("No overlaps found! iVertex %d.\n", iVertex);
 					// We have to be able to handle this by moving towards the nearest image of our destination point until
@@ -5854,80 +6010,176 @@ void TriMesh::Integrate_using_iScratch(TriMesh * pX_src)
 							iVertex, iVertSrc, pVertex->pos.x, pVertex->pos.y, pVertSrc->pos.x, pVertSrc->pos.y);
 						while (1) getch();
  					} else {
-						pVertSrc = pX_src->X[izNeigh2[iWhich]];
-						iVertSrc = pVertSrc - X;
+						pVertSrc = &(pX_src->X[izNeigh2[iWhich]]);
+						iVertSrc = pVertSrc - pX_src->X;
 						printf("iVertex %d : had to move to source proposal %d\n",
 							iVertex, iVertSrc);
 					};
 				};
 			} while (bIntersect == false);
-			// If no overlaps found, flag an error.
+			
+			printf("\n");
 
+			if (iVertex == 22537) printf("iVertex %d iVertSrc %d", iVertex, iVertSrc);
 
 			// ======================================================================
 			// Recursion:
 
-			found_overlap = true; // to trigger getneighs
-			pVertSrc = pX_src->X[pVertex->iScratch];
-
-			// Need to dimension above..
-
+			bool found_overlap = true; // to trigger getneighs
+			pVertex->iScratch = pVertSrc - pX_src->X + BEGINNING_OF_CENTRAL; 			
+			//pVertSrc = &(pX_src->X[pVertex->iScratch-BEGINNING_OF_CENTRAL]);
+			
 			memset(p_flagarray, 0, sizeof(bool)*NUMVERTICES);
 
+			f64_vec2 srcpos, coord0, coord1;
 			int r = 0;
+			f64 nresults[3], temp0[MAXNEIGH], temp1[MAXNEIGH], temp2[MAXNEIGH];
+			int iShard, iShardNext;
+			long iVertUse;
+			Vertex * pVertUse;
+			short neigh_len;
+			// Make sure we count the shards of the thing itself.
+			
+			r = 0;
 			iCycle[0] = 0;
-			pPivot[0] = pVertSrc;
-			// Make sure we count the thing itself?
-			// !
-
-			bOverlap = cp.GetIntersectionWithPolygon(cp2, cpIntersection);
-			p_flagarray[iVertUse] = true; // checked, either way.
-										  // Add integral:
-			IntegralMass_i += cpIntersection.IntegrateMacroscopicPlanarTriangle;
-			IntegralMass_n += cpIntersection;
-			IntegralHeat_i += cpIntersection;
-			IntegralHeat_n += cpIntersection;
-			IntegralHeat_e += cpIntersection;
-
+			maxCycle[0] = 1;
+			izNeigh3[0] = iVertSrc;// iVertUse = iVertSrc; need to copy text overiVertSrc
+			// Let's keep iVertSrc and use another label called iVertUse.
+			
 			do {
-				if (iCycle[r] == 0) {
+			//	printf("Cycle %d : ", r);
+				if ((r > 0) && (iCycle[r] == 0)) {
 					// Get Neighbours at this level:
+			//		printf("maxCycle[%d] :",r);
 					maxCycle[r] = pPivot[r]->GetNeighIndexArray(izNeigh3);
+			//		printf("%d\n", maxCycle[r]);
 				};
+				
 
 				iVertUse = izNeigh3[iCycle[r]];
-				pVertUse = pX_src->X[iVertUse];
+				pVertUse = &(pX_src->X[iVertUse]);
+				
 				if (!p_flagarray[iVertUse]) // not already looked at before
 				{
 					// Look for overlap at neighbour i:
 
 					cp2.Clear();
-					tri_len2 = pVertSrc->GetTriIndexArray(izTri2);
+					tri_len2 = pVertUse->GetTriIndexArray(izTri2);
 					for (ii = 0; ii < tri_len2; ii++) {
-						pos = pX_src->T[izTri2[ii]].cent;
+						pos = RotateClosest(pX_src->T[izTri2[ii]].cent, pVertex->pos);
 						// Take the image that lies closest to pVertex->pos.
-						distsq = (pos - pVertex->pos).dot(pos - pVertex->pos);
-						pos1 = Anticlockwise*pos;
-						distsq1 = (pos1 - pVertex->pos).dot(pos1 - pVertex->pos);
-						pos2 = Clockwise*pos;
-						distsq2 = (pos2 - pVertex->pos).dot(pos2 - pVertex->pos);
-						if (distsq1 < distsq) pos = pos1;
-						if (distsq2 < distsq) pos = pos2;
 						cp2.add(pos);
+
+						//SetConsoleTextAttribute()
+				//		printf("ii %d izTri2[ii] %d cent %1.8E %1.8E cp2.coord[%d] %1.8E %1.8E\n",
+				//			ii, izTri2[ii], pX_src->T[izTri2[ii]].cent.x, pX_src->T[izTri2[ii]].cent.y,
+				//			ii,
+				//			cp2.coord[ii].x,cp2.coord[ii].y);
+
 					};
 
-					bOverlap = cp.GetIntersectionWithPolygon(cp2, cpIntersection);
+					bOverlap = cp.GetIntersectionWithPolygon(&cpIntersection, &cp2);
+					
+					//for (ii = 0; ii < tri_len2; ii++)
+					//{
+					//	printf(". cp2.coord[%d] %1.8E %1.8E\n", ii, cp2.coord[ii].x, cp2.coord[ii].y);
+					//};
+					// Altered by GetIntersection function? Shall we change to sending a copy?
+
+
 					p_flagarray[iVertUse] = true; // checked, either way.
-
+					
 					if (bOverlap) {
+						
+						// We created ShardModel and must integrate on shards.
+						// The fact that cpIntersection exists does not imply it exists for every shard.
+						// We need to loop through shards to find intersections.
+						srcpos = RotateClosest(pVertUse->pos, pVertex->pos);
+						
+						tri_len = pVertUse->GetTriIndexArray(izTri);
+						for (iShard = 0; iShard < tri_len; iShard++)
+						{
+							// Note that we must map the shard to the correct orientation to match pVertex.
+							// Do this by mapping every point.
+							iShardNext = iShard + 1;
+							if (iShardNext == tri_len) iShardNext = 0;
+							//pTri = pX_src->T[izTri[iShard]];
+							//pTri2 = pX_src->T[izTri[iShardNext]];
+							//coord0 = RotateClosest(pTri->cent, pVertex->pos);
+							//coord1 = RotateClosest(pTri2->cent, pVertex->pos);
 
-						// Add integral:
-						IntegralMass_i += cpIntersection.IntegrateMacroscopicPlanarTriangle;
-						IntegralMass_n += cpIntersection;
-						IntegralHeat_i += cpIntersection;
-						IntegralHeat_n += cpIntersection;
-						IntegralHeat_e += cpIntersection;
+						//	printf("iShard %d next %d num %d srcpos %1.8E %1.8E cp2.coord[iShard] %1.8E %1.8E , nex %1.8E %1.8E\n", 
+						//		iShard, iShardNext, cp.numCoords, srcpos.x, srcpos.y,
+						//		cp2.coord[iShard].x, cp2.coord[iShard].y, 
+						//		cp2.coord[iShardNext].x, cp2.coord[iShardNext].y
+						//		);
+					//		printf("iVertUse %d izTri %d %d %d %d %d %d \n",
+					//			iVertUse, izTri[0], izTri[1], izTri[2], izTri[3], izTri[4], izTri[5]);
 
+							// We are posting 2 coordinates the same --- 
+							
+							bOverlap = cp.GetIntersectionWithTriangle(&cpIntersection, srcpos, cp2.coord[iShard], cp2.coord[iShardNext]);
+							
+					//		printf("iVertUse %d iShard %d bOverlap %d tri_len %d\n", iVertUse, iShard,
+					//				(bOverlap?1:0), tri_len);
+
+							if (bOverlap) {
+							
+							//	for (int vii = 0; vii < cpIntersection.numCoords; vii++)
+							//	{
+							//		printf("cpIntersection coord %d : %1.9E %1.9E \n",
+							//			vii, cpIntersection.coord[vii].x, cpIntersection.coord[vii].y);
+							//	}
+								
+								coord0 = cp2.coord[iShard];
+								coord1 = cp2.coord[iShardNext];
+								temp0[0] = shardmodel_host_i[iVertUse].n_cent;
+								temp0[1] = shardmodel_host_n[iVertUse].n_cent;
+
+								temp1[0] = shardmodel_host_i[iVertUse].n[iShard];
+								temp1[1] = shardmodel_host_n[iVertUse].n[iShard];
+
+								temp2[0] = shardmodel_host_i[iVertUse].n[iShardNext];
+								temp2[1] = shardmodel_host_n[iVertUse].n[iShardNext];
+//
+//
+//								temp0[2] = shardmodel_host_i[iVertUse].n[iShardNext];
+//
+//								temp1[0] = shardmodel_host_n[iVertUse].n_cent;
+//								temp1[1] = shardmodel_host_n[iVertUse].n[iShard];
+//								temp1[2] = shardmodel_host_n[iVertUse].n[iShardNext];
+//
+//								temp2[0] = 0.0;
+//								temp2[1] = 0.0;
+//								temp2[2] = 0.0;
+
+							//	printf("n012 %1.8E %1.8E %1.8E nn012 %1.8E %1.8E %1.8E\n",
+							//		temp0[0], temp1[0], temp2[0], temp0[1], temp1[1], temp2[1]);
+								
+//								iVertUse 1524 iShard 1 bOverlap 1 tri_len 6
+//									cpIntersection coord 0 : -6.520443899E-01 3.384225876E+00
+//									cpIntersection coord 1 : -6.533123337E-01 3.380685105E+00
+//									cpIntersection coord 2 : -6.540835838E-01 3.384933091E+00
+//								n012 3.51492816E+16 2.51662292E+16 2.16108768E+16 nn012 8.13694827E+17 9.30004496E+17 9.61944018E+17
+//									Press any key to continue . . .
+//
+								// It seems to fail even with sensible inputs.
+
+								//	Nearly there -- debugging steadily. Going to reach the point can do vertexswim. Then get out of the woods.
+
+								cpIntersection.Integrate_Planes(
+									srcpos, coord0, coord1,
+									temp0, temp1, temp2,
+									nresults,
+									2 // 2 densities + 3 heats = 5
+								);
+								// where to put results?
+								IntegralMass_i += nresults[0];
+								IntegralMass_n += nresults[1];
+								//IntegralHeat_i += cpIntersection;					
+							};
+						};
+						
 						// (((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((
 
 						// Now must go up to neighbours.
@@ -5936,15 +6188,24 @@ void TriMesh::Integrate_using_iScratch(TriMesh * pX_src)
 						iCycle[r] = 0;
 					} else {
 						iCycle[r]++;
-
-						while (iCycle[r] == maxCycle[r]) {
-							r--;
-							if (r >= 0) iCycle[r]++; // we do not move on when we go up a level
-						};
 					};
-				}; // if (!p_flagarray[iVertUse]) 		
+				} else { // if (!p_flagarray[iVertUse]) 		
+					iCycle[r]++;
+				};
+
+				int rold = r;
+				while (iCycle[r] == maxCycle[r]) {
+					r--;
+					if (r >= 0) {
+						iCycle[r]++; // we do not move on when we go up a level						
+					};				
+				};
+				// restore neigh array for level:
+				if ((r != rold) && (r >= 0)) pPivot[r]->GetNeighIndexArray(izNeigh3);
+
 			} while (r > -1);
 
+		//	printf("]\n");
 			Mass_i[iVertex] = IntegralMass_i;
 			Mass_n[iVertex] = IntegralMass_n;
 		};
@@ -5952,5 +6213,25 @@ void TriMesh::Integrate_using_iScratch(TriMesh * pX_src)
 		pVertex++;
 	};
 	free(p_flagarray);
+
+	printf("done \c\n", getch());
+	
+	pVertex = X;
+	for (iVertex = 0; iVertex < NUMVERTICES; iVertex++){
+		// Is pVertex->AreaCell set?
+
+		if (iVertex == 22537) {
+			printf("22537 Mass_i %1.10E Area %1.10E ratio %1.9E\n",
+				Mass_i[iVertex], pVertex->AreaCell, Mass_i[iVertex] / pVertex->AreaCell);
+			getch(); getch();
+		};
+
+		pData[iVertex + BEGINNING_OF_CENTRAL].n = Mass_i[iVertex]/ pVertex->AreaCell;
+		pData[iVertex + BEGINNING_OF_CENTRAL].n_n = Mass_n[iVertex] / pVertex->AreaCell;
+		pVertex++;
+	};
+	free(Mass_i);
+	free(Mass_n);
+	// Infer minor n ?
 }
 

@@ -27,6 +27,9 @@ Tensor2 const HalfAnticlockwise (cos(HALFANGLE),-sin(HALFANGLE),sin(HALFANGLE),c
 Tensor2 const HalfClockwise(cos(HALFANGLE),sin(HALFANGLE),-sin(HALFANGLE),cos(HALFANGLE));
 
 real modelled_n;
+
+bool bSpit = false;
+
 void ConvexPolygon::CreateClockwiseImage(const ConvexPolygon & cpSrc) 
 {
 	numCoords = cpSrc.numCoords;
@@ -1120,14 +1123,21 @@ void TriMesh::Recalculate_TriCentroids_VertexCellAreas_And_Centroids()
 			{
 				pTri = T + izTri[i];
 				cp.add(pTri->GetContiguousCent_AssumingCentroidsSet(pVertex));
+				if (iVertex == 22537) printf("added %1.9E %1.9E \n", cp.coord[cp.numCoords - 1].x, cp.coord[cp.numCoords - 1].y);
+			
 			};
 		};
 
 		pVertex->AreaCell = cp.GetArea();
 
-	//	pVertex->centroid = cp.CalculateBarycenter();
+		if (iVertex == 22537) {
+			printf("Area %1.9E \n", pVertex->AreaCell);
+			printf("press t\n");
+			while (getch() != 't');
+		};
 
-		
+	//	pVertex->centroid = cp.CalculateBarycenter();
+				
 		//if (iVertex == 36685) {
 		//	printf("vertex %d flag %d \n",iVertex,pVertex->flags);
 		//	for (i = 0; i < cp.numCoords; i++)
@@ -4042,11 +4052,35 @@ int Triangle::GetCentreOfIntersectionWithInsulator(Vector2 & cc)
 		
 		// convex polygon: if we take any edge then we should be fine to supply any other point as being on the "in" side of that edge..
 
+		// pClip, the one we clip against, needs a centroid so we can determine what's inside.
+
+		f64_vec2 centclip(0.0, 0.0);
+		for (i = 0; i < pClip->numCoords; i++)
+		{
+			centclip += pClip->coord[i];
+		}
+		centclip.x /= (real)pClip->numCoords;
+		centclip.y /= (real)pClip->numCoords;
+
 		for (i = 0; i < pClip->numCoords; i++)
 		{
 			inext = i+1; if (inext == pClip->numCoords) inext = 0;
 			inext2 = inext+1; if (inext2 == pClip->numCoords) inext2 = 0;
-			if (!pPoly->ClipAgainstHalfplane(pClip->coord[i],pClip->coord[inext],pClip->coord[inext2])) return false;
+
+			if (bSpit) {
+				printf("pPoly: %d : ", pPoly->numCoords);
+				for (int ii = 0; ii < pPoly->numCoords; ii++)
+					printf("%1.8E %1.8E | ", pPoly->coord[ii].x, pPoly->coord[ii].y);
+				printf("\n--------------------\n"
+					"%1.8E %1.8E ; %1.8E %1.8E ; %1.8E %1.8E \n",
+					pClip->coord[i].x, pClip->coord[i].y,
+					pClip->coord[inext].x, pClip->coord[inext].y,
+					centclip.x, centclip.y);
+			};
+			if (!pPoly->ClipAgainstHalfplane(pClip->coord[i], pClip->coord[inext], centclip)) {
+				if (bSpit) printf("return false.\n");
+				return false;
+			}
 		};
 		
 		return true;
@@ -4188,10 +4222,13 @@ int Triangle::GetCentreOfIntersectionWithInsulator(Vector2 & cc)
 		real dist12;
 		real ypos, dbyd12[15], dbydperp[15];
 		
+		if (this->numCoords >= CP_MAX) printf("Warning! numCoords %d >= CP_MAX\n\a", numCoords);
+
 		// make tri-aligned coordinates:
 		x12 = r2 - r1;
 		dist12 = x12.modulus();
 
+	//	printf("dist12 %1.8E  \n", dist12);
 		x12.x /= dist12;
 		x12.y /= dist12;
 		x12perp.x = x12.y;
@@ -4205,6 +4242,8 @@ int Triangle::GetCentreOfIntersectionWithInsulator(Vector2 & cc)
 		real x13_perp = x13.x*x12perp.x + x13.y*x12perp.y;
 		
 		// So x13_12 is projection of x13 in direction 12
+
+	//	printf("dist12 %1.8E x13_perp %1.8E \n", dist12, x13_perp);
 
 		for (int j = 0; j < N_planes; j++)
 		{
@@ -4222,6 +4261,8 @@ int Triangle::GetCentreOfIntersectionWithInsulator(Vector2 & cc)
 			for (int j = 0; j < N_planes; j++)
 				y[i][j] = yvals1[j] + dbyd12[j]*(relpos.x*x12.x + relpos.y*x12.y) + dbydperp[j]*(relpos.x*x12perp.x+relpos.y*x12perp.y);
 		};
+		
+		printf(":");
 
 		// chop up this into triangles
 		// assume average attained by plane on each triangle
@@ -4240,12 +4281,19 @@ int Triangle::GetCentreOfIntersectionWithInsulator(Vector2 & cc)
 			cpTri.add(coord[i-1]);
 			cpTri.add(coord[i]);
 			area = cpTri.GetArea();
+		//	printf("cpTri area %1.8E i %d\n", area, i);
+
+			// 012 023 034 045
+
 			for (int j = 0; j < N_planes; j++)
 			{
 				average = (y[0][j] + y[i-1][j] + y[i][j])*THIRD;			
+
+	//			printf("j %d avg %1.8E ", j, average);
 				results[j] += average*area;
 			};
 		};
+	//	printf("jjj");
 		// case of 3 coords: 0,1,2
 		// case of 4 coords: 0,1,2  0,2,3
 	}
