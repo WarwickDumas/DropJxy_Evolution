@@ -3,6 +3,8 @@
 #ifndef FFXTUBES_h
 #define FFXTUBES_h
 
+// This is the file with NMINOR defined.
+
 // Should have thought of better name.
 // Lagrangian deterministic 2D plasma filament simulation;
 // vertex-based version.
@@ -25,8 +27,8 @@ bool const bScrewPinch = false;
 int const NUMAVI = 9;
 #define FOLDER L"C:/outputs/"
 #define FOLDER2 "C:/outputs/"
-#define INITIALAVI "10250a.avi"		
-#define INITIALMP4 L"10250a.mp4"
+#define INITIALAVI "10200D.avi"		
+#define INITIALMP4 L"10200D.mp4"
 #define STORYFILE "temp.txt"
 #define STORYFILE2 "temp2.txt"
 
@@ -40,9 +42,9 @@ int const NUMAVI = 9;
 #else
 #define FUNCTIONALFILE_START FOLDER2 "bfunctionals"
 #define DATAFILENAME FOLDER2 "Data_"
-#define AUTOSAVE_FILENAME FOLDER2 "bautosave.dat"
-#define RUNTIME_FILENAME FOLDER2 "bruntime.dat"
-#define AUTOSAVENAME "cauto"
+#define AUTOSAVE_FILENAME FOLDER2 "bBautosave.dat"
+#define RUNTIME_FILENAME FOLDER2 "bBruntime.dat"
+#define AUTOSAVENAME "cCauto"
 #define VERTAUTOSAVENAME "graph"
  
 #endif
@@ -54,18 +56,16 @@ int const NUMAVI = 9;
 // steps per frame
 #define GRAPHICS_FREQUENCY				1 // 2e-11
 #define REDELAUN_FREQUENCY				10 
-
-#define STEPS_PER_LOOP               1    // soon change to 500
+#define STEPS_PER_LOOP                  1    // soon change to 500
 // frames between file pinch-offs:
-#define AVI_FILE_PINCHOFF_FREQUENCY     250 // 50 = 1 ns
+#define AVI_FILE_PINCHOFF_FREQUENCY     125 // 50 = 1 ns
 
 // 1 frame = 0.01 so 100 frames == 1 ns
 
 // milliseconds between frames:
-#define AVIFRAMEPERIOD         15  // milliseconds; 20 ms => 50 fps.
-
-#define VERTDATA_SAVE_FREQUENCY              5
-#define DATA_SAVE_FREQUENCY					 1
+#define AVIFRAMEPERIOD                     15  // milliseconds; 20 ms => 50 fps.
+#define VERTDATA_SAVE_FREQUENCY            5
+#define DATA_SAVE_FREQUENCY					1
 // For debug. For production change it to 25
 
 // Program Mechanics:
@@ -115,6 +115,9 @@ double const RELTHRESH_AZ =  1.0e-9;
 // Model parameters:
 //===============================
 
+#define EULERIAN       1
+#define OSCILLATE_IZ   1
+
  // radii in cm from anode centre : 
 #define DOMAIN_OUTER_RADIUS  10.0   // Assume cold neutrals looking out from this point.
 #define START_SPREADING_OUT_RADIUS 4.24
@@ -126,7 +129,6 @@ double const RELTHRESH_AZ =  1.0e-9;
 
 // Think it's time we made radial values going out to 10cm.
 #define CHAMBER_OUTER_RADIUS  10.0
-
 #define GRAPH1D_MAXR  4.6
 
 #define KILL_NEUTRAL_V_OUTSIDE_TEMP  8.0 // No idea why problem occurring - just killing it for now

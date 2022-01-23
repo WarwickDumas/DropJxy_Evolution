@@ -798,7 +798,35 @@ kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species(
 	f64 const over_m_s,
 	int * __restrict__ p_Select);
 
+__global__ void kernelCreateTargetForAmpere (
+	nvals * __restrict__ p_n,
+	// populated? Check
+	v4 * __restrict__ p_v,
+	f64 * __restrict__ p_targ // 4pi/c Jz
+	);
+
 __global__ void Set(int * __restrict__ operand);
+__global__ void kernelAccumulateMatrix_Ampere(
+	structural * __restrict__ p_info,
+	f64 * __restrict__ p_epsilon,
+	f64 * __restrict__ p_regressor1,
+	f64 * __restrict__ p_regressor2,
+	f64 * __restrict__ p_regressor3,
+	f64 * __restrict__ p_LapReg1,
+	f64 * __restrict__ p_LapReg2,
+	f64 * __restrict__ p_LapReg3,
+	f64 * __restrict__ p_deps_matrix,
+	f64_vec3 * __restrict__ p_eps_against_deps);
+
+__global__ void kernelCreateAmpereEpsilonAndJacobi(
+	structural * p_info,
+	f64 * __restrict__ p_target,
+	f64 * __restrict__ p_coeffself,
+	f64 * __restrict__ p_Lap,
+	f64 * __restrict__ p_eps,
+	f64 * __restrict__ p_Jacobi,
+	bool * __restrict__ p_bFail
+);
 
 __global__ void
 // __launch_bounds__(128) -- manual says that if max is less than 1 block, kernel launch will fail. Too bad huh.
@@ -1324,14 +1352,14 @@ __global__ void kernelAddStoredNTFlux(
 	NTrates * __restrict__ p_values_to_augment
 );
 
-__device__ void Augment_Jacobean(
-	f64_tens3 * pJ,
-	real Factor, //h_over (N m_i)
-	f64_vec2 edge_normal,
-	f64 ita_par, f64 nu, f64_vec3 omega,
-	f64 grad_vjdx_coeff_on_vj_self,
-	f64 grad_vjdy_coeff_on_vj_self
-);
+//__device__ void Augment_Jacobean(
+//	f64_tens3 * pJ,
+//	real Factor, //h_over (N m_i)
+//	f64_vec2 edge_normal,
+//	f64 ita_par, f64 nu, f64_vec3 omega,
+//	f64 grad_vjdx_coeff_on_vj_self,
+//	f64 grad_vjdy_coeff_on_vj_self
+//);
 __global__ void kernelAccumulateAdvectiveMassHeatRateNew(
 	f64 const h_use,
 	structural * __restrict__ p_info_minor,
@@ -1381,14 +1409,14 @@ __global__ void kernelAccumulateNeutralAdvectiveMassHeatRateNew(
 	NTrates * __restrict__ p_store_flux
 );
 
-__device__ void Augment_JacobeanNeutral(
-	f64_tens3 * pJ,
-	real Factor, //h_over (N m_i)
-	f64_vec2 edge_normal,
-	f64 ita_par, f64 nu, f64_vec3 omega,
-	f64 grad_vjdx_coeff_on_vj_self,
-	f64 grad_vjdy_coeff_on_vj_self
-);
+//__device__ void Augment_JacobeanNeutral(
+//	f64_tens3 * pJ,
+//	real Factor, //h_over (N m_i)
+//	f64_vec2 edge_normal,
+//	f64 ita_par, f64 nu, f64_vec3 omega,
+//	f64 grad_vjdx_coeff_on_vj_self,
+//	f64 grad_vjdy_coeff_on_vj_self
+//);
 
 __global__ void kernelPrepareNuGraphs(
 	structural * __restrict__ p_info_minor,
@@ -1554,6 +1582,21 @@ __global__ void AddFromMyNeighbours(
 	short * __restrict__ p_who_am_I_to_you
 );
 
+__global__ void kernelCreateShardModelOfDensities_And_SetMajorAreaDEBUG(
+	structural * __restrict__ p_info_minor,
+	nvals * __restrict__ p_n_major,
+	nvals * __restrict__ p_n_minor,
+	long * __restrict__ p_izTri_vert,
+	char * __restrict__ p_szPBCtri_vert,
+	f64_vec2 * __restrict__ p_cc,
+	ShardModel * __restrict__ p_n_shards,
+	ShardModel * __restrict__ p_n_n_shards,
+	//	long * __restrict__ Tri_n_lists,
+	//	long * __restrict__ Tri_n_n_lists	,
+	f64 * __restrict__ p_AreaMajor,
+	bool bUseCircumcenter
+)// sets n_shards_n, n_shards, Tri_n_n_lists, Tri_n_lists
+;
 
 __global__ void kernelCreateShardModelOfDensities_And_SetMajorArea(
 	structural * __restrict__ p_info_minor,
@@ -2669,11 +2712,11 @@ __global__ void kernelPopulateArrayAz(
 );
 __global__ void kernelPushAzInto_dest(
 	AAdot * __restrict__ p_AAdot,
-	f64 * __restrict__ p_Az
+	f64 * __restrict__ pAz
 );
 __global__ void kernelPullAzFromSyst(
 	AAdot * __restrict__ p_AAdot,
-	f64 * __restrict__ p_Az
+	f64 * __restrict__ pAz
 );
 __global__ void kernelAdd(
 	f64 * __restrict__ p_updated,

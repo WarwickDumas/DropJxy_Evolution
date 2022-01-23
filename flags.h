@@ -231,6 +231,11 @@ int const REAL = 2;
 #define GRAPH_AXY3         211
 #define AZSOLVERGRAPHS     212
 #define OHMS2              213
+#define ARELZ              214
+#define GRAPH_ERROR        215
+#define GRAPH_VXBARELZ     216
+#define GRAPH_ARELZ        217
+#define GRAPH_ELECTROMOTIVE 218
 
 // Number of vars used to produce heights:
 int const FLAG_FLAT_MESH = 0;

@@ -3146,7 +3146,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 		// That should be done manually from the menus.		
 
 		break;
-		 
+		  
 	case WM_COMMAND:
 		wmId = LOWORD(wParam);
 		wmEvent = HIWORD(wParam);
@@ -3158,6 +3158,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 		switch (wmId)
 		{
 			
+		case ID_RUN_RESPRINKLE:
+			MessageBox(hWnd, "billabongs", "test", MB_OK);
+			break;
+
 		case ID_DISPLAY_ONE_D:
 			// printf("\a\n");
 			// Don't know why resource.h is not working;

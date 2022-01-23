@@ -647,6 +647,7 @@ real GetPossiblyPeriodicDist(Vector2 & vec1, Vector2 & vec2)
 	mindistsq = min(dist1sq,min(dist2sq,dist3sq));
 	return sqrt(mindistsq);
 }
+
 real GetPossiblyPeriodicDistSq(Vector2 & vec1, Vector2 & vec2)
 {
 	real dist1sq,dist2sq,dist3sq,mindistsq;

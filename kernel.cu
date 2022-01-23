@@ -1,9 +1,16 @@
 #include "kernel.h"
-#include "helpers.cu"
 #include "vector_tensor.cu"
 #include "cuda_struct.h"
 #include "constant.h"
 #include "FFxtubes.h"
+#include "switches.h"
+
+#include <stdlib.h>
+#include <stdio.h> 
+#include <conio.h>
+#include <math.h>
+#include <time.h>
+#include <windows.h>
 
 #define BWDSIDET
 #define LONGITUDINAL
@@ -15,62 +22,6 @@
 // load flags to determine if it is an insulator-crossing triangle and that is the proper way to handle that.
 
  
-#define FOUR_PI 12.5663706143592
-#define TEST  (0) //iVertex == VERTCHOSEN) 
-#define TEST_ELEC_VISC_TRI (0) //iMinor == CHOSEN)
-#define TESTNEUTVISC2 (0) // iMinor == CHOSEN)
-#define TESTPRESSUREY (0) //iVertex == VERTCHOSEN)
-#define TEST_T (0) 
-#define TEST3  (0)
-#define TEST1 (0)
-#define TESTTRI (0) // thermal pressure output & infer minor density & momflux_minor
-#define TESTADVECT (0)
-#define TESTADVECTZ (0)//iVertex == VERTCHOSEN)
-#define TESTADVECTNEUT (0) //iVertex == VERTCHOSEN)
-#define TESTIONVERTVISC (0)//(iVertex == VERTCHOSEN)
-#define TESTNEUTVISC (0) // iVertex == VERTCHOSEN) 
-#define TESTVISC (0) //iMinor == CHOSEN)
-#define TESTIONVISC (0) 
-#define TESTHEAT (0)
-#define TESTHEATFULL (0)
-#define TESTHEAT1 (0)
-#define TESTTRI2 (0)
-#define TESTTRI3 (0)
-#define TESTHEAT2 (0)
-#define TESTIONISE (0)
-#define TESTOHMS (0) //iMinor == VERTCHOSEN + BEGINNING_OF_CENTRAL)
-#define TEST_IONIZE (iVertex == VERTCHOSEN)
-#define TESTACCEL (0) //iMinor == VERTCHOSEN + BEGINNING_OF_CENTRAL)
-#define TESTACCEL2 (0) //iMinor - BEGINNING_OF_CENTRAL == VERTCHOSEN)
-#define TESTACCEL_X (0) // PopOhms output
-#define TESTLAP (0)
-#define TESTLAP2 (0) //(iMinor == CHOSEN1) || (iMinor == CHOSEN2))
-#define TESTVEZ (0)//iMinor == CHOSEN)
-#define TEST_VS_MATRIX (0) //iMinor == VERTCHOSEN + BEGINNING_OF_CENTRAL)
-#define TEST_VS_MATRIX2 (0) // iVertex == VERTCHOSEN
-#define TESTVNX (0)
-#define TESTVNY (0) //iMinor == CHOSEN)//PopOhms
-#define TESTVNY2 (0) // iMinor == CHOSEN) //neutral momflux
-#define TESTVNY3 (0)// || (iVertex == VERTCHOSEN2))
-#define TESTVNZ (0)//iMinor == VERTCHOSEN + BEGINNING_OF_CENTRAL)
-#define TEST_ADV_HEAT_FLAG 0
-#define TEST_ADV_MASS_FLAG 0
-#define TESTVNXVERT (0)
-#define TESTVNYVERT (0)
-#define TEST_ACCEL_Y (0) // iMinor == VERTCHOSEN + BEGINNING_OF_CENTRAL)
-#define VISCMAG 1 
-#define MIDPT_A
-#define TEST_ACCEL_EZ (0)//iMinor == CHOSEN)
-#define TEST_EPSILON_Y (0)
-#define TEST_EPSILON_X (0)
-#define TEST_EPSILON_Y_IMINOR (0)//iMinor == lChosen)
-#define TEST_EPSILON_X_MINOR (0) // iMinor == CHOSEN)
- 
-#define ARTIFICIAL_RELATIVE_THRESH  1.0e10 // if we let it be more strict than heat thresh then it drives a difference generating heat!
-#define ARTIFICIAL_RELATIVE_THRESH_HEAT  1.0e10   // typical initial density is 1e8 vs 1e18
-#define LOW_THRESH_FOR_VISC_CALCS 1.0e10 // density. This should not be too much greater than the density where we do not soak away velocity and heat. At the moment it's 100 times.
-#define MINIMUM_NU_EI_DENSITY       1.0e12
-
 
 // Try excluding only if both sides are at this density -- it just doesn't matter.
 // Just exclude to/from anything this sparse. It doesn't matter.
@@ -100,42 +51,6 @@ __device__ f64 ArtificialUpliftFactor(f64 n_i, f64 n_n)
 	// Having to boost up when < 1e15 because our dodgy point has > 1e14.
 }
 
-
-__device__ f64 ArtificialUpliftFactor_MT(f64 n_i, f64 n_n)
-{
-	if (n_i > 1.0e13) return 1.0;
-	// Used in crushing v to be hydrodynamic and in viscous ita.
-	
-	f64 additional_nn = min(exp(-n_i*n_i/0.5e24)*(1.0e30 / (n_i)), 1.0e20); // high effective density to produce hydrodynamics
-	// n <= 1e10 : additional_nn ~= 1e20
-	// n == 1e11 : additional_nn ~= 1e19
-	// n == 1e12 : additional_nn ~= 1e17
-	// n == 1e13 : additional_nn ~= 1e-70
-	return 1.0 + additional_nn /n_n;
-}
-
-
-__device__ __forceinline__ void CalculateCircumcenter(f64_vec2 * p_cc, f64_vec2 poscorner0, f64_vec2 poscorner1, f64_vec2 poscorner2)
-{
-	f64_vec2 Bb = poscorner1 - poscorner0;
-	f64_vec2 C = poscorner2 - poscorner0;
-	f64 D = 2.0*(Bb.x*C.y - Bb.y*C.x);
-	f64 modB = Bb.x*Bb.x + Bb.y*Bb.y;
-	f64 modC = C.x*C.x + C.y*C.y;
-	p_cc->x = (C.y*modB - Bb.y*modC) / D + poscorner0.x;
-	p_cc->y = (Bb.x*modC - C.x*modB) / D + poscorner0.y;
-	// formula agrees with wikipedia so why does it give a stupid result.
-}
-
-
-__device__ __forceinline__ bool TestDomainPos(f64_vec2 pos)
-{
-	return (
-		(pos.x*pos.x + pos.y*pos.y > DEVICE_RADIUS_INSULATOR_OUTER*DEVICE_RADIUS_INSULATOR_OUTER)
-		&&
-		(pos.x*pos.x + (pos.y - CATHODE_ROD_R_POSITION)*(pos.y - CATHODE_ROD_R_POSITION) > CATHODE_ROD_RADIUS*CATHODE_ROD_RADIUS)		
-		);
-}
 
 
 __device__ f64 GetRecombinationRate_given_v(f64 const Te, int i_v)
@@ -5184,10 +5099,6 @@ __global__ void kernelAccumulateDiffusiveHeatRate_new_Longitudinalonly_1species(
 
 	memcpy(NTadditionrates + iVertex, &ourrates, sizeof(NTrates));
 }
-
-#include "heatflux.cu"
-
-;
 
 __global__ void kernelCalc_SelfCoefficient_for_HeatConduction 
 (
@@ -13616,10 +13527,10 @@ __global__ void kernelPopulateBackwardOhmsLaw_noadvect(
 			h_use*qovermc*(v0.vxy + ohm.beta_xy_z*v0.viz).dot(grad_Az[threadIdx.x])
 			);
 
-		if (TESTVEZ) printf("%d vh_use *qovermc*(AAzdot_k.Azdot) %1.14E \nhhqc_overm(LapAz) %1.14E LapAz %1.14E \n"
+		if (TESTVEZ) printf("%d h_use *qovermc*(AAzdot_k.Azdot) %1.14E Azdot_k %1.10E \nhhqc_overm(LapAz) %1.14E LapAz %1.14E \n"
 			"hh4piqqoverm n viz %1.14E  hq/mc v0.vxy.gradAz %1.14E hq/mc beta_xyz viz.gradAz %1.14E \n"
 			"v0.vxy %1.12E %1.12E grad Az %1.12E %1.12E \n", 
-			iMinor, h_use *qovermc*(AAzdot_k.Azdot), 
+			iMinor, h_use *qovermc*(AAzdot_k.Azdot), AAzdot_k.Azdot,
 			h_use *qovermc*(h_use * c*c*(LapAz )),
 			LapAz,
 			h_use *qovermc*(h_use * c*c*(FOURPI_Q_OVER_C*n_use.n*v0.viz)),
@@ -13640,7 +13551,7 @@ __global__ void kernelPopulateBackwardOhmsLaw_noadvect(
 			(omega[threadIdx.x].y*qovermc*BZ_CONSTANT + nu_eHeart * omega[threadIdx.x].x)*gradTe[threadIdx.x].y) /
 				(m_e*nu_eHeart*(nu_eHeart*nu_eHeart + omega[threadIdx.x].dot(omega[threadIdx.x]) + qovermc*BZ_CONSTANT*qovermc*BZ_CONSTANT));
 
-		if (TESTVEZ) printf("%d thermal force %1.14E \n", iMinor, -1.5*h_use*nu_eiBar*((omega[threadIdx.x].x*qovermc*BZ_CONSTANT - nu_eHeart * omega[threadIdx.x].y)*gradTe[threadIdx.x].x +
+		if (TESTVEZ) printf("%d thermal F accel %1.14E \n", iMinor, -1.5*h_use*nu_eiBar*((omega[threadIdx.x].x*qovermc*BZ_CONSTANT - nu_eHeart * omega[threadIdx.x].y)*gradTe[threadIdx.x].x +
 			(omega[threadIdx.x].y*qovermc*BZ_CONSTANT + nu_eHeart * omega[threadIdx.x].x)*gradTe[threadIdx.x].y) /
 			(m_e*nu_eHeart*(nu_eHeart*nu_eHeart + omega[threadIdx.x].dot(omega[threadIdx.x]) + qovermc*BZ_CONSTANT*qovermc*BZ_CONSTANT)));
 
@@ -13915,8 +13826,14 @@ __global__ void kernelAccelerate_v_from_advection
 		vie.viz = (vie_k.viz*Nk + h_use * MAR.z)/Nplus;
 
 		if (TEST_ACCEL_Y) printf("iMinor %d vie_k.vxy.y %1.8E Nk %1.9E Nplus %1.9E nk nplus %1.9E %1.9E \n"
-			"AreaMinor k plus %1.9E %1.9E intermediate vxy %1.9E MAR_ion %1.9E h_use %1.10E \n",
-			iMinor, vie_k.vxy.y, Nk, Nplus, n_k.n, n_dest.n, AreaMinor_k, AreaMinor_plus, vie.vxy.y, MAR.y, h_use);
+			"AreaMinor k plus %1.9E %1.9E intermediate vxy %1.9E MAR_ion %1.9E h_use %1.10E m_i %1.12E m_e %1.12E\n"
+			"h_use * m_i*MAR.xypart() / (m_i + m_e) %1.10E %1.10E 1/Nplus %1.10E\n"
+			,
+			iMinor, vie_k.vxy.y, Nk, Nplus, n_k.n, n_dest.n, AreaMinor_k, AreaMinor_plus, vie.vxy.y, MAR.y, h_use,
+			m_i, m_e,
+			h_use * m_i*MAR.xypart().x / (m_i + m_e),
+			h_use * m_i*MAR.xypart().y / (m_i + m_e),
+			1.0 / Nplus);
 
 		memcpy(&MAR, p_MAR_elec + iMinor, sizeof(f64_vec3));
 
@@ -15219,7 +15136,7 @@ __global__ void kernelCreateEpsilonAndJacobi_Heat_1species
 			p__Jacobi[iVertex] = -actual_T;			
 			// Try just doing Richardson beyond the 1st regressor.
 		}
-		if (TESTHEAT) printf("%d : T %1.10E T_k %1.10E epsilon %1.10E d/dt NiTi %1.10E hsub/N %1.10E coeffself %1.10E Jacobi %1.10E \n",
+		if ((TESTHEAT) && (iVertex == VERTCHOSEN)) printf("%d : T %1.10E T_k %1.10E epsilon %1.10E d/dt NiTi %1.10E hsub/N %1.10E coeffself %1.10E Jacobi %1.10E \n",
 			iVertex, T, T_k, epsilon, Rates.NiTi, h_sub/N, p__coeffself[iVertex], p__Jacobi[iVertex]);
 
 		if (p_bFailedTest != 0) {
@@ -15294,8 +15211,6 @@ __global__ void kernelCreateEpsilonHeat_1species
 #else
 		epsilon = T - actual_T;
 #endif	
-		// although putting this here just seems completely wrong.
-		// epsilon *= sqrt(N);
 		p__epsilon[iVertex] = epsilon;
 				
 		if (p_bFailedTest != 0) {
@@ -15923,14 +15838,14 @@ __global__ void kernelGetLap_minor(
 			//	iVertex, endpt0.x, endpt0.y, endpt1.x, endpt1.y,
 			//	(0.5*endpt0.x + 0.5*endpt1.x)*edge_normal.x, edge_normal.x);
 
-			if (TESTLAP) printf("iVertex %d izTri[%d] %d ourAz %1.8E oppAz %1.8E prevAz %1.8E nextAz %1.8E contrib %1.14E "
-				"grad Az %1.9E %1.9E Area_quad %1.8E\n",
-				iVertex, i, izTri[i],
+			if (TESTLAP) printf("iVertex %d izTri[%d] %d %d ourAz %1.8E oppAz %1.8E prevAz %1.8E nextAz %1.8E contrib %1.14E "
+				"grad Az %1.9E %1.9E endpt0 %1.8E %1.8E\n",
+				iVertex, i, izTri[iprev], izTri[i],
 				ourAz, oppAz, prevAz, nextAz,
 				integ_grad_Az.dot(edge_normal) / area_quadrilateral,
 				integ_grad_Az.x / area_quadrilateral,
 				integ_grad_Az.y / area_quadrilateral,
-				area_quadrilateral);
+				endpt0.x, endpt0.y);
 
 			endpt0 = endpt1;
 			prevpos = opppos;
@@ -16131,11 +16046,11 @@ __global__ void kernelGetLap_minor(
 				Our_integral_Lap_Az += integ_grad_Az.dot(edge_normal) / area_quadrilateral;
 
 				if (TESTLAP) printf("iVertex %d ourAz %1.8E oppAz %1.8E prev %1.8E next %1.8E contrib %1.14E "
-					"grad Az %1.9E %1.9E edgenormal %1.8E %1.8E\n",
+					"grad Az %1.9E %1.9E enpt0 %1.8E %1.8E\n",
 					iVertex, ourAz, oppAz, prevAz, nextAz,
 					integ_grad_Az.dot(edge_normal) / area_quadrilateral,
 					integ_grad_Az.x / area_quadrilateral,
-					integ_grad_Az.y / area_quadrilateral, edge_normal.x, edge_normal.y);
+					integ_grad_Az.y / area_quadrilateral, endpt0.x, endpt0.y);
 			};
 
 			AreaMinor += (0.5*endpt0.x + 0.5*endpt1.x)*edge_normal.x;
@@ -16169,8 +16084,7 @@ __global__ void kernelGetLap_minor(
 		// Why are we doing all this? Just set = 0 out here.
 
 		p_LapAz[iMinor] = 0.0;
-	}
-	else {
+	} else {
 
 		f64 Our_integral_Lap_Az = 0.0;
 		f64 AreaMinor = 0.0;
@@ -16179,8 +16093,7 @@ __global__ void kernelGetLap_minor(
 		{
 			prevAz = shared_Az[izNeighMinor[iprev] - StartMinor];
 			prevpos = shared_pos[izNeighMinor[iprev] - StartMinor];
-		}
-		else {
+		} else {
 			if ((izNeighMinor[iprev] >= StartMajor + BEGINNING_OF_CENTRAL) &&
 				(izNeighMinor[iprev] < EndMajor + BEGINNING_OF_CENTRAL))
 			{
@@ -16205,15 +16118,13 @@ __global__ void kernelGetLap_minor(
 		{
 			oppAz = shared_Az[izNeighMinor[i] - StartMinor];
 			opppos = shared_pos[izNeighMinor[i] - StartMinor];
-		}
-		else {
+		} else {
 			if ((izNeighMinor[i] >= StartMajor + BEGINNING_OF_CENTRAL) &&
 				(izNeighMinor[i] < EndMajor + BEGINNING_OF_CENTRAL))
 			{
 				oppAz = shared_Az_verts[izNeighMinor[i] - BEGINNING_OF_CENTRAL - StartMajor];
 				opppos = shared_pos_verts[izNeighMinor[i] - BEGINNING_OF_CENTRAL - StartMajor];
-			}
-			else {
+			} else {
 				oppAz = p_Az[izNeighMinor[i]];
 				opppos = p_info[izNeighMinor[i]].pos;
 			};
@@ -16231,7 +16142,6 @@ __global__ void kernelGetLap_minor(
 		for (i = 0; i < 6; i++)
 		{
 			inext = i + 1; if (inext > 5) inext = 0;
-
 			if ((izNeighMinor[inext] >= StartMinor) && (izNeighMinor[inext] < EndMinor))
 			{
 				nextAz = shared_Az[izNeighMinor[inext] - StartMinor];
@@ -16243,8 +16153,7 @@ __global__ void kernelGetLap_minor(
 				{
 					nextAz = shared_Az_verts[izNeighMinor[inext] - BEGINNING_OF_CENTRAL - StartMajor];
 					nextpos = shared_pos_verts[izNeighMinor[inext] - BEGINNING_OF_CENTRAL - StartMajor];
-				}
-				else {
+				} else {
 					nextAz = p_Az[izNeighMinor[inext]];
 					nextpos = p_info[izNeighMinor[inext]].pos;
 				};
@@ -16298,12 +16207,15 @@ __global__ void kernelGetLap_minor(
 					(RADIALDECLINE)) &&
 				(opppos.dot(opppos) > 1.00001*1.00001*FRILL_CENTROID_INNER_RADIUS_d*FRILL_CENTROID_INNER_RADIUS_d)
 				)
-			{
+			{ 
 				// neighbour's not a frill, or it's Dirichlet or radial decline looking outwards.
 				Our_integral_Lap_Az += integ_grad_Az.dot(edge_normal) / area_quadrilateral;
 				if ((TESTLAP2) || (Our_integral_Lap_Az != Our_integral_Lap_Az)) {
-					printf("iMinor %d [i] %d ourAz %1.9E theirs %1.9E prev %1.9E next %1.9E numer %1.9E contrib %1.10E areaquad %1.8E\n",
-						iMinor, izNeighMinor[i], ourAz, oppAz, prevAz, nextAz,
+					printf("iMinor %d %d %1.7E %1.7E [i]%d %d ourAz %1.9E theirs %1.9E prev %1.9E next %1.9E pos %1.9E %1.9E dot %1.9E contr %1.10E areaquad %1.8E\n",
+						iMinor, info.flag, info.pos.x, info.pos.y, 
+						izNeighMinor[iprev],
+						izNeighMinor[i], ourAz, oppAz, prevAz, nextAz,
+						opppos.x, opppos.y,
 						integ_grad_Az.dot(edge_normal),
 						integ_grad_Az.dot(edge_normal) / area_quadrilateral,
 						area_quadrilateral);					
@@ -22090,8 +22002,6 @@ __global__ void kernelCreate_momflux_minor(
 				// We could profitably create a minmod model of velocity. 
 				// However for now let's try pretending there is a shock front (so use average v for advection) and the upwind nv
 				// to advect is just the upwind cell average.
-
-
 
 
 				// FIX FOR NOW, 22/11/20 :
@@ -31828,3 +31738,5 @@ __global__ void kernelAccumulateSummandsProduct(
 		p_sum_eps_deps_[blockIdx.x] = sumdata_eps_deps[0];
 	};
 }
+
+#include "little_kernels.cu"

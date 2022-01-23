@@ -29,6 +29,7 @@ Tensor2 const HalfClockwise(cos(HALFANGLE),sin(HALFANGLE),-sin(HALFANGLE),cos(HA
 real modelled_n;
 
 bool bSpit = false;
+bool bDebugcp = false;
 
 void ConvexPolygon::CreateClockwiseImage(const ConvexPolygon & cpSrc) 
 {
@@ -1019,12 +1020,13 @@ Vector2 Triangle::RecalculateCentroid(real InnermostFrillCentroidRadius,real Out
 		{
 			// Modify the centre to be the centre of the intersection of insulator
 			GetCentreOfIntersectionWithInsulator(cent);
-		}
-		else {
+		} else {
 			Vector2 cent2 = cent;
-			cent2.project_to_radius(cent, DEVICE_RADIUS_INSULATOR_OUTER);
-		}
-	}
+			// Only project if otherwise inside insulator.
+			if (cent2.dot(cent2) < DEVICE_RADIUS_INSULATOR_OUTER*DEVICE_RADIUS_INSULATOR_OUTER)
+				cent2.project_to_radius(cent, DEVICE_RADIUS_INSULATOR_OUTER);
+		};
+	};
 	if (u8domain_flag == OUTER_FRILL) {
 		Vector2 temp = 0.5*(u[0]+u[1]); // ? compare to GPU
 		temp.project_to_radius(cent, OutermostFrillCentroidRadius);
@@ -1123,18 +1125,13 @@ void TriMesh::Recalculate_TriCentroids_VertexCellAreas_And_Centroids()
 			{
 				pTri = T + izTri[i];
 				cp.add(pTri->GetContiguousCent_AssumingCentroidsSet(pVertex));
-				if (iVertex == 22537) printf("added %1.9E %1.9E \n", cp.coord[cp.numCoords - 1].x, cp.coord[cp.numCoords - 1].y);
+			//	if (iVertex == 22537) printf("added %1.9E %1.9E \n", cp.coord[cp.numCoords - 1].x, cp.coord[cp.numCoords - 1].y);
 			
 			};
 		};
 
 		pVertex->AreaCell = cp.GetArea();
 
-		if (iVertex == 22537) {
-			printf("Area %1.9E \n", pVertex->AreaCell);
-			printf("press t\n");
-			while (getch() != 't');
-		};
 
 	//	pVertex->centroid = cp.CalculateBarycenter();
 				
@@ -3694,11 +3691,31 @@ int Triangle::GetCentreOfIntersectionWithInsulator(Vector2 & cc)
 			(coord[prev].y-coord[side].y)*(coord[prev].y-coord[side].y));
 	}
 
-	bool ConvexPolygon::ClipAgainstHalfplane(const Vector2 & r1, const Vector2 & r2, const Vector2 & r3)
+	bool ConvexPolygon::IsConvex()
 	{
+		int inext, inext2, inext3;
+		f64_vec2 v1, v2, direction;
+		for (int i = 0; i < numCoords; i++)
+		{
+			inext = i + 1; if (inext == numCoords) inext = 0;
+			inext2 = inext + 1; if (inext2 == numCoords) inext2 = 0;
+			inext3 = inext2 + 1; if (inext3 == numCoords) inext3 = 0;
+			v1 = coord[i];
+			v2 = coord[inext2];
+			direction.x = v2.y - v1.y;
+			direction.y = v1.x - v2.y; // perpendicular
+			if ((coord[inext] - v1).dot(direction)*((coord[inext3] - v1).dot(direction)) > 0.0) {
+				// Same side, not convex
+				return false;
+			};
+		};
+		return true;
+	}
 
-		// The reason this way is not succeeding: basically we can create two equal points due to 
-		// clipping a vertex that is on the boundary and replacing with 2
+	int ConvexPolygon::ClipAgainstHalfplane(const Vector2 & r1, const Vector2 & r2, const Vector2 & r3)
+	{
+		// 'The reason this way is not succeeding: basically we can create two equal points due to 
+		// clipping a vertex that is on the boundary and replacing with 2'
 
 		bool intersect;
 		bool above_is_inside;
@@ -3721,7 +3738,6 @@ int Triangle::GetCentreOfIntersectionWithInsulator(Vector2 & cc)
 		// This ensures hopefully that intersections are only taken towards points that are away from the clip boundary.
 
 		// If no points figure as actually OUTSIDE (further outside than EPS) then clipping is skipped.
-
 		// If no points figure as actually INSIDE (further inside than EPS) then we return no intersection.
 
 #define INSIDE     0
@@ -3806,16 +3822,22 @@ int Triangle::GetCentreOfIntersectionWithInsulator(Vector2 & cc)
 				
 				if (above_is_inside)
 				{
+					if (bDebugcp) printf("qwe{} coord[i].x %1.14E compare %1.14E compare+EPS %1.14E dir %1.14E %1.14E gradient %1.14E y %1.14E %1.14E\n",
+						coord[i].x, compare, compare + EPS,
+						direction.x, direction.y, gradient, coord[i].y, r1.y);
 					if (coord[i].x > compare + EPS) {
 						status[i] = INSIDE;
 						intersect = true;
+						if (bDebugcp) printf(".");
 					} else {
 						if (coord[i].x < compare - EPS) {
 							status[i] = OUTSIDE;
 							first = i;
 							setfirst = true;
+							if (bDebugcp) printf("~");
 						} else {
 							status[i] = NEARBY;
+							if (bDebugcp) printf("+");
 						};
 					};
 				} else {
@@ -3833,17 +3855,26 @@ int Triangle::GetCentreOfIntersectionWithInsulator(Vector2 & cc)
 					};
 				};
 			};
-
 		};
 
-		if (intersect == false) return false;		// nothing clipped
-		if (setfirst == false) return true;			// all to be clipped - no change to ConvexPolygon object
+		if (intersect == false) return 0;		// nothing INSIDE
+		if (setfirst == false) return 1;			// no change to ConvexPolygon object
+
+		// If all inside then we do not printf status list.
+
 
 		// If we get here, some polygon vertices were (properly) clipped and some were (properly) not.
-
 		// OK now scrap those that did not intersect, if any, and replace them with the points where the lines are intersected
 
 		// Let's get the first point before our OUTSIDE subset that is not INSIDE.
+
+		if (bDebugcp) {
+
+			printf("Status list : ");
+			for (int sd = 0; sd < numCoords; sd++)
+				printf("%d", status[sd]);
+			printf("\n");
+		}
 
 		while (status[first] != INSIDE)
 		{
@@ -3867,14 +3898,31 @@ int Triangle::GetCentreOfIntersectionWithInsulator(Vector2 & cc)
 		post_last = last;
 		last--;
 		if (last < 0) last = numCoords-1;
-		
+		int store_post_last = post_last;
+
+		// post_last is one that should say 'inside' and so did pre_first.
+
+		// Are there more 'outside' between post_last and pre_first?
+
+		// Check for two-part intersection with half-plane, and if so return error:
+		while ((status[post_last] != OUTSIDE) && (post_last != pre_first)) {
+			post_last++; if (post_last == numCoords) post_last = 0;
+		};
+		if (post_last != pre_first) return 2;
+		post_last = store_post_last;
+		// Note that in the case of double intersection, no clipping was performed.
+
+
 		if (!_finite(coord[last].y)) {
 			printf("bad ness. %1.8E %1.8E %1.8E  %1.8E %1.8E %1.8E \n",r1.x,r1.y,r2.x,r2.y,r3.x,r3.y);
 			getch();			
 		};
 		
 		GetIntersection(&cross2,r1,gradient,flag,coord[last],coord[post_last]); // this was passed a.y == #INF
-		
+
+		if (bDebugcp) 
+			printf("first: %d last: %d post_last %d\n", first, last, post_last);
+
 		// now repopulate the array:
 		// cases:
 		if (last >= first)
@@ -3902,14 +3950,27 @@ int Triangle::GetCentreOfIntersectionWithInsulator(Vector2 & cc)
 			// post_last is the first element that is INSIDE
 			
 			// Move elements back to 0; if post_last = 4, first = 6 then there are 2 such elements + 2 new ones
-			for (i =0; i < first-post_last; i++)
-				coord[i] = coord[i+post_last];
+			
+				
+			for (i = 0; i < first - post_last; i++) {
+				coord[i] = coord[i + post_last];
+				if (bDebugcp) printf("XXXX i %d coord %1.10E %1.10E\n", i, coord[i].x, coord[i].y);
+			};
 			coord[i] = cross1;
+			if (bDebugcp) printf("i %d = cross1 %1.10E %1.10E\n", i, cross1.x, cross1.y);
 			coord[i+1] = cross2;
+			if (bDebugcp) printf("i+1 %d = cross2 %1.10E %1.10E\n", i+1, cross2.x, cross2.y);
 			numCoords = i+2;
 		};
 		
-		return true;
+		if (bDebugcp) {
+			printf("Clipped :\n");
+			for (i = 0; i < numCoords; i++)
+				printf("%1.10E %1.10E -- ", coord[i].x, coord[i].y);
+			printf("\n-------------------\n");
+		};
+
+		return 1;
 		
 
 		//// we know it goes from first to last
@@ -4035,17 +4096,92 @@ int Triangle::GetCentreOfIntersectionWithInsulator(Vector2 & cc)
 	bool ConvexPolygon::GetIntersectionWithTriangle(ConvexPolygon * pPoly,Vector2 & r1, Vector2 & r2, Vector2 & r3)
 	{
 		pPoly->CopyFrom(*this);
+		if (bDebugcp) {
+			printf("r1 %1.10E %1.10E r2 %1.10E %1.10E r3 %1.10E %1.10E \n",
+				r1.x, r1.y, r2.x, r2.y, r3.x, r3.y);
+		};
 
-		if (!pPoly->ClipAgainstHalfplane(r1,r2,r3)) return false;
-		if (!pPoly->ClipAgainstHalfplane(r1,r3,r2)) return false;
-		if (!pPoly->ClipAgainstHalfplane(r2,r3,r1)) return false;
-		
+		if (bDebugcp) {
+			// output pPoly
+			for (int f = 0; f < pPoly->numCoords; f++)
+				printf("After none %d %1.12E %1.12E \n", f, pPoly->coord[f].x, pPoly->coord[f].y);
+		};
+
+		int retval = pPoly->ClipAgainstHalfplane(r1, r2, r3);
+		if (retval == 0) return false;
+		if (retval == 2) {
+
+			// Try a different sequence of halfplanes! Desperate!
+
+			retval = pPoly->ClipAgainstHalfplane(r1, r3, r2);
+			if (retval == 0) return false;
+			if (retval == 2) // oh dear
+			{
+				// Try the other one first:
+				retval = pPoly->ClipAgainstHalfplane(r2, r3, r1);
+				if (retval == 0) return false;
+				if (retval == 2) return false; // give up
+				retval = pPoly->ClipAgainstHalfplane(r1, r3, r2);
+				if (retval == 0) return false;
+				if (retval == 2) return false; // give up
+
+			} else {
+
+				retval = pPoly->ClipAgainstHalfplane(r2, r3, r1);
+				if (retval == 0) return false;
+				if (retval == 2) return false; // give up
+			};
+
+			int retval = pPoly->ClipAgainstHalfplane(r1, r2, r3);
+			if (retval == 0) return false;
+			if (retval == 2) return false; // give up because there were still two intersections.
+			
+			return true;
+		} else {
+			
+			if (bDebugcp) {
+				// output pPoly
+				for (int f = 0; f < pPoly->numCoords; f++)
+					printf("After 1 %d %1.12E %1.12E \n", f, pPoly->coord[f].x, pPoly->coord[f].y);
+			};
+
+			retval = pPoly->ClipAgainstHalfplane(r1, r3, r2);
+			if (retval == 0) return false;
+			if (retval == 2) {
+
+				retval = pPoly->ClipAgainstHalfplane(r2, r3, r1);
+				if (retval == 0) return false;
+				if (retval == 2) return false; // give up
+				retval = pPoly->ClipAgainstHalfplane(r1, r3, r2);
+				if (retval == 0) return false;
+				if (retval == 2) return false; // give up
+			} else {
+
+				if (bDebugcp) {
+					// output pPoly
+					for (int f = 0; f < pPoly->numCoords; f++)
+						printf("After 2 %d %1.12E %1.12E \n", f, pPoly->coord[f].x, pPoly->coord[f].y);
+				};
+
+				retval = pPoly->ClipAgainstHalfplane(r2, r3, r1);
+				if (retval == 0) return false;
+				if (retval == 2) return false; // give up
+
+				if (bDebugcp) {
+					// output pPoly
+					for (int f = 0; f < pPoly->numCoords; f++)
+						printf("After 3 %d %1.12E %1.12E \n", f, pPoly->coord[f].x, pPoly->coord[f].y);
+				};
+			};
+		};
 		return true;
 	}
 	
 	bool ConvexPolygon::GetIntersectionWithPolygon(ConvexPolygon * pPoly, // target
 												ConvexPolygon * pClip)// clip this against that.
 	{
+		// IF CALLING THIS WITHOUT CONVEX POLYGONS, BEWARE AND RECONFIGURE TO SPLIT UP NONCONVEX INTO TRIANGLES.
+
 		int i, inext, inext2;
 
 		pPoly->CopyFrom(*this);
@@ -4077,14 +4213,19 @@ int Triangle::GetCentreOfIntersectionWithInsulator(Vector2 & cc)
 					pClip->coord[inext].x, pClip->coord[inext].y,
 					centclip.x, centclip.y);
 			};
-			if (!pPoly->ClipAgainstHalfplane(pClip->coord[i], pClip->coord[inext], centclip)) {
+			
+			if (bDebugcp) printf("i = %d : ClipAgainstHalfplane %1.10E %1.10E | %1.10E %1.10E | %1.10E %1.10E\n",
+				i, pClip->coord[i].x, pClip->coord[i].y, pClip->coord[inext].x, pClip->coord[inext].y, centclip.x, centclip.y);
+			
+			int ret = pPoly->ClipAgainstHalfplane(pClip->coord[i], pClip->coord[inext], centclip);
+			if ((ret == 0) || (ret == 2)) {
 				if (bSpit) printf("return false.\n");
 				return false;
-			}
-		};
-		
+			};
+		};		
 		return true;
 	}
+
 /*
 	real ConvexPolygon::IntegratePlane(Vector2 & r1, Vector2 & r2, Vector2 & r3,
 																	real y1, real y2, real y3)
@@ -4262,8 +4403,6 @@ int Triangle::GetCentreOfIntersectionWithInsulator(Vector2 & cc)
 				y[i][j] = yvals1[j] + dbyd12[j]*(relpos.x*x12.x + relpos.y*x12.y) + dbydperp[j]*(relpos.x*x12perp.x+relpos.y*x12perp.y);
 		};
 		
-		printf(":");
-
 		// chop up this into triangles
 		// assume average attained by plane on each triangle
 		// take sum of multiplying average by area of triangle

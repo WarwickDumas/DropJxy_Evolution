@@ -109,9 +109,10 @@ using std::cout;
 				if ((temp1=fabs(LU[i][j])) > big) big = temp1;
 			if (big == zero) 
 				return 1; // no nonzero largest element
-			vv[i] = unity/big;
+			vv[i] = unity/big; // "save the scaling"
 		};
-		for (k = 0; k < LUSIZE; k++) // the outermost kij loop
+
+		for (k = 0; k < LUSIZE; k++) // the outermost kij loop 
 		{
 		
 			if (k < LUSIZE - 1) // if it == LUSIZE-1 then we don't need to run this, and it's dangerous too.
@@ -120,7 +121,8 @@ using std::cout;
 				big = zero;					// initialise for the search for largest pivot element
 				for (i = k; i < LUSIZE; i++)
 				{
-					temp1 = vv[i] * fabs(LU[i][k]);
+					temp1 = vv[i] * fabs(LU[i][k]); // row i > k, column k
+
 					if (temp1 > big) // is the figure of merit for the pivot better than the best so far?
 					{
 						big = temp1;
@@ -129,6 +131,11 @@ using std::cout;
 				};
 				if (k != imax)	// do we need to interchange rows?
 				{
+					// Swap row imax with row k.
+
+					// With a big matrix, what we want to do for efficiency is just exchange pointers,
+					// from an array of pointers to rows.
+
 					for (j = 0; j < LUSIZE; j++)
 					{
 						temp1 = LU[imax][j];
@@ -153,6 +160,7 @@ using std::cout;
 			} else {
 				imax = k;
 			}
+			
 			if (imax < 0) {
 				printf("problem -- imax not found.\n");
 				getch();
@@ -177,6 +185,9 @@ using std::cout;
 				for (j = k+1; j < LUSIZE; j++)  // innermost loop: reduce remaining submatrix
 					LU[i][j] -= temp1*LU[k][j];
 			};
+
+			// Here could launch each row or column as a block.
+			
 		};
 	//	printf("LUdecomp done\n");
 
@@ -208,6 +219,15 @@ using std::cout;
 
 		// For further debugging why not output this intermediate x
 
+		// It works up through the rows  -- we need x[j > i].
+		// We could do 16 consecutive followed by next 16 together using those 16, followed by 16 consecutive.
+		// Next 16, we use 32 final rows, then do those 16 together. Can do 'consecutive' part in a kernel.
+		// Maybe it goes:
+		// for thread 0 alone: do calc ; syncthreads
+		// all other threads: use result ; syncthreads
+		// for thread 1 alone: do calc ; syncthreads
+		// all other threads: use result ; syncthreads ...
+
 		for (i = LUSIZE-1; i >= 0; i--) // now do the back-substitution, (2.3.7)
 		{
 			sum = x[i];
@@ -223,8 +243,7 @@ using std::cout;
 			};
 			// For some reason no, we have in the decomp matrix a thing we should
 			// not have -- LU[i][i] == 0 for the previous element.
-		};
-		
+		};		
 		return 0;
 	}
 

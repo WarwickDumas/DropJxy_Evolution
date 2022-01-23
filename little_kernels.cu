@@ -1,320 +1,4 @@
-#include "kernel.h"
-#include "cuda_struct.h"
-#include "constant.h"
-#include "FFxtubes.h"
 
-#define BWDSIDET
-#define LONGITUDINAL
-
-// TO DO:
-// Line 1420:
-// Yes, very much a waste. The edge positions should be calculated from the vertex positions, we can
-// load flags to determine if it is an insulator-crossing triangle and that is the proper way to handle that.
-
-#define TEST_OVERALL_V (0) //index == 38799)
-
-#define FOUR_PI 12.5663706143592
-
-
-__device__ void Augment_JacobeanNeutral(
-	f64_tens3 * pJ,
-	real Factor, //h_over (N m_i)
-	f64_vec2 edge_normal,
-	f64 ita_par, f64 nu, f64_vec3 omega,
-	f64 grad_vjdx_coeff_on_vj_self,
-	f64 grad_vjdy_coeff_on_vj_self
-) {
-	
-		//Pi_zx = -ita_par*(gradviz.x);
-		//Pi_zy = -ita_par*(gradviz.y);		
-		//	visc_contrib.x = -over_m_i*(Pi_xx*edge_normal.x + Pi_xy*edge_normal.y);
-		// The z direction doesn't feature vx --- that is because dvx/dz == 0
-
-		pJ->xx += Factor*
-			((
-				// Pi_zx
-				-ita_par*grad_vjdx_coeff_on_vj_self
-				)*edge_normal.x + (
-					// Pi_zy
-					-ita_par*grad_vjdy_coeff_on_vj_self
-					)*edge_normal.y);
-		
-		pJ->yy += Factor*
-			((
-				// Pi_zx
-				-ita_par*grad_vjdx_coeff_on_vj_self
-				)*edge_normal.x + (
-					// Pi_zy
-					-ita_par*grad_vjdy_coeff_on_vj_self
-					)*edge_normal.y);
-
-		pJ->zz += Factor*
-			((
-				// Pi_zx
-				-ita_par*grad_vjdx_coeff_on_vj_self
-				)*edge_normal.x + (
-					// Pi_zy
-					-ita_par*grad_vjdy_coeff_on_vj_self
-					)*edge_normal.y);	
-
-
-	// We are storing a whole matrix when it's just a scalar. !!!
-
-}
-
-__device__ void Augment_Jacobean(
-	f64_tens3 * pJ, 
-	real Factor, //h_over (N m_i)
-	f64_vec2 edge_normal, 
-	f64 ita_par, f64 nu, f64_vec3 omega,
-	f64 grad_vjdx_coeff_on_vj_self,
-	f64 grad_vjdy_coeff_on_vj_self
-) {
-	if ((VISCMAG == 0) || (omega.dot(omega) < 0.01*0.1*nu*nu))
-	{
-		// run unmagnetised case
-
-		//Pi_xx = -ita_par*THIRD*(4.0*gradvx.x - 2.0*gradvy.y);
-		//Pi_xy = -ita_par*(gradvx.y + gradvy.x);
-		//Pi_yx = Pi_xy;
-		//Pi_yy = -ita_par*THIRD*(4.0*gradvy.y - 2.0*gradvx.x);
-		//Pi_zx = -ita_par*(gradviz.x);
-		//Pi_zy = -ita_par*(gradviz.y);		
-		//	visc_contrib.x = -over_m_i*(Pi_xx*edge_normal.x + Pi_xy*edge_normal.y);
-
-
-		// eps_x = vx_k+1 - vx_k - h MAR.x / N
-		pJ->xx += Factor*
-			((
-				// Pi_xx
-				-ita_par*THIRD*(4.0*grad_vjdx_coeff_on_vj_self)
-				) *edge_normal.x + (
-					//Pi_xy
-					-ita_par*(grad_vjdy_coeff_on_vj_self)
-					)*edge_normal.y);
-
-		pJ->yx += Factor*
-			((
-				// Pi_yx
-				-ita_par*(grad_vjdy_coeff_on_vj_self)
-				)*edge_normal.x + (
-					// Pi_yy
-					-ita_par*THIRD*(-2.0*grad_vjdx_coeff_on_vj_self)
-					)*edge_normal.y);
-
-		// The z direction doesn't feature vx --- that is because dvx/dz == 0
-
-		pJ->xy += Factor*
-			((
-				// Pi_xx
-				-ita_par*THIRD*(-2.0*grad_vjdy_coeff_on_vj_self)
-				)*edge_normal.x + (
-					// Pi_xy
-					-ita_par*(grad_vjdx_coeff_on_vj_self)
-					)*edge_normal.y);
-
-		pJ->yy += Factor*
-			((
-				// Pi_yx
-				-ita_par*(grad_vjdx_coeff_on_vj_self)
-				)*edge_normal.x + (
-					// Pi_yy
-					-ita_par*THIRD*(4.0*grad_vjdy_coeff_on_vj_self)
-					)*edge_normal.y);
-
-		pJ->zz += Factor*
-			((
-				// Pi_zx
-				-ita_par*grad_vjdx_coeff_on_vj_self
-				)*edge_normal.x + (
-					// Pi_zy
-					-ita_par*grad_vjdy_coeff_on_vj_self
-					)*edge_normal.y);
-
-		// In this way we develop let's say the J matrix, J for Jacobean
-		// Then we could wish to do LU decomp of 4x4 matrix J so that
-		// Regressor = J^-1 epsilon[loaded]
-		// But we'll do 2 x 3 x 3.
-	} else {
-
-		f64 omegamod;
-		f64_vec3 unit_b, unit_perp, unit_Hall;
-		{
-			f64 omegasq = omega.dot(omega);
-			omegamod = sqrt(omegasq);
-			unit_b = omega / omegamod;
-			unit_perp = Make3(edge_normal, 0.0) - unit_b*(unit_b.dotxy(edge_normal));
-			unit_perp = unit_perp / unit_perp.modulus();
-			unit_Hall = unit_b.cross(unit_perp); // Note sign.
-		}
-
-		//f64 momflux_b, momflux_perp, momflux_Hall;
-		f64 ita_1 = ita_par*(nu*nu / (nu*nu + omegamod*omegamod));
-		f64 ita_2 = ita_par*(nu*nu / (nu*nu + 0.25*omegamod*omegamod));
-		f64 ita_3 = ita_par*(nu*omegamod / (nu*nu + omegamod*omegamod));
-		f64 ita_4 = 0.5*ita_par*(nu*omegamod / (nu*nu + 0.25*omegamod*omegamod));
-
-		f64_vec3mag mag_edge;
-		mag_edge.b = unit_b.x*edge_normal.x + unit_b.y*edge_normal.y;
-		mag_edge.P = unit_perp.x*edge_normal.x + unit_perp.y*edge_normal.y;
-		mag_edge.H = unit_Hall.x*edge_normal.x + unit_Hall.y*edge_normal.y;
-
-		// ==================================================================
-
-		// Our approach is going to be to populate the "Flux Jacobean".
-		// Let F_P = PI_Pb edgenormal_b + PI_PP edgenormal_P + PI_PH edgenormal_H
-
-		// *********************
-		//  Accumulate dF_b/dvx 
-		// *********************
-
-		f64_tens3mag F;
-		memset(&F, 0, sizeof(f64_tens3mag));
-		f64 bdotPsi = unit_b.x*grad_vjdx_coeff_on_vj_self + unit_b.y*grad_vjdy_coeff_on_vj_self;
-		f64 PdotPsi = unit_perp.x*grad_vjdx_coeff_on_vj_self + unit_perp.y*grad_vjdy_coeff_on_vj_self;
-		f64 HdotPsi = unit_Hall.x*grad_vjdx_coeff_on_vj_self + unit_Hall.y*grad_vjdy_coeff_on_vj_self;
-
-		f64 d_Pi_by_dvx;
-		// how to use union? Can just put in and out of scope.
-		// d_Pi_bb_by_dvx =
-		d_Pi_by_dvx = -ita_par*THIRD*(4.0*unit_b.x*bdotPsi - 2.0*unit_perp.x*PdotPsi - 2.0*unit_Hall.x*HdotPsi);
-
-		F.bx += d_Pi_by_dvx * mag_edge.b; // Pi_bb
-
-		d_Pi_by_dvx = -ita_2*(unit_b.x*PdotPsi + unit_perp.x*bdotPsi)
-			- ita_4*(unit_b.x*HdotPsi + unit_Hall.x*bdotPsi);
-		// Pi_bP
-
-		F.bx += d_Pi_by_dvx * mag_edge.P; // Pi_bP
-		F.Px += d_Pi_by_dvx * mag_edge.b; // Pi_Pb
-
-		d_Pi_by_dvx = -(ita_2*(unit_b.x*HdotPsi + unit_Hall.x*bdotPsi) + ita_4*(unit_b.x*PdotPsi + unit_perp.x*bdotPsi));
-		// Pi_bH
-
-		F.bx += d_Pi_by_dvx * mag_edge.H; // Pi_bH 
-		F.Hx += d_Pi_by_dvx * mag_edge.b; // Pi_Hb	
-
-		d_Pi_by_dvx = -0.5*(ita_par + ita_1)*THIRD*(-2.0*unit_b.x*bdotPsi + 4.0*unit_perp.x*PdotPsi - 2.0*unit_Hall.x*HdotPsi)
-			- 0.5*(ita_par - ita_1)*THIRD*(-2.0*unit_b.x*bdotPsi - 2.0*unit_perp.x*PdotPsi + 4.0*unit_Hall.x*HdotPsi)
-			- ita_3*(unit_perp.x*HdotPsi + unit_Hall.x*PdotPsi);
-		// Pi_PP
-
-		F.Px += d_Pi_by_dvx * mag_edge.P;
-
-		d_Pi_by_dvx = -ita_1*(unit_perp.x*HdotPsi + unit_Hall.x*PdotPsi) + ita_3*(unit_perp.x*PdotPsi - unit_Hall.x*HdotPsi);
-		// Pi_PH
-
-		F.Px += d_Pi_by_dvx * mag_edge.H;
-		F.Hx += d_Pi_by_dvx * mag_edge.P; // Pi_PH
-
-		d_Pi_by_dvx = -0.5*(ita_par + ita_1)*THIRD*(-2.0*unit_b.x*bdotPsi - 2.0*unit_perp.x*PdotPsi + 4.0*unit_Hall.x*HdotPsi)
-			- 0.5*(ita_par - ita_1)*THIRD*(-2.0*unit_b.x*bdotPsi + 4.0*unit_perp.x*PdotPsi - 2.0*unit_Hall.x*HdotPsi)
-			+ ita_3*(unit_perp.x*HdotPsi + unit_Hall.x*PdotPsi);
-		// Pi_HH
-
-		F.Hx += d_Pi_by_dvx*mag_edge.H;
-
-		// That was the x column.
-		// Repeat exact same thing again replacing .x ..
-		// first get it sensible.
-		f64 d_Pi_by_dvy;
-
-		// d_Pi_bb_by_dvy =
-		d_Pi_by_dvy = -ita_par*THIRD*(4.0*unit_b.y*bdotPsi - 2.0*unit_perp.y*PdotPsi - 2.0*unit_Hall.y*HdotPsi);
-
-		F.by += d_Pi_by_dvy * mag_edge.b; // Pi_bb
-
-		d_Pi_by_dvy = -ita_2*(unit_b.y*PdotPsi + unit_perp.y*bdotPsi)
-			- ita_4*(unit_b.y*HdotPsi + unit_Hall.y*bdotPsi);
-		// Pi_bP
-
-		F.by += d_Pi_by_dvy * mag_edge.P; // Pi_bP
-		F.Py += d_Pi_by_dvy * mag_edge.b; // Pi_Pb
-
-		d_Pi_by_dvy = -(ita_2*(unit_b.y*HdotPsi + unit_Hall.y*bdotPsi) + ita_4*(unit_b.y*PdotPsi + unit_perp.y*bdotPsi));
-		// Pi_bH
-
-		F.by += d_Pi_by_dvy * mag_edge.H; // Pi_bH 
-		F.Hy += d_Pi_by_dvy * mag_edge.b; // Pi_Hb	
-
-		d_Pi_by_dvy = -0.5*(ita_par + ita_1)*THIRD*(-2.0*unit_b.y*bdotPsi + 4.0*unit_perp.y*PdotPsi - 2.0*unit_Hall.y*HdotPsi)
-			- 0.5*(ita_par - ita_1)*THIRD*(-2.0*unit_b.y*bdotPsi - 2.0*unit_perp.y*PdotPsi + 4.0*unit_Hall.y*HdotPsi)
-			- ita_3*(unit_perp.y*HdotPsi + unit_Hall.y*PdotPsi);
-		// Pi_PP
-
-		F.Py += d_Pi_by_dvy * mag_edge.P;
-
-		d_Pi_by_dvy = -ita_1*(unit_perp.y*HdotPsi + unit_Hall.y*PdotPsi) + ita_3*(unit_perp.y*PdotPsi - unit_Hall.y*HdotPsi);
-		// Pi_PH
-
-		F.Py += d_Pi_by_dvy * mag_edge.H;
-		F.Hy += d_Pi_by_dvy * mag_edge.P; // Pi_PH
-
-		d_Pi_by_dvy = -0.5*(ita_par + ita_1)*THIRD*(-2.0*unit_b.y*bdotPsi - 2.0*unit_perp.y*PdotPsi + 4.0*unit_Hall.y*HdotPsi)
-			- 0.5*(ita_par - ita_1)*THIRD*(-2.0*unit_b.y*bdotPsi + 4.0*unit_perp.y*PdotPsi - 2.0*unit_Hall.y*HdotPsi)
-			+ ita_3*(unit_perp.y*HdotPsi + unit_Hall.y*PdotPsi);
-		// Pi_HH
-
-		F.Hy += d_Pi_by_dvy*mag_edge.H;
-
-		f64 d_Pi_by_dvz;
-
-		// d_Pi_bb_by_dvz =
-		d_Pi_by_dvz = -ita_par*THIRD*(4.0*unit_b.z*bdotPsi - 2.0*unit_perp.z*PdotPsi - 2.0*unit_Hall.z*HdotPsi);
-
-		F.bz += d_Pi_by_dvz * mag_edge.b; // Pi_bb
-
-		d_Pi_by_dvz = -ita_2*(unit_b.z*PdotPsi + unit_perp.z*bdotPsi)
-			- ita_4*(unit_b.z*HdotPsi + unit_Hall.z*bdotPsi);
-		// Pi_bP
-
-		F.bz += d_Pi_by_dvz * mag_edge.P; // Pi_bP
-		F.Pz += d_Pi_by_dvz * mag_edge.b; // Pi_Pb
-
-		d_Pi_by_dvz = -(ita_2*(unit_b.z*HdotPsi + unit_Hall.z*bdotPsi) + ita_4*(unit_b.z*PdotPsi + unit_perp.z*bdotPsi));
-		// Pi_bH
-
-		F.bz += d_Pi_by_dvz * mag_edge.H; // Pi_bH 
-		F.Hz += d_Pi_by_dvz * mag_edge.b; // Pi_Hb	
-
-		d_Pi_by_dvz = -0.5*(ita_par + ita_1)*THIRD*(-2.0*unit_b.z*bdotPsi + 4.0*unit_perp.z*PdotPsi - 2.0*unit_Hall.z*HdotPsi)
-			- 0.5*(ita_par - ita_1)*THIRD*(-2.0*unit_b.z*bdotPsi - 2.0*unit_perp.z*PdotPsi + 4.0*unit_Hall.z*HdotPsi)
-			- ita_3*(unit_perp.z*HdotPsi + unit_Hall.z*PdotPsi);
-		// Pi_PP
-
-		F.Pz += d_Pi_by_dvz * mag_edge.P;
-
-		d_Pi_by_dvz = -ita_1*(unit_perp.z*HdotPsi + unit_Hall.z*PdotPsi) + ita_3*(unit_perp.z*PdotPsi - unit_Hall.z*HdotPsi);
-		// Pi_PH
-
-		F.Pz += d_Pi_by_dvz * mag_edge.H;
-		F.Hz += d_Pi_by_dvz * mag_edge.P; // Pi_PH
-
-		d_Pi_by_dvz = -0.5*(ita_par + ita_1)*THIRD*(-2.0*unit_b.z*bdotPsi - 2.0*unit_perp.z*PdotPsi + 4.0*unit_Hall.z*HdotPsi)
-			- 0.5*(ita_par - ita_1)*THIRD*(-2.0*unit_b.z*bdotPsi + 4.0*unit_perp.z*PdotPsi - 2.0*unit_Hall.z*HdotPsi)
-			+ ita_3*(unit_perp.z*HdotPsi + unit_Hall.z*PdotPsi);
-		// Pi_HH
-
-		F.Hz += d_Pi_by_dvz*mag_edge.H;
-
-		// *************************
-		//  Now use it to create J
-		// *************************
-
-		pJ->xx += Factor*(unit_b.x*F.bx + unit_perp.x*F.Px + unit_Hall.x*F.Hx);
-		pJ->xy += Factor*(unit_b.x*F.by + unit_perp.x*F.Py + unit_Hall.x*F.Hy); // d eps x / d vy
-		pJ->xz += Factor*(unit_b.x*F.bz + unit_perp.x*F.Pz + unit_Hall.x*F.Hz);
-
-		pJ->yx += Factor*(unit_b.y*F.bx + unit_perp.y*F.Px + unit_Hall.y*F.Hx);
-		pJ->yy += Factor*(unit_b.y*F.by + unit_perp.y*F.Py + unit_Hall.y*F.Hy);
-		pJ->yz += Factor*(unit_b.y*F.bz + unit_perp.y*F.Pz + unit_Hall.y*F.Hz);
-
-		pJ->zx += Factor*(unit_b.z*F.bx + unit_perp.z*F.Px + unit_Hall.z*F.Hx);
-		pJ->zy += Factor*(unit_b.z*F.by + unit_perp.z*F.Py + unit_Hall.z*F.Hy);
-		pJ->zz += Factor*(unit_b.z*F.bz + unit_perp.z*F.Pz + unit_Hall.z*F.Hz);
-
-	}
-}
 
 __global__ void kernelUnpack(f64 * __restrict__ pTn,
 	f64 * __restrict__ pTi,
@@ -1940,7 +1624,7 @@ __global__ void kernelCalculateOverallVelocitiesVertices(
 	f64 const h_full_adv
 )
 {
-#ifdef EULERIAN
+#if EULERIAN
 	long const iVertex = threadIdx.x + blockIdx.x * blockDim.x; // INDEX OF VERTEX
 	f64_vec2 v_overall(0.0, 0.0);
 	p_v_overall_major[iVertex] = v_overall;
@@ -2110,10 +1794,15 @@ __global__ void kernelCentroidVelocitiesTriangles(
 	CHAR4 * __restrict__ p_tri_periodic_corner_flags
 )
 {
+#if EULERIAN
+	long const index = threadIdx.x + blockIdx.x * blockDim.x; // INDEX OF VERTEX
+	f64_vec2 v_overall(0.0, 0.0);
+	p_overall_v_minor[index] = v_overall;
+#else
+
 	__shared__ f64_vec2 shared_v[threadsPerTileMajor];
 	__shared__ f64_vec2 shared_pos[threadsPerTileMajor];
-
-
+	
 	long const index = threadIdx.x + blockIdx.x * blockDim.x; // INDEX OF VERTEX
 	if (threadIdx.x < threadsPerTileMajor)
 	{
@@ -2231,6 +1920,7 @@ __global__ void kernelCentroidVelocitiesTriangles(
 		// leave it == 0		
 	};
 	p_overall_v_minor[index] = v;
+#endif
 }
 
 __global__ void Reversesubtract_vec3(
@@ -3215,17 +2905,17 @@ __global__ void kernelPopulateArrayAz(
 
 __global__ void kernelPushAzInto_dest(
 	AAdot * __restrict__ p_AAdot,
-	f64 * __restrict__ p_Az
+	f64 * __restrict__ pAz
 ) {
 	long const index = blockDim.x*blockIdx.x + threadIdx.x;
-	p_AAdot[index].Az = p_Az[index];
+	p_AAdot[index].Az = pAz[index];
 } 
 __global__ void kernelPullAzFromSyst(
 	AAdot * __restrict__ p_AAdot,
-	f64 * __restrict__ p_Az
+	f64 * __restrict__ pAz
 ) {
 	long const index = blockDim.x*blockIdx.x + threadIdx.x;
-	p_Az[index] = p_AAdot[index].Az;
+	pAz[index] = p_AAdot[index].Az;
 }
 
 __global__ void kernelAddtoT(
@@ -3396,15 +3086,21 @@ __global__ void kernelResetFrillsAz(
 	//			index, izNeigh.i1, p_Az[index]);
 
 		} else {			
-				
+			
+			// Ignore what editor is showing: RADIALDECLINE is true, DIRICHLET false.
+
 #if RADIALDECLINE
 			f64 r = p_info[izNeigh.i1].pos.modulus();
 		 	p_Az[index] = (r/ FRILL_CENTROID_OUTER_RADIUS_d)*p_Az[izNeigh.i1]; // should be something like 0.99*p_Az[izNeigh.i1]
+			//printf("r");
+			// verified that this is the code path.
+
 			// Better if we store a constant called Outer_Frill_Factor to save a load and a division.
 #else
 			if (DIRICHLET == false)
 			{
 				p_Az[index] = p_Az[izNeigh.i1];
+				//printf("F");
 			}
 			else {
 				p_Az[index] = 0.0;
@@ -3430,6 +3126,34 @@ __global__ void kernelResetFrillsAz(
 		};
 	};
 }
+// Try resetting frills here and ignoring in calculation:
+__global__ void kernelResetFrillsAz_II(
+structural * __restrict__ p_info,
+LONG3 * __restrict__ trineighbourindex,
+AAdot * __restrict__ p_Az)
+{
+	long const index = blockDim.x*blockIdx.x + threadIdx.x;
+	structural info = p_info[index];
+	if ((info.flag == INNER_FRILL) || (info.flag == OUTER_FRILL))
+	{
+		LONG3 izNeigh = trineighbourindex[index];
+		if (info.flag == INNER_FRILL) {
+			p_Az[index].Az = p_Az[izNeigh.i1].Az;
+		} else {
+#if RADIALDECLINE
+			f64 r = p_info[izNeigh.i1].pos.modulus();
+			p_Az[index].Az = (r / FRILL_CENTROID_OUTER_RADIUS_d)*p_Az[izNeigh.i1].Az; // should be something like 0.99*p_Az[izNeigh.i1]
+#else
+			if (DIRICHLET == false)
+			{
+				p_Az[index].Az = p_Az[izNeigh.i1].Az;
+			} else {
+				p_Az[index].Az = 0.0;
+			};
+#endif
+		};
+	};
+}
 
 __global__ void kernelAddToAz(
 	long * p_indicator,
@@ -3441,6 +3165,7 @@ __global__ void kernelAddToAz(
 		pAz[index] += beta_n_c[ind - 1];
 
 }
+
 __global__ void kernelReturnMaximumInBlock
 (
 	f64 * __restrict__ p_f,
@@ -3583,26 +3308,6 @@ __global__ void kernelReset_v_in_outer_frill_and_outermost
 	}
 }
 
-// Try resetting frills here and ignoring in calculation:
-__global__ void kernelResetFrillsAz_II(
-	structural * __restrict__ p_info,
-	LONG3 * __restrict__ trineighbourindex,
-	AAdot * __restrict__ p_Az)
-{
-	long const index = blockDim.x*blockIdx.x + threadIdx.x;
-	structural info = p_info[index];
-	if ((info.flag == INNER_FRILL) || (info.flag == OUTER_FRILL))
-	{
-		LONG3 izNeigh = trineighbourindex[index];
-		p_Az[index].Az = p_Az[izNeigh.i1].Az;
-	}
-
-//	need to change this if we want to use it for RADIALDECLINE.
-
-
-
-}
-
 
 __global__ void kernelCreateAzbymultiplying(
 	f64 * __restrict__ p_Az,
@@ -3720,6 +3425,112 @@ __global__ void kernelAccumulateMatrix(
 		memcpy(&p_eps_against_deps[blockIdx.x], &tempvec3, sizeof(f64_vec3));
 	}
 }
+	
+__global__ void kernelAccumulateMatrix_Ampere(
+		structural * __restrict__ p_info,
+		f64 * __restrict__ p_epsilon,
+		f64 * __restrict__ p_regressor1,
+		f64 * __restrict__ p_regressor2,
+		f64 * __restrict__ p_regressor3,
+		f64 * __restrict__ p_LapReg1,
+		f64 * __restrict__ p_LapReg2,
+		f64 * __restrict__ p_LapReg3,
+		f64 * __restrict__ p_deps_matrix,
+		f64_vec3 * __restrict__ p_eps_against_deps)
+
+	{
+		__shared__ f64 sum_mat[threadsPerTileMinor][6];
+		__shared__ f64 sum_eps_deps[threadsPerTileMinor][3];
+
+		long const index = blockDim.x*blockIdx.x + threadIdx.x;
+		f64 d_eps_by_d_beta1, d_eps_by_d_beta2, d_eps_by_d_beta3;
+		structural info = p_info[index];
+		if ((info.flag == OUTER_FRILL) || (info.flag == INNER_FRILL))
+		{
+			d_eps_by_d_beta1 = 0.0;
+			d_eps_by_d_beta2 = 0.0;
+			d_eps_by_d_beta3 = 0.0; // eps here actually is 0.
+		}
+		else {
+			d_eps_by_d_beta1 = (p_LapReg1[index]);
+			d_eps_by_d_beta2 = (p_LapReg2[index]);
+			d_eps_by_d_beta3 = (p_LapReg3[index]);
+
+		};
+		sum_mat[threadIdx.x][0] = d_eps_by_d_beta1*d_eps_by_d_beta1;
+		sum_mat[threadIdx.x][1] = d_eps_by_d_beta1*d_eps_by_d_beta2;
+		sum_mat[threadIdx.x][2] = d_eps_by_d_beta1*d_eps_by_d_beta3;
+		sum_mat[threadIdx.x][3] = d_eps_by_d_beta2*d_eps_by_d_beta2;
+		sum_mat[threadIdx.x][4] = d_eps_by_d_beta2*d_eps_by_d_beta3;
+		sum_mat[threadIdx.x][5] = d_eps_by_d_beta3*d_eps_by_d_beta3;
+		f64 eps = p_epsilon[index];
+		sum_eps_deps[threadIdx.x][0] = eps*d_eps_by_d_beta1;
+		sum_eps_deps[threadIdx.x][1] = eps*d_eps_by_d_beta2;
+		sum_eps_deps[threadIdx.x][2] = eps*d_eps_by_d_beta3;
+
+		if (sum_eps_deps[threadIdx.x][0] != sum_eps_deps[threadIdx.x][0])
+			printf("index %d sum_eps_deps[threadIdx.x][0] == NAN\n"
+				"p_regressor1[index] %1.8E LapReg %1.8E \n",
+				index, p_regressor1[index],
+				p_LapReg1[index]);
+
+		if (sum_eps_deps[threadIdx.x][1] != sum_eps_deps[threadIdx.x][1])
+			printf("index %d sum_eps_deps[threadIdx.x][1] == NAN\n"
+				"p_regressor2[index] %1.8E LapReg %1.8E \n",
+				index, p_regressor2[index],
+				p_LapReg2[index]);
+
+		if (sum_eps_deps[threadIdx.x][2] != sum_eps_deps[threadIdx.x][2])
+			printf("index %d sum_eps_deps[threadIdx.x][2] == NAN eps %1.10E d_eps_by_dbeta3 %1.10E\n"
+				"p_regressor3[index] %1.8E LapReg %1.8E \n",
+				index, eps, d_eps_by_d_beta3,
+				p_regressor3[index],
+				p_LapReg3[index]);
+
+		__syncthreads();
+
+		int s = blockDim.x;
+		int k = s / 2;
+
+		while (s != 1) {
+			if (threadIdx.x < k)
+			{
+#pragma unroll
+				for (int y = 0; y < 6; y++)
+					sum_mat[threadIdx.x][y] += sum_mat[threadIdx.x + k][y];
+				sum_eps_deps[threadIdx.x][0] += sum_eps_deps[threadIdx.x + k][0];
+				sum_eps_deps[threadIdx.x][1] += sum_eps_deps[threadIdx.x + k][1];
+				sum_eps_deps[threadIdx.x][2] += sum_eps_deps[threadIdx.x + k][2];
+
+			};
+			__syncthreads();
+
+			// Modify for case blockdim not 2^n:
+			if ((s % 2 == 1) && (threadIdx.x == k - 1)) {
+				for (int y = 0; y < 6; y++)
+					sum_mat[threadIdx.x][y] += sum_mat[threadIdx.x + s - 1][y];
+				sum_eps_deps[threadIdx.x][0] += sum_eps_deps[threadIdx.x + s - 1][0];
+				sum_eps_deps[threadIdx.x][1] += sum_eps_deps[threadIdx.x + s - 1][1];
+				sum_eps_deps[threadIdx.x][2] += sum_eps_deps[threadIdx.x + s - 1][2];
+			};
+			// In case k == 81, add [39] += [80]
+			// Otherwise we only get to 39+40=79.
+			s = k;
+			k = s / 2;
+			__syncthreads();
+		};
+
+		if (threadIdx.x == 0)
+		{
+			memcpy(&(p_deps_matrix[6 * blockIdx.x]), sum_mat[0], sizeof(f64) * 6);
+			f64_vec3 tempvec3;
+			tempvec3.x = sum_eps_deps[0][0];
+			tempvec3.y = sum_eps_deps[0][1];
+			tempvec3.z = sum_eps_deps[0][2];
+
+			memcpy(&p_eps_against_deps[blockIdx.x], &tempvec3, sizeof(f64_vec3));
+		}
+	}
 
 __global__ void GetMax(
 		f64 * __restrict__ p_comp1,
@@ -4958,18 +4769,17 @@ __global__ void Augment_dNv_minor(
 			coeff2 = 0.333333333333333*Nnhere / p_temp_Nntotalmajor[tricornerindex.i2];
 			coeff3 = 0.333333333333333*Nnhere / p_temp_Nntotalmajor[tricornerindex.i3];
 
-			// DEBUG:
-			if (0)//iMinor == CHOSEN) 
-				printf("%d Nntotal123 %1.9E %1.9E %1.9E MARneutz %1.8E %1.8E %1.8E \n",CHOSEN,
-				p_temp_Nntotalmajor[tricornerindex.i1],
-				p_temp_Nntotalmajor[tricornerindex.i2],
-				p_temp_Nntotalmajor[tricornerindex.i3],
-				p_MAR_neut_major[tricornerindex.i1].z,
-				p_MAR_neut_major[tricornerindex.i2].z,
-				p_MAR_neut_major[tricornerindex.i3].z
-				);
-
-
+			//// DEBUG:
+			//if (0) //iMinor == CHOSEN) 
+			//	printf("%d Nntotal123 %d %d %d %1.9E %1.9E %1.9E MARneutz %1.8E %1.8E %1.8E \n",CHOSEN,
+			//	tricornerindex.i1, tricornerindex.i2, tricornerindex.i3,
+			//	p_temp_Nntotalmajor[tricornerindex.i1],
+			//	p_temp_Nntotalmajor[tricornerindex.i2],
+			//	p_temp_Nntotalmajor[tricornerindex.i3],
+			//	p_MAR_neut_major[tricornerindex.i1].z,
+			//	p_MAR_neut_major[tricornerindex.i2].z,
+			//	p_MAR_neut_major[tricornerindex.i3].z
+			//	);
 
 			f64_vec3 add_n = p_MAR_neut_major[tricornerindex.i1] * coeff1
 				+ p_MAR_neut_major[tricornerindex.i2] * coeff2

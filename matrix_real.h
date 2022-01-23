@@ -19,12 +19,12 @@
 class Matrix_real 
 {
 private:
-	long * indx;   // the index array when decomposed
 	
 public:
 	real ** LU; // the elements
 	long LUSIZE;  // the size of the matrix
 	real * vv;
+	long * indx;   // the index array when decomposed
 
 	Matrix_real ();
 

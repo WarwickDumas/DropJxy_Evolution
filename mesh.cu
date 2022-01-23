@@ -2006,7 +2006,6 @@ long TriMesh::Redelaunerize(bool exhaustion, bool bReplace)
 
 	printf("start of redelaunerize");
 	DebugTestWrongNumberTrisPerEdge();
-	printf("got to here\n");
 
 	memset(flaglist, 0, sizeof(bool)*NMINOR);
 
@@ -2019,6 +2018,10 @@ long TriMesh::Redelaunerize(bool exhaustion, bool bReplace)
 		for (iTri = 0; iTri < numTriangles; ++iTri)
 		{
 			// Do not play at outer edge of memory: (fluid replace is not designed to work there)
+			
+			//if (iTri == 52723) printf("52723 got to here. Domain_flag %d corner flags %d %d %d | %d %d %d\n",
+			//	pTri->u8domain_flag, pTri->cornerptr[0]->flags, pTri->cornerptr[1]->flags, pTri->cornerptr[2]->flags,
+			//	pTri->cornerptr[0]-X,pTri->cornerptr[1]-X, pTri->cornerptr[2]-X);
 
 			if ((pTri->cornerptr[0]->flags == OUTERMOST) ||
 				(pTri->cornerptr[1]->flags == OUTERMOST) ||
@@ -2028,9 +2031,10 @@ long TriMesh::Redelaunerize(bool exhaustion, bool bReplace)
 				) 
 			{
 				// do nothing
+				
 			} else {
 				// calculate circumcenter first....
-				pTri->CalculateCircumcenter(cc, &pdistsq);
+				pTri->CalculateCircumcenter(cc, &pdistsq); // Note, this uses cornerptr[0] to create pdistsq -- I guess it's same dist from all is why.
 					
 				for (int iNeigh = 0; iNeigh < 3; iNeigh++)
 				{
@@ -2049,6 +2053,7 @@ long TriMesh::Redelaunerize(bool exhaustion, bool bReplace)
 						&& (pTri2->cornerptr[2]->flags != OUTERMOST)
 						)
 					{
+						
 						pVertq = pTri2->ReturnUnsharedVertex(pTri);
 							// we compare two triangles
 							
@@ -2057,11 +2062,16 @@ long TriMesh::Redelaunerize(bool exhaustion, bool bReplace)
 						// in which case we should map q to same side as p
 
 						real qdistsq = GetPossiblyPeriodicDistSq(pVertq->pos,cc); // less elegant but should still work.
-
+						
 						if (qdistsq < pdistsq-pdistsq*REL_TOLERANCE)
 						{
 							++flips;
 							++flip_tri_to_tri;
+
+
+							printf("LINE 2073: X[9594].iScratch %d \n", X[9594].iScratch);
+
+
 							if ((bReplace)) { //&& ((pTri->u8domain_flag == DOMAIN_TRIANGLE) || (pTri2->u8domain_flag == DOMAIN_TRIANGLE))) {
 								// need to do even if it's just AZ
 
@@ -2237,17 +2247,22 @@ long TriMesh::Redelaunerize(bool exhaustion, bool bReplace)
 									GiveAndTake(shard_data2,pVertq,pVertex2);
 
 									*/
+
+
 							} else {
 								Flip(pTri, pTri2, -1);
+
 							};							
 							iNeigh = 4; // Skip out of loop.
 						};
 					}; // whether an edge worth looking through, vs, going off the domain
 				}; // next neighbour
 			};		
-		};
+			++pTri;
+		}; // next iTri
 
 		printf("Flips: %d \n", flips);
+
 	// Vertex::flags does not need to be changed as a result of this routine.
 //#ifndef RELEASE
 		if (flips > 0) DebugTestWrongNumberTrisPerEdge();
@@ -3221,6 +3236,16 @@ void TriMesh::Flip(Triangle * pTri1, Triangle * pTri2, int iLevel)
 			other_index_2 = 1;
 		};
 	};
+	
+	// Quick fix: store iScratch data to restore later.
+	Vertex * pVert_1 = pTri1->cornerptr[other_index_1];
+	Vertex * pVert_2 = pTri1->cornerptr[other_index_2];
+
+
+	int keep1 = pVertex_unshared1->iScratch;
+	int keep2 = pVertex_unshared2->iScratch;
+	int keep3 = pVert_1->iScratch;
+	int keep4 = pVert_2->iScratch;
 
 	// First we set up periodic "scratch" data on the 4 vertices:
 	if (pTri1->periodic == 0)
@@ -3478,6 +3503,11 @@ void TriMesh::Flip(Triangle * pTri1, Triangle * pTri2, int iLevel)
 		pTri->neighbours[1] = ReturnPointerToOtherSharedTriangle(pTri->cornerptr[0],pTri->cornerptr[2],pTri,iLevel);
 	};
 
+	// restore iScratch : QUICK FIX
+	pVertex_unshared1->iScratch = keep1;
+	pVertex_unshared2->iScratch = keep2;
+	pVert_1->iScratch = keep3;
+	pVert_2->iScratch = keep4;
 }
 
 

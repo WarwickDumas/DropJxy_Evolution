@@ -1,30 +1,18 @@
 // Version 1.0 23/04/19:
 // Changing to use upwind T for advection. We could do better in future. Interp gives negative T sometimes.
 // Corrected ionisation rate.
- 
+  
 #pragma once     
 #include "switches.h" // defines AZCG
 #include <cusolverDn.h>
- 
-#define LAPACKE
-#define PRECISE_VISCOSITY 
-#define DEBUGTE               0
-#define SQRTNT           1
-#define SQRTNV 
-#define EQNS_TOTAL 384 // 1024
-#define INNER_EQNS 256 // 512   // half inside, half outside
-#define MAXRINGS    96
-#define MAXRINGLEN  512  // Note that this is also the max # on the periphery.
-
-#define LIBERALIZED_VISC_SOLVER
-
+  
 #include <stdlib.h>
 #include <stdio.h> 
 #include <math.h>
 #include <time.h>
 #include <windows.h>  
 //#include "lapacke.h" 
-
+ 
 #include "mesh.h" 
 #include "FFxtubes.h"
 #include "cuda_struct.h"
@@ -52,13 +40,7 @@ extern TriMesh X4;
 
 // This will be slow but see if it solves it.
 
-#define CHOSEN 52233
-#define CHOSEN1 14332
-#define CHOSEN2 14334 
-
-#define VERTCHOSEN 26084
 // 17906  // 26081 // 22026 // 16196
-#define VERTCHOSEN2 50
 
 #define ITERATIONS_BEFORE_SWITCH  18
 #define REQUIRED_IMPROVEMENT_RATE  0.98
@@ -113,7 +95,7 @@ extern HWND hWnd;
   
 FILE * fp_trajectory;
 FILE * fp_dbg;
-bool GlobalSuppressSuccessVerbosity = DEFAULTSUPPRESSVERBOSITY;
+bool GlobalSuppressSuccessVerbosity = false;// DEFAULTSUPPRESSVERBOSITY;
 bool bGlobalSaveTGraphs;
 bool bViscousHistory;
 long iHistoryVN = 0;
@@ -127,7 +109,6 @@ extern long NumInnerFrills, FirstOuterFrill;
 __constant__ long NumInnerFrills_d, FirstOuterFrill_d;
 __constant__ long DebugFlag;
 __constant__ long nBlocks, Nverts, uDataLen_d; // Nverts == numVertices 
-f64 over_iEquations_n, over_iEquations_i, over_iEquations_e;
 __constant__ f64_tens2 Anticlockwise_d, Clockwise_d; // use this to do rotation.   
 __constant__ f64 kB, c, q, m_e, m_ion, m_i, m_n, 
 eoverm, qoverM, moverM, qovermc, qoverMc,
@@ -147,28 +128,28 @@ over_sqrt_m_ion, over_sqrt_m_e, over_sqrt_m_neutral,
 over_m_e, over_m_i, over_m_n,
 four_pi_over_c_ReverseJz, RELTHRESH_AZ_d,
 FRILL_CENTROID_OUTER_RADIUS_d, FRILL_CENTROID_INNER_RADIUS_d;
-
 __constant__ long lChosen;
 __constant__ f64 UNIFORM_n_d;
 __constant__ f64 cross_s_vals_viscosity_ni_d[10], cross_s_vals_viscosity_nn_d[10],
                  cross_T_vals_d[10], cross_s_vals_MT_ni_d[10];
 __constant__ f64 beta_n_c[32], beta_i_c[8], beta_e_c[8];
 __constant__ long iEqnsDevice, ActualInnerEqnsDevice;
-
 __constant__ bool bSwitch = false;
 __constant__ f64 recomb_coeffs[32][3][5];
-f64 recomb_coeffs_host[32][3][5];
 __constant__ f64 ionize_coeffs[32][5][5];
-f64 ionize_coeffs_host[32][5][5];  
 __constant__ f64 ionize_temps[32][10];
-f64 ionize_temps_host[32][10];
 __constant__ long MyMaxIndex;
 __device__ __constant__ f64 billericay;
 __constant__ f64 Ez_strength;
-f64 EzStrength_;
 __constant__ f64 negative_Iz_per_triangle; // -Iz_prescribed / (real)(numEndZCurrentTriangles - numStartZCurrentTriangles)
 __constant__ long numStartZCurrentTriangles, numEndZCurrentTriangles;
+
+f64 EzStrength_;
 f64 * p_eqns_host;
+f64 recomb_coeffs_host[32][3][5];
+f64 ionize_coeffs_host[32][5][5];
+f64 ionize_temps_host[32][10];
+f64 over_iEquations_n, over_iEquations_i, over_iEquations_e;
 
 #define CallMAC(cudaStatus) Call(cudaStatus, #cudaStatus )   
 // { Call(cudaStatus, "cudaStatus") } ?
@@ -273,7 +254,6 @@ __device__ short * sz_who_vert_vert;
 __device__ long * p_indicator;
 __device__ f64 * p_Jacobian_list;
 __device__ NTrates * p_store_NTFlux;
-#define SQUASH_POINTS  24
 __device__ f64 * p_matrix_blocks;
 __device__ f64 * p_vector_blocks;
 f64 * p_matrix_blocks_host, *p_vector_blocks_host;
@@ -924,8 +904,6 @@ void SolveBackwardAzAdvanceJ3LS(f64 hsub,
 	// 1. Create regressor:
 	// Careful with major vs minor + BEGINNING_OF_CENTRAL:
 
-	//GlobalSuppressSuccessVerbosity = true;
-
 	kernelResetFrillsAz << <numTilesMinor, threadsPerTileMinor >> > (
 			pX_use->p_info, pX_use->p_tri_neigh_index,
 			p_AzNext);
@@ -977,12 +955,10 @@ void SolveBackwardAzAdvanceJ3LS(f64 hsub,
 
 		if (((iIteration > 4) && (L4L2ratio > 10.0) && (iIteration % 2 == 0))
 			|| ((iIteration > 1600) && (iIteration % 4 == 0))) // if things are messed up, try it anyway
-		{
-			
+		{			
 			printf("\nDoing the smash! iteration %d\n", iIteration);
 
 			// Alternative: smoosh 24 points
-
 			// find maximum
 			cudaMemset(p_indicator, 0, sizeof(long)*NMINOR);
 			int number_set = 0; // now we're going to have to number them as 1 through 24 .. be careful.
@@ -1020,7 +996,6 @@ void SolveBackwardAzAdvanceJ3LS(f64 hsub,
 				//	bSpitOutErrorAfter = true;
 				//	iMax0 = iMax;
 				//};
-
 				//printf("%d: %d  || ", ii, iMax);
 
 				number_set++;
@@ -2718,8 +2693,6 @@ int RunBackwardForHeat_ConjugateGradient(
 	return 0;
 }
 
-#define REGRESSORS 8
-
 __device__ f64 * regressors;
 __device__ f64 * p_coeffself;
 
@@ -3550,7 +3523,7 @@ int RunGeometricHeatConduction_NonlinearCG__singleregression(f64 * p_T_k, f64 * 
 							sum_eps_eps_curr += p_temphost3[iTile];
 						};
 
-						printf("vWDB : b = %1.11E RSS = 1.11E \n", b, sum_eps_eps_curr);
+						printf("vWDB : b = %1.11E RSS = %1.11E \n", b, sum_eps_eps_curr);
 
 	//					fb = (*func)(b);
 						
@@ -4905,12 +4878,12 @@ int RunBwdRnLSForHeat(f64 * p_T_k, f64 * p_T, f64 hsub,
 		char o = '4';
 
 		f64 RSS = 0.0;
-		f64 oldRSS;
+		f64 oldRSS = 0.0;
 		bool bSlowProgress = false;
 
 		iIteration = 0;
 		do {
-			printf("\nspecies %d ITERATION %d : ", species, iIteration);
+			printf("species %d ITERATION %d : ", species, iIteration);
 			// create epsilon, & Jacobi 0th regressor.
 
 			//		And we want to look into this:
@@ -4978,8 +4951,14 @@ int RunBwdRnLSForHeat(f64 * p_T_k, f64 * p_T, f64 hsub,
 			printf(" L2eps %1.11E   RSS %1.11E   R^2 %2.5f\%\n", L2eps, RSS,
 				((oldRSS > 0.0)?((oldRSS - RSS) / oldRSS):0.0));
 // DEBUG : 
-			if (RSS > oldRSS*1.1) {
+			if ((RSS > oldRSS*1.01) && (oldRSS != 0.0)) {
+				SetConsoleTextAttribute(hConsole, 13);
 				printf("RSS worsened.\n");
+				SetConsoleTextAttribute(hConsole, 15);
+
+			//	Must investigate/fix this today - Tuesday.
+
+
 			} else {
 			};
 			if (
@@ -4990,6 +4969,20 @@ int RunBwdRnLSForHeat(f64 * p_T_k, f64 * p_T, f64 hsub,
 				ctr = 0;
 			};
 
+			long iMax = 0;
+			f64 maxeps = 0.0;
+			cudaMemcpy(p_temphost1, p_epsilon, sizeof(f64)*NUMVERTICES, cudaMemcpyDeviceToHost);
+			for (i = 0; i < NUMVERTICES; i++)
+			{
+				if (fabs(p_temphost1[i]) > maxeps) {
+					maxeps = fabs(p_temphost1[i]);
+					iMax = i;
+				};
+			};
+			//printf("Max |eps| at %d = %1.9E\n", iMax, maxeps);
+			//printf("Epsilon[%d] = %1.11E\n", VERTCHOSEN, p_temphost1[VERTCHOSEN]);
+			 
+
 			if (REGRESSORS < iEquations[species]) {
 				// Note: most iEquations[species] are near 1, a few are like 22 or 150.
 				
@@ -4998,26 +4991,54 @@ int RunBwdRnLSForHeat(f64 * p_T_k, f64 * p_T, f64 hsub,
 				// ? CallMAC(cudaMemset(p_Ax + (i - 1)*NUMVERTICES, 0, sizeof(f64)*NUMVERTICES));
 				
 				kernelHeat_1species_geometric_coeffself << < numTilesMajorClever, threadsPerTileMajorClever >> > (
-					pX_use->p_info,
-					pX_use->p_izNeigh_vert,
-					pX_use->p_szPBCneigh_vert,
-					pX_use->p_izTri_vert,
-					pX_use->p_szPBCtri_vert,
+					pX_use->p_info,	pX_use->p_izNeigh_vert,	pX_use->p_szPBCneigh_vert,
+					pX_use->p_izTri_vert, pX_use->p_szPBCtri_vert,
 					pX_use->p_cc,
 					pX_use->p_n_major,
 					p_T,  // evaluation point
 					hsub,
 					pX_use->p_B + BEGINNING_OF_CENTRAL, // NEED POPULATED
-					p_kappa,
-					p_nu,
+					p_kappa, p_nu,
 					pX_use->p_AreaMajor,
-					p_boolarray2 + NUMVERTICES*species,
-					p_boolarray_block,
+					p_boolarray2 + NUMVERTICES*species,	p_boolarray_block,
 					bUseMask,
 					species,
 					p_Ap_e  // coeffself
 					);						
 				Call(cudaThreadSynchronize(), "cudaTS kernelHeat_1species_geometric_coeffself");
+				f64 tempf64_2, temp3;
+				structural info;
+//				cudaMemcpy(&info, &(pX_use->p_info[BEGINNING_OF_CENTRAL + 34324]), sizeof(structural), cudaMemcpyDeviceToHost);
+//
+//				long izNeigh[MAXNEIGH];
+//				long izTri[MAXNEIGH];
+//				cudaMemcpy(izNeigh, pX_use->p_izNeigh_vert + MAXNEIGH * 34324, sizeof(long)*MAXNEIGH, cudaMemcpyDeviceToHost);
+//				for (i = 0; i < info.neigh_len; i++) {
+//					cudaMemcpy(&tempf64, p_Ap_e + izNeigh[i], sizeof(f64), cudaMemcpyDeviceToHost);
+//					cudaMemcpy(&tempf64_2, p_T + izNeigh[i], sizeof(f64), cudaMemcpyDeviceToHost);
+//					cudaMemcpy(&temp3, p_epsilon + izNeigh[i], sizeof(f64), cudaMemcpyDeviceToHost);
+//
+//					cudaMemcpy(&info, &(pX_use->p_info[BEGINNING_OF_CENTRAL + izNeigh[i]]), sizeof(structural), cudaMemcpyDeviceToHost);
+//
+//					printf("%d: coeffself %1.14E T %1.14E eps %1.14E pos %1.10E %1.10E flag %d\n", izNeigh[i], tempf64, tempf64_2, temp3,
+//						info.pos.x, info.pos.y, info.flag);
+//				};
+//
+//				f64_vec2 pos;
+//				cudaMemcpy(izTri, pX_use->p_izTri_vert + MAXNEIGH * 34324, sizeof(long)*MAXNEIGH, cudaMemcpyDeviceToHost);
+//				for (i = 0; i < info.neigh_len; i++) {
+//					
+//					cudaMemcpy(&info, &(pX_use->p_info[izTri[i]]), sizeof(structural), cudaMemcpyDeviceToHost);
+//					cudaMemcpy(&pos, &(pX_use->p_cc[izTri[i]]), sizeof(f64_vec2), cudaMemcpyDeviceToHost);
+//
+//					printf("Tri %d: flag %d %1.12E %1.12E cc %1.10E %1.10E\n",
+//						izTri[i], info.flag, info.pos.x, info.pos.y, pos.x, pos.y);
+//				};
+//
+//
+//				printf("press f");
+//				while (getch() != 'f');
+
 
 				kernelDivide << < numTilesMajorClever, threadsPerTileMajorClever >> > (
 					p_regressors,
@@ -5033,7 +5054,13 @@ int RunBwdRnLSForHeat(f64 * p_T_k, f64 * p_T, f64 hsub,
 				kernelDivideBySqrtN << < numTilesMajorClever, threadsPerTileMajorClever >> > (
 					p_regressors, pX_use->p_n_major, pX_use->p_AreaMajor, species
 					);
+
+				// should this be happening?
+				// Yes. p_regressors was the proposed move in (sqrt N) T
+				// It is now the proposed move in T.
+
 				Call(cudaThreadSynchronize(), "cudaTS kernelDivideBySqrtN");
+								
 				// Note that we also divide Richardson, because we are moving sqrtN T in the direction of epsilon.
 				kernelDivideBySqrtN << < numTilesMajorClever, threadsPerTileMajorClever >> > (
 					p_regressors + NUMVERTICES, pX_use->p_n_major, pX_use->p_AreaMajor, species
@@ -5048,7 +5075,7 @@ int RunBwdRnLSForHeat(f64 * p_T_k, f64 * p_T, f64 hsub,
 			
 			// graph:
 			// draw a graph:					
-			if (iIteration > 1000) {
+			if (iIteration > 2000) {
 				SetActiveWindow(hwndGraphics);
 				cudaMemcpy(p_temphost1, p_epsilon, sizeof(f64)*NUMVERTICES, cudaMemcpyDeviceToHost);
 				pVertex = pTriMesh->X;
@@ -5147,68 +5174,6 @@ int RunBwdRnLSForHeat(f64 * p_T_k, f64 * p_T, f64 hsub,
 				//cudaMemcpy(p_temphost1, p_regressors + NUMVERTICES, sizeof(f64)*NUMVERTICES, cudaMemcpyDeviceToHost);
 
 
-
-				//// temp5 is predicted difference
-				//// temp6 is old epsilon
-				//SubtractVector << < numTilesMajorClever, threadsPerTileMajorClever >> > 
-				//	(p_temp4, p_temp6, p_epsilon);
-				//// temp4 = actual difference & it's right-left, so new eps-old eps
-				//
-				//Call(cudaThreadSynchronize(), "subtractvector");
-				//SubtractVector << < numTilesMajorClever, threadsPerTileMajorClever >> > 
-				//	(p_temp3, p_temp5, p_temp4);
-				//// temp3 = predicted-actual
-				//Call(cudaThreadSynchronize(), "subtractvector");
-
-
-				//cudaMemcpy(p_temphost3, p_temp5, sizeof(f64)*NUMVERTICES, cudaMemcpyDeviceToHost);
-
-				//pVertex = pTriMesh->X;
-				//pdata = pTriMesh->pData + BEGINNING_OF_CENTRAL;
-				//for (iVertex = 0; iVertex < NUMVERTICES; iVertex++)
-				//{
-				//	pdata->temp.x = p_temphost3[iVertex];
-				//	pdata->temp.y = p_temphost3[iVertex];
-
-				//	++pVertex;
-				//	++pdata;
-				//}
-
-				//Graph[2].DrawSurface("predicted difference",
-				//	DATA_HEIGHT, (real *)(&((pTriMesh->pData[0]).temp.x)),
-				//	AZSEGUE_COLOUR, (real *)(&((pTriMesh->pData[0]).temp.y)),
-				//	false,
-				//	GRAPH_AZ, pTriMesh);
-
-				////cudaMemcpy(p_temphost1, p_regressors + 2 * NUMVERTICES, sizeof(f64)*NUMVERTICES, cudaMemcpyDeviceToHost);
-
-				//cudaMemcpy(p_temphost1, p_temp3, sizeof(f64)*NUMVERTICES, cudaMemcpyDeviceToHost);
-				//pVertex = pTriMesh->X;
-				//pdata = pTriMesh->pData + BEGINNING_OF_CENTRAL;
-				//
-				//long iMax = 0;
-				//f64 maxi = 0.0;
-				//
-				//for (iVertex = 0; iVertex < NUMVERTICES; iVertex++)
-				//{
-				//	pdata->temp.x = p_temphost1[iVertex];
-				//	pdata->temp.y = p_temphost1[iVertex];
-				//	if (fabs(p_temphost1[iVertex]) > maxi) {
-				//		maxi = fabs(p_temphost1[iVertex]);
-				//		iMax = iVertex;
-				//	}
-				//	++pVertex;
-				//	++pdata;
-				//}
-
-				//Graph[3].DrawSurface("difference from pred",
-				//	DATA_HEIGHT, (real *)(&((pTriMesh->pData[0]).temp.x)),
-				//	AZSEGUE_COLOUR, (real *)(&((pTriMesh->pData[0]).temp.y)),
-				//	false,
-				//	GRAPH_AZ, pTriMesh);
-				//printf("\nMax %1.10E was found at %d \n\n", maxi, iMax);
-
-
 				SetActiveWindow(hwndGraphics);
 				ShowWindow(hwndGraphics, SW_HIDE);
 				ShowWindow(hwndGraphics, SW_SHOW);
@@ -5256,6 +5221,8 @@ int RunBwdRnLSForHeat(f64 * p_T_k, f64 * p_T, f64 hsub,
 			bContinue = bFailedTest;
 			if (bContinue) {
 				bool bUseVolleys = (iIteration % 8 == 0);
+
+
 				if (bSlowProgress) bUseVolleys = false;
 				//if (bUseMask == 0) bUseVolleys = !bUseVolleys; // start without volleys for unmasked.
 				// To prepare volley regressors we only need 2 x Jacobi:
@@ -5397,20 +5364,16 @@ int RunBwdRnLSForHeat(f64 * p_T_k, f64 * p_T, f64 hsub,
 						CallMAC(cudaMemset(p_Ax + (REGRESSORS - i - 1)*NUMVERTICES, 0, sizeof(f64)*NUMVERTICES));
 						kernelAccumulateDiffusiveHeatRateROC_wrt_regressor_1species_Geometric <<< numTilesMajorClever, threadsPerTileMajorClever >>>
 							(
-								pX_use->p_info,
-								pX_use->p_izNeigh_vert,
-								pX_use->p_szPBCneigh_vert,
-								pX_use->p_izTri_vert,
-								pX_use->p_szPBCtri_vert,
-								pX_use->p_cc,
+								pX_use->p_info,			pX_use->p_izNeigh_vert,
+								pX_use->p_szPBCneigh_vert,		pX_use->p_izTri_vert,
+								pX_use->p_szPBCtri_vert,		pX_use->p_cc,
 								pX_use->p_n_major,
 								p_T,  // evaluation point
 								hsub,
 								p_regressors + (REGRESSORS - i - 1)*NUMVERTICES, // proposed direction
 																//p_regressors + (i - 1)*NUMVERTICES, // input as T
 								pX_use->p_B + BEGINNING_OF_CENTRAL, // NEED POPULATED
-								p_kappa,
-								p_nu,
+								p_kappa,	p_nu,
 								p_Ax + (REGRESSORS - i - 1)*NUMVERTICES, // output = deps/dbeta
 								pX_use->p_AreaMajor,
 								p_boolarray2 + NUMVERTICES*species,
@@ -5548,18 +5511,29 @@ int RunBwdRnLSForHeat(f64 * p_T_k, f64 * p_T, f64 hsub,
 				if (!GlobalSuppressSuccessVerbosity) printf("Doing LUSolve:\n");
 				matLU.LUSolve(sum_eps_deps_by_dbeta_vector, beta);
 
-				if ((iIteration > 200) && (bSlowProgress))
+
+				// We seem to be seeing RSS worsened when we are not even doing Jacobi though. That should not be possible.
+
+				if ((iIteration > 300) && (iIteration % 100 < 25))// && (bSlowProgress))
 				{
-					// A punch of Jacobi
+					// A punch of Jacobi -- 25 goes at the start of each century
 					memset(beta, 0, sizeof(f64) * 8);
 					beta[0] = 0.8;
 					SetConsoleTextAttribute(hConsole, 12);
 					ctr++;
-					if (ctr == 24) { // 16 * 0.8 = 12.8 Jacobi's.
-						ctr = 0;
-						bSlowProgress = false;
-						SetConsoleTextAttribute(hConsole, 15);
-					};
+					//if (ctr == 24) { // 16 * 0.8 = 12.8 Jacobi's.
+					//	ctr = 0;
+					//	bSlowProgress = false;
+					//	SetConsoleTextAttribute(hConsole, 15);
+					//};
+
+					// This seems to do it a lot of harm -- wonder why Jacobi fails.
+					// Are we far from diagonal dominance?
+
+					// Be nice to know.
+
+					// Also in terms of coaxing, we need to set a countdown or % 100 == 0. 
+
 				}
 
 				if (o == '1') {
@@ -5570,8 +5544,8 @@ int RunBwdRnLSForHeat(f64 * p_T_k, f64 * p_T, f64 hsub,
 					memset(beta, 0, sizeof(f64) * 8);
 					beta[0] = 0.01;
 				};
-
-				printf("\nbeta: ");
+				 
+				printf("beta: ");
 				for (i = 0; i < REGRESSORS; i++)
 					printf(" %1.8E ", beta[i]);
 				printf("\n");
@@ -5579,16 +5553,20 @@ int RunBwdRnLSForHeat(f64 * p_T_k, f64 * p_T, f64 hsub,
 				CallMAC(cudaMemcpyToSymbol(beta_n_c, beta, REGRESSORS * sizeof(f64)));
 
 
+			//	kernelCreatePredictions << <numTilesMajor, threadsPerTileMajor >> > (p_epsilon, p_Ax, p_temp1); // p_temp1 = predictions
+			//	Call(cudaThreadSynchronize(), "cudaTS CreatePredictions");
+				
+
 				// Predict Change In Epsilon at VERTCHOSEN:
 
-				//f64 sum = 0.0;
-				//for (i = 0; i < REGRESSORS; i++)
-				//{
-				//	cudaMemcpy(&tempf64, p_Ax + i*NUMVERTICES + VERTCHOSEN, sizeof(f64), cudaMemcpyDeviceToHost);
-				//	sum += tempf64*beta[i];
-				//	printf("sum += %1.9E * %1.9E = %1.9E\n", tempf64, beta[i], tempf64*beta[i]);
-				//};
-				//printf("Total change predicted for %d = %1.11E \n\n", VERTCHOSEN, sum);
+				f64 sum = 0.0;
+	//			for (i = 0; i < REGRESSORS; i++)
+	//			{
+	//				cudaMemcpy(&tempf64, p_Ax + i*NUMVERTICES + VERTCHOSEN, sizeof(f64), cudaMemcpyDeviceToHost);
+	//				sum += tempf64*beta[i];
+	//				printf("sum += %1.9E * %1.9E = %1.9E\n", tempf64, beta[i], tempf64*beta[i]);
+	//			};
+	//			printf("Total change predicted for %d = %1.11E \n\n", VERTCHOSEN, sum);
 
 				// add lc to our T
 
@@ -7013,12 +6991,12 @@ int RunBackwardJLSForHeat(T3 * p_T_k, T3 * p_T, f64 hsub, cuSyst * pX_use,
 		cudaMemcpy(p_boolhost, p_bFailed, sizeof(bool)*numTilesMajor, cudaMemcpyDeviceToHost);
 		for (iTile = 0; iTile < numTilesMajor; iTile++)
 			if (p_boolhost[iTile]) bFailedTest = true;
-		if (bFailedTest) {
-			printf("bFailedTest true \n");
-		}
-		else {
-			printf("bFailedTest false \n");
-		}
+		//if (bFailedTest) {
+		//	printf("bFailedTest true \n");
+		//}
+		//else {
+		//	printf("bFailedTest false \n");
+		//}
 		
 		f64 ratio;
 		bProgress = false;
@@ -8049,7 +8027,7 @@ void RunBackwardJLSForHeat_volleys(T3 * p_T_k, T3 * p_T, f64 hsub, cuSyst * pX_u
 	f64_vec4 tempf64vec4;
 	f64 tempf64;
 	int iIteration = 0;
-	do {
+	do { 
 		printf("\nITERATION %d \n\n", iIteration);
 		if ((iIteration >= 500) && (iIteration % 100 == 0))
 		{
@@ -12276,6 +12254,7 @@ int Compare_structural(structural * p1, structural * p2, long N)
 		iFailneighlen_start, iFailneigh_len);
 	if (bFailflag) printf("Start of inconsistent flag: %d end : %d\n",
 		iFailflag, iFailflag_start);
+	return 0;
 }
  
 int Compare_f64_vec2(f64_vec2 * p1, f64_vec2 * p2, long N)
@@ -12360,17 +12339,18 @@ int Compare_f64_vec3(f64_vec3 * p1, f64_vec3 * p2, long N)
  
 real GetIzPrescribed(real const t)
 {
-	
+
 	static real const C_over_38e6PI = (PEAKCURRENT_STATCOULOMB*0.5 / (38.0e6*PEAKTIME))*cos(PIOVERPEAKTIME*0.5 / 19.0e6);
-	
+
 	real Iz = -PEAKCURRENT_STATCOULOMB * sin((t + ZCURRENTBASETIME) * 0.5* PIOVERPEAKTIME); // half pi / peaktime
 
 	// Changed back to no osc.
 	// Change back to osc :
-#ifdef OSCILLATE_IZ																					
-	real factor11 = 1.1*(1.0-exp(-t*1.0e10)); // exp(2) = 13.6% at the end of the first cycle.	
-	Iz -= C_over_38e6PI*factor11*sin(PI*0.993 + 38.0e6*PI*t);
-#endif
+	if (OSCILLATE_IZ)
+	{
+		real factor11 = 1.1*(1.0 - exp(-t*1.0e10)); // exp(2) = 13.6% at the end of the first cycle.	
+		Iz -= C_over_38e6PI*factor11*sin(PI*0.993 + 38.0e6*PI*t);
+	};
 	
 	//printf("\nGetIzPrescribed : t + ZCURRENTBASETIME = %1.5E : %1.12E\n", t + ZCURRENTBASETIME, Iz);
 	return Iz;
@@ -12518,6 +12498,18 @@ void PerformCUDA_Invoke_Populate(
 	Set_f64_constant(m_ion, m_ion_);
 	Set_f64_constant(m_i, m_ion_);
 	Set_f64_constant(m_n, m_n_);
+
+	printf("m_i set to %1.10E\n", m_ion_);
+	cudaMemcpy(&tempf64, &m_i, sizeof(f64), cudaMemcpyDeviceToHost);
+	printf("m_i reported back %1.10E\n", tempf64);
+
+	Call(cudaGetSymbolAddress((void **)(&f64address), m_i),
+		"cudaGetSymbolAddress((void **)(&f64address), m_i )"); 
+	cudaMemcpy(&tempf64, f64address, sizeof(f64), cudaMemcpyDeviceToHost);
+	printf("m_i reported back using GetSymbolAddress %1.10E\n", tempf64);
+	
+	// Why did this fail?
+
 	Set_f64_constant(eoverm, eoverm_);
 	Set_f64_constant(qoverM, qoverM_);
 	Set_f64_constant(moverM, moverM_);
@@ -12885,6 +12877,8 @@ void PerformCUDA_Invoke_Populate(
 	CallMAC(cudaMalloc((void **)&p_MAR_ion, NMINOR * sizeof(f64_vec3)));
 	CallMAC(cudaMalloc((void **)&p_MAR_elec, NMINOR * sizeof(f64_vec3)));
 	CallMAC(cudaMalloc((void **)&p_Az, NMINOR * sizeof(f64)));
+
+
 	CallMAC(cudaMalloc((void **)&p_AzNext, NMINOR * sizeof(f64)));
 	CallMAC(cudaMalloc((void **)&p_LapAz, NMINOR * sizeof(f64)));
 	CallMAC(cudaMalloc((void **)&p_LapAzNext, NMINOR * sizeof(f64)));
@@ -12930,7 +12924,13 @@ void PerformCUDA_Invoke_Populate(
 	CallMAC(cudaMalloc((void **)&p_temp4, NMINOR * sizeof(f64)));
 	CallMAC(cudaMalloc((void **)&p_temp5, NMINOR * sizeof(f64)));
 	CallMAC(cudaMalloc((void **)&p_temp6, NMINOR * sizeof(f64)));
-	
+	cudaPointerAttributes PA;
+	memset(&PA, 0, sizeof(cudaPointerAttributes));
+
+	cudaPointerGetAttributes(&PA, (void *)p_temp2);
+	printf("p_temp2: %d %lld %lld %d", PA.device, (long long)PA.devicePointer, (long long)PA.hostPointer,
+		PA.memoryType);
+
 	CallMAC(cudaMalloc((void **)&p_graphdata1, NMINOR * sizeof(f64)));
 	CallMAC(cudaMalloc((void **)&p_graphdata2, NMINOR * sizeof(f64)));
 	CallMAC(cudaMalloc((void **)&p_graphdata3, NMINOR * sizeof(f64)));
@@ -13217,17 +13217,18 @@ void PerformCUDA_RunStepsAndReturnSystem(cuSyst * pX_host)
 	static cuSyst * pX2 = &cuSyst3;    // remember which way round - though with an even number of steps it's given we get back
 	static cuSyst * pX_half = &cuSyst2; 
 	cuSyst * pXtemp;
-	// So let's be careful here
-
 	structural info;
 
-//	cudaMemcpy(&info, &(cuSyst1.p_info[VERTCHOSEN + BEGINNING_OF_CENTRAL]), sizeof(structural), cudaMemcpyDeviceToHost);
-//	printf("%d info: flag %d tri_len %d  \n", VERTCHOSEN, info.flag, info.neigh_len);
-
 	iHistoryAz = 0;
-
 	bViscousHistory = false; // it might sometimes be true but hey
 	
+	cudaMemcpy(&tempf64, &m_i, sizeof(f64), cudaMemcpyDeviceToHost);
+	printf("m_i reported back %1.10E\n", tempf64);
+	Call(cudaGetSymbolAddress((void **)(&f64address), m_i),
+		"cudaGetSymbolAddress((void **)(&f64address), m_i )");
+	cudaMemcpy(&tempf64, f64address, sizeof(f64), cudaMemcpyDeviceToHost);
+	printf("m_i reported back using GetSymbolAddress %1.10E\n", tempf64);
+
 	cudaEvent_t start1, stop1;
 	cudaEventCreate(&start1);
 	cudaEventCreate(&stop1);
@@ -13248,7 +13249,6 @@ void PerformCUDA_RunStepsAndReturnSystem(cuSyst * pX_host)
 		);
 	Call(cudaThreadSynchronize(), "cudaTS kernelCreateWhoAmI_verts");
 	
-
 	long iSubstep;
 	int i;
 	// Ultimately this 10 steps .. so 1e-11? .. can be 1 advective step.
@@ -13268,7 +13268,8 @@ void PerformCUDA_RunStepsAndReturnSystem(cuSyst * pX_host)
 	for (int iRepeat = 0; iRepeat < ADVECT_STEPS_PER_GPU_VISIT; iRepeat++) 
 	{	
 		printf("Advection step:\n"); 
-		bGlobalSaveTGraphs == true;
+		bGlobalSaveTGraphs == true;	
+
 		pX1->PerformCUDA_AdvectionCompressionInstantaneous(TIMESTEP*(real)ADVECT_FREQUENCY, pX2, pX_half);
 
 		// We need to smoosh the izTri etc data on to the pXhalf and new pX dest systems
@@ -13294,8 +13295,7 @@ void PerformCUDA_RunStepsAndReturnSystem(cuSyst * pX_host)
 
 			pXtemp = pX1;
 			pX1 = pX2;
-			pX2 = pXtemp;
-			
+			pX2 = pXtemp;			
 			/*
 					cudaMemcpy(pX_half->p_izTri_vert, pX1->p_izTri_vert,
 						NUMVERTICES*MAXNEIGH_d * sizeof(long), cudaMemcpyDeviceToDevice);
@@ -13331,15 +13331,10 @@ void PerformCUDA_RunStepsAndReturnSystem(cuSyst * pX_host)
 						NUMTRIANGLES * 6 * sizeof(char), cudaMemcpyDeviceToDevice);
 					cudaMemcpy(pX_half->p_szPBC_triminor, pX1->p_szPBC_triminor,
 						NUMTRIANGLES * 6 * sizeof(char), cudaMemcpyDeviceToDevice);*/
-		};
+		};		
+	};
 
-		
-	}
-
-
-
-	// After an even number of goes, pX1 = &cuSyst1 and this is where we ended up.
-		
+	// After an even number of goes, pX1 = &cuSyst1 and this is where we ended up.		
 	fclose(fp_dbg);
 	fclose(fp_trajectory);
 
@@ -13356,16 +13351,13 @@ void PerformCUDA_RunStepsAndReturnSystem(cuSyst * pX_host)
 	printf("Graphing data passed: %d : Lap %1.9E ; %d : Lap %1.9E \n",
 		VERTCHOSEN, temp_array_host[VERTCHOSEN + BEGINNING_OF_CENTRAL], VERTCHOSEN2, temp_array_host[VERTCHOSEN2 + BEGINNING_OF_CENTRAL]);
 	
-
 	cudaMemcpy(p_OhmsCoeffs_host, p_OhmsCoeffs, sizeof(OhmsCoeffs)*NMINOR, cudaMemcpyDeviceToHost);
 	
 	pX1->SendToHost(*pX_host);
-	
 	// Now store for 1D graphs: temphost3 = n, temphost4 = vr, temphost5 = vez
 
 	// This is where we think to fill in temphost1 = nu_ei_effective + nu_en_MT
 	// temphost2 = nu_en_MT / temphost1.
-
 	kernelPrepareNuGraphs << <numTilesMinor, threadsPerTileMinor >> > (
 		pX1->p_info,
 		pX1->p_n_minor,
@@ -13377,10 +13369,7 @@ void PerformCUDA_RunStepsAndReturnSystem(cuSyst * pX_host)
 	cudaMemcpy(p_temphost1 , p_temp1, sizeof(f64)*NMINOR, cudaMemcpyDeviceToHost);
 	cudaMemcpy(p_temphost2 , p_temp2, sizeof(f64)*NMINOR, cudaMemcpyDeviceToHost);
 
-
-
 	// Get some graph data:
-
 	cudaMemset(p_temp3_1, 0, sizeof(f64_vec3)*numTilesMajor*threadsPerTileMajor);
 	cudaMemset(p_temp3_2, 0, sizeof(f64_vec3)*numTilesMajor*threadsPerTileMajor);
 	cudaMemset(p_temp3_3, 0, sizeof(f64_vec3)*numTilesMajor*threadsPerTileMajor);
@@ -13588,6 +13577,7 @@ void cuSyst::PerformCUDA_AdvectionCompressionInstantaneous(//const
 	// DEBUG:
 	f64 sum_plus, sum_minus, sum_Lap, abs_Lap, sum_Azdot, abs_Azdot;
 	FILE * fp_2;
+	f64 tempf64;
 
 	HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
 
@@ -13667,7 +13657,6 @@ void cuSyst::PerformCUDA_AdvectionCompressionInstantaneous(//const
 		cudaMemcpy(&tempf64, &(this->p_AAdot[VERTCHOSEN + BEGINNING_OF_CENTRAL].Azdot),
 			sizeof(f64), cudaMemcpyDeviceToHost);
 		printf("Azdot %1.10E \n", tempf64);
-
 
 	}
 	//char ch;
@@ -13870,7 +13859,6 @@ void cuSyst::PerformCUDA_AdvectionCompressionInstantaneous(//const
 		p_Tgraph[6]);
 	Call(cudaThreadSynchronize(), "cudaTS DivideNeTe_by_N");
 
-
 	////////////////////////////////
 	cudaMemset(
 		NT_addition_tri_d, 0, sizeof(NTrates)*NUMVERTICES * 2);
@@ -13932,20 +13920,20 @@ void cuSyst::PerformCUDA_AdvectionCompressionInstantaneous(//const
 		NT_addition_tri_d
 		);
 	Call(cudaThreadSynchronize(), "cudaTS sum up heat 2");
-
-
-
+		
 	long i;
-	
-
 	if (!DEFAULTSUPPRESSVERBOSITY)
 	{ 
 		cudaMemcpy(&tempf64, &(NT_addition_rates_d[VERTCHOSEN].NiTi), sizeof(f64), cudaMemcpyDeviceToHost);
-		printf("\nNiTi rate [%d] : %1.13E\n\n", VERTCHOSEN, tempf64);
+		printf("NiTi rate [%d] : %1.13E\n", VERTCHOSEN, tempf64);
 		cudaMemcpy(&tempf64, &(NT_addition_rates_d[VERTCHOSEN].NeTe), sizeof(f64), cudaMemcpyDeviceToHost);
-		printf("\nNeTe rate [%d] : %1.13E\n\n", VERTCHOSEN, tempf64);
+		printf("NeTe rate [%d] : %1.13E\n", VERTCHOSEN, tempf64);
 		cudaMemcpy(&tempf64, &(NT_addition_rates_d[VERTCHOSEN].NnTn), sizeof(f64), cudaMemcpyDeviceToHost);
-		printf("\nNnTn rate [%d] : %1.13E\n\n", VERTCHOSEN, tempf64);
+		printf("NnTn rate [%d] : %1.13E\n\n", VERTCHOSEN, tempf64);
+		Call(cudaGetSymbolAddress((void **)(&f64address), m_i),
+			"cudaGetSymbolAddress((void **)(&f64address), m_i )");
+		cudaMemcpy(&tempf64, f64address, sizeof(f64), cudaMemcpyDeviceToHost);
+		printf("m_i reported back using GetSymbolAddress %1.10E\n", tempf64);
 	};
 	// &&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&
 
@@ -14060,7 +14048,11 @@ void cuSyst::PerformCUDA_AdvectionCompressionInstantaneous(//const
 	Call(cudaThreadSynchronize(), "cudaTS kernelAccelerate_v_from_advection pX_half");
 
 	if (!GlobalSuppressSuccessVerbosity) {
-		f64 tempf64, tempb;
+		f64 tempb;
+		Call(cudaGetSymbolAddress((void **)(&f64address), m_i),
+			"cudaGetSymbolAddress((void **)(&f64address), m_i )");
+		cudaMemcpy(&tempf64, f64address, sizeof(f64), cudaMemcpyDeviceToHost);
+		printf("m_i reported back using GetSymbolAddress %1.10E\n", tempf64);
 		cudaMemcpy(&tempf64, &(this->p_v_n[VERTCHOSEN + BEGINNING_OF_CENTRAL].y),
 			sizeof(f64), cudaMemcpyDeviceToHost);
 		cudaMemcpy(&tempb, &(this->p_vie[VERTCHOSEN + BEGINNING_OF_CENTRAL].vxy.y),
@@ -14465,13 +14457,14 @@ void cuSyst::PerformCUDA_AdvectionCompressionInstantaneous(//const
 	printf("Elapsed time advection : %f ms ", elapsedTime);
 	SetConsoleTextAttribute(hConsole, 15);
 
-	nvals n;
-	cudaMemcpy(&n, &(pX_half->p_n_major[VERTCHOSEN]), sizeof(nvals), cudaMemcpyDeviceToHost);
-	printf("%d pX_half n %1.12E n_n %1.12E \n!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n", VERTCHOSEN, n.n, n.n_n);
-	cudaMemcpy(&n, &(pX_target->p_n_major[VERTCHOSEN]), sizeof(nvals), cudaMemcpyDeviceToHost);
-	printf("%d pX_target n %1.12E n_n %1.12E \n!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n", VERTCHOSEN, n.n, n.n_n);
 	
 	if (!GlobalSuppressSuccessVerbosity) {
+		nvals n;
+		cudaMemcpy(&n, &(pX_half->p_n_major[VERTCHOSEN]), sizeof(nvals), cudaMemcpyDeviceToHost);
+		printf("%d pX_half n %1.12E n_n %1.12E \n!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n", VERTCHOSEN, n.n, n.n_n);
+		cudaMemcpy(&n, &(pX_target->p_n_major[VERTCHOSEN]), sizeof(nvals), cudaMemcpyDeviceToHost);
+		printf("%d pX_target n %1.12E n_n %1.12E \n!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n", VERTCHOSEN, n.n, n.n_n);
+	
 		f64 tempf64;
 		cudaMemcpy(&tempf64, &(pX_target->p_v_n[VERTCHOSEN + BEGINNING_OF_CENTRAL].y),
 			sizeof(f64), cudaMemcpyDeviceToHost);
@@ -14597,6 +14590,7 @@ void cuSyst::PerformCUDA_Advance_noadvect(//const
 		cudaMemcpy(&tempf64, &(this->p_AAdot[VERTCHOSEN + BEGINNING_OF_CENTRAL].Azdot),
 			sizeof(f64), cudaMemcpyDeviceToHost);
 		printf("Azdot %1.10E \n", tempf64);		
+		getch();
 	}
 
 	// ```````````````````````````````````````````````````````````````
@@ -15858,24 +15852,23 @@ void cuSyst::PerformCUDA_Advance_noadvect(//const
 		p_SelectflagNeut
 		);
 	Call(cudaThreadSynchronize(), "cudaTS visccontrib neut");
-
-
+	
 	printf("testing pX_half->p_vie\n");
 	ReportNaNs << <numTilesMinor, threadsPerTileMinor >> >(pX_half->p_vie, &bNaN);
 	Call(cudaThreadSynchronize(), "cudaTS ReportNaNs 122");
 	printf("tested pX_half->p_vie\n");
 	if (bNaN) { while (1) getch(); };
-
-
+	
 	printf("testing this->p_vie\n");
 	ReportNaNs << <numTilesMinor, threadsPerTileMinor >> >(this->p_vie, &bNaN);
 	Call(cudaThreadSynchronize(), "cudaTS ReportNaNs 444");
 	printf("tested this->p_vie\n");
 	if (bNaN) { while (1) getch(); };
 
+
 	// The following function is modelled on epsilon calc and must be updated with it.
 	kernelCreate_v_k_modified_with_fixed_flows << <numTilesMinor, threadsPerTileMinor >> > (
-		hsub,
+		0.5*Timestep,
 		this->p_info,
 		p_vie_modified_k,
 		p_v_n_modified_k,
@@ -15891,19 +15884,18 @@ void cuSyst::PerformCUDA_Advance_noadvect(//const
 		);
 	Call(cudaThreadSynchronize(), "cudaTS Create v_k_modified");
 	
+
 	cudaMemcpy(pX_half->p_vie, p_vie_modified_k, sizeof(v4)*NMINOR, cudaMemcpyDeviceToDevice);
 	cudaMemcpy(pX_half->p_v_n, p_v_n_modified_k, sizeof(f64_vec3)*NMINOR, cudaMemcpyDeviceToDevice);
 	// This is to give us a good starting point for applying a seed that we created based on the move between systems.
-
+	
 
 	printf("testing p_vie_modified_k");
 	ReportNaNs << <numTilesMinor, threadsPerTileMinor >> >(p_vie_modified_k, &bNaN);
 	Call(cudaThreadSynchronize(), "cudaTS ReportNaNs 13");
 	printf("tested p_vie_modified_k");
 	if (bNaN) { while (1) getch(); };
-
-	
-	
+		
 	if (0) {
 		f64 tempf64_2, tempf64_3;
 		long izTri[12];
@@ -16228,16 +16220,6 @@ void cuSyst::PerformCUDA_Advance_noadvect(//const
 	};
 
 
-
-
-
-
-
-
-
-
-
-
 	/*printf("\nDEBUG: Look for negs!\n");
 	cudaMemset(p_longtemp, 0, sizeof(long)*numTilesMinor);
 	kernelFindNegative_dTi << <numTilesMinor, threadsPerTileMinor >> > (
@@ -16251,8 +16233,6 @@ void cuSyst::PerformCUDA_Advance_noadvect(//const
 	if (negs > 0) {
 		getch(); getch(); getch();
 	};*/
-
-
 	 
 
 	if (DEFAULTSUPPRESSVERBOSITY == false) {
@@ -16333,7 +16313,7 @@ void cuSyst::PerformCUDA_Advance_noadvect(//const
 	kernelAdd3 << <numTilesMinor, threadsPerTileMinor >> > (p_MAR_elec, p_MAR_elec2);
 	kernelAdd3 << <numTilesMinor, threadsPerTileMinor >> > (p_MAR_neut, p_MAR_neut2);
 	Call(cudaThreadSynchronize(), "cudaTS addMAR");
-	
+
 
 	// --------------------------------------------------------
 	// --------           DIAGNOSTIC GRAPHS            --------
@@ -16690,14 +16670,11 @@ void cuSyst::PerformCUDA_Advance_noadvect(//const
 	 
 	//f64 Ez_strength_ = (Iz_prescribed_endtime - Iz0) / sigma_Izz;
 	//Set_f64_constant(Ez_strength, Ez_strength_);
-
 	//f64 neg_Iz_per_triangle = -(Iz_prescribed_endtime) / (f64)numReverseJzTriangles;
 	//Set_f64_constant(negative_Iz_per_triangle, neg_Iz_per_triangle);
-
 	//printf("GPU: Iz_prescribed %1.14E Iz0 %1.14E sigma_Izz %1.14E \n",
 	//	Iz_prescribed_endtime, Iz0, sigma_Izz);
 	//printf("Ez_strength (GPU) %1.14E \n", Ez_strength_);
-
 	//// Update velocities and Azdot:
 	//kernelCalculateVelocityAndAzdot_noadvect << <numTilesMinor, threadsPerTileMinor >> > (
 	//	0.5*Timestep,
@@ -16727,11 +16704,10 @@ void cuSyst::PerformCUDA_Advance_noadvect(//const
 	// $$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
 	// Why are we doing this way? Consistent would be better.
 	// $$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
-
-
+	
 	kernelResetFrillsAz_II << < numTriTiles, threadsPerTileMinor >> > (
 		this->p_info, this->p_tri_neigh_index, pX_half->p_AAdot);
-	Call(cudaThreadSynchronize(), "cudaTS ResetFrills I");
+	Call(cudaThreadSynchronize(), "cudaTS ResetFrills II");
 
 	// ))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
 	// 
@@ -16789,9 +16765,7 @@ void cuSyst::PerformCUDA_Advance_noadvect(//const
 		);
 	Call(cudaThreadSynchronize(), "cudaTS kernelCreate_pressure_gradT_and_gradA_CurlA_minor_noadvect pX_half");
 	
-
-	// Copy it to pX_target because we haven't called pressure there yet:
-	 
+	// Copy it to pX_target because we haven't called pressure there yet:	 
 	cudaMemcpy(pX_target->p_AreaMinor, pX_half->p_AreaMinor, sizeof(f64)*NMINOR, cudaMemcpyDeviceToDevice);
 	
 	kernelNeutral_pressure << <numTriTiles, threadsPerTileMinor >> > (
@@ -16871,9 +16845,7 @@ void cuSyst::PerformCUDA_Advance_noadvect(//const
 	Call(cudaThreadSynchronize(), "cudaTS Average_nTx cc");
 
 	// Do not need cc shard model
-
 	// Do need cc for the following THOUGH !!!
-
 	// HEAT DIFFUSION:
 
 	kernelCalculate_kappa_nu_vertices << <numTilesMajor, threadsPerTileMajor >> >(
@@ -16925,8 +16897,7 @@ void cuSyst::PerformCUDA_Advance_noadvect(//const
 			0,
 			false);
 		SetConsoleTextAttribute(hConsole, 14);
-	}
-	else {
+	} else {
 		printf("iHistory %d\n", iHistory);
 		cudaMemset(p_regressors + (REGRESSORS - 1)*NUMVERTICES, 0, sizeof(f64)*NUMVERTICES);
 	};
@@ -16935,10 +16906,8 @@ void cuSyst::PerformCUDA_Advance_noadvect(//const
 				p_Tnk, p_Tn,
 				HEATSTEP, pX_half, false,
 				0, p_kappa_n, p_nu_i);		
-
 	} while (iSuccess != 0);
-
-
+	
 	printf("ION SOLVE:\n");
 	if (iHistory > 0)
 	{
@@ -16953,8 +16922,7 @@ void cuSyst::PerformCUDA_Advance_noadvect(//const
 			1,
 			false);
 		SetConsoleTextAttribute(hConsole, 14);
-	}
-	else {
+	} else {
 		printf("iHistory %d\n", iHistory);
 		cudaMemset(p_regressors + (REGRESSORS - 1)*NUMVERTICES, 0, sizeof(f64)*NUMVERTICES);
 	};
@@ -16964,8 +16932,7 @@ void cuSyst::PerformCUDA_Advance_noadvect(//const
 			HEATSTEP, pX_half, false,
 			1, p_kappa_i, p_nu_i);
 	} while (iSuccess != 0);
-
-
+	
 	printf("ELECTRON SOLVE:\n");
 	if (iHistory > 0)
 	{
@@ -18057,7 +18024,7 @@ void cuSyst::PerformCUDA_Advance_noadvect(//const
 
 	// The following function is modelled on epsilon calc and must be updated with it.
 	kernelCreate_v_k_modified_with_fixed_flows << <numTilesMinor, threadsPerTileMinor >> > (
-		hsub,
+		Timestep,
 		this->p_info,
 		p_vie_modified_k,
 		p_v_n_modified_k,
@@ -19793,7 +19760,7 @@ void inline SubroutineComputeDbyDbeta(
 	//	cudaMemcpy(&tempf64, &(p_ROCMAR2[CHOSEN].z), sizeof(f64), cudaMemcpyDeviceToHost);
 //		printf("\nROCMAR2[%d].z %1.14E \n\n", CHOSEN, tempf64);
 	} 
-
+	 
 	kernelComputeCombinedDEpsByDBeta << <numTilesMinor, threadsPerTileMinor >> >
 	(
 		hsub,
@@ -19839,6 +19806,8 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 	int i, iMoveType;
 	f64 TSS_xy, TSS_iz, TSS_ez, RSS_xy, RSS_iz, RSS_ez;
 	f64 Rsquared_xy, Rsquared_iz, Rsquared_ez;
+	f64 temp_iz, temp_ez;
+	f64_vec2 temp_xy;
 
 	HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
 
@@ -19924,7 +19893,12 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 		2, m_e_, 1.0 / m_e_,
 		p_Selectflag);
 	Call(cudaThreadSynchronize(), "cudaTS Create visc flux elec");
-	  
+	
+	// It's simply that we are missing setting epsilon to zero first? 
+	CallMAC(cudaMemset(p_epsilon_xy, 0, sizeof(f64_vec2)*NMINOR));
+	CallMAC(cudaMemset(p_epsilon_iz, 0, sizeof(f64)*NMINOR));
+	CallMAC(cudaMemset(p_epsilon_ez, 0, sizeof(f64)*NMINOR));
+	
 	// Given putative ROC and coeff on self, it is simple to calculate eps and Jacobi. So do so:
 	CallMAC(cudaMemset(p_bFailed, 0, sizeof(bool)*numTilesMinor));
 	kernelCreateEpsilon_Visc << <numTilesMinor, threadsPerTileMinor >> > (
@@ -20003,7 +19977,7 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 	// set epsilon vectors again at end of loop.		
 	while (bContinue) {
 
-		printf("--------------------------------------------- iteration %d\n", iIteration);
+		printf("------- Iteration %d\n", iIteration);
 
 	//	ReportNaNs << <numTilesMinor, threadsPerTileMinor >> >(p_vie, &bNaN);
 	//	Call(cudaThreadSynchronize(), "cudaTS ReportNaNs 4");
@@ -20228,7 +20202,9 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 				// 2. Spread out around it, add points to equation list (CPU?) 
 				// (within domain only)
 				printf("Add points to eqn list. iMax: %d ; ", iMax);
-
+				printf("p_tempvec2_host[%d] = %1.10E %1.10E p_temphost1[%d] = %1.10E p_temphost2[%d] = %1.10E\n",
+					iMax, p_tempvec2_host[iMax].x, p_tempvec2_host[iMax].y,
+					iMax, p_temphost1[iMax], iMax, p_temphost2[iMax]);
 				CallMAC(cudaMemcpy(cuSyst_host.p_info, pX_use->p_info, sizeof(structural)*NMINOR, cudaMemcpyDeviceToHost));
 
 				memset(iRing, 0, sizeof(int)*NMINOR);
@@ -20332,7 +20308,7 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 					};
 					iRingLength[whichRing] = ilength;
 			//		printf("iRingLength[%d] = %d\n", whichRing, ilength);
-					++whichRing;
+					if (ilength > 0) ++whichRing; // Added if (ilength>0) as otherwise we always pass through here even if ring 2 contained no members.
 					ilengthprev = ilength;
 					//memcpy(izArrayPrev, izArray, sizeof(long)*ilength);
 					
@@ -20641,7 +20617,7 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 				printf("ActualNumberOfOuterEquations = %d\n", ActualNumberOfOuterEquations);
 				printf("ActualNumberOfEquations = %d\n", ActualNumberOfEquations);
 				printf("ActualNumberOfOuterNeighbours = %d\n", ActualNumberOfOuterNeighbours);
-				printf("Total iEqns = %d\n", iEqns);
+				printf("Total iEqns = %d  EQNS_TOTAL %d\n", iEqns, EQNS_TOTAL);
 				printf("Start of outer rings = %d ; last ring = %d", StartOfOuterRings, whichRing);
 				
 				// ======================================================================================================
@@ -20690,7 +20666,18 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 						1, m_i_, 1.0 / m_i_
 						);
 				Call(cudaThreadSynchronize(), "cudaTS kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species_effect_of_neighs_on_flux");
-
+				if (ActualNumberOfEquations <= 24) {
+					printf("ION\n");
+					cudaMemcpy(p_eqns_host, ionmomflux_eqns, 3 * iEqns * 3 * iEqns * sizeof(f64),
+						cudaMemcpyDeviceToHost);
+					for (i = 0; i < 3 * iEqns; i++) {
+						for (j = 0; j < 3 * iEqns; j++)
+						{
+							printf("%1.11E ", p_eqns_host[i * 3 * iEqns + j]);
+						};
+						printf("\n");
+					};
+				};
 				kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species_effect_of_neighs_on_flux
 					<< <numTriTiles, threadsPerTileMinor >> > (
 						pX_use->p_info,
@@ -20709,7 +20696,18 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 						2, m_e_, 1.0 / m_e_
 						);
 				Call(cudaThreadSynchronize(), "cudaTS kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species_effect_of_neighs_on_flux");
-
+				if (ActualNumberOfEquations <= 24) {
+					printf("ELECTRON\n");
+					cudaMemcpy(p_eqns_host, elecmomflux_eqns, 3 * iEqns * 3 * iEqns * sizeof(f64),
+						cudaMemcpyDeviceToHost);
+					for (i = 0; i < 3 * iEqns; i++) {
+						for (j = 0; j < 3 * iEqns; j++)
+						{
+							printf("%1.11E ", p_eqns_host[i * 3 * iEqns + j]);
+						};
+						printf("\n");
+					};
+				};
 				CallMAC(cudaMemset(p_eqns_big, 0, sizeof(f64) * 4 * 4 * (EQNS_TOTAL+MAXRINGLEN)*(EQNS_TOTAL + MAXRINGLEN)));
 				CallMAC(cudaMemset(p_RHS_big, 0, sizeof(f64) * 4 * (EQNS_TOTAL + MAXRINGLEN)));
 				cudaMemset(p_eqns, 0, sizeof(f64) * 4 * 4 * EQNS_TOTAL*EQNS_TOTAL);
@@ -20785,9 +20783,25 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 						cudaMemcpy(&(p_eqns[4*EQNS_TOTAL*i]), &(p_eqns_big[4 * (EQNS_TOTAL+MAXRINGLEN)*i]),
 							sizeof(f64)*4*EQNS_TOTAL, cudaMemcpyDeviceToDevice);
 					cudaMemcpy(p_RHS, p_RHS_big, sizeof(f64)*4* ActualNumberOfEquations, cudaMemcpyDeviceToDevice);
+
+//					if (ActualNumberOfEquations <= 24) {
+//						cudaMemcpy(p_eqns_host, p_eqns, 4 * EQNS_TOTAL * 4 * EQNS_TOTAL * sizeof(f64),
+//							cudaMemcpyDeviceToHost);
+//						cudaMemcpy(p_temphost5, p_RHS, 4 * EQNS_TOTAL * sizeof(f64), cudaMemcpyDeviceToHost);
+//						for (i = 0; i < 4 * iEqns; i++) {
+//							for (j = 0; j < 4 * iEqns; j++)
+//							{
+//								printf("%1.11E ", p_eqns_host[i * 4 * EQNS_TOTAL + j]);
+//							};
+//							printf("  |  %1.11E \n", p_temphost5[i]);
+//						}
+//					};
+
 				};
 				
 				if (0) {
+					printf("saving eqn matrix.\n");
+
 					cudaMemcpy(p_eqns_host, p_eqns, 4 * iEqns * 4 * iEqns * sizeof(f64),
 						cudaMemcpyDeviceToHost);
 					cudaMemcpy(p_temphost5, p_RHS, 4 * iEqns * sizeof(f64), cudaMemcpyDeviceToHost);
@@ -20831,27 +20845,31 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 				cudaMemcpy(p_eqns_host, p_eqns, 4 * EQNS_TOTAL * 4 * EQNS_TOTAL * sizeof(f64),
 					cudaMemcpyDeviceToHost);
 				cudaMemcpy(p_temphost5, p_RHS, 4 * EQNS_TOTAL * sizeof(f64), cudaMemcpyDeviceToHost);
-
-			//	printf("Solving equations.\n");				
-			//	printf("copy to host\n");
-				
+	
 				matLU.Invoke(4 * ActualNumberOfEquations); // Amount of eqns we expect to solve.				
 				for (int i = 0; i < 4 * ActualNumberOfEquations; i++)
 					memcpy(&(matLU.LU[i][0]), &(p_eqns_host[i * 4 * EQNS_TOTAL]), 
 						sizeof(f64) * 4 * ActualNumberOfEquations);
 				
-
-				//FILE * fpdbg;
-				//fpdbg = fopen("matrix.txt", "w");
-				//for (int i = 0; i < 4 * EQNS_TOTAL; i++) {
-				//	for (int j = 0; j < 4 * EQNS_TOTAL; j++)
-				//	{
-				//		fprintf(fpdbg, "%1.13E ", matLU.LU[i][j]);
-				//	};
-				//	fprintf(fpdbg, "| %1.13E\n", p_temphost5[i]);
-				//};
-				//fclose(fpdbg);
-
+			//	for (int i = 0; i < 4 * EQNS_TOTAL; i++) {
+			//		for (int j = 0; j < 4 * EQNS_TOTAL; j++)
+			//		{
+			//			printf("%1.13E ", matLU.LU[i][j]);
+			//		};
+			//		printf("| %1.13E\n", p_temphost5[i]);
+			//	};
+			//	FILE * fpdbg;
+			//	fpdbg = fopen("matrix.txt", "w");
+			//	for (int i = 0; i < 4 * ActualNumberOfEquations; i++) {
+			//		for (int j = 0; j < 4 * ActualNumberOfEquations; j++)
+			//		{
+			//			fprintf(fpdbg, "%1.13E ", matLU.LU[i][j]);
+			//		};
+			//		fprintf(fpdbg, "| %1.13E\n", p_temphost5[i]);
+			//	};
+			//	fclose(fpdbg);
+			//	printf("spat out matrix.txt\n");
+				 
 				int unused;
 				unused = 0;
 				for (int i = 0; i < 4 * ActualNumberOfEquations; i++)
@@ -20863,23 +20881,35 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 				
 			//	printf("unused %d \n", unused);
 			
-				FILE * fpdbg;
-				if (0) {
-					fpdbg = fopen("LU.txt", "w");
-					for (int i = 0; i < 4 * EQNS_TOTAL; i++) {
-						for (int j = 0; j < 4 * EQNS_TOTAL; j++)
-						{
-							fprintf(fpdbg, "%1.13E ", matLU.LU[i][j]);
-						};
-						fprintf(fpdbg, " | %1.14E \n", p_temphost5[i]);
-					};
-					fclose(fpdbg);
-				};
+				//if (0) {
+				//	fpdbg = fopen("LU.txt", "w");
+				//	for (int i = 0; i < 4 * EQNS_TOTAL; i++) {
+				//		for (int j = 0; j < 4 * EQNS_TOTAL; j++)
+				//		{
+				//			fprintf(fpdbg, "%1.13E ", matLU.LU[i][j]);
+				//		};
+				//		fprintf(fpdbg, " | %1.14E \n", p_temphost5[i]);
+				//	};
+				//	fclose(fpdbg);
+				//};
 
 				matLU.LUdecomp();			
 				matLU.LUSolve(p_temphost5, result); // solving Ax = b and it's (b, x).
 				printf("Done LU. Dimension was %d. Unused %d\n", 4 * ActualNumberOfEquations, unused);
+
+				cudaMemset(p_RHS, 0, sizeof(f64) * 4 * EQNS_TOTAL);
 				cudaMemcpy(p_RHS, result, sizeof(f64) * 4 * ActualNumberOfEquations, cudaMemcpyHostToDevice);
+				
+				// is the rest of p_RHS == 0?
+
+			//	if (ActualNumberOfEquations <= 24) {
+			//		for (i = 0; i < 4 * ActualNumberOfEquations; i++)
+			//		{
+			//			printf("%d indx %d Soln %1.12E | ", i, matLU.indx[i], result[i]);
+			//			if (i % 4 == 0) printf("\n");
+			//		};
+			//	}
+
 				if (0) {
 					fp = fopen("soln1.txt", "w");
 					for (i = 0; i < 4 * EQNS_TOTAL; i++)
@@ -21136,6 +21166,8 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 						whichRing,
 						ActualNumberOfEquations); 
 				// (ring < whicRing - 3) == regressor 0
+				// But when ring == 1 that is ALWAYS regressor 0
+				// And when ring == 2 that is ALWAYS at most regressor 1
 				Call(cudaThreadSynchronize(), "cudaTS PopulateRegressors");
 				SubroutineComputeDbyDbeta(hsub, p_regressors2, p_regressors_iz, p_regressors_ez, p_vie, pX_use, 0,
 					1, 1, 1);
@@ -21143,13 +21175,28 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 					1, 1, 1);
 				SubroutineComputeDbyDbeta(hsub, p_regressors2, p_regressors_iz, p_regressors_ez, p_vie, pX_use, 2,
 					1, 1, 1);
-				
 			
+		//		cudaMemcpy(&temp_xy, p_regressors2 + izArray[1][0], sizeof(f64_vec2), cudaMemcpyDeviceToHost);
+		//		cudaMemcpy(&temp_iz, p_regressors_iz + izArray[1][0], sizeof(f64), cudaMemcpyDeviceToHost);
+		//		cudaMemcpy(&temp_ez, p_regressors_ez + izArray[1][0], sizeof(f64), cudaMemcpyDeviceToHost);
+		//		printf("izArray[1][0] %d temp_xy %1.10E %1.10E temp_iz %1.10E temp_ez %1.10E\n",
+		//			izArray[1][0], temp_xy.x, temp_xy.y, temp_iz, temp_ez);
+		//		cudaMemcpy(&temp_xy, p_regressors2 + NMINOR+ izArray[1][0], sizeof(f64_vec2), cudaMemcpyDeviceToHost);
+		//		cudaMemcpy(&temp_iz, p_regressors_iz + NMINOR + izArray[1][0], sizeof(f64), cudaMemcpyDeviceToHost);
+		//		cudaMemcpy(&temp_ez, p_regressors_ez + NMINOR + izArray[1][0], sizeof(f64), cudaMemcpyDeviceToHost);
+		//		printf("izArray[1][0] %d temp_xy %1.10E %1.10E temp_iz %1.10E temp_ez %1.10E\n",
+		//			izArray[1][0], temp_xy.x, temp_xy.y, temp_iz, temp_ez);
+		//		cudaMemcpy(&temp_xy, p_regressors2 + NMINOR*2 + izArray[1][0], sizeof(f64_vec2), cudaMemcpyDeviceToHost);
+		//		cudaMemcpy(&temp_iz, p_regressors_iz + NMINOR*2 + izArray[1][0], sizeof(f64), cudaMemcpyDeviceToHost);
+		//		cudaMemcpy(&temp_ez, p_regressors_ez + NMINOR*2 + izArray[1][0], sizeof(f64), cudaMemcpyDeviceToHost);
+		//		printf("izArray[1][0] %d temp_xy %1.10E %1.10E temp_iz %1.10E temp_ez %1.10E\n",
+		//			izArray[1][0], temp_xy.x, temp_xy.y, temp_iz, temp_ez);
+		//		printf("whichRing %d \n", whichRing);
+
 				// For now let's do without Jacobi, to experiment.
 
 
 				if (0) {//iIteration == 401) {
-
 
 					SetConsoleTextAttribute(hConsole, 14);
 					kernelPutative_v_from_matrix << <numTilesMinor, threadsPerTileMinor >> > (
@@ -21197,9 +21244,6 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 							2, m_e_, 1.0 / m_e_
 							);
 					Call(cudaThreadSynchronize(), "cudaTS kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species_effect_of_neighs_on_flux");
-
-					printf("done 2nd viscous elecmomflux_eqns\n press g\n");
-					while (getch() != 'g');
 
 					CallMAC(cudaMemset(p_eqns, 0, sizeof(f64) * 4 * 4 * EQNS_TOTAL*EQNS_TOTAL));
 					CallMAC(cudaMemset(p_RHS, 0, sizeof(f64) * 4 * EQNS_TOTAL));
@@ -21505,6 +21549,7 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 				} else {
 					// Do nothing because we already set regressors and Ax to 0.
 
+					// For those past 0,1,2.					
 				}
 				//	Careful of autocorrelation. Is there a way to reduce it?
 				/*
@@ -21678,18 +21723,12 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 //
 //				SubroutineComputeDbyDbeta(hsub, p_regressors2, p_regressors_iz, p_regressors_ez, p_vie, pX_use, 5,
 //					1, 1, 1);
-//				/*
-//
-				
+//				/*				
 							  // 7 = previous xy move, or historic xy move
 							  // 8 = previous iz and ez moves, or historic.
-
 							  // Let's say we want to try a move that just completely emphasizes the most volatile points, ie divide by sqrt N.
-
 				/////////////////////////////////////////////////////////////////////////////////////
 				// We overwrote what used to be, splitting out the xy prev component into slot 6.
-
-
 
 				break;
 			case 1:
@@ -22369,52 +22408,55 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 		// collect eps deps and sum-product matrix
 		// ===============================================
 
+	//	GlobalSuppressSuccessVerbosity = false; // DEBUG
+
 		f64 eps_deps[REGRESSORS];
 		f64 sum_product_matrix[REGRESSORS*REGRESSORS];
 		memset(eps_deps, 0, sizeof(f64) * REGRESSORS);
 		memset(sum_product_matrix, 0, sizeof(f64) * REGRESSORS*REGRESSORS);
 
 		char o;
+
+		// Run this part for all cases so that we have got eps_deps to create dRSS0.
+
+		cudaMemset(p_eps_against_d_eps, 0, sizeof(f64)*REGRESSORS * numTilesMinor);
+		cudaMemset(p_sum_product_matrix, 0, sizeof(f64) * REGRESSORS*REGRESSORS* numTilesMinor);
+		kernelAccumulateSummandsVisc << <numTilesMinor, threadsPerTileMinor / 4 >> > (
+			p_epsilon_xy, // 
+			p_epsilon_iz,
+			p_epsilon_ez,
+			p_d_epsxy_by_d_beta_i, // f64_vec2
+			p_d_eps_iz_by_d_beta_i,
+			p_d_eps_ez_by_d_beta_i,
+
+			p_eps_against_d_eps,  // 1x8 for each tile
+			p_sum_product_matrix // this is 8x8 for each tile
+			);
+		Call(cudaThreadSynchronize(), "cudaTS AccumulateSummands visc2");
+
+		cudaMemcpy(p_eps_against_d_eps_host, p_eps_against_d_eps, sizeof(f64) * REGRESSORS * numTilesMinor, cudaMemcpyDeviceToHost);
+		cudaMemcpy(p_sum_product_matrix_host, p_sum_product_matrix, sizeof(f64) * REGRESSORS*REGRESSORS * numTilesMinor, cudaMemcpyDeviceToHost);
+
+		for (iTile = 0; iTile < numTilesMinor; iTile++)
+		{
+			for (i = 0; i < REGRESSORS; i++)
+				eps_deps[i] -= p_eps_against_d_eps_host[iTile *REGRESSORS + i];
+			// Note minus, to get beta already negated.
+			for (i = 0; i < REGRESSORS*REGRESSORS; i++)
+				sum_product_matrix[i] += p_sum_product_matrix_host[iTile *REGRESSORS*REGRESSORS + i];
+		};
 		if (iMoveType != 5) {
-
-			cudaMemset(p_eps_against_d_eps, 0, sizeof(f64)*REGRESSORS * numTilesMinor);
-			cudaMemset(p_sum_product_matrix, 0, sizeof(f64) * REGRESSORS*REGRESSORS* numTilesMinor);
-			kernelAccumulateSummandsVisc << <numTilesMinor, threadsPerTileMinor / 4 >> > (
-				p_epsilon_xy, // 
-				p_epsilon_iz,
-				p_epsilon_ez,
-				p_d_epsxy_by_d_beta_i, // f64_vec2
-				p_d_eps_iz_by_d_beta_i,
-				p_d_eps_ez_by_d_beta_i,
-
-				p_eps_against_d_eps,  // 1x8 for each tile
-				p_sum_product_matrix // this is 8x8 for each tile
-				);
-			Call(cudaThreadSynchronize(), "cudaTS AccumulateSummands visc2");
-
-			cudaMemcpy(p_eps_against_d_eps_host, p_eps_against_d_eps, sizeof(f64) * REGRESSORS * numTilesMinor, cudaMemcpyDeviceToHost);
-			cudaMemcpy(p_sum_product_matrix_host, p_sum_product_matrix, sizeof(f64) * REGRESSORS*REGRESSORS * numTilesMinor, cudaMemcpyDeviceToHost);
-
-			for (iTile = 0; iTile < numTilesMinor; iTile++)
-			{
-				for (i = 0; i < REGRESSORS; i++)
-					eps_deps[i] -= p_eps_against_d_eps_host[iTile *REGRESSORS + i];
-				// Note minus, to get beta already negated.
-				for (i = 0; i < REGRESSORS*REGRESSORS; i++)
-					sum_product_matrix[i] += p_sum_product_matrix_host[iTile *REGRESSORS*REGRESSORS + i];
-			};
 			// Try this:
 			for (i = 0; i < REGRESSORS; i++)
 				if ((sum_product_matrix[REGRESSORS*i + i] == 0.0) && (eps_deps[i] == 0.0))
 					sum_product_matrix[REGRESSORS*i + i] = 1.0;
-
 
 			if ((!GlobalSuppressSuccessVerbosity) || (iIteration >= ITERGRAPH))
 			{
 				printf("\n");
 				for (i = 0; i < REGRESSORS; i++) {
 					for (int j = 0; j < REGRESSORS; j++)
-						printf("ei %1.9E ", sum_product_matrix[i*REGRESSORS + j]);
+						printf("%1.9E ", sum_product_matrix[i*REGRESSORS + j]);
 					printf(" |  %1.9E \n", eps_deps[i]);
 				}
 				printf("\n");
@@ -22436,12 +22478,12 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 			matLU.LUdecomp();
 			matLU.LUSolve(eps_deps, beta);
 
-			SetConsoleTextAttribute(hConsole, 13);
-			printf("\nbeta: ");
-			for (i = 0; i < REGRESSORS; i++)
-				printf(" %1.8E ", beta[i]);
-			printf("\n");
-			SetConsoleTextAttribute(hConsole, 15);
+		//	SetConsoleTextAttribute(hConsole, 13);
+		//	printf("\nbeta: ");
+		//	for (i = 0; i < REGRESSORS; i++)
+		//		printf(" %1.8E ", beta[i]);
+		//	printf("\n");
+		//	SetConsoleTextAttribute(hConsole, 15);
 
 			if ((iIteration == ITERGRAPH) || (bDebug)) {
 				printf("reset beta? y/n\n");
@@ -22486,34 +22528,26 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 			//		beta[5] = 0.0;
 			//		beta[6] = 0.0;
 			//		beta[7] = 0.0;
-
-
 			//	beta[0] = -1.0;
 			//	beta[1] = -1.0;
 			//	beta[2] = -1.0;
 			/*
-
 			#ifdef LAPACKE
 			lapack_int ipiv[REGRESSORS];
 			lapack_int Nrows = REGRESSORS,
 			Ncols = REGRESSORS,  // lda
 			Nrhscols = 1, // ldb
 			Nrhsrows = REGRESSORS, info;
-
 			//	for (i = 0; i < REGRESSORS; i++) {
 			//		for (int j = 0; j < REGRESSORS; j++)
 			//			printf("%1.8E ", sum_product_matrix[i*REGRESSORS + j]);
 			//		printf(" ] [ %1.8E ]\n", eps_deps[i]);
 			//	};
-
-
-
 			//	printf("LAPACKE_dgesv Results\n");
 			// Solve the equations A*X = B
 			info = LAPACKE_dgesv(LAPACK_ROW_MAJOR,
 			Nrows, 1, sum_product_matrix, Ncols, ipiv, eps_deps, Nrhscols);
 			// Check for the exact singularity :
-
 			if (info > 0) {
 			printf("The diagonal element of the triangular factor of A,\n");
 			printf("U(%i,%i) is zero, so that A is singular;\n", info, info);
@@ -22546,10 +22580,14 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 			// 
 		} else {
 
+		// Case 5?
+
+		// Trouble is that we have not collected the info to produce dRSS0.
+
 			beta[0] = 1.0;
 			beta[1] = 1.0;
 			beta[2] = 1.0;
-			memset(&(beta[3]), 0, sizeof(f64) * 5);
+			memset(&(beta[3]), 0, sizeof(f64) * (REGRESSORS-3));
 		};
 		// Now beta[8] is the set of coefficients for x
 		// Move to the new value: add lc of regressors to proposal vector.
@@ -22557,7 +22595,7 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 		CallMAC(cudaMemcpyToSymbol(beta_n_c, beta, REGRESSORS * sizeof(f64)));
 
 		printf("Iteration %d visc: [ beta ", iIteration);
-		for (i = 0; i < REGRESSORS; i++) printf("%1.3E ", beta[i]);
+		for (i = 0; i < REGRESSORS; i++) printf("%1.4E ", beta[i]);
 		printf(" ]\n");
 
 		//// Predict change.
@@ -22593,7 +22631,7 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 		// Be careful what we are doing here:			
 		// we have 4 dimensions of epsilon.
 		// However we only care about sum eps.deps which is d/dlambda[RSS].
-
+		 
 		// 2. Compute dRSS/dlambda(0) 
 		dRSS0 = 0.0;
 		for (i = 0; i < REGRESSORS; i++)
@@ -22601,9 +22639,17 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 		// Test to make sure we got it negative:
 		if (dRSS0 > 0.0) {
 			printf("ERROR: dRSSbydlambda0 %1.9E \n\a", dRSS0);
-
-		}
-		else {
+			// In this case we need to understand why.
+			// Under the linear approximation we should have chosen coefficients beta which made a good direction linearly.
+			printf("\n");
+			for (i = 0; i < REGRESSORS; i++) {
+				for (int j = 0; j < REGRESSORS; j++)
+					printf("%1.9E ", sum_product_matrix[i*REGRESSORS + j]);
+				printf(" |  %1.9E \n", eps_deps[i]);
+			}
+			printf("\n");
+			getch();
+		} else {
 			//	printf("Success? dRSSbydlambda0 %1.9E \n", dRSS0);
 		};
 
@@ -22681,14 +22727,19 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 		Call(cudaThreadSynchronize(), "cudaTS CreateLCv4");
 
 		// DEBUG : 
-		if (0)//(iMoveType == 4) && (iIteration == ITERGRAPH))
+		if (0)//iMoveType == 5)
 		{
 			v4 tempv4;
-			for (int iEqn = 0; iEqn < EQNS_TOTAL; iEqn++) {
+			for (int iEqn = 0; ((iEqn < ActualNumberOfEquations) && (iEqn < 4)); iEqn++) {
 				cudaMemcpy(&(tempv4.vxy), &(p_epsilon_xy[eqnlist[iEqn]]), sizeof(f64_vec2), cudaMemcpyDeviceToHost);
 				cudaMemcpy(&(tempv4.viz), &(p_epsilon_iz[eqnlist[iEqn]]), sizeof(f64), cudaMemcpyDeviceToHost);
 				cudaMemcpy(&(tempv4.vez), &(p_epsilon_ez[eqnlist[iEqn]]), sizeof(f64), cudaMemcpyDeviceToHost);
 				printf("Eqn: %d %d : epsilon b4 loop: %1.14E %1.14E %1.14E %1.14E \n",
+					iEqn, eqnlist[iEqn], tempv4.vxy.x, tempv4.vxy.y, tempv4.viz, tempv4.vez);
+				cudaMemcpy(&(tempv4.vxy), &(p_regrlc2[eqnlist[iEqn]]), sizeof(f64_vec2), cudaMemcpyDeviceToHost);
+				cudaMemcpy(&(tempv4.viz), &(p_regrlc_iz[eqnlist[iEqn]]), sizeof(f64), cudaMemcpyDeviceToHost);
+				cudaMemcpy(&(tempv4.vez), &(p_regrlc_ez[eqnlist[iEqn]]), sizeof(f64), cudaMemcpyDeviceToHost);
+				printf("Eqn: %d %d : regrlc b4 loop: %1.14E %1.14E %1.14E %1.14E \n",
 					iEqn, eqnlist[iEqn], tempv4.vxy.x, tempv4.vxy.y, tempv4.viz, tempv4.vez);
 			};
 		}
@@ -22712,7 +22763,8 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 		bool condition = true;
 		bool bGiveUp = false;
 
-		if ((o == 'y') || (iMoveType == 5)){
+		if ((o == 'y')) { // || (iMoveType == 5)){ 
+			// Note that if it chooses a tiny coefficient we will put it back to 0.16?
 			bGiveUp = true;
 			printf("Skipping most of lambda loop!\n");
 		};
@@ -22722,6 +22774,8 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 			SetConsoleTextAttribute(hConsole, 12);
 			printf("iMoveType %d : Loop: lambda = %1.9E \n", iMoveType, lambda);
 			SetConsoleTextAttribute(hConsole, 15);
+
+			if (lambda > 1.0e30) getch();
 
 			// 1. Find RSS(lambda) and if not accepted, dRSS(lambda); call this dRSS1.
 
@@ -23237,6 +23291,8 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 					((TotalRSS1 < TotalRSS0) && (fabs(dRSS1) < 0.1*fabs(dRSS0)))
 					||
 					((b_vWDB) && (fabs(a_Brent - b_Brent) < 0.00001) && (fabs(dRSS1) < fabs(dRSS0)))
+					||
+					((b_vWDB) && ((fabs(a_Brent - b_Brent) < 1.0e-11) || (fabs(dRSSa-dRSSb) < 1.0e-11*dRSSa)))
 					) {
 					// good enough
 					printf("lambda %1.9E accepted: dRSS0 %1.6E dRSS1 %1.6E\n", lambda, dRSS0, dRSS1);
@@ -23250,18 +23306,23 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 
 				if (b_vWDB)
 				{
+					printf(" b_vWDB:");
+					// Review this whole segment.
+					// Does loop structure work properly?
+
+
 					d_Brent = c_Brent;// (d is assigned for the first time here; it won't be used above on the first iteration because mflag is set)
 					c_Brent = b_Brent;
 					dRSSc = dRSSb;
 					bool_c_equals_a_or_b = true;
-					if (dRSSa*dRSS1 < 0.0)
+					if (dRSS1 > 0.0) // dRSSa*dRSS1 < 0.0) // a is lower limit where dRSS is meant to be negative
 					{
 						b_Brent = lambda;
 						dRSSb = dRSS1;
 						bool_c_equals_a_or_b = false;
 					}
 					else {
-						a_Brent = lambda;
+						a_Brent = lambda; // at lower side, dRSS > 0.0 ... we find where dRSS = 0
 						dRSSa = dRSS1;
 					};
 
@@ -23286,14 +23347,17 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 					}
 					else {
 						// inverse quadratic:
+						printf("[d]");
 						f64 denom = (dRSSa - dRSSb)*(dRSSa - dRSSc)*(dRSSb - dRSSc);
 						lambda = (a_Brent*dRSSb*dRSSc*(dRSSb - dRSSc)
 							+ b_Brent*dRSSa*dRSSc*(dRSSc - dRSSa)
 							+ c_Brent*dRSSa*dRSSb*(dRSSa - dRSSb)
 							) / denom;
+
+						printf("W");
 					};
 					f64 delta = 1.0e-14*(fabs(b_Brent) + 1.0); // machine precision tolerance, see p.51 of
-															   // "Algorithms for Minimization Without Derivatives" by Richard P. Brent
+																// "Algorithms for Minimization Without Derivatives" by Richard P. Brent
 					if ((!within(lambda, 0.75*a_Brent + 0.25*b_Brent, b_Brent)) ||
 						((mflag == true) && ((fabs(lambda - b_Brent) >= 0.5*fabs(b_Brent - c_Brent)) || (fabs(b_Brent - c_Brent) < delta))) ||
 						((mflag == false) && ((fabs(lambda - b_Brent) >= 0.5*fabs(c_Brent - d_Brent)) || (fabs(c_Brent - d_Brent) < delta)))
@@ -23307,9 +23371,9 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 					else {
 						mflag = false;
 					};
-
+					
 				} else {
-
+					//printf(" 0:");
 					// Not Brent's method yet
 					// (b_vWDB == false)
 					if ((dRSS1 > 0.0)) {
@@ -23329,10 +23393,15 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 						// c is somehow lagged to a and b -- accepting s is what triggers cnot equal a or b
 						// Run secant method the first time:
 
-						lambda = b_Brent - dRSSb*(b_Brent - a_Brent) / (dRSSb - dRSSa);
+						if (dRSSb - dRSSa == 0.0) {
+							lambda = 0.5*(a_Brent + b_Brent); // safe division
+						} else {
+							printf("[b-a]");
+							lambda = b_Brent - dRSSb*(b_Brent - a_Brent) / (dRSSb - dRSSa);
+							printf("W");
+						};
 						f64 delta = 1.0e-14*(fabs(b_Brent) + 1.0);
 						// machine precision tolerance, see p.51 of R.P.Brent (1973)
-
 						if ((!within(lambda, 0.75*a_Brent + 0.25*b_Brent, b_Brent)) ||
 							((fabs(lambda - b_Brent) >= 0.5*fabs(b_Brent - c_Brent)) || (fabs(b_Brent - c_Brent) < delta))
 							)
@@ -23343,18 +23412,36 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 						else {
 							mflag = false;
 						};
-					}
-					else {
+
+					} else {
 						// Not bracketed the root yet.
 
-						if (dRSS1 > dRSS0) {
-							// Linearly extrapolate;
-							// aim slightly beyond where we think the root is.
-							lambda = lambda + (-dRSS0 / (dRSS1 - dRSS0))*lambda*1.01;
+						if (dRSS0 < 0.0) {
+
+							if (dRSS1 > dRSS0) {
+								// Linearly extrapolate;
+								// aim slightly beyond where we think the root is.
+
+							//	printf("[1-0]");
+								lambda = lambda + (-dRSS0 / (dRSS1 - dRSS0))*lambda*1.01;
+							//	printf("W");
+							}
+							else {
+								// Just multiply lambda by 1.6
+								lambda *= 1.6;
+
+								// Note: dRSS0 should be < 0 but it could be == 0 and we
+								// need to account for both cases.
+								// If dRSS0 < 0.0 and dRSS1 <= dRSS0 then we are still heading to better?
+								// RSS cannot go through zero since it's a sum of squares.
+
+							};
 						} else {
-							// Just multiply lambda by 1.6
-							lambda *= 1.6;
-						};
+							// weird pathological case
+							condition = true; // last pass.
+							bGiveUp = true;
+							lambda = 0.1;
+						}
 					};
 				};
 
@@ -23370,26 +23457,27 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 
 		skip:
 
-			if ((lambda < 0.16) && (iMoveType == 4) && (condition == false) && (iIteration > 100)
-				&& (iIteration % 12 == 0)) // stubborn residuals
+			if ((lambda < 0.1) && (iMoveType >= 4) && (condition == false) && (iIteration > 200)
+				//&& (iIteration % 12 == 0)
+				) // stubborn residuals
 			{
 				// If we think we are accepted lambda < 0.1 then think again.
 
 				// Note, this doesn't do anything if the linear regression already decided
 				// that the coefficients were small.
-
-
+				
 				// Which is what happens.
 				
-
-
-				printf("((lambda < 0.16) && (iMoveType == 4)) so restore coeffs to {0.16 beta,ditto,0,0,0,0,0}\n");
+				printf("((lambda < 0.1) && (iMoveType >= 4)) so restore coeffs to {0.1 beta,ditto,0,0,0,0,0}\n");
 				// Go again:
 				// This trick worked!
 
-				beta[0] = min(beta[0], max(1.0, beta[0])*0.16);
-				beta[1] = min(beta[1], max(1.0, beta[1])*0.16);
-				beta[2] = min(beta[2], max(1.0, beta[2])*0.16);
+				// Why not accounting for negative beta?
+				// Can't make sense of the following -- going to scrap it.
+
+				beta[0] = beta[0] * 0.1;  //min(beta[0], max(1.0, beta[0])*0.16);
+				beta[1] = beta[1] * 0.1; // min(beta[1], max(1.0, beta[1])*0.16);
+				beta[2] = beta[2] * 0.1; // min(beta[2], max(1.0, beta[2])*0.16);
 				beta[3] = 0.0;
 				beta[4] = 0.0;
 				beta[5] = 0.0;
@@ -23463,8 +23551,411 @@ labelBudgerigar2:
 	fclose(fp);
 }
 
+void Ampere_solve()
+{
+	// As far as I can tell, extern device pointer just doesn't work.
 
+	HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
+	f64 beta[3];
+	cuSyst * pX_use = &cuSyst1;
+
+	cudaPointerAttributes PA;
+	memset(&PA, 0, sizeof(cudaPointerAttributes));
+	printf("going to call cudaPointerGetAttributes\n");
+	cudaError_t cudaStatus = cudaPointerGetAttributes(&PA, (void *)p_temp2);
+	printf("cudaStatus %s", cudaGetErrorString(cudaStatus));
+
+	printf("p_temp2: %d %lld %lld %d", PA.device, (long long)PA.devicePointer, (long long)PA.hostPointer,
+		PA.memoryType);
+	memset(&PA, 0, sizeof(cudaPointerAttributes));
+	cudaStatus = cudaPointerGetAttributes(&PA, (void *)p_Az);
+	printf("cudaStatus %s", cudaGetErrorString(cudaStatus));
+	printf("p_Az: %d %lld %lld %d", PA.device, (long long)PA.devicePointer, (long long)PA.hostPointer,
+		PA.memoryType);
+
+//	cudaMalloc((void **)&p_AAdot_temp, sizeof(AAdot)*NMINOR);
+//	cudaMalloc((void **)&p_temp_jill, sizeof(f64)*NMINOR);
+	
+	kernelPullAzFromSyst << <numTilesMinor, threadsPerTileMinor >> > (
+		cuSyst1.p_AAdot,
+		p_Az
+		);
+	Call(cudaThreadSynchronize(), "cudaTS PullAz");
+
+	kernelResetFrillsAz << <numTilesMinor, threadsPerTileMinor >> > (
+		pX_use->p_info, pX_use->p_tri_neigh_index,
+		p_Az);
+	Call(cudaThreadSynchronize(), "cudaTS ResetFrillsAz");
+
+	// This code works.
+
+	printf("got to here ZZZZ\n");
+
+	//	Have we been through dimensioning p_Az?
+
+
+	// Set up integral of 4pi/c Jz
+	kernelCreateTargetForAmpere << <numTilesMinor, threadsPerTileMinor >> > (
+		pX_use->p_n_minor,
+		// populated? Check
+		pX_use->p_vie,
+		p_temp2 // 4pi/c Jz
+		);
+	Call(cudaThreadSynchronize(), "cudaTS 4pi over c Jz");
+	// Ampere: Lap Az = -4pi/c Jz
+
+	kernelGetLapCoeffs_and_min << <numTriTiles, threadsPerTileMinor >> >(
+		pX_use->p_info,
+		pX_use->p_izTri_vert,
+		pX_use->p_izNeigh_TriMinor,
+		pX_use->p_szPBCtri_vert,
+		pX_use->p_szPBC_triminor,
+		p_LapCoeffself,
+		p_temp1, // collect min
+		p_longtemp
+		);
+	Call(cudaThreadSynchronize(), "cudaTS GetLapCoeffs");
+
+	cudaMemcpy(&tempf64, p_LapCoeffself + CHOSEN, sizeof(f64), cudaMemcpyDeviceToHost);
+	printf("LapCoeffself[%d] = %1.12E\n", CHOSEN, tempf64);
+	getch();
+	
+	// Alternatively, divide by area instead of using integrated LapAz --?
+	pX_use = &cuSyst1;
+	
+	// Need to be able to account for why error in Az is reported at 1e6 not 1e3.
+	  	
+	for (int iIter = 0; iIter < 300; iIter++) {
+		kernelGetLap_minor << <numTriTiles, threadsPerTileMinor >> > (
+			pX_use->p_info,
+			p_Az,
+			pX_use->p_izTri_vert,
+			pX_use->p_izNeigh_TriMinor,
+			pX_use->p_szPBCtri_vert,
+			pX_use->p_szPBC_triminor,
+			p_LapAz
+			);
+		Call(cudaThreadSynchronize(), "cudaTS GetLap Az ");
+		// Put 0 line through outer frill centroid radius.
+		// Squash the outermost vertex cell.
+
+		cudaMemset(p_bFailed, 0, sizeof(bool)*numTilesMinor);
+		kernelCreateAmpereEpsilonAndJacobi << <numTilesMinor, threadsPerTileMinor >> >
+			(pX_use->p_info, // only domain, only within certain radius...
+				p_temp2, // target for LapAz
+				p_LapCoeffself, p_LapAz,
+				p_epsilon, p_Jacobi_x, p_bFailed
+				);
+		Call(cudaThreadSynchronize(), "cudaTS CreateEpsAndJacobi 1");
+
+		// Where are we proposing to change Az?
+
+		// Epsilon is not at scale of Az
+
+		// Draw Lap Az, target.
+		
+		// Is there a way of showing Az in triangles on graph?
+		// Average a few neighbours?
+
+
+		// Graphics:
+		// ===========
+
+		char buffer[128];
+		long iVertex;
+		f64 maxi = 0.0, mini = 0.0;
+		long iMin, iMax;
+		
+		if (iIter % 10 == 0) {
+
+			cudaMemcpy(p_temphost2, p_epsilon + BEGINNING_OF_CENTRAL, sizeof(f64)*NUMVERTICES, cudaMemcpyDeviceToHost);
+			Vertex * pVertex = pTriMesh->X;
+			plasma_data * pdata = pTriMesh->pData + BEGINNING_OF_CENTRAL;
+			for (iVertex = 0; iVertex < NUMVERTICES; iVertex++)
+			{
+				pdata->temp.x = p_temphost2[iVertex];
+
+				if (p_temphost2[iVertex] > maxi) {
+					maxi = p_temphost2[iVertex];
+					iMax = iVertex;
+				};
+				if (p_temphost2[iVertex] < mini) {
+					mini = p_temphost2[iVertex];
+					iMin = iVertex;
+				};
+
+				++pVertex;
+				++pdata;
+			}
+			SetConsoleTextAttribute(hConsole, 13);
+			printf("\niMax %d %1.10E iMin %d %1.10E\n", iMax, maxi, iMin, mini);
+			SetConsoleTextAttribute(hConsole, 15);
+
+			sprintf(buffer, "eps %d", iIter);
+			Graph[0].DrawSurface(buffer,
+				DATA_HEIGHT, (real *)(&((pTriMesh->pData[0]).temp.x)),
+				AZSEGUE_COLOUR, (real *)(&((pTriMesh->pData[0]).temp.x)),
+				false,
+				GRAPH_EPSILON, pTriMesh);
+
+			cudaMemcpy(p_temphost2, p_Az + BEGINNING_OF_CENTRAL, sizeof(f64)*NUMVERTICES, cudaMemcpyDeviceToHost);
+			pVertex = pTriMesh->X;
+			pdata = pTriMesh->pData + BEGINNING_OF_CENTRAL;
+			for (iVertex = 0; iVertex < NUMVERTICES; iVertex++)
+			{
+				pdata->temp.x = p_temphost2[iVertex];
+				++pVertex;
+				++pdata;
+			}
+			sprintf(buffer, "Az %d", iIter);
+			Graph[1].DrawSurface(buffer,
+				DATA_HEIGHT, (real *)(&((pTriMesh->pData[0]).temp.x)),
+				AZSEGUE_COLOUR, (real *)(&((pTriMesh->pData[0]).temp.x)),
+				false,
+				GRAPH_AZ, pTriMesh);
+
+			cudaMemcpy(p_temphost2, p_temp2 + BEGINNING_OF_CENTRAL, sizeof(f64)*NUMVERTICES, cudaMemcpyDeviceToHost);
+			pVertex = pTriMesh->X;
+			pdata = pTriMesh->pData + BEGINNING_OF_CENTRAL;
+			for (iVertex = 0; iVertex < NUMVERTICES; iVertex++)
+			{
+				pdata->temp.x = p_temphost2[iVertex];
+				++pVertex;
+				++pdata;
+			}
+			sprintf(buffer, "targ %d", iIter);
+			Graph[2].DrawSurface(buffer,
+				DATA_HEIGHT, (real *)(&((pTriMesh->pData[0]).temp.x)),
+				AZSEGUE_COLOUR, (real *)(&((pTriMesh->pData[0]).temp.x)),
+				false,
+				GRAPH_EPSILON, pTriMesh);
+
+			cudaMemcpy(p_temphost2, p_LapAz + BEGINNING_OF_CENTRAL, sizeof(f64)*NUMVERTICES, cudaMemcpyDeviceToHost);
+			pVertex = pTriMesh->X;
+			pdata = pTriMesh->pData + BEGINNING_OF_CENTRAL;
+			maxi = 0.0;
+			mini = 0.0;
+			for (iVertex = 0; iVertex < NUMVERTICES; iVertex++)
+			{
+				pdata->temp.x = p_temphost2[iVertex];
+				if (p_temphost2[iVertex] > maxi) {
+					maxi = p_temphost2[iVertex];
+					iMax = iVertex;
+				}
+				if (p_temphost2[iVertex] < mini) {
+					mini = p_temphost2[iVertex];
+					iMin = iVertex;
+				}
+				++pVertex;
+				++pdata;
+			}
+
+			printf("   ---  MAXI LAP AZ %1.10E at %d -||- MIN LAP AZ %1.10E at %d\n",
+				maxi, iMax, mini, iMin);
+
+			sprintf(buffer, "Lap Az %d", iIter);
+			Graph[3].DrawSurface(buffer,
+				DATA_HEIGHT, (real *)(&((pTriMesh->pData[0]).temp.x)),
+				AZSEGUE_COLOUR, (real *)(&((pTriMesh->pData[0]).temp.x)),
+				false,
+				GRAPH_LAPAZ, pTriMesh);
+
+
+			SetActiveWindow(hwndGraphics);
+			ShowWindow(hwndGraphics, SW_HIDE);
+			ShowWindow(hwndGraphics, SW_SHOW);
+			Direct3D.pd3dDevice->Present(NULL, NULL, NULL, NULL);
+
+
+			getch();
+		};
+
+		// Test whether failed.
+
+		//cudaMemcpy(p_boolhost, p_bFailed, sizeof(bool)*numTilesMinor, cudaMemcpyDeviceToHost);
+		//bContinue = false;
+		//for (iTile = 0; ((p_boolhost[iTile] == 0) && (iTile < numTilesMinor)); iTile++);
+		//;
+		//if (iTile < numTilesMinor) {
+		//	//			printf("failed test\n");
+		//	bContinue = true;
+		//};
+
+		// Spit out RSS: 
+
+		kernelAccumulateSumOfSquares1 << <numTilesMinor, threadsPerTileMinor >> >
+			(p_epsilon, p_temp1);
+		cudaMemcpy(p_temphost3, p_temp1, sizeof(f64)*numTilesMinor, cudaMemcpyDeviceToHost);
+		f64 RSS = 0.0;
+		for (long iTile = 0; iTile < numTilesMinor; iTile++) RSS += p_temphost3[iTile];
+		f64 L2eps = sqrt(RSS / (f64)NMINOR);
+		SetConsoleTextAttribute(hConsole, 14);
+		printf("L2eps: %1.9E .. RSS %1.9E .. \n", L2eps, RSS);
+		SetConsoleTextAttribute(hConsole, 15);
+
+		// Now work out coefficients on Jacobi and Richardson regressors.
+
+		cudaMemcpy(p_regressor_n, p_epsilon, sizeof(f64)*NMINOR, cudaMemcpyDeviceToDevice);
+		
+		kernelGetLap_minor << <numTriTiles, threadsPerTileMinor >> > (
+			pX_use->p_info,
+			p_Jacobi_x,
+			pX_use->p_izTri_vert,
+			pX_use->p_izNeigh_TriMinor,
+			pX_use->p_szPBCtri_vert,
+			pX_use->p_szPBC_triminor,
+			p_LapJacobi
+			);
+		Call(cudaThreadSynchronize(), "cudaTS Get Lap Jacobi 1");
+		
+		kernelGetLap_minor << <numTriTiles, threadsPerTileMinor >> > (
+			pX_use->p_info,
+			p_regressor_n, // = epsilon
+			pX_use->p_izTri_vert,
+			pX_use->p_izNeigh_TriMinor,
+			pX_use->p_szPBCtri_vert,
+			pX_use->p_szPBC_triminor,
+			p_temp4
+			);
+		// Use Lap eps as regressor:
+		cudaMemcpy(p_regressor_i, p_temp4, sizeof(f64)*NMINOR, cudaMemcpyDeviceToDevice);
+
+		Call(cudaThreadSynchronize(), "cudaTS Get Lap Jacobi 2");
+		kernelGetLap_minor << <numTriTiles, threadsPerTileMinor >> > (
+			pX_use->p_info,
+			p_regressor_i, // Lap eps
+			pX_use->p_izTri_vert,
+			pX_use->p_izNeigh_TriMinor,
+			pX_use->p_szPBCtri_vert,
+			pX_use->p_szPBC_triminor,
+			p_temp5
+			);
+		Call(cudaThreadSynchronize(), "cudaTS Get Lap Jacobi 3");
+
+		// Okay ... now we need to do the routine that creates the matrix deps/dbeta_i deps/dbeta_j
+		// and the vector against epsilon
+
+		kernelAccumulateMatrix_Ampere << <numTilesMinor, threadsPerTileMinor >> > (
+			pX_use->p_info,
+			p_epsilon,
+			p_Jacobi_x,
+			p_regressor_n,
+			p_regressor_i,
+			p_LapJacobi, // coming through as 0.
+			p_temp4,
+			p_temp5,
+			p_temp1, // sum of matrices, in lots of 6
+			p_eps_against_deps
+			);
+		Call(cudaThreadSynchronize(), "cudaTS kernelAccumulateMatrix");
+
+		// Now take 6 sums
+		f64 sum_mat[6];
+		f64_vec3 sumvec(0.0, 0.0, 0.0);
+		memset(sum_mat, 0, sizeof(f64) * 6);
+		cudaMemcpy(p_temphost1, p_temp1, sizeof(f64) * 6 * numTilesMinor, cudaMemcpyDeviceToHost);
+		cudaMemcpy(p_sum_vec_host, p_eps_against_deps, sizeof(f64_vec3)*numTilesMinor, cudaMemcpyDeviceToHost);
+		for (int iTile = 0; iTile < numTilesMinor; iTile++)
+		{
+			sum_mat[0] += p_temphost1[iTile * 6 + 0];
+			sum_mat[1] += p_temphost1[iTile * 6 + 1];
+			sum_mat[2] += p_temphost1[iTile * 6 + 2];
+			sum_mat[3] += p_temphost1[iTile * 6 + 3];
+			sum_mat[4] += p_temphost1[iTile * 6 + 4];
+			sum_mat[5] += p_temphost1[iTile * 6 + 5];
+			sumvec += p_sum_vec_host[iTile];
+
+			//printf("iTile %d sum_mat +=  %1.9E %1.9E %1.9E %1.9E %1.9E %1.9E sum_vec %1.9E \n",
+			//	iTile, p_temphost1[iTile * 6 + 0],
+			//	p_temphost1[iTile * 6 + 1],
+			//	p_temphost1[iTile * 6 + 2],
+			//	p_temphost1[iTile * 6 + 3],
+			//	p_temphost1[iTile * 6 + 4],
+			//	p_temphost1[iTile * 6 + 5],
+			//	p_sum_vec_host[iTile]);
+		};
+
+		//	printf("sum_mat %1.9E %1.9E %1.9E %1.9E %1.9E %1.9E sum_vec %1.9E \n",
+		//		sum_mat[0], sum_mat[1], sum_mat[2], sum_mat[3], sum_mat[4], sum_mat[5], sumvec);
+
+		if (sumvec != sumvec) {
+			printf("sum_mat %1.9E %1.9E %1.9E %1.9E %1.9E %1.9E sum_vec %1.9E \n",
+				sum_mat[0], sum_mat[1], sum_mat[2], sum_mat[3], sum_mat[4], sum_mat[5], sumvec);
+			getch();
+		}
+
+		// Now populate symmetric matrix
+		f64_tens3 mat, mat2;
+
+		mat.xx = sum_mat[0];
+		mat.xy = sum_mat[1];
+		mat.xz = sum_mat[2]; // all == 0
+		mat.yx = mat.xy;
+		mat.yy = sum_mat[3];
+		mat.yz = sum_mat[4];
+		mat.zx = mat.xz;
+		mat.zy = mat.yz;
+		mat.zz = sum_mat[5];
+		// debug:
+
+		//		mat.yx = 0.0; mat.yy = 1.0; mat.yz = 0.0;
+		//		mat.zx = 0.0; mat.zy = 0.0; mat.zz = 1.0;
+		//		sumvec.y = 0.0;
+		//		sumvec.z = 0.0;
+		//
+		//printf("mat\n%1.14E %1.14E %1.14E \n%1.14E %1.14E %1.14E \n%1.14E %1.14E %1.14E \n",
+		//	mat.xx, mat.xy, mat.xz, mat.yx, mat.yy, mat.yz, mat.zx, mat.zy, mat.zz);
+		
+		mat.Inverse(mat2);
+		
+
+		//printf(
+		//	" ( %1.6E %1.6E %1.6E ) ( beta0 )   ( %1.6E )\n"
+		//	" ( %1.6E %1.6E %1.6E ) ( beta1 ) = ( %1.6E )\n"
+		//	" ( %1.6E %1.6E %1.6E ) ( beta2 )   ( %1.6E )\n",
+		//	mat.xx, mat.xy, mat.xz, sumvec.x,
+		//	mat.yx, mat.yy, mat.yz, sumvec.y,
+		//	mat.zx, mat.zy, mat.zz, sumvec.z);
+		f64_vec3 product = mat2*sumvec;
+		
+
+		beta[0] = -product.x; beta[1] = -product.y; beta[2] = -product.z;
+		
+		//beta[0] = 0.5; beta[1] = 0.0; beta[2] = 0.0;
+
+		// Jacobi : what happens? One point tougher than the rest.
+
+		
+		SetConsoleTextAttribute(hConsole, 14);
+		printf("beta %1.10E %1.10E %1.10E\n", beta[0], beta[1], beta[2]);
+
+		//Now add to Az:
+		SetConsoleTextAttribute(hConsole, 15);
+		kernelAddRegressors << <numTilesMinor, threadsPerTileMinor >> > (
+			p_Az,
+			beta[0], beta[1], beta[2],
+			p_Jacobi_x,
+			p_regressor_n,
+			p_regressor_i
+			);
+		Call(cudaThreadSynchronize(), "cudaTS kernelAddRegressors");
+
+		kernelResetFrillsAz << <numTilesMinor, threadsPerTileMinor >> > (
+			pX_use->p_info, pX_use->p_tri_neigh_index,
+			p_Az);
+		Call(cudaThreadSynchronize(), "cudaTS ResetFrillsAz");
+
+		//again borrow from J3LS 
+	};
+
+	printf("Ampere solved.\n");
+
+	kernelPushAzInto_dest << <numTilesMinor, threadsPerTileMinor >> > (
+		cuSyst1.p_AAdot,
+		p_Az
+		);
+	Call(cudaThreadSynchronize(), "cudaTS kernelPushAzInto_dest");
+}
+
+#include "heatflux.cu"
 #include "kernel.cu"
-#include "little_kernels.cu"
-
-// There must be a better way.

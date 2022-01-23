@@ -6124,7 +6124,10 @@ void TriMesh::RefreshVertexNeighboursOfVerticesOrdered(void)
 				}
 				angle[j] = theta;
 				index[j] = i;
+
 			};
+
+
 			for (i = 0; i < tri_len; i++)
 				templong[i] = izTri[index[i]];
 		}
@@ -6190,7 +6193,7 @@ void TriMesh::RefreshVertexNeighboursOfVerticesOrdered(void)
 
 			int iAnti;
 			// cross product element z
-			if (vec1.x*vec2.y - vec1.y*vec2.x < 0.0) {
+			if (vec1.x*vec2.y - vec1.y*vec2.x > 0.0) {
 				// Let's think this through.
 				// Say our point is the origin. pos1 is at (1,0). pos2 is at (1,1). Then (1*1 - 0*1 > 0.0).
 				// So a positive value here means pos2 is anticlockwise.
@@ -6198,7 +6201,9 @@ void TriMesh::RefreshVertexNeighboursOfVerticesOrdered(void)
 			}
 			else {
 				iAnti = i1;
-			}
+			};
+			
+
 			Vertex * pCorner = pTri->cornerptr[iAnti];
 			// c. Keep seeking tri in list which possesses same other corner.
 			int iWhich;
@@ -6228,8 +6233,7 @@ void TriMesh::RefreshVertexNeighboursOfVerticesOrdered(void)
 						pTri = T + izTri[iWhich];
 						if ((pTri->cornerptr[0] != pCorner) && (pTri->cornerptr[0] != pVertex)) {
 							pCorner = pTri->cornerptr[0];
-						}
-						else {
+						} else {
 							if ((pTri->cornerptr[1] != pCorner) && (pTri->cornerptr[1] != pVertex)) {
 								pCorner = pTri->cornerptr[1];
 							}
@@ -6237,6 +6241,7 @@ void TriMesh::RefreshVertexNeighboursOfVerticesOrdered(void)
 								pCorner = pTri->cornerptr[2];
 							};
 						};
+
 					};
 				};
 			} while (iWhich != 0);
@@ -11716,6 +11721,10 @@ void TriMesh::CreateTilingAndResequence_with_data(TriMesh * pDestMesh) {
 		//memcpy(pVertdest, pVertex, sizeof(Vertex));
 		pVertdest->pos = pVertex->pos;
 		pVertdest->flags = pVertex->flags;
+
+	//	This overwrite should militate against getting '4 4 4' as the flags of vertices.
+
+
 		pVertdest->has_periodic = pVertex->has_periodic;
 		pVertdest->AreaCell = pVertex->AreaCell;
 		pVertdest->iVolley = pVertex->iVolley;
@@ -11728,7 +11737,6 @@ void TriMesh::CreateTilingAndResequence_with_data(TriMesh * pDestMesh) {
 		for (i = 0; i < neigh_len; i++)
 		{
 			pVertdest->AddNeighbourIndex((X + izNeigh[i])->iIndicator);
-
 		};
 
 		pVertdest->ClearTris();
@@ -11743,6 +11751,9 @@ void TriMesh::CreateTilingAndResequence_with_data(TriMesh * pDestMesh) {
 		if (iVertex == 26511) printf("26511 maps to %d . n = %1.9E \n",
 			pVertex->iIndicator, pData[iVertex + BEGINNING_OF_CENTRAL].n
 		);
+		if (pVertex->iIndicator == 26191) printf("%d |-> 26191 \n", iVertex);
+		if (pVertex->iIndicator == 26194) printf("%d |-> 26194 \n", iVertex);
+		if (pVertex->iIndicator == 26195) printf("%d |-> 26195 \n", iVertex);
 
 		memcpy(&(pDestMesh->pData[pVertex->iIndicator+BEGINNING_OF_CENTRAL]), &(pData[iVertex + BEGINNING_OF_CENTRAL]), sizeof(plasma_data));
 
@@ -11837,7 +11848,7 @@ void TriMesh::CopyMesh(TriMesh * pDestMesh)
 		int neigh_len = pVertex->GetNeighIndexArray(izNeigh);
 		for (i = 0; i < neigh_len; i++)
 		{
-			pVertdest->AddNeighbourIndex((X + izNeigh[i])->iIndicator);
+			pVertdest->AddNeighbourIndex(izNeigh[i]);
 		};
 
 		pVertdest->ClearTris();
@@ -11845,7 +11856,8 @@ void TriMesh::CopyMesh(TriMesh * pDestMesh)
 		int tri_len = pVertex->GetTriIndexArray(izTri);
 		for (i = 0; i < tri_len; i++)
 		{
-			pVertdest->AddTriIndex((T + izTri[i])->indicator);
+			//pVertdest->AddTriIndex((T + izTri[i])->indicator);
+			pVertdest->AddTriIndex(izTri[i]);
 		};
 		++pVertex;
 
@@ -11870,20 +11882,19 @@ void TriMesh::CopyMesh(TriMesh * pDestMesh)
 
 		// Neighbour list, cornerptr list, what else to rewrite?
 
-		pTriDest->neighbours[0] = pDestMesh->T + pTri->neighbours[0]->indicator;
-		pTriDest->neighbours[1] = pDestMesh->T + pTri->neighbours[1]->indicator;
-		pTriDest->neighbours[2] = pDestMesh->T + pTri->neighbours[2]->indicator;
+		pTriDest->neighbours[0] = pDestMesh->T + (pTri->neighbours[0]-T);
+		pTriDest->neighbours[1] = pDestMesh->T + (pTri->neighbours[1]-T);
+		pTriDest->neighbours[2] = pDestMesh->T + (pTri->neighbours[2] - T);
+		//pTriDest->neighbours[1] = pDestMesh->T + pTri->neighbours[1]->indicator;
 
-		pTriDest->cornerptr[0] = pDestMesh->X + pTri->cornerptr[0]->iIndicator;
-		pTriDest->cornerptr[1] = pDestMesh->X + pTri->cornerptr[1]->iIndicator;
-		pTriDest->cornerptr[2] = pDestMesh->X + pTri->cornerptr[2]->iIndicator;
+		pTriDest->cornerptr[0] = pDestMesh->X + (pTri->cornerptr[0]-X);
+		pTriDest->cornerptr[1] = pDestMesh->X + (pTri->cornerptr[1]-X);
+		pTriDest->cornerptr[2] = pDestMesh->X + (pTri->cornerptr[2]-X);
 
 		memcpy(&(pDestMesh->pData[iTri]), &(pData[iTri]), sizeof(plasma_data));
 
 		++pTri;
 	}
-
-	printf("Tiling & resequencing done.\n");
 
 	// Also copy across any other stuff from source to dest:
 
@@ -11896,6 +11907,8 @@ void TriMesh::CopyMesh(TriMesh * pDestMesh)
 	pDestMesh->numReverseJzTris = this->numReverseJzTris;
 	pDestMesh->numTriangles = this->numTriangles;
 	pDestMesh->numVertices = this->numVertices;
+
+	printf("Copy mesh done. But it doesn't seem very comprehensive.\n");
 
 	// >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 

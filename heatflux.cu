@@ -1,9 +1,11 @@
 
+#include "switches.h"
+
 #define TESTHEAT (0)
 #define TESTXYDERIVZVISCVERT (0) // (iVertex == VERTCHOSEN) && (DebugFlag))
 #define TEST_EPSILON_Y (0)
 #define TEST_EPSILON_X (0)//iVertex == VERTCHOSEN)
-#define TEST_EPSILON_Y_IMINOR (0)//iMinor == lChosen)
+#define TEST_EPSILON_Y_IMINOR (0)
 #define TEST_EPSILON_X_MINOR (0)//iMinor == CHOSEN) // iMinor == VERTCHOSEN + BEGINNING_OF_CENTRAL)
 
 #define HTGPRINT (0) // (iVertex == VERTCHOSEN) && (iSpecies == 1))
@@ -41,6 +43,8 @@
 // Decreasing ita will do a better job than having a high number here.
 // Unfortunately this damping factor will only play havoc where v_k has been adjusted for fixed flows.
 // We need to re-jig so we look at distance from v_n.
+
+#include "helpers.cu"
 
 
 //__device__ __forceinline__ v4 Intermediate_v(v4 v1, v4 v2)
@@ -3550,7 +3554,7 @@ __global__ void kernelAccumulateDiffusiveHeatRate__array_of_deps_by_dxj_1species
 
 						fzArray[iNeigh] += temp*our_fac;
 						effectself -= temp*our_fac;
-#if (TESTHEAT) 
+#if (0) 
 							printf("iVertex %d indexneigh %d temp %1.14E our_fac %1.14E iNeigh %d temp*our_fac %1.14E \n",
 								iVertex, indexneigh, temp, our_fac, iNeigh, temp*our_fac);
 #endif
@@ -3901,13 +3905,9 @@ __global__ void kernelHeat_1species_geometric_coeffself(
 	// Balance of shared vs L1: 24*256*8 = 48K. That leaves 8 doublesworth in L1 for variables.
 
 	long izTri[MAXNEIGH_d];  // so only 2 doubles left in L1. 31 in registers??
-
 							 // Set threadsPerTileMajorClever to 256.
-
 							 // It would help matters if we get rid of T3. We might as well therefore change to scalar flatpack T.
-
 							 // We are hoping that it works well loading kappa(tri) and that this is not upset by nearby values. Obviously a bit of an experiment.
-
 							 // Does make it somewhat laughable that we go to such efforts to reduce global accesses when we end up overflowing anyway. 
 							 // If we can fit 24 doubles/thread in 48K that means we can fit 8 doubles/thread in 16K so that's most of L1 used up.
 
@@ -3954,7 +3954,6 @@ __global__ void kernelHeat_1species_geometric_coeffself(
 		memset(&(shared_B[threadIdx.x]), 0, sizeof(f64_vec2));
 		shared_T[threadIdx.x] = 0.0;
 	}
-
 	__syncthreads();
 
 	f64_vec2 grad_T;
@@ -3971,7 +3970,6 @@ __global__ void kernelHeat_1species_geometric_coeffself(
 	f64_vec2 endpt_clock;    // As we only use endpt_anti afterwords we could union endpt_clock with edge_normal
 							 // Come back and optimize by checking which things we need in scope at the same time?
 	f64 kappa_out, nu_out;
-
 	short iNeigh; // only fixed # of addresses so short makes no difference.
 	char PBC; // char makes no difference.
 	f64 d_by_dbeta = 0.0;
@@ -3986,8 +3984,21 @@ __global__ void kernelHeat_1species_geometric_coeffself(
 		else {
 			N = p_AreaMajor[iVertex] * p_n_major[iVertex].n;
 		}
-		f64 our_fac = - h_use / N; // factor for change in epsilon^2											 
+		f64 our_fac = - h_use / N; // factor for change in epsilon
+
+		// but where is the * SQRT N ?
+
+		// I still do not understand why coeffself often comes out different signs.
+
 		effectself = 1.0; // change in own epsilon by changing T is +1.0 for eps = T_k+1-T_k-hF
+
+//
+//#if SQRTNT
+//		effectself = sqrt(N);
+//		our_fac *= sqrt(N);
+//#endif
+
+
 #if TESTHEAT
 		if (iVertex == VERTCHOSEN) printf("%d effectself %1.10E our_fac %1.10E \n", iVertex, effectself, our_fac);
 #endif
@@ -4154,6 +4165,9 @@ __global__ void kernelHeat_1species_geometric_coeffself(
 						f64 temp = TWOTHIRDS*kappa_par * edgelen *
 							(1.0) / (pos_out - info.pos).modulus();
 
+
+						// Actual question is why is it ever negative. It's + and then this looks +
+
 						effectself -= temp*our_fac;
 						
 						// .. for neutral heat cond, it turns out we basically never even use T_anti, T_clock.
@@ -4279,6 +4293,18 @@ __global__ void kernelHeat_1species_geometric_coeffself(
 							) / (nu * nu + omega.dot(omega))
 							;
 
+//						if ((iVertex == 34345)) {
+//							printf("iVertex %d %d result_coeff_self %1.12E kappa %1.8E nu %1.8E edgelen %1.8E delta_out %1.8E omega %1.8E %1.8E cself_gradT %1.9E %1.9E\n"
+//								"pos_ours %1.9E %1.9E pos_anti %1.9E %1.9E pos_out %1.9E %1.9E pos_clock %1.9E %1.9E T ours %1.9E %1.9E %1.9E %1.9E\n"
+//								"edge_normal %1.10E %1.10E magnetic_ctb %1.10E \n"
+//								,
+//								iVertex, iNeigh, result_coeff_self, kappa_par, nu, edgelen, delta_out, omega.x, omega.y, coeffself_grad_T.x, coeffself_grad_T.y,
+//								pos_ours.x, pos_ours.y, pos_anti.x, pos_anti.y, pos_out.x, pos_out.y, pos_clock.x, pos_clock.y,
+//								shared_T[threadIdx.x], T_anti, T_out, T_clock,
+//								edge_normal.x, edge_normal.y, (omega.dotxy(coeffself_grad_T))*(omega.dotxy(edge_normal)) / (nu * nu + omega.dot(omega))
+//								);
+//						};
+
 						// d/dself:
 						f64 result = result_coeff_self;
 
@@ -4288,17 +4314,25 @@ __global__ void kernelHeat_1species_geometric_coeffself(
 								(omega.dotxy(coeffsqrt_grad_T))*(omega.dotxy(edge_normal))
 								) / (nu * nu + omega.dot(omega));
 							result += 0.5*result_coeff_sqrt / sqrt(shared_T[threadIdx.x]);
+
+//							if ((iVertex == 34345)) {
+//								printf("iVertex %d %d result_coeff_sqrt %1.12E contrib %1.11E result %1.10E\n",
+//									iVertex, iNeigh, result_coeff_sqrt, 0.5*result_coeff_sqrt / sqrt(shared_T[threadIdx.x]),
+//									result
+//								);
+//							};
 						}; // else sqrt term didn't have an effect.
 						//d_by_dbeta += our_x*result;
 
-						effectself += result*our_fac;
+						effectself += result*our_fac; // our_fac < 0 representing effect within epsilon kernel
+						// expected effect is positive as coefficient on T_ours in inward flow 'result' should be negative.
+
 					};
 				}; // if iSpecies == 0
-
 			} // if (pos_out.x*pos_out.x + pos_out.y*pos_out.y > ...)
 
 			  // Now go round:	
-			endpt_clock = endpt_anti;
+			endpt_clock = endpt_anti; // 
 			pos_clock = pos_out;
 			pos_out = pos_anti;
 			T_clock = T_out;
@@ -4311,7 +4345,6 @@ __global__ void kernelHeat_1species_geometric_coeffself(
 	}; // DOMAIN vertex active in mask
 
 	p_effectself[iVertex] = effectself;
-	//memcpy(NTadditionrates + iVertex, &ourrates, sizeof(NTrates));
 }
 
 __global__ void AddFromMyNeighbours(
@@ -9764,7 +9797,7 @@ kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species_effect_of_neighs_o
 
 				iEqnOurs = p_mapping_to_array[iVertex + BEGINNING_OF_CENTRAL];
 				// We are losing energy if there is viscosity into OUTERMOST.
-			//	if (iEqnOurs == 0) printf("iEqnOurs 0 found (vertex)\n");
+			//	if (iEqnOurs == 0) printf("iEqnOurs 0 found (vertex) %d\n", iVertex);
 
 				memcpy(izTri, p_izTri + iVertex*MAXNEIGH_d, MAXNEIGH_d * sizeof(long));
 				memcpy(szPBC, p_szPBC + iVertex*MAXNEIGH_d, MAXNEIGH_d * sizeof(char));
@@ -10319,7 +10352,7 @@ kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species_effect_of_neighs_o
 											// Probably won't need to analyze this.
 
 											// DEBUG:
-									//		if (iEqnOurs == 0) printf("outputting to matrix! iEqnOurs 0 iEqnTheirs %d iDim %d %1.9E %1.9E %1.9E\n", iEqnTheirs, iDimension,
+									//		if (iEqnOurs == 0) printf("outputting to matrix! iVertex %d iEqnOurs 0 iEqnTheirs %d iDim %d %1.9E %1.9E %1.9E\n", iVertex, iEqnTheirs, iDimension,
 									//			visc_contrib.x, visc_contrib.y, visc_contrib.z);
 
 											eqns[(iEqnOurs * 3 + 0) * 3 * (EQNS_TOTAL + MAXRINGLEN) + iEqnTheirs * 3 + iDimension] += visc_contrib.x;
@@ -11181,7 +11214,6 @@ __global__ void kernelCreateEquations(
 		// too many elements otherwise
 
 		f64 N = p_AreaMinor[iMinor] * p_n_minor[iMinor].n;
-
 		f64 ROC_i = p_ROC_i[iMinor];
 		f64 ROC_e = p_ROC_e[iMinor];
 		f64 factor_i = ROC_i*(m_ion / ((m_ion + m_e)));
@@ -11234,17 +11266,18 @@ __global__ void kernelCreateEquations(
 		coeff.w = factor_e*elecfluxcoeff3.z;
 		//Here add 1 :
 		coeff.y += sqrtN;
-
+		// Okay where did this go?
 
 		// Note that whereas ion flux was 3 dimensions contributing to 3 dimensions of flux,
 		// the equations are 4 dimensions contributing to 4 dimensions of residual.
 		memcpy(&(eqns[4 * (EQNS_TOTAL + MAXRINGLEN)*(iOurEqn*4 + 1) + 4 * iOurEqn]), &coeff, sizeof(double4));
 
-		//if (TEST_EPSILON_Y_IMINOR) printf("%d y->y coeff.y %1.14E ionfluxcoeff3.y %1.14E elecfluxcoeff3.y %1.13E factor_i %1.11E factor_e %1.11E\n",
-		//	iMinor, coeff.y, ionfluxcoeff3.y, elecfluxcoeff3.y, 
-		//	factor_i, factor_e
-		//	//minus_hsub_over_N, 4 * EQNS_TOTAL*(iOurEqn * 4 + 1) + 4 * iOurEqn + 1
-		//);
+		if (TEST_EPSILON_Y_IMINOR) printf("%d y->y coeff.y %1.14E ionfluxcoeff3.y %1.14E elecfluxcoeff3.y %1.13E factor_i %1.11E factor_e %1.11E\n",
+			iMinor, coeff.y, ionfluxcoeff3.y, elecfluxcoeff3.y, 
+			factor_i, factor_e
+			//minus_hsub_over_N, 4 * EQNS_TOTAL*(iOurEqn * 4 + 1) + 4 * iOurEqn + 1
+		);
+		
 		//if (TEST_EPSILON_Y_IMINOR) printf("%d ez->y coeff.w %1.14E elecfluxcoeff3.z %1.13E minus_hsub_over_N %1.11E %d\n",
 		//	iMinor, coeff.w, elecfluxcoeff3.z, minus_hsub_over_N, 4 * EQNS_TOTAL*(iOurEqn * 4 + 1) + 4 * iOurEqn + 3
 		//);
@@ -11264,7 +11297,12 @@ __global__ void kernelCreateEquations(
 		// Note that whereas ion flux was 3 dimensions contributing to 3 dimensions of flux,
 		// the equations are 4 dimensions contributing to 4 dimensions of residual.
 		memcpy(&(eqns[4 * (EQNS_TOTAL + MAXRINGLEN)*(iOurEqn*4 + 2) + 4 * iOurEqn]), &coeff, sizeof(double4));
-
+		
+		if (TEST_EPSILON_Y_IMINOR) printf("%d iz->iz coeff.z %1.14E ionfluxcoeff3.z %1.14E elecfluxcoeff3.z %1.13E factor_i %1.11E factor_e %1.11E\n",
+			iMinor, coeff.z, ionfluxcoeff3.z, elecfluxcoeff3.z,
+			factor_i, factor_e
+			//minus_hsub_over_N, 4 * EQNS_TOTAL*(iOurEqn * 4 + 1) + 4 * iOurEqn + 1
+		);
 		// Contribs to ez residual:
 		memcpy(&elecfluxcoeff3, &(p_elecmomflux[3 * (EQNS_TOTAL + MAXRINGLEN)*(iOurEqn*3+2) + 3 * iOurEqn]),
 			sizeof(double3));
@@ -13734,6 +13772,9 @@ __global__ void AddLCtoVector4
 		operand.vxy += beta_n_c[i] * p_regr2[index + i*NMINOR];
 		operand.viz += beta_n_c[i] * p_regr_iz[index + i*NMINOR];
 		operand.vez += beta_n_c[i] * p_regr_ez[index + i*NMINOR];		
+
+	//	if (index == 116344) printf(" 116344 operand.viz %1.10E beta %1.10E regr %1.10E\n",
+	//		operand.viz, beta_n_c[i], p_regr_iz[index + i*NMINOR]);
 	};
 	move.vxy = operand.vxy - old.vxy;
 	move.viz = operand.viz - old.viz;
@@ -13806,6 +13847,7 @@ kernelPopulateRegressors_from_iRing_RHS
 	if (p_selected[index]) {
 		int ring = p_Ring[index];
 		short eqnindex = p_eqn_index[index];
+
 		if (eqnindex < numEqnsUsed) {
 			double4 jillium;
 			memcpy(&jillium, &(p_solution[4 * eqnindex]), sizeof(f64) * 4);
@@ -13813,15 +13855,18 @@ kernelPopulateRegressors_from_iRing_RHS
 			// Important:
 			// regressor 2 corresponds to whichRing-1, whichRing-2
 
-			if (ring < whicRing - 3)
+			if ((ring < whicRing - 3) || (ring == 1))
 			{
 				p_regr2[index].x = jillium.x;
 				p_regr2[index].y = jillium.y;
 				p_regr_iz[index] = jillium.z;
 				p_regr_ez[index] = jillium.w; // don't get them wrong way round.
+
+			//	if (jillium.w != 0.0) printf("| %d jill.w %1.8E |", index, jillium.w);
 			}
 			else {
-				if (ring == whicRing - 3) // whichRing-1 and whichRing-2 are the last two rings.
+				if ((ring == whicRing - 3) || (ring < 3)) // whichRing-1 and whichRing-2 are the last two rings.
+					// But ring 2 always goes here if it did not fall into the previous case.
 				{
 					p_regr2_1[index].x = jillium.x;
 					p_regr2_1[index].y = jillium.y;
@@ -15079,6 +15124,8 @@ __global__ void kernelCreateEpsilon_Visc(
 	int * __restrict__ p_Select
 ) {
 	long const iMinor = blockDim.x * blockIdx.x + threadIdx.x;
+	
+	//if (iMinor == 116344) printf("EPS CALC 116344 bSelect %d epsilon_iz %1.10E\n", p_Select[iMinor], p_epsilon_iz[iMinor]);
 
 	if (p_Select[iMinor] == 0) return;
 
@@ -15088,6 +15135,7 @@ __global__ void kernelCreateEpsilon_Visc(
 	v4 epsilon;
 	memset(&epsilon, 0, sizeof(v4));
 
+	//if (iMinor == 116344) printf("EPS CALC 116344 info.flag %d \n", info.flag);
 	if (
 		(info.flag == DOMAIN_VERTEX) || (info.flag == DOMAIN_TRIANGLE)
 		||
@@ -15152,6 +15200,12 @@ __global__ void kernelCreateEpsilon_Visc(
 			//- hsub*MAR_ion.z /
 			//	(N + N*FACTOR_DECAY*0.5*hsub*nu_in_MT*ratio_nn_ntot)
 				 // 0.5 for m_n/(m_n+m_i)
+	//	if (iMinor == 116344) printf("EPS CALC 116344 sqrtN %1.10E vie.viz %1.10E k %1.10E MAR_ion.z %1.10E ROC_i %1.10E eps.viz %1.10E\n",
+	//		sqrtN, vie.viz, vie_k.viz, MAR_ion.z, ROC_i, epsilon.viz
+	//		);
+
+		// This bit is all sorts of weird.
+
 
 #endif
 
@@ -16926,17 +16980,17 @@ __global__ void kernelCreate_v4 (
 	f64 lciz = p_regrlc_iz_[iMinor];
 	f64 lcez = p_regrlc_ez_[iMinor];	
 
-	if (iMinor == VERTCHOSEN + BEGINNING_OF_CENTRAL) printf("iMinor %d: vez %1.12E lambda %1.9E lcez %1.9E\n",
-		iMinor, vie.vez, lambda_, lcez);
+	//if (iMinor == VERTCHOSEN + BEGINNING_OF_CENTRAL) printf("iMinor %d: vez %1.12E lambda %1.9E lcez %1.9E\n",
+	//	iMinor, vie.vez, lambda_, lcez);
 
-	if (iMinor == VERTCHOSEN + BEGINNING_OF_CENTRAL) printf("iMinor %d: vy %1.13E lambda %1.9E lcy %1.9E\n",
-		iMinor, vie.vxy.y, lambda_, lc2.y);
+	//if (iMinor == VERTCHOSEN + BEGINNING_OF_CENTRAL) printf("iMinor %d: vy %1.13E lambda %1.9E lcy %1.9E\n",
+	//	iMinor, vie.vxy.y, lambda_, lc2.y);
 	vie.vxy += lambda_*lc2;
 	vie.viz += lambda_*lciz;
 	vie.vez += lambda_*lcez;
 
-	if (iMinor == VERTCHOSEN + BEGINNING_OF_CENTRAL) printf("iMinor %d: vy %1.13E \n",
-		iMinor, vie.vxy.y);
+	//if (iMinor == VERTCHOSEN + BEGINNING_OF_CENTRAL) printf("iMinor %d: vy %1.13E \n",
+	//	iMinor, vie.vxy.y);
 	
 	p_vie_[iMinor] = vie;
 }
@@ -17102,4 +17156,67 @@ __global__ void Set(int * __restrict__ operand)
 {
 	long const index = blockDim.x*blockIdx.x + threadIdx.x;
 	operand[index] = 1;
+}
+
+__global__ void kernelCreateAmpereEpsilonAndJacobi(
+	structural * p_info,
+	f64 * __restrict__ p_target,
+	f64 * __restrict__ p_coeffself,
+	f64 * __restrict__ p_Lap,
+	f64 * __restrict__ p_eps,
+	f64 * __restrict__ p_Jacobi,
+	bool * __restrict__ p_bFail
+	) 
+{
+	long const index = blockDim.x*blockIdx.x + threadIdx.x;
+	structural info = p_info[index];
+	
+	if (index == VERTCHOSEN + BEGINNING_OF_CENTRAL) printf("%d : flag %d %1.10E %1.10E\n",
+		index, info.flag, info.pos.x, info.pos.y);
+
+	if (
+		((info.flag == DOMAIN_VERTEX) || (info.flag == CROSSING_INS)) && // note == DOMAIN_TRIANGLE
+		(info.pos.dot(info.pos) < START_SPREADING_OUT_RADIUS*START_SPREADING_OUT_RADIUS))
+	{
+		f64 epsilon = p_Lap[index] - p_target[index];
+		// Ampere: Lap Az = - 4pi/c Jz
+		// target = -4pi/c Jz
+		// epsilon = Lap Az + 4pi/c Jz
+
+		// Is it fair to say it should be diagonally dominant??
+
+
+		f64 coeffself = p_coeffself[index];
+		if (coeffself != 0.0) {
+			p_Jacobi[index] = -epsilon / coeffself;
+		} else {
+			p_Jacobi[index] = 0.0;
+		};
+		p_eps[index] = epsilon;
+
+		if (index == VERTCHOSEN + BEGINNING_OF_CENTRAL) printf("eps[%d] %1.10E coeffself %1.10E Jacobi %1.10E\n",
+			index, epsilon, coeffself, p_Jacobi[index]);
+
+
+	} else {
+		p_eps[index] = 0.0;
+	};
+	p_bFail[index] = 0; // to begin with
+}
+
+__global__ void kernelCreateTargetForAmpere(
+	nvals * __restrict__ p_n,
+	// populated? Check
+	v4 * __restrict__ p_v,
+	f64 * __restrict__ p_targ // 4pi/c Jz
+) {
+	long const index = blockDim.x*blockIdx.x + threadIdx.x;
+	nvals n = p_n[index];
+	if (n.n > 0.0) {
+		v4 v = p_v[index];
+		f64 Jz = q*n.n*(v.viz - v.vez);
+		p_targ[index] = -FOURPI_OVER_C*Jz;
+	} else {
+		p_targ[index] = 0.0;
+	}
 }

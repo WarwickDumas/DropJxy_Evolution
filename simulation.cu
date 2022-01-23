@@ -3,20 +3,23 @@
 #include "globals.h"
 #include "headers.h"
 #include "FFxtubes.h"
+#include "cuda_struct.h"
 //#include "cppconst.h"
 
+#define CHOSEN 52233
 #define VERT1 14639
 #define VERT2 14645
 // these should explain something we hope.
 extern HWND hWnd;
+extern HWND hwndGraphics;
+extern D3D Direct3D;
+extern void RefreshGraphs(TriMesh & X, const int iGraphsFlag);
 
-f64 sigma_tiles[1024];
- 
+
+f64 sigma_tiles[1024]; 
 const int TriFiles[12] = { 29414, 29413, 29412, 29108, 29109, 29110,
 						29442, 29441, 29440, 29136, 29137, 29138 };
-
 const int Chosens[7] = { 25454, 86529, 25453, 86381, 25455, 86530, 25750 };
-
 f64 LapCoeffself[NMINOR];
 f64 LapCoefftri[NUMTRIANGLES][6];
 f64 LapCoeffvert[NUMVERTICES][MAXNEIGH];
@@ -27,6 +30,9 @@ f64 epsilon[NMINOR];
 f64 Lap_Aznext[NMINOR];
 
 real GlobalIzElasticity;
+
+
+extern f64_vec2 RotateClosest(f64_vec2 pos, f64_vec2 prox);
 
 f64 inline GetEzShape__(f64 r) {
 	return 1.0 - 1.0 / (1.0 + exp(-24.0*(r - 4.32))); // At 4.0cm it is 96% as strong as at tooth. At 4.4 it is 4%.
@@ -51,10 +57,10 @@ f64 inline GetEzShape__(f64 r) {
 
 
 three_vec3 AdditionalMomRates[NMINOR];
+f64_vec2 p_v[NMINOR];
 f64_vec2 GradAz[NMINOR];
 f64_vec2 GradTeArray[NMINOR];
 f64 LapAzArray[NMINOR];
-f64_vec2 p_v[NMINOR];
 NTrates NTadditionrates[NUMVERTICES];
 f64 p_div_v_neut[NUMVERTICES];
 f64 p_div_v[NUMVERTICES];
@@ -86,6 +92,1581 @@ real inline TriMesh::GetIzPrescribed(real const t)
 //		real Iz = -PEAKCURRENT_STATCOULOMB * sin ((t + ZCURRENTBASETIME) * PIOVERPEAKTIME );
 //		return Iz;
 //	};
+
+
+void TriMesh::SwimMesh(TriMesh * pSrcMesh)
+{
+	long izTri[MAXNEIGH];
+
+	printf("SwimMesh in simulation.cu . \n");
+
+	real acceptance, mass_avg, mass_SD, mass_min, mass_max, move, coefficient;
+
+	FILE * swimfile = fopen("swim.txt", "a");
+
+	// coefficient is the (adaptive) proportion of the steps we try to make....
+	// why is it that most of our moves start getting rejected, I do not know
+	coefficient = 0.5;
+
+	double GlobalMaxVertexRadiusSq = 0.0;
+	Vertex * pVertex = X;
+	for (long iVertex = 0; iVertex < numVertices; iVertex++)
+	{
+		if (pVertex->pos.x*pVertex->pos.x + pVertex->pos.y*pVertex->pos.y > GlobalMaxVertexRadiusSq)
+			GlobalMaxVertexRadiusSq = pVertex->pos.x*pVertex->pos.x + pVertex->pos.y*pVertex->pos.y;
+		++pVertex;
+	};
+
+	long izNeigh[MAXNEIGH];
+
+	Triangle * pTri = T;
+	for (long iTri = 0; iTri < numTriangles; iTri++)
+	{
+		pTri->RecalculateCentroid(this->InnermostFrillCentroidRadius,
+			this->OutermostFrillCentroidRadius);
+		//if (pTri->has_vertex(X + 40910)) {
+		//	printf("SWIM iTri %d cent %1.9E %1.9E %d | ", iTri, pTri->cent.x, pTri->cent.y,
+		//		pTri->u8domain_flag);
+		//	Vector2 u[3];
+		//	pTri->MapLeftIfNecessary(u[0], u[1], u[2]);
+		//	printf(" %1.9E %1.9E |  %1.9E %1.9E |  %1.9E %1.9E | \n",
+		//		u[0].x, u[0].y, u[1].x, u[1].y, u[2].x, u[2].y);
+		//}
+		++pTri; // this seems like it should still work if we have not wrapped any vertex that moved, even if tri no longer periodic in truth but some pts outside tranche
+
+	};
+
+	// puzzle why moves are rarely accepted so try something more empirical even if it takes a little longer to run.
+	for (int j = 0; j < 10; j++) // 3 goes of 1 squeeze, 1 further go
+	{
+		fprintf(swimfile, "\n\nGSC: %d\n", GlobalStepsCounter);
+		
+		fprintf(swimfile, "Swim %d  ", j);
+				
+		for (int jj = j; jj < 18; jj++)
+		{
+			move = this->SwimVertices(pSrcMesh, coefficient, &acceptance);
+			printf(" L2 of moves: %1.6E  Squeeze: %1.6E   Acceptance rate: %.2f%%\n", move, coefficient, acceptance*100.0);
+		//	printf("%d : %d : X[9594].iScratch %d \n", j,jj, X[9594].iScratch);
+		
+		};
+
+		fprintf(swimfile, " L2 of moves: %1.6E  Squeeze: %1.6E   Acceptance rate: %.2f%%\n", move, coefficient, acceptance*100.0);
+		//if ((acceptance > 0.1) && (move < 1.0e-7)) break; // stop if wasting time
+
+		// Re-integrate density. ?
+		printf("About to re-integrate. \n");
+		// If need be, check here about the polygon surrounding a vertex in pX.
+		// Is it something to do with cent vs cc ??
+		//
+		//pTri = T;
+		//for (long iTri = 0; iTri < numTriangles; iTri++)
+		//{		
+		//	pTri->RecalculateCentroid(this->InnermostFrillCentroidRadius,
+		//		this->OutermostFrillCentroidRadius);
+		//	if (pTri->has_vertex(X + 4000)) {
+		//		printf("iTri %d cent %1.9E %1.9E %d | ", iTri, pTri->cent.x, pTri->cent.y,
+		//			pTri->u8domain_flag);
+		//		Vector2 u[3];
+		//		pTri->MapLeftIfNecessary(u[0], u[1], u[2]);
+		//		printf(" %1.9E %1.9E |  %1.9E %1.9E |  %1.9E %1.9E | \n", 
+		//			u[0].x, u[0].y, u[1].x, u[1].y, u[2].x, u[2].y);
+		//	}
+		//	++pTri; // this seems like it should still work if we have not wrapped any vertex that moved, even if tri no longer periodic in truth but some pts outside tranche
+		//};
+#define A1 0
+
+		printf("\nthis->pData[%d].Az %1.10E\n", A1, this->pData[A1].Az);
+
+		this->Integrate_using_iScratch(pSrcMesh, ((j < 9) ? false : true)); // AFFECTS ONLY pData, NO STRUCTURAL IMPACT
+		
+		printf("\nthis->pData[%d].Az %1.10E\n", A1, this->pData[A1].Az);
+
+		//Can we go and see which values have been moved? I mean, I guess now all of them.
+		
+		SetActiveWindow(hwndGraphics);
+		ShowWindow(hwndGraphics, SW_HIDE);
+		ShowWindow(hwndGraphics, SW_SHOW);
+		RefreshGraphs(*this, SPECIES_ION);
+		Direct3D.pd3dDevice->Present(NULL, NULL, NULL, NULL);
+		UpdateWindow(hwndGraphics);
+
+		// sometimes move came out 0 indicating acceptance rates had fallen very low ; ..
+		// redundant code:
+		if (acceptance == 0.0)
+		{
+			coefficient *= 0.05;
+		} else {
+			if ((acceptance < 0.5) && (j % 3 == 2))
+			{
+				if (acceptance > 0.025) {
+					coefficient *= acceptance / 0.5; // Note:quite aggressive - could put sqrt
+				} else {
+					// too low...
+					coefficient *= 0.05;
+				};
+			};
+		};
+	};
+
+	fclose(swimfile);
+
+	SetupMajorPBCTriArrays(); // they've been destroyed by resequencing.
+	Recalculate_TriCentroids_VertexCellAreas_And_Centroids();
+	EnsureAnticlockwiseTriangleCornerSequences_SetupTriMinorNeighboursLists();
+	Create4Volleys(); // destroyed in resequencing.
+
+	printf("Beware: resetting Az in tris: not right idea?\n");
+
+	// Now refresh v avg in tris because we created v on verts only.
+	pTri = T;
+	f64_vec2 vxy, vxysum;
+	f64 viz, vez, vezsum, vizsum, Az, Azsum, Azdotsum, Azdot;
+	f64_vec3 v_n, vnsum;
+	int npts;
+	for (long iTri = 0; iTri < BEGINNING_OF_CENTRAL; iTri++)
+	{
+		if (((pTri->u8domain_flag == DOMAIN_TRIANGLE) || (pTri->u8domain_flag == CROSSING_INS))
+			&& (pTri->cent.dot(pTri->cent) < START_SPREADING_OUT_RADIUS*START_SPREADING_OUT_RADIUS))
+		{
+			npts = 0;
+			vnsum.x = 0.0; vnsum.y = 0.0; vnsum.z = 0.0;
+			vxysum.x = 0.0; vxysum.y = 0.0;
+			vizsum = 0.0; vezsum = 0.0;		 
+			Azsum = 0.0; Azdotsum = 0.0;
+			for (int i = 0; i < 3; i++)
+			{
+				long iVertex = pTri->cornerptr[i]-X;
+				if (pData[iVertex + BEGINNING_OF_CENTRAL].n > 0.0) {
+					vnsum += pData[iVertex + BEGINNING_OF_CENTRAL].v_n;
+					vxysum += pData[iVertex + BEGINNING_OF_CENTRAL].vxy;
+					vizsum += pData[iVertex + BEGINNING_OF_CENTRAL].viz;
+					vezsum += pData[iVertex + BEGINNING_OF_CENTRAL].vez;
+					npts++;
+				};
+
+				Azsum += pData[iVertex + BEGINNING_OF_CENTRAL].Az;
+				Azdotsum += pData[iVertex + BEGINNING_OF_CENTRAL].Azdot;
+			}
+			
+			f64 over = 1.0 / (real)npts;
+			vxy = vxysum*over;
+			v_n = vnsum*over;
+			vez = vezsum*over;
+			viz = vizsum*over;
+			
+			pData[iTri].vxy = vxy;
+			pData[iTri].vez = vez;
+			pData[iTri].viz = viz;
+			pData[iTri].v_n = v_n;
+								
+			Az = Azsum*THIRD;
+			pData[iTri].Az = Az;
+			Azdot = Azdotsum*THIRD;
+			pData[iTri].Azdot = Azdot;
+
+			// Replaced all, not just the ones where something had moved...
+		}
+		++pTri;
+	};
+
+	//Ultimately it could be done better, but we aren't going to do that.
+
+	//1. Fix vtri -- where is vn?
+	//2. Fix Atri -- need to integrate Az.
+//	3. Check it runs sim step without resprinkle.
+//	4. Ask what is different with resprinkle.
+
+}
+
+
+real TriMesh::SwimVertices(TriMesh * pSrcMesh, real coefficient, real * pAcceptance)
+{
+	// First let's try moving towards barycenters to sort out the messiness.
+	long izTri[MAXNEIGH];
+	long izNeigh[MAXNEIGH];
+	f64 sqrtn[MAXNEIGH];
+	short tri_len, neigh_len, i , inext;
+	ConvexPolygon cp;
+	Vertex * pVertex = X;
+	Vertex * pNeigh, *pNeigh2;
+	f64_vec2 pos1, pos2, Pretend_barycenter;
+	f64 n1, n2;
+	Triangle * pTri,*pTri2;
+	long iVertex;
+	f64 leng, moverat;
+	f64_vec2 Direction;
+	f64 SumSq = 0.0;
+	long NumSum = 0;
+	
+	pTri = T;
+	for (long iTri = 0; iTri < numTriangles; iTri++)
+	{
+		pTri->RecalculateCentroid(this->InnermostFrillCentroidRadius,
+			this->OutermostFrillCentroidRadius);
+
+		// Makes no allowance for CROSSING_CATH but we don't care much.
+		// Also GPU does not actually make different centroid in that case
+		// -- don't know why not but it's deliberate.
+		
+		//if (pTri->has_vertex(X + 4000)) {
+		//	printf("iTri %d cent %1.9E %1.9E %d %d | ", iTri, pTri->cent.x, pTri->cent.y,
+		//		pTri->u8domain_flag, pTri->periodic);
+		//	Vector2 u[3];
+		//	pTri->MapLeftIfNecessary(u[0], u[1], u[2]);
+		//	printf(" %1.9E %1.9E |  %1.9E %1.9E |  %1.9E %1.9E | %d %d %d\n",
+		//		u[0].x, u[0].y, u[1].x, u[1].y, u[2].x, u[2].y,
+		//		pTri->cornerptr[0] - X,
+		//		pTri->cornerptr[1] - X,
+		//		pTri->cornerptr[2] - X
+		//	);
+		//}
+
+		// Recompute n based on domain corners only:
+
+		int npts = 0, i1;
+		f64_vec2 vec2;
+		f64 nsum = 0.0, nnsum = 0.0;
+		switch (pTri->u8domain_flag) {
+		case DOMAIN_TRIANGLE:
+			
+
+			pData[iTri].n = THIRD*(pData[BEGINNING_OF_CENTRAL + pTri->cornerptr[0] - X].n
+				+ pData[BEGINNING_OF_CENTRAL + pTri->cornerptr[1] - X].n
+				+ pData[BEGINNING_OF_CENTRAL + pTri->cornerptr[2] - X].n);
+			pData[iTri].n_n = THIRD*(pData[BEGINNING_OF_CENTRAL + pTri->cornerptr[0] - X].n_n
+				+ pData[BEGINNING_OF_CENTRAL + pTri->cornerptr[1] - X].n_n
+				+ pData[BEGINNING_OF_CENTRAL + pTri->cornerptr[2] - X].n_n);
+			break;
+
+		case CROSSING_INS:
+			//if (iTri == 52332) printf("52332 Ins triangle %d %1.8E %d %1.8E %d %1.8E\n"
+			//	"pos %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E\n",
+			//	pTri->cornerptr[0] - X, pData[BEGINNING_OF_CENTRAL + pTri->cornerptr[0] - X].n_n,
+			//	pTri->cornerptr[1] - X, pData[BEGINNING_OF_CENTRAL + pTri->cornerptr[1] - X].n_n,
+			//	pTri->cornerptr[2] - X, pData[BEGINNING_OF_CENTRAL + pTri->cornerptr[2] - X].n_n,
+			//	pTri->cornerptr[0]->pos.x, pTri->cornerptr[0]->pos.y,
+			//	pTri->cornerptr[1]->pos.x, pTri->cornerptr[1]->pos.y,
+			//	pTri->cornerptr[2]->pos.x, pTri->cornerptr[2]->pos.y
+			//);
+
+			for (i1 = 0; i1 < 3; i1++)
+			{
+				vec2 = pTri->cornerptr[i1]->pos;
+				if (vec2.dot(vec2) > DEVICE_RADIUS_INSULATOR_OUTER*DEVICE_RADIUS_INSULATOR_OUTER)
+				{
+					nsum += pData[pTri->cornerptr[i1] - X + BEGINNING_OF_CENTRAL].n;
+					nnsum += pData[pTri->cornerptr[i1] - X + BEGINNING_OF_CENTRAL].n_n;
+					++npts;
+				};
+			}
+			if (npts == 0) {
+				printf("%d npts = 0 CROSSING_INS\n", iTri);
+			}
+			else {
+				pData[iTri].n = nsum / (real)npts;
+				pData[iTri].n_n = nnsum / (real)npts;
+			};
+			break;
+		case CROSSING_CATH:
+			//if (iTri == 52332) printf("52332 Cath triangle %d %1.8E %d %1.8E %d %1.8E\n"
+			//	"pos %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E\n",
+			//	pTri->cornerptr[0] - X, pData[BEGINNING_OF_CENTRAL + pTri->cornerptr[0] - X].n_n,
+			//	pTri->cornerptr[1] - X, pData[BEGINNING_OF_CENTRAL + pTri->cornerptr[1] - X].n_n,
+			//	pTri->cornerptr[2] - X, pData[BEGINNING_OF_CENTRAL + pTri->cornerptr[2] - X].n_n,
+			//	pTri->cornerptr[0]->pos.x, pTri->cornerptr[0]->pos.y,
+			//	pTri->cornerptr[1]->pos.x, pTri->cornerptr[1]->pos.y,
+			//	pTri->cornerptr[2]->pos.x, pTri->cornerptr[2]->pos.y
+			//);
+			for (i1 = 0; i1 < 3; i1++)
+			{
+				vec2 = pTri->cornerptr[i1]->pos;
+				vec2.y -= CATHODE_ROD_R_POSITION; // vec2 is vector from rod centre
+				if (vec2.dot(vec2) > CATHODE_ROD_RADIUS*CATHODE_ROD_RADIUS)
+				{
+					nsum += pData[pTri->cornerptr[i1] - X + BEGINNING_OF_CENTRAL].n;
+					nnsum += pData[pTri->cornerptr[i1] - X + BEGINNING_OF_CENTRAL].n_n;
+					++npts;
+				};
+			}
+			if (npts == 0) {
+				printf("%d npts = 0 CROSSING_CATH\n", iTri);
+			}
+			else {
+				pData[iTri].n = nsum / (real)npts;
+				pData[iTri].n_n = nnsum / (real)npts;
+			};
+			break;
+		default:
+			pData[iTri].n = 0.0;
+			pData[iTri].n_n = 0.0;
+		};
+
+		++pTri; // this seems like it should still work if we have not wrapped any vertex that moved, even if tri no longer periodic in truth but some pts outside tranche
+	};
+#define TEST50 0  // (iVertex == 13798))
+	
+#define SWITCH 1  // 0 = tricentre based barycenter polygon
+	
+	// We are doing based on izNeigh instead of izTri
+	// This is no good. For one thing we can get sucked beneath the periodic boundary.
+	// For another thing we need to define n in ins_crossing triangles in the appropriate way, not use out of domain values of n.
+
+	// Conclusion : DO BASED ON izTri !!
+	// _________________________
+
+	f64_vec2 Uniform_barycenter, Direction2;
+	for (iVertex = 0; iVertex < NUMVERTICES; iVertex++)
+	{
+		if (iVertex % 1000 == 0) printf("%d ", iVertex);
+		if ((pVertex->flags == DOMAIN_VERTEX) &&
+			(pVertex->pos.dot(pVertex->pos) < START_SPREADING_OUT_RADIUS*START_SPREADING_OUT_RADIUS))
+		{		
+			// . Populate polygon about vertex:
+
+			tri_len = pVertex->GetTriIndexArray(izTri);
+			neigh_len = pVertex->GetNeighIndexArray(izNeigh);
+			f64_vec2 numer, numer2, pos;
+			f64 denom, denom2;
+			numer.x = 0.0; numer.y = 0.0; denom = 0.0; denom2 = 0.0; numer2.x = 0.0; numer2.y = 0.0;
+			
+			if (SWITCH == 0) {
+				for (i = 0; i < tri_len; i++) {
+					inext = i + 1; if (inext == tri_len) inext = 0;
+					pTri = &(T[izTri[i]]);
+					pTri2 = &(T[izTri[inext]]);
+					pos1 = RotateClosest(pTri->cent, pVertex->pos);
+					pos2 = RotateClosest(pTri2->cent, pVertex->pos);
+					n1 = pData[izTri[i]].n + pData[izTri[i]].n_n;
+					n2 = pData[izTri[inext]].n + pData[izTri[inext]].n_n;
+
+					cp.Clear();
+					cp.add(pos1);
+					cp.add(pos2);
+					cp.add(pVertex->pos);
+
+					f64 weight1 = cp.GetArea();
+					f64 argument = (n1 + n2 + pData[iVertex + BEGINNING_OF_CENTRAL].n
+						+ pData[iVertex + BEGINNING_OF_CENTRAL].n_n);
+					if ((argument < 0.0) || (argument == 0.0)) printf("Vertex %d argument %1.9E\n"
+						"n1 %1.9E pData[%d].n %1.9E pData[%d].nn %1.9E \n"
+						"n2 %1.9E pData[%d].n %1.9E pData[%d].nn %1.9E \n"
+						"pData[%d+BOC].n %1.9E pData[%d+BOC].nn %1.9E \n",
+						iVertex, argument,
+						n1, izTri[i], pData[izTri[i]].n, izTri[i], pData[izTri[i]].n_n,
+						n2, izTri[inext], pData[izTri[inext]].n, izTri[inext], pData[izTri[inext]].n_n,
+						iVertex, pData[iVertex + BEGINNING_OF_CENTRAL].n, iVertex, pData[iVertex + BEGINNING_OF_CENTRAL].n_n
+					);
+
+					f64 weight = weight1*sqrt(argument)*THIRD;
+					denom += weight;
+					numer += weight*THIRD*(pos1 + pos2 + pVertex->pos);
+
+					denom2 += weight1; // uniform barycenter
+					numer2 += weight1*THIRD*(pos1 + pos2 + pVertex->pos);
+					/*
+
+								neigh_len = pVertex->GetNeighIndexArray(izNeigh);
+
+								f64_vec2 numer, numer2;
+								f64 denom, denom2;
+								numer.x = 0.0; numer.y = 0.0; denom = 0.0; denom2 = 0.0; numer2.x = 0.0; numer2.y = 0.0;
+								bool bFound = false;
+								for (i = 0; i < neigh_len; i++) {
+									inext = i + 1; if (inext == neigh_len) inext = 0;
+									pNeigh = &(X[izNeigh[i]]);
+									pNeigh2 = &(X[izNeigh[inext]]);
+									pos1 = RotateClosest(pNeigh->pos, pVertex->pos);
+									pos2 = RotateClosest(pNeigh2->pos, pVertex->pos);
+									n1 = pData[izNeigh[i] + BEGINNING_OF_CENTRAL].n
+										+ pData[izNeigh[i] + BEGINNING_OF_CENTRAL].n_n;
+									n2 = pData[izNeigh[inext] + BEGINNING_OF_CENTRAL].n
+										+ pData[izNeigh[inext] + BEGINNING_OF_CENTRAL].n_n;
+
+									if (TEST50) printf("izNeigh[%d] %d pNeigh->pos %1.9E %1.9E our pos %1.9E %1.9E n1 n2 %1.9E %1.9E\n",
+										i, izNeigh[i], pNeigh->pos.x, pNeigh->pos.y, pVertex->pos.x, pVertex->pos.y, n1, n2);
+
+									// Suspect this one did not get populated properly by integration.
+
+									cp.Clear();
+									cp.add(pos1);
+									cp.add(pos2);
+									cp.add(pVertex->pos);
+
+									if (TEST50)  printf("n1 %1.8E n2 %1.8E data n %1.9E %1.9E pos1 pos2 %1.9E %1.9E %1.9E %1.9E\n",
+										n1, n2, pData[iVertex + BEGINNING_OF_CENTRAL].n, pData[iVertex + BEGINNING_OF_CENTRAL].n_n,
+										pos1.x, pos1.y, pos2.x, pos2.y);
+									// why is barycenter bad?
+
+									f64 weight1 = cp.GetArea();
+
+									// Vertex 13798 argument -3.905548138E+03
+
+									f64 argument = (n1 + n2 + pData[iVertex + BEGINNING_OF_CENTRAL].n
+															+ pData[iVertex + BEGINNING_OF_CENTRAL].n_n);
+									if ((argument < 0.0) || (argument == 0.0)) printf("Vertex %d argument %1.9E\n"
+										"n1 %1.9E pData[%d+BOC].n %1.9E pData[%d+BOC].nn %1.9E \n"
+										"n2 %1.9E pData[%d+BOC].n %1.9E pData[%d+BOC].nn %1.9E \n"
+										"pData[%d+BOC].n %1.9E pData[%d+BOC].nn %1.9E \n",
+										iVertex, argument,
+										n1, izNeigh[i], pData[izNeigh[i] + BEGINNING_OF_CENTRAL].n, izNeigh[i], pData[izNeigh[i] + BEGINNING_OF_CENTRAL].n_n,
+										n2, izNeigh[inext], pData[izNeigh[inext] + BEGINNING_OF_CENTRAL].n, izNeigh[inext], pData[izNeigh[inext] + BEGINNING_OF_CENTRAL].n_n,
+										iVertex, pData[iVertex + BEGINNING_OF_CENTRAL].n, iVertex, pData[iVertex + BEGINNING_OF_CENTRAL].n_n
+										);
+
+
+
+									f64 weight = weight1*sqrt(argument)*THIRD;
+									denom += weight;
+									numer += weight*THIRD*(pos1 + pos2 + pVertex->pos);
+
+									denom2 += weight1; // uniform barycenter
+									numer2 += weight1*THIRD*(pos1 + pos2 + pVertex->pos);
+
+									if (TEST50)  printf("weight %1.8E numer.x contrib %1.8E \n",
+										weight, weight*THIRD*((pos1 + pos2 + pVertex->pos).x));
+										*/
+				};
+			} else {
+
+				for (i = 0; i < neigh_len; i++) {
+					inext = i + 1; if (inext == neigh_len) inext = 0;
+					pNeigh = X + izNeigh[inext];
+					pos = 0.5*(pVertex->pos + RotateClosest(pNeigh->pos, pVertex->pos));
+					n1 = pData[izNeigh[inext]+BEGINNING_OF_CENTRAL].n + pData[izNeigh[inext]+BEGINNING_OF_CENTRAL].n_n;
+					
+					pTri = &(T[izTri[i]]);
+					pTri2 = &(T[izTri[inext]]);
+					pos1 = RotateClosest(pTri->cent, pVertex->pos);
+					pos2 = RotateClosest(pTri2->cent, pVertex->pos); 										
+					cp.Clear();
+					cp.add(pos1);
+					cp.add(pos);
+					cp.add(pVertex->pos);
+					f64 weight1 = cp.GetArea(); 
+					cp.Clear();
+					cp.add(pos2);
+					cp.add(pos);
+					cp.add(pVertex->pos);
+					weight1 += cp.GetArea();
+
+					f64 argument = 0.5*(n1 + pData[iVertex + BEGINNING_OF_CENTRAL].n
+						+ pData[iVertex + BEGINNING_OF_CENTRAL].n_n);
+
+					f64 weight = weight1*sqrt(argument);
+					denom += weight;
+					numer += weight*0.5*(pos + pVertex->pos);
+
+					denom2 += weight1; // uniform barycenter
+					numer2 += weight1*0.5*(pos + pVertex->pos);
+				};
+			}; // behaviour switch
+
+			if (TEST50)
+				printf("numer %1.9E %1.9E denom %1.9E numer2 %1.9E %1.9E denom2 %1.9E\n", numer.x, numer.y, denom,
+					numer2.x, numer2.y, denom2);
+			if (denom == 0.0) printf("About to divide by zero denom: %d %1.8E %1.8E\n", iVertex, pVertex->pos.x, pVertex->pos.y);
+			if (denom2 == 0.0) printf("About to divide by zero denom2: %d %1.8E %1.8E\n", iVertex, pVertex->pos.x, pVertex->pos.y);
+			Pretend_barycenter = numer / denom;
+			Uniform_barycenter = numer2 / denom2;
+
+			//    If we were over 0.03 = 300 micron from a neighbour point, track towards it instead:			
+			// 3. Fix why it is again coming out with zero in some of these middle places. Again.
+			
+			Direction = Pretend_barycenter - pVertex->pos;
+			leng = Direction.modulus();
+			
+			if (TEST50)  printf("\nleng %1.9E Direction %1.9E %1.9E Barycenter %1.9E %1.9E pos %1.9E %1.9E\n",
+				leng, Direction.x, Direction.y,
+				Pretend_barycenter.x, Pretend_barycenter.y,
+				pVertex->pos.x, pVertex->pos.y
+				);
+			if (leng <= 0.0) printf("About to divide by <=zero leng %d\n", iVertex);
+
+			moverat = min(sqrt(0.1 * 0.005/leng),1.0); // cm						
+
+			// Should this be max or min ?????????????
+			
+			Direction *= moverat*coefficient;
+
+			f64_vec2 newpos = pVertex->pos + Direction;
+			bool bFound = false;
+			for (i = 0; i < neigh_len; i++) {
+				inext = i + 1; if (inext == neigh_len) inext = 0;
+				pNeigh = &(X[izNeigh[i]]);
+				pNeigh2 = &(X[izNeigh[inext]]);
+				pos1 = RotateClosest(pNeigh->pos, pVertex->pos);
+				pos2 = RotateClosest(pNeigh2->pos, pVertex->pos);
+				if ((((pos1 - pVertex->pos).dot(pos1 - pVertex->pos)) > 0.03*0.03)
+					||
+					(((pos2 - pVertex->pos).dot(pos2 - pVertex->pos)) > 0.03*0.03))
+					bFound = true;
+			};
+
+			f64 maxdistsq = 0.0;
+			int iMax = -1;
+			if (bFound) {
+				//for (i = 0; i < neigh_len; i++) {
+				//	pNeigh = &(X[izNeigh[i]]);
+				//	pos1 = RotateClosest(pNeigh->pos, newpos);
+				//	if (((pos1 - newpos).dot(pos1 - newpos)) > maxdistsq)
+				//	{
+				//		maxdistsq = ((pos1 - newpos).dot(pos1 - newpos));
+				//		iMax = i;
+				//	};
+				//};
+				//pos1 = RotateClosest(X[izNeigh[iMax]].pos, newpos);
+				//Direction2 = pos1 - newpos;
+				//// Cancel first part of move if it took us away from new farthest point:
+				//if (Direction.dot(Direction2) < 0.0) {
+				//	Direction.x = 0.0; Direction.y = 0.0;
+				//	newpos = pVertex->pos;
+				//}
+				// Now move from newpos, add Direction, towards uniform barycenter
+				//Direction2 = (Uniform_barycenter - newpos)*coefficient;
+				//Direction += Direction2;
+
+				Direction = Uniform_barycenter - pVertex->pos;
+				leng = Direction.modulus();
+				if (leng <= 0.0) printf("About to divide by <=zero leng %d\n", iVertex);
+				moverat = min(sqrt(0.1 * 0.005 / leng), 1.0); // cm			
+				Direction *= moverat;
+			};
+			
+			pVertex->pos += Direction;	
+			if (pVertex->pos.y == 0.0) printf("About to divide by zero pVertex->pos.y %d\n", iVertex);
+
+			if (pVertex->pos.x / pVertex->pos.y > GRADIENT_X_PER_Y)
+			{
+				// went off RH side
+				printf("R");
+				f64 newx, newy;
+				tri_len = pVertex->GetTriIndexArray(izTri);
+				for (i = 0; i < tri_len; i++)
+				{
+					// if triangle is periodic then we need to map other vertices to living nearby....
+					pTri = T + izTri[i];
+					pTri->IncrementPeriodic();
+				};
+				newx = Anticlockwise.xx*pVertex->pos.x + Anticlockwise.xy*pVertex->pos.y;
+				newy = Anticlockwise.yx*pVertex->pos.x + Anticlockwise.yy*pVertex->pos.y;
+				pVertex->pos.x = newx;
+				pVertex->pos.y = newy;
+			};
+
+			if (pVertex->pos.x / pVertex->pos.y < -GRADIENT_X_PER_Y)
+			{
+				printf("L");
+				f64 newx, newy;
+				tri_len = pVertex->GetTriIndexArray(izTri);
+				for (i = 0; i < tri_len; i++)
+				{
+					// if triangle is periodic then we need to map other vertices to living nearby....
+					pTri = T + izTri[i];
+					pTri->DecrementPeriodic();
+				};
+				newx = Clockwise.xx*pVertex->pos.x + Clockwise.xy*pVertex->pos.y;
+				newy = Clockwise.yx*pVertex->pos.x + Clockwise.yy*pVertex->pos.y;
+				pVertex->pos.x = newx;
+				pVertex->pos.y = newy;
+			};
+			SumSq += Direction.dot(Direction);
+
+		//	if (Direction.modulus() > 0.03) {
+		//		printf("Crazy move: %d Direction %1.9E %1.9E Pretend_barycenter %1.9E %1.9E pos %1.9E %1.9E\n",
+		//			iVertex, Direction.x, Direction.y,
+		//			Pretend_barycenter.x, Pretend_barycenter.y,
+		//			pVertex->pos.x, pVertex->pos.y);
+		//		getch();
+		//	}
+			NumSum++;
+		};
+		++pVertex;
+	};
+	
+	f64 L2 = sqrt(SumSq / (real)NumSum);
+	 
+	// Now recalculate triangle centroids.
+	
+	this->Recalculate_TriCentroids_VertexCellAreas_And_Centroids();
+	printf("L2 %1.7E\n", L2);
+	printf("About to re-delaunerize.\n");
+
+	pTri = T;
+	for (long iTri = 0; iTri < numTriangles; iTri++)
+	{
+		pTri->RecalculateCentroid(this->InnermostFrillCentroidRadius,
+			this->OutermostFrillCentroidRadius);
+		//if (pTri->has_vertex(X + 4000)) {
+		//	printf("iTri %d cent %1.9E %1.9E %d %d | ", iTri, pTri->cent.x, pTri->cent.y,
+		//		pTri->u8domain_flag, pTri->periodic);
+		//	Vector2 u[3];
+		//	pTri->MapLeftIfNecessary(u[0], u[1], u[2]);
+		//	printf(" %1.9E %1.9E |  %1.9E %1.9E |  %1.9E %1.9E | %d %d %d\n",
+		//		u[0].x, u[0].y, u[1].x, u[1].y, u[2].x, u[2].y,
+		//		pTri->cornerptr[0]-X,
+		//		pTri->cornerptr[1] - X,
+		//		pTri->cornerptr[2] - X
+		//		);
+		//}
+		++pTri; // this seems like it should still work if we have not wrapped any vertex that moved, even if tri no longer periodic in truth but some pts outside tranche
+	};
+
+//	tri_len = X[26194].GetTriIndexArray(izTri);
+//	neigh_len = X[26194].GetNeighIndexArray(izNeigh);
+//	for (i = 0; i < tri_len; i++)
+//		printf("i %d tri %d neigh %d \n", i, izTri[i], izNeigh[i]);
+
+	// Redelaunerize:	
+	this->Redelaunerize(true, true);
+	//printf("LINE 746 : X[9594].iScratch %d \n", X[9594].iScratch);
+
+	this->RefreshVertexNeighboursOfVerticesOrdered();
+	// What is not populated properly after Redelaun? BIG QUESTION. Need to set it out in orderly fashion.
+
+	*pAcceptance = 1.0;
+	//&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&
+	
+	/*
+	// Redistribute vertices towards where we get more equal masses in cells.
+
+	// We must have already positioned vertices in pDestMesh -- position same as existing initially;
+	// *this has the existing mesh and values that we keep until we are finished with iterating.
+
+	// ( We should then swap pointers: DestMesh is then the current system. )
+
+
+	//		1. Swim vertices according to distribution of mass seen on dest mesh;
+	//		2. Renew mass distribution for dest mesh by doing advectioncompression with 0 velocity 
+	// Then loop.
+
+	// When we are ready to stop, we want those filled in values for dest mesh.
+
+	// Here's one thought.
+	// Suppose we pick a time when we are doing a move anyway.
+	// ...
+	//					we created the new mesh
+	//				we do advectioncompression for two species
+	//				that lands us with mass
+	//					let's say we see that vertices can swim profitably
+	//				we move them, zero the cells and do the advectioncompression again
+	//					is there a criterion to see that it was an improvement?
+
+	// OK so perhaps we want two functions:
+	// 1. Establish whether we can make gains
+	// 2. Make the moves
+
+	// Remember that we want to FinishAdvectingMesh when we reposition the vertices
+	// Might want to look over that also.
+
+
+
+	// try to decide a more optimal positioning for this point based on equalising the masses of triangles...
+	// So we want density to be inversely proportional to area.
+
+	// If we assume that the density at this vertex is what we add or take away from a triangle, that is 
+	// probably not madly wrong.
+
+
+	// Well here is an idea ... assume density in triangles stays fairly constant ... this will be a small move ...
+	// or assume that it's somewhere between the two ... 
+	// ... either actually might fail if just one of the neighbours is very tall.
+	// in that case we need to be assuming that the edge density of the tall cell is what we add when we
+	// move the boundaries.
+
+	// Could do the following way: 
+	// We need to pick a direction and a magnitude for changing vertex position.
+	// Pick the direction that optimises the sum of squared differences from equal mass -- ??
+
+	// Can't remember which way worked best.
+
+	// Maybe we should just consider moving towards average of neighbours --- is it true that if cells
+	// are maldistributed then there is always something that can do this?
+
+	// However it might sometimes be, if behaviour locally is very bad, so be careful.
+
+
+	// OK let's do this -- let's consider just moving towards neighbour average, which makes the grid more equilateral.
+
+
+	// rate of change of triangle area can be found by dotting this move direction with direction perp to other edge
+
+	// If we assume density in each triangle is given (this may have proven to be a bad assumption before)
+	// then we can try to minimize sum of squared masses ?
+
+	// What we did before was take Sum(mass - avgmass)^2 as objective function and estimated grad empirically,
+	// then changed magnitude - to settle on one s.t. both initial value is worse and halving magnitude is also worse.
+
+
+	// So here is what we should do: only move lone vertices: set a flag to each neighbour that it has to be in the next volley.
+	// This way we can tell if each move has been an improvement, if we remember the previous objective function at each vertex.
+
+	// We're spoilt for choice: can indicate which volley with Vertex::iScratch or Vertex::flags
+
+	// Vertex::e_pm_Heat_denominator can be the objective function stored for the initial position
+	// Vertex::eP_Viscous_denominator_x, eP_Viscous_denominator_y can be the stored initial position
+
+	// Vertex::IonP_Viscous_numerator_x, IonP_Viscous_numerator_y is the position we are leapfrogging
+	// Vertex::ion_pm_Heat_numerator can be the objective function stored for this position
+
+	// Vertex::iScratch can be the volley to which it is assigned.
+	// (and we repeat until everything is assigned status -1 meaning done).
+	// Vertex::flags can be which way we are heading -- 0 means more change, 1 means less.
+
+	// in this way we bisect to get an improvement:
+	// if the new value is worse than e_pm_Heat_denominator then we go smaller until it is better
+	// and keep going smaller until it stops getting better
+	// if the new value is better, we can try going larger; when it stops being better we stop and accept previous
+
+	// Algorithm: 
+	// If masses are already within ~8% of each other, it is not worth moving.
+	//	If they are somewhat different, do a move:
+
+	//					create 2 first guesses 20% apart --- the magnitude to pick may be based on a number of things,
+	// but in particular we might solve the linear equation for d/dt (sum of squared masses) = 0.
+	// Note that we also get our grad Objective by assuming that the change is adding (and subtracting) at rate n_vertex.
+
+	// Let's say we take that, reduce it somewhat if necessary according to practical constraints,
+	// then consider that vs 80% of that.
+
+	// Now one guess will be better than the other;
+	// we walk another 10% that way
+	// and continue as long as it keeps getting better.
+	// If we end up with a quite small move then stop bothering.
+	// When we come to a guess that is worse, we go back to the previous one Viscous_numerator.
+
+	// If that is no better than the original, we fail and stay where we were; if it is better, we accept it.
+
+	// ... so, we need to store which way we are going; for this try Vertex::flags
+
+	// We also need to store the direction we are heading in -- make this Pressure_numerator
+	// -- since we assume we are not doing this as part of an advance.
+
+	// it would be far better to therefore _NOT_ do this re-jig as part of advection
+	// There will be a few stubborn points where we do the re-mapping many times -- for these,
+	// we want to just re-create masses repeatedly using the triangles locally, not re-doing the whole system.
+
+	// ...Seems that it is high time we created a function that returns the triplanar model for a tri
+	// or the quadriplanar model for a wedge.
+	// We will need it again for smoothings.
+	// We will need to do a zero-velocity advection to place triangles of mass and mom on to this new mesh.
+	// Wish to do it for particular sets of triangles at a time.
+
+	// Bite the leather.
+
+
+
+
+
+
+	// New plan.
+
+	// Do populate masses from source mesh each time.
+
+	// Each volley:
+	//				Populate masses for initial position from source mesh;
+	//				Calculate objective functions and store them; label neighbour vertices to next volley;
+	//					store old positions and create new ones based on grad objective function (store grad and magnitude)
+	//				Populate masses again from source mesh;
+	//					Create another guess of position: store objective function and our first guess
+	//				Populate masses again from source mesh;
+	//					Calculate objective functions for 3rd time; now accept the best guess of the 3.
+
+	// so we have 3 populates per volley; we may have 4 volleys I expect. But it could be 5. 
+	// .... This is a fairly expensive procedure to run even 1 go of. 
+
+
+	// REMEMBER TO CALL VERTEXNEIGHBOURSOFVERTICES BEFORE WE EMBARK ON THIS SWIMVERTICES BUSINESS
+	// %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+	long * pIndex;
+	Vertex * pVertex;
+	long iVertex, iTri;
+	real length1, length2;
+	Vector2 average_pos, changevector;
+	int i;
+	Triangle * pTri;
+	int iVolley = 0;
+	bool found_vertices_this_volley;
+	real objective, weight, area, minlen, magnitude, mass;
+	Vector2 grad, putative;
+	real d_mass_by_dx, d_area_by_dx, d_mass_by_dy, d_area_by_dy;
+	Vector2 u0, u1, u2, uO;
+	real sum_mass_times_rate_of_change, sum_squared_rates_of_change, sum_squared_move_length,
+		d_mass_per_unit_grad, newx, newy;
+	int triangles_len;
+	bool crush_radial_move;
+	Triangle * pDummyTri;
+	int which, c1;
+
+	real xdist, ydist, dist, graddotnormal, max, original_dot, original_dist, new_position_dot;
+	Vector2 edgenormal, rhat, mingrad, from_here, to1, to2, u;
+	Vertex * pNeigh1, *pNeigh2;
+	real d_minmass_by_dt, d_mass_by_dt, crossover, minmass,
+		normaldistance, tmax;
+	int iMin;
+	long attempted, accepted;
+	attempted = 0; accepted = 0;
+
+#ifdef VERTBASED
+
+	// Have to work out what to do
+
+	return 0;
+	// wish I hadn't done this change.
+
+#else
+	pVertex = X;
+	
+	sum_squared_move_length = 0.0; // a crude way to gauge how much impression this call of SwimVertices makes
+	short neigh_len;
+	long izNeigh[MAXNEIGH];
+
+	for (iVolley = 0; iVolley < 4; iVolley++)
+	{
+		
+		pTri = T;
+		for (iTri = 0; iTri < numTriangles; iTri++)
+		{
+			pTri->RecalculateEdgeNormalVectors(true); // these are used below
+			++pTri;
+		};
+		//	Populate masses for initial position from source mesh;
+		printf("`");
+		pSrcMesh->RepopulateCells(this, MASS_ONLY); // this will need attention.
+		printf(".");
+
+		//	Calculate objective functions and store them; label neighbour vertices to next volley;
+		//	store old positions and create new ones based on grad objective function (store grad and magnitude)
+		
+		long izTri[MAXNEIGH];
+		pVertex = X;
+		for (iVertex = 0; iVertex < numVertices; iVertex++)
+		{
+			if (pVertex->iVolley == iVolley)
+			{
+				objective = 0.0;
+				grad.x = 0.0; grad.y = 0.0;
+				sum_squared_rates_of_change = 0.0;
+				sum_mass_times_rate_of_change = 0.0;
+
+				triangles_len = pVertex->GetTriIndexArray(izTri);
+				pData[iVertex + BEGINNING_OF_CENTRAL].n = 0.0;
+				pData[iVertex + BEGINNING_OF_CENTRAL].n_n = 0.0;
+				for (i = 0; i < triangles_len; i++)
+				{
+					// Get objective function:
+					//pTri = (Triangle *)(pVertex->triangles.ptr[i]);
+					iTri = izTri[i];
+
+					T.area : populated ? Where ? It exists apparently.And would have to be kept well populated.;
+
+					area = pTri->GetArea();
+					mass = (pData[iTri].n + pData[iTri].n_n)*area;
+					objective += mass*mass;
+
+					// Recalculate pVertex->ion.n and pVertex->neut.n
+					weight = pTri->ReturnAngle(pVertex); // takes acct of periodic & wedge cases.
+					pVertex->ion.n += weight*(pData[iTri].n);
+					pVertex->neut.n += weight*(pTri->neut.mass) / area; // really only want the total of course
+																							// (( Is this how vertex n is calculated elsewhere? ))
+				};
+
+				Okay, so this is an older way of approaching it. n vertex is what has to be calculated as an average.
+				Our way, we need to rethink what happens when points move around.
+
+					What happens to vertex n?
+
+					Get it rite.
+
+
+					.. We want to move towards centre of mass of shard model.
+					.. Only actually move if figure of merit is getting better.
+					.. Another way to look at it : want to minimize the sum of squared FOM's. Therefore take gradient of this objective function
+					.. with respect to the position. 
+					.. But do not move on the vector that takes you away from COM & do not move towards COM on the vector away from objective function improvement.
+
+					That's quite clever.
+
+
+
+
+
+
+
+				pVertex->e_pm_Heat_denominator = objective; // store for initial positions
+				pVertex->eP_Viscous_denominator_x = pVertex->pos.x;
+				pVertex->eP_Viscous_denominator_y = pVertex->pos.y; // store initial positions
+
+																// Now collect contributions to grad Area, and normalise:
+				iMin = 0; minmass = 1.0e100;
+				mingrad.x = 0.0; mingrad.y = 0.0;
+				for (i = 0; i < triangles_len; i++)
+				{
+					pTri = (Triangle *)(pVertex->triangles.ptr[i]);
+					pTri->Return_grad_Area(pVertex, &d_area_by_dx, &d_area_by_dy); 		// contiguous with pVertex
+					mass = (pTri->ion.mass + pTri->neut.mass);
+
+					// Now estimate gradient of objective:
+					// d/dx sum of squares = 2 sum (mass )(d/dx mass )
+					// To find change of area, dot x with the vector that is normal to the other side						
+					// In this whole function we need to map periodically everything to be on same side as pVertex.
+					// THAT is rather crucial isn't it 
+
+					d_mass_by_dx = (pVertex->ion.n + pVertex->neut.n)*d_area_by_dx;
+					d_mass_by_dy = (pVertex->ion.n + pVertex->neut.n)*d_area_by_dy;
+
+					if (mass < minmass) {
+						minmass = mass;
+						iMin = i;
+						mingrad.x = d_mass_by_dx;
+						mingrad.y = d_mass_by_dy;
+					};
+					grad.x += mass*d_mass_by_dx*2.0; // gradient of mass*mass ... 
+					grad.y += mass*d_mass_by_dy*2.0;
+				};
+				grad.Normalise();
+
+				// Now in place of grad we want our intended move direction.
+				if (pVertex->flags >= 3) {
+					// delete radial component:
+					rhat.x = pVertex->pos.x; rhat.y = pVertex->pos.y; rhat.Normalise();
+					grad -= rhat*(grad.dot(rhat));
+				};
+
+				// Test: if grad is making minimum tri smaller that is bad
+				// Bear in mind we expect to head along negative of grad to REDUCE objective function
+				if (grad.x*mingrad.x + grad.y*mingrad.y > 0.0)
+				{
+					// heading against mingrad - no good.
+					// we already set pVertex->eP_Viscous_denominator_x = pVertex->pos.x
+
+					pVertex->IonP_Viscous_numerator_x = pVertex->pos.x;
+					pVertex->IonP_Viscous_numerator_y = pVertex->pos.y; // store unwrapped first guess positions
+
+																	// would be good to record number of times we hit this branch.
+				}
+				else {
+
+					// IN EDGE CASE, I think we should be only mooting such moves in the first place
+					// We can still take gradient of mass*mass, 2D, but then consider moving azimuthally.
+
+					// Decide where to place a guess of a better position:
+					// How to find d/dt sum of squares = 0? Modelling area as linear function of progress in this direction,
+					// Magnitude :
+					//						t = - sum (dA/dt ^2) / sum (A * dA/dt)
+
+					// not sure about that??
+
+					// Now get sums
+
+					// This bit was not commented:
+					//for (i = 0; i <  triangles_len; i++)
+					//{
+					//	pTri = (Triangle *)(pVertex->triangles.ptr[i]);
+					//	
+					//	mass = (pTri->ion.mass + pTri->neut.mass);
+					//	pTri->Return_grad_Area(pVertex,&d_area_by_dx,&d_area_by_dy); 			
+					//	d_mass_by_dx = (pVertex->ion.n + pVertex->neut.n)*d_area_by_dx;
+					//	d_mass_by_dy = (pVertex->ion.n + pVertex->neut.n)*d_area_by_dy;
+					//	
+					//	d_mass_per_unit_grad = d_mass_by_dx*grad.x + d_mass_by_dy*grad.y; // for a move in direction of grad.
+					//	sum_squared_rates_of_change += d_mass_per_unit_grad*d_mass_per_unit_grad;
+					//	sum_mass_times_rate_of_change += d_mass_per_unit_grad*mass;
+					//};
+					//
+					//magnitude = - sum_mass_times_rate_of_change / sum_squared_rates_of_change;
+
+					// THAT SEEMS LIKE A BOLD PLAN !
+
+					// Alternative idea
+					// ______________
+					// They are all changing at different rates
+					// Stop when one that is moving down becomes the minimum one???
+					// How to do?
+					// maybe just stop when whichever ones are moving downwards, reach past original average ?
+					// might be one close to average moving down. 
+
+					// See when the down-movers cross over the one coming up from least mass.
+					// Stop when it crosses over one. Is there a scenario where that is bad? Think it looks pretty good.
+
+					// assume we head in direction MINUS grad
+					d_minmass_by_dt = -(mingrad.dot(grad)); // > 0
+
+					magnitude = 1.0e100;
+					for (i = 0; i < triangles_len; i++)
+					{
+						pTri = (Triangle *)(pVertex->triangles.ptr[i]);
+
+						mass = (pTri->ion.mass + pTri->neut.mass);
+						pTri->Return_grad_Area(pVertex, &d_area_by_dx, &d_area_by_dy);
+						d_mass_by_dx = (pVertex->ion.n + pVertex->neut.n)*d_area_by_dx;
+						d_mass_by_dy = (pVertex->ion.n + pVertex->neut.n)*d_area_by_dy;
+
+						d_mass_by_dt = -d_mass_by_dx*grad.x - d_mass_by_dy*grad.y;
+						// ROC for a move in direction of minus grad, we think.
+
+						if (d_mass_by_dt < 0.0) {
+							// find crossing time; take t = min(t,crossover of this one with min mass)
+							crossover = (mass - minmass) / (d_minmass_by_dt - d_mass_by_dt);
+							magnitude = min(magnitude, crossover);
+						};
+					};
+
+					// Just measure, in the first place, the normal distance across a triangle, and travel at most 0.33 of this.
+					// Or perhaps just pick the ones where the motion is making that normal shorter - yes.
+
+					if (pVertex->flags < 3) {
+						for (i = 0; i < triangles_len; i++)
+						{
+							// if triangle is periodic then we need to map other vertices to living nearby....
+							pTri = (Triangle *)(pVertex->triangles.ptr[i]);
+
+							which = 0; c1 = 1;
+							if (pVertex == pTri->cornerptr[1]) { which = 1; c1 = 0; };
+							if (pVertex == pTri->cornerptr[2]) which = 2;
+							pTri->cornerptr[c1]->PopulatePosition(u1);
+							edgenormal = pTri->edge_normal[which]; // We called with (true) so is already normalised
+																	// this faces across the triangle.
+
+							if (pTri->periodic > 0)
+							{
+								if (pVertex->pos.x < 0.0) {
+									if (u1.x > 0.0) u1 = Anticlockwise*u1;
+								}
+								else {
+									edgenormal = Clockwise*edgenormal; // make contig with our vertex
+									if (u1.x < 0.0) u1 = Clockwise*u1;
+								};
+							};
+
+							if (grad.dot(edgenormal) < 0.0) {
+								// only care if we are making the distance shorter by moving in direction _minus grad_
+								from_here.x = u1.x - pVertex->pos.x;
+								from_here.y = u1.y - pVertex->pos.y;
+								normaldistance = from_here.dot(edgenormal); // >0
+																			// -grad dot edgenormal is the rate of progress in reducing normal distance, dot product of normalised vectors
+								tmax = -0.33*(normaldistance / (grad.dot(edgenormal))); // >0
+								magnitude = min(tmax, magnitude);
+							};
+						};
+					}
+					else {
+						// pVertex->flags >= 3 : test against base neighbour distance only
+						pNeigh2 = X + pVertex->neighbours.ptr[0];
+						pNeigh1 = X + pVertex->neighbours.ptr[pVertex->neighbours.len - 1];
+						if ((pNeigh2->flags != pVertex->flags) || (pNeigh1->flags != pVertex->flags))
+						{
+							printf("\nDid we fail to call RefreshNeighboursOfVerticesOrdered?\n");
+							getch();
+						};
+						// we will only be moving towards one of them. Which one?
+						if (pVertex->has_periodic) {
+							pNeigh1->PopulatePosition(u1);
+							pNeigh2->PopulatePosition(u2);
+							if (pVertex->pos.x > 0.0) {
+								if (pNeigh1->x < 0.0) u1 = Clockwise*u1;
+								if (pNeigh2->x < 0.0) u2 = Clockwise*u2;
+							}
+							else {
+								if (pNeigh1->x > 0.0) u1 = Anticlockwise*u1;
+								if (pNeigh2->x > 0.0) u2 = Anticlockwise*u2;
+							};
+							to1.x = u1.x - pVertex->pos.x; to1.y = u1.y - pVertex->pos.y;
+							to2.x = u2.x - pVertex->pos.x; to2.y = u2.y - pVertex->pos.y;
+						}
+						else {
+							to1.x = pNeigh1->x - pVertex->pos.x; to1.y = pNeigh1->y - pVertex->pos.y;
+							to2.x = pNeigh2->x - pVertex->pos.x; to2.y = pNeigh2->y - pVertex->pos.y;
+						};
+						if (grad.dot(to1)*grad.dot(to2) > 0.0)
+						{
+							printf("summat WEIRD - heading towards/away from both edge neighs \n");
+							to1 = to1;
+						};
+						if (grad.dot(to1) < 0.0) { // bear in mind we move along minus grad
+							tmax = -0.33*(to1.dot(to1) / (grad.dot(to1))); // >0
+							magnitude = min(tmax, magnitude);
+						}
+						if (grad.dot(to2) < 0.0) {
+							tmax = -0.33*(to2.dot(to2) / (grad.dot(to2))); // >0
+							magnitude = min(tmax, magnitude);
+						};
+					};
+
+					magnitude *= coefficient;	//	Adaptive coefficient. Mysteriously goes small.
+
+					if (magnitude < 0.0)
+					{
+						//  do a warning and try using 0.15 the nearest neighbour length
+						printf("	\t magnitude negative -- ");
+					};
+
+					pVertex->pos.x = pVertex->pos.x - magnitude*grad.x;
+					pVertex->pos.y = pVertex->pos.y - magnitude*grad.y;
+
+					if (pVertex->flags == 3)
+					{
+						pVertex->project_to_ins(u);
+						pVertex->pos.x = u.x; pVertex->pos.y = u.y;
+					}
+					if (pVertex->flags == 4)
+					{
+						pVertex->project_to_radius(u, Outermost_r_achieved);
+						pVertex->pos.x = u.x; pVertex->pos.y = u.y;
+					}
+
+					// The following code was too complicated and so was replaced by simply comparing to distances across triangles.
+
+
+					//// Now we make it at most the nearest neighbour distance.
+					//minlen = 1.0; // 1 cm - improbably large
+					//for (i = 0; i < triangles_len; i++)
+					//{
+					//	// if triangle is periodic then we need to map other vertices to living nearby....
+					//	pTri = (Triangle *)(pVertex->triangles.ptr[i]);
+					//	if (pTri->periodic == 0)
+					//	{
+					//		pTri->PopulatePositions(u0,u1,u2);								
+					//	} else {
+					//		// periodic triangle								
+					//		if (pVertex->pos.x < 0.0) // bit slapdash but hey, unreasonable for periodic tris to cross centre.
+					//		{
+					//			pTri->MapLeft(u0,u1,u2);
+					//		} else {
+					//			pTri->MapRight(u0,u1,u2);
+					//		};								
+					//	};
+					//	
+					//	if (pVertex == pTri->cornerptr[0])
+					//	{
+					//		length1 = (u0-u2).modulus();
+					//		length2 = (u0-u1).modulus();
+					//	} else {
+					//		if (pVertex == pTri->cornerptr[1])
+					//		{
+					//			length1 = (u1-u0).modulus();
+					//			length2 = (u1-u2).modulus();
+					//		} else {
+					//			length1 = (u2-u0).modulus();
+					//			length2 = (u2-u1).modulus();
+					//		};
+					//	};
+					//	minlen = min(minlen,min(length1,length2));
+					//}; // Done this way because we need contiguous neighbour image which is harder to get from neighbour array. Okay.
+					//
+					//// We actually keep it down to 33% of the distance to a neighbour :
+					//if (magnitude > 0.33*minlen) magnitude = 0.33*minlen;
+					//
+					//if (magnitude < 0.0)// && (crush_radial_move == false))
+					//{
+					//	//  do a warning and try using 0.15 the nearest neighbour length
+					//	printf("	\t magnitude negative -- ");
+					//	magnitude = 0.15*minlen;
+					//};
+
+					//// We do not push out beyond the outermost radius: (hopefully unnecessary check)
+					//if (pVertex->pos.x*pVertex->pos.x + pVertex->pos.y*pVertex->pos.y > r_Outermost*r_Outermost)
+					//{
+					//	real factor = sqrt((pVertex->pos.x*pVertex->pos.x + pVertex->pos.y*pVertex->pos.y) / r_Outermost*r_Outermost);
+					//	pVertex->pos.x /= factor;
+					//	pVertex->pos.y /= factor;
+					//};
+
+					//// Now also verify that this move is not taking us outside the adjacent cells.
+					//// This seems pointless: if we did not move more than 33% distance to nearest neighbour then
+					//// how can we possibly have exited cells? Perhaps if triangle is extremely flat for some reason. :/
+
+					//// Simpler way then: do not move more than a fraction of normal distance in a triangle!
+
+
+
+
+					//// Use for debug only :
+
+					//magnitude = - magnitude; // old way: coeff on grad not minus grad
+					//for (i = 0; i < triangles_len; i++)
+					//{
+					//	// if triangle is periodic then we need to map other vertices to living nearby....
+					//	pTri = (Triangle *)(pVertex->triangles.ptr[i]);
+
+					//	which = 0; c1 = 1;
+					//	if (pVertex == pTri->cornerptr[1]) { which = 1; c1 = 0;};
+					//	if (pVertex == pTri->cornerptr[2]) which = 2;
+
+					//	// Note that transvec exist for triangle that is mapped left.
+					//	if (pTri->periodic == 0) 
+					//	{
+					//		if (pTri->TestAgainstEdge(pVertex->pos.x,pVertex->pos.y, c1, which, &pDummyTri))
+					//		{
+					//			// outside!
+					//			// how far is it to the edge then?
+					//			// Take original position dot normalized tranverse vector
+
+					//			printf("summat strange --- exiting polygon although only move 33% towards neighbours.");
+
+					//			edgenormal = pTri->edge_normal[which]; // DID WE DO NORMALISE TRUE?
+					//			edgenormal.Normalise();
+					//			xdist = pVertex->eP_Viscous_denominator_x - pTri->cornerptr[c1]->x;
+					//			ydist = pVertex->eP_Viscous_denominator_y - pTri->cornerptr[c1]->y;
+					//			dist = xdist*edgenormal.x + ydist*edgenormal.y; // may be + or -
+					//			// That is the normal distance across the triangle.
+
+					//			// We want to know what multiple of -grad
+					//			graddotnormal = grad.x*edgenormal.x+grad.y*edgenormal.y; // dot product of normalized vectors
+					//			max = -fabs(dist/graddotnormal);
+					//			if (max < magnitude)
+					//			{
+					//				// error
+					//				printf("\nshouldn't be here .. max < magnitude \n");
+					//				getch();
+					//			} else {
+					//				magnitude = max*0.33;
+					//				pVertex->pos.x = pVertex->eP_Viscous_denominator_x + magnitude*grad.x;
+					//				pVertex->pos.y = pVertex->eP_Viscous_denominator_y + magnitude*grad.y;
+					//				if (pVertex->pos.x*pVertex->pos.x + pVertex->pos.y*pVertex->pos.y > r_Outermost*r_Outermost)
+					//				{
+					//					printf("\n\n\nStrewth! ultimate default \n--------\n\n\n");
+					//					// ultimate default:
+					//					pVertex->pos.x = pVertex->eP_Viscous_denominator_x;
+					//					pVertex->pos.y = pVertex->eP_Viscous_denominator_y;
+					//				};
+					//				//should be domain interior verts here only.
+					//			};
+					//		};
+					//	} else {
+					//		// periodic triangle:
+					//		
+					//		if (pVertex->pos.x > 0.0)
+					//		{
+					//			//x_on_left = Anticlockwise.xx*pVertex->pos.x + Anticlockwise.xy*pVertex->pos.y;
+					//			//y_on_left = Anticlockwise.yx*pVertex->pos.x + Anticlockwise.yy*pVertex->pos.y;
+
+					//			if (which == 0) pTri->MapRight(uO,u0,u1);
+					//			if (which == 1) pTri->MapRight(u0,uO,u1);
+					//			if (which == 2) pTri->MapRight(u0,u1,uO);
+
+					//			edgenormal.x = u1.y-u0.y;
+					//			edgenormal.y = u0.x-u1.x;
+					//			
+					//				// want to assess whether pVertex->pos.x,y on same side as pVertex->Viscous_denominator
+					//			original_dot = (pVertex->eP_Viscous_denominator_x - u0.x)*edgenormal.x
+					//							 + (pVertex->eP_Viscous_denominator_y - u0.y)*edgenormal.y;
+
+					//			new_position_dot = (pVertex->pos.x - u0.x)*edgenormal.x
+					//							+ (pVertex->pos.y - u0.y)*edgenormal.y;
+					//			if (new_position_dot*original_dot < 0.0)
+					//			{
+					//				
+					//				printf("summat strange --- exiting polygon although only move 33% towards neighbours.");
+
+					//				// not same side of edge.										
+					//				edgenormal.Normalise();										
+					//				original_dist = (pVertex->eP_Viscous_denominator_x - u0.x)*edgenormal.x
+					//											  + (pVertex->eP_Viscous_denominator_y - u0.y)*edgenormal.y;
+					//				graddotnormal = grad.x*edgenormal.x + grad.y*edgenormal.y;
+					//				
+					//				max = -fabs(original_dist/graddotnormal);
+					//				if (max < magnitude)
+					//				{
+					//					// error
+					//					printf("\nshouldn't be here .. max < magnitude \n");
+					//					getch();
+					//				} else {
+					//					magnitude = max*0.33;
+					//					pVertex->pos.x = pVertex->eP_Viscous_denominator_x + magnitude*grad.x;
+					//					pVertex->pos.y = pVertex->eP_Viscous_denominator_y + magnitude*grad.y;
+					//					if (pVertex->pos.x*pVertex->pos.x + pVertex->pos.y*pVertex->pos.y > GlobalMaxVertexRadiusSq)
+					//					{
+					//						printf("\n\n\nStrewth! ultimate default \n--------\n\n\n");
+					//						// ultimate default:
+					//						pVertex->pos.x = pVertex->eP_Viscous_denominator_x;
+					//						pVertex->pos.y = pVertex->eP_Viscous_denominator_y;
+					//					};
+					//				};
+					//			};
+					//		} else {
+					//			// x is on left so it should be easier
+					//			if (pTri->TestAgainstEdge(pVertex->pos.x,pVertex->pos.y, c1, which, &pDummyTri))
+					//			{
+					//				// outside!
+					//				// how far is it to the edge then?
+					//				// Take original position dot normalized tranverse vector
+
+					//				printf("summat strange --- exiting polygon although only move 33% towards neighbours.");
+
+					//				if (which == 0) pTri->MapLeft(uO,u0,u1);
+					//				if (which == 1) pTri->MapLeft(u0,uO,u1);
+					//				if (which == 2) pTri->MapLeft(u0,u1,uO); // may be wedge or tri
+
+					//				edgenormal = pTri->edge_normal[which];
+					//				//edgenormal.Normalise();
+					//				xdist = pVertex->eP_Viscous_denominator_x - u0.x;
+					//				ydist = pVertex->eP_Viscous_denominator_y - u0.y;
+					//				original_dist = xdist*edgenormal.x + ydist*edgenormal.y; // may be + or -
+
+					//				graddotnormal = grad.x*edgenormal.x+grad.y*edgenormal.y; // dot product of normalized vectors
+					//				// this is how far we travel in direction jim for 1 unit of grad - that's one interpretation
+					//			
+					//				max = -fabs(original_dist/graddotnormal);
+
+					//				if (max < magnitude)
+					//				{
+					//					// error
+					//					printf("\nshouldn't be here .. max < magnitude \n");
+					//					getch();
+					//				} else {
+					//					magnitude = max*0.33;
+
+					//					pVertex->pos.x = pVertex->eP_Viscous_denominator_x + magnitude*grad.x;
+					//					pVertex->pos.y = pVertex->eP_Viscous_denominator_y + magnitude*grad.y;
+
+					//					if (pVertex->pos.x*pVertex->pos.x + pVertex->pos.y*pVertex->pos.y > GlobalMaxVertexRadiusSq)
+					//					{
+					//						printf("\n\n\nStrewth! ultimate default \n--------\n\n\n");
+					//						// ultimate default:
+					//						pVertex->pos.x = pVertex->eP_Viscous_denominator_x;
+					//						pVertex->pos.y = pVertex->eP_Viscous_denominator_y;
+					//					};
+					//				};
+					//			};
+					//		};
+					//	};
+					//};
+
+					// Bear in mind, this may be across PB so ReturnPointerToTriangle would fail.
+
+					// In the case it crossed PB, we ought to update periodicity of triangles...					
+					// Wrap (x,y) also -- but do not wrap the stored version - this allows us to take an average
+					pVertex->IonP_Viscous_numerator_x = pVertex->pos.x;
+					pVertex->IonP_Viscous_numerator_y = pVertex->pos.y; // store unwrapped first guess positions
+																	// ( used for counting up variance and doing periodic tests)
+
+					if (pVertex->pos.x / pVertex->pos.y > GRADIENT_X_PER_Y)
+					{
+						// went off RH side						
+						for (i = 0; i < triangles_len; i++)
+						{
+							// if triangle is periodic then we need to map other vertices to living nearby....
+							pTri = (Triangle *)(pVertex->triangles.ptr[i]);
+							pTri->IncrementPeriodic();
+						};
+						newx = Anticlockwise.xx*pVertex->pos.x + Anticlockwise.xy*pVertex->pos.y;
+						newy = Anticlockwise.yx*pVertex->pos.x + Anticlockwise.yy*pVertex->pos.y;
+						pVertex->pos.x = newx;
+						pVertex->pos.y = newy;
+					};
+
+					if (pVertex->pos.x / pVertex->pos.y < -GRADIENT_X_PER_Y)
+					{
+						// went off LH side
+						for (i = 0; i < triangles_len; i++)
+						{
+							// if triangle is periodic then we need to map other vertices to living nearby....
+							pTri = (Triangle *)(pVertex->triangles.ptr[i]);
+							pTri->DecrementPeriodic();
+						};
+						newx = Clockwise.xx*pVertex->pos.x + Clockwise.xy*pVertex->pos.y;
+						newy = Clockwise.yx*pVertex->pos.x + Clockwise.yy*pVertex->pos.y;
+						pVertex->pos.x = newx;
+						pVertex->pos.y = newy;
+					};
+
+					// DEBUG:
+					if (pVertex->pos.x*pVertex->pos.x + pVertex->pos.y*pVertex->pos.y < 11.833599999)
+					{
+						pVertex->pos.x = pVertex->pos.x;
+						// absolutely should not be able to happen
+						printf("\nTarnation! point swam inside ins! \n");
+						getch();
+					};
+
+				}; // whether against minimum triangle area grad
+
+			}; // whether iVolley
+
+			++pVertex;
+		};
+
+		//		Populate masses again from source mesh;
+		// Note that we need to update transvec in order to place points and thus triangles into mesh
+
+		pTri = T;
+		for (iTri = 0; iTri < numTriangles; iTri++)
+		{
+			pTri->RecalculateEdgeNormalVectors(false);
+			pTri++;
+		};
+		printf("`");
+		pSrcMesh->RepopulateCells(this, MASS_ONLY);
+		printf(".");
+
+		// We just test whether we gained an improvement in the objective function, and either accept this or not.
+
+		pVertex = X;
+		for (iVertex = 0; iVertex < numVertices; iVertex++)
+		{
+			if (pVertex->iVolley == iVolley)
+			{
+				objective = 0.0;
+				triangles_len = pVertex->triangles.len;
+				for (i = 0; i < pVertex->triangles.len; i++)
+				{
+					pTri = (Triangle *)(pVertex->triangles.ptr[i]);
+					objective += (pTri->ion.mass + pTri->neut.mass)*(pTri->ion.mass + pTri->neut.mass);
+				};
+				//pVertex->ion_pm_Heat_numerator = objective; // store for first guess
+
+				// Decide whether to accept move:
+				if (objective < pVertex->e_pm_Heat_denominator)
+				{
+					// improved
+					// (x,y) already set so that's it
+
+					// but in recording move, need to still remember it may have been wrapped across PB
+					// so use the unwrapped coords:						
+					sum_squared_move_length += (pVertex->IonP_Viscous_numerator_x - pVertex->eP_Viscous_denominator_x)*(pVertex->IonP_Viscous_numerator_x - pVertex->eP_Viscous_denominator_x)
+						+ (pVertex->IonP_Viscous_numerator_y - pVertex->eP_Viscous_denominator_y)*(pVertex->IonP_Viscous_numerator_y - pVertex->eP_Viscous_denominator_y);
+
+					accepted++;
+					attempted++;
+				}
+				else {
+					// revert to original position
+					attempted++;
+					pVertex->pos.x = pVertex->eP_Viscous_denominator_x;
+					pVertex->pos.y = pVertex->eP_Viscous_denominator_y;
+					// twist back any periodic changes:
+					if (pVertex->IonP_Viscous_numerator_x / pVertex->IonP_Viscous_numerator_y > GRADIENT_X_PER_Y)
+					{
+						// in this case we applied increment periodic
+						for (i = 0; i < triangles_len; i++)
+						{
+							// if triangle is periodic then we need to map other vertices to living nearby....
+							pTri = (Triangle *)(pVertex->triangles.ptr[i]);
+							pTri->DecrementPeriodic();
+						};
+					};
+					if (pVertex->IonP_Viscous_numerator_x / pVertex->IonP_Viscous_numerator_y < -GRADIENT_X_PER_Y)
+					{
+						for (i = 0; i < triangles_len; i++)
+						{
+							// if triangle is periodic then we need to map other vertices to living nearby....
+							pTri = (Triangle *)(pVertex->triangles.ptr[i]);
+							pTri->IncrementPeriodic();
+						};
+					};
+				};
+			};
+			++pVertex;
+		};
+
+
+			/*
+			// Due to PB, the following became too complicated to be viable !!
+
+
+			//		Populate masses again from source mesh;
+
+			PopulateMasses(pDestMesh);
+
+			//		Calculate objective functions for 3rd time; now accept the best guess of the 3.
+
+			pVertex = pDestMesh->X;
+			for (iVertex = 0; iVertex < numVertices; iVertex++)
+			{
+			if (pVertex->iScratch == iVolley)
+			{
+			objective = 0.0;
+			for (i = 0; i < pVertex->triangles.len; i++)
+			{
+			pTri = (Triangle *)(pVertex->triangles.ptr[i]);
+			objective += (pTri->ion.mass + pTri->neut.mass)*(pTri->ion.mass + pTri->neut.mass);
+			};
+
+			if (objective < pVertex->e_pm_Heat_denominator)
+			{
+			if (objective < pVertex->ion_pm_Heat_numerator)
+			{
+			// second guess is best
+			// don't need to make further changes
+			} else {
+			// first guess is best
+			pVertex->pos.x = pVertex->IonP_Viscous_numerator_x;
+			pVertex->pos.y = pVertex->IonP_Viscous_numerator_y;
+			};
+			} else {
+			if (pVertex->ion_pm_Heat_numerator < pVertex->e_pm_Heat_denominator)
+			{
+			// first guess is best
+			pVertex->pos.x = pVertex->IonP_Viscous_numerator_x;
+			pVertex->pos.y = pVertex->IonP_Viscous_numerator_y;
+			} else {
+			// failed: both guesses were exprovements.
+			pVertex->pos.x = pVertex->eP_Viscous_denominator_x;
+			pVertex->pos.y = pVertex->eP_Viscous_denominator_y;
+			};
+			};
+
+			// Again, if we have crossed PB relative to presently existing (x,y) then we have to update triangles' periodicity
+			// But now we have a difficult problem:
+
+			// We already wrapped points :
+			// confusing but I think we can miss something here. Suppose we end up reverting to original. It
+			// may be on the other side from (x,y) which is a wrapped position.
+
+
+			// This whole thing is too difficult
+
+			// Let's just make one attempted move and take it or leave it ! (   :-(   )
+
+
+			if (pVertex->pos.x/pVertex->pos.y > GRADIENT_X_PER_Y)
+			{
+			// went off RH side
+			for (i = 0; i < triangles_len; i++)
+			{
+			// if triangle is periodic then we need to map other vertices to living nearby....
+			pTri = (Triangle *)(pVertex->triangles.ptr[i]);
+			pTri->IncrementPeriodic();
+			};
+			newx = Anticlockwise.xx*pVertex->pos.x+Anticlockwise.xy*pVertex->pos.y;
+			newy = Anticlockwise.yx*pVertex->pos.x+Anticlockwise.yy*pVertex->pos.y;
+			pVertex->pos.x = newx;
+			pVertex->pos.y = newy;
+			};
+
+			if (pVertex->pos.x/pVertex->pos.y < -GRADIENT_X_PER_Y)
+			{
+			for (i = 0; i < triangles_len; i++)
+			{
+			// if triangle is periodic then we need to map other vertices to living nearby....
+			pTri = (Triangle *)(pVertex->triangles.ptr[i]);
+			pTri->DecrementPeriodic();
+			};
+			newx = Clockwise.xx*pVertex->pos.x+Clockwise.xy*pVertex->pos.y;
+			newy = Clockwise.yx*pVertex->pos.x+Clockwise.yy*pVertex->pos.y;
+			pVertex->pos.x = newx;
+			pVertex->pos.y = newy;
+			};
+
+			sum_squared_move_length += (pVertex->pos.x - pVertex->eP_Viscous_denominator_x)*(pVertex->pos.x - pVertex->eP_Viscous_denominator_x)
+			+ (pVertex->pos.y - pVertex->eP_Viscous_denominator_y)*(pVertex->pos.y - pVertex->eP_Viscous_denominator_y);
+
+			}; // whether (pVertex->iScratch == iVolley)
+			++pVertex;
+			};*/
+/*};
+
+	// One round of SwimVertices will attempt to move every vertex once.
+
+	*pAcceptance = ((real)accepted) / ((real)attempted);
+	return sqrt(sum_squared_move_length / ((real)(numVertices)));
+#endif
+*/
+	return L2;
+}
+
 
 real inline Get_lnLambda(real n_e, real T_e)
 {
@@ -3466,6 +5047,8 @@ void TriMesh::Create_momflux_integral_grad_nT_and_gradA_LapA_CurlA_on_minors(
 	//ShardModel n_shards[NUMVERTICES],
 	three_vec3 AdditionRateNv[NMINOR])
 {
+
+
 	// Inputs:
 	// data inc Az, pos 
 	// MajorTriPBC
@@ -3547,7 +5130,7 @@ void TriMesh::Create_momflux_integral_grad_nT_and_gradA_LapA_CurlA_on_minors(
 		// Need to pick out OUTERMOST/INNERMOST vertex as these are
 		// having Az set after the event. Doesn't matter much what Lap Az we assign 
 		// but probably should skip it to save crashes.
-
+		
 		Our_integral_curl_Az.x = 0.0;
 		Our_integral_curl_Az.y = 0.0;
 		Our_integral_grad_Az.x = 0.0;
@@ -3559,10 +5142,11 @@ void TriMesh::Create_momflux_integral_grad_nT_and_gradA_LapA_CurlA_on_minors(
 		Our_integral_Lap_Az = 0.0;
 		AreaMinor = 0.0;
 		tri_len = pVertex->GetTriIndexArray(izTri);
+		
 		iprev = tri_len - 1;
 		memcpy(szPBC, MajorTriPBC[iVertex], sizeof(char)*MAXNEIGH); 
 		memcpy(&ourdata, pData + iMinor, sizeof(plasma_data));
-
+		
 		i = 0; iprev = tri_len - 1;
 
 		memcpy(&prevdata, pData + izTri[tri_len - 1], sizeof(plasma_data)); // all vertices
@@ -3582,7 +5166,7 @@ void TriMesh::Create_momflux_integral_grad_nT_and_gradA_LapA_CurlA_on_minors(
 		//	printf("CPU: prevdata.pos %1.9E %1.9E szPBC[iprev] %d \n",
 		//		prevdata.pos.x, prevdata.pos.y, (int)szPBC[iprev]);
 		//}
-
+		
 	//	if (iVertex == 11588) {
 	//		printf("izTri[len-1] %d  prevdata.v_n.y %1.8E \n", izTri[tri_len-1], prevdata.v_n.y);
 	//	}
@@ -3599,7 +5183,7 @@ void TriMesh::Create_momflux_integral_grad_nT_and_gradA_LapA_CurlA_on_minors(
 				oppdata.pos = Anticlockwise * oppdata.pos;
 			}
 		};
-
+		
 //if (iVertex == 11588) {
 	//		printf("izTri[0] %d  oppdata.v_n.y %1.8E \n", izTri[0], oppdata.v_n.y);
 //}
@@ -3978,13 +5562,14 @@ void TriMesh::Create_momflux_integral_grad_nT_and_gradA_LapA_CurlA_on_minors(
 				edge_normal.y = projendpt0.x - endpt0.x;
 				AreaMinor += (0.5*projendpt0.x + 0.5*endpt0.x)*edge_normal.x;
 			};
-			
+
 			for (i = istart; i < iend; i++)
 			{
 				// Idea to create n at 1/3 out towards neighbour .. shard model defines n at tri centrnT_loids
 				// Can infer n by interpolation within triangle.
 				// Tri 0 is anticlockwise of neighbour 0, we think
 				inext = i + 1; if (inext >= tri_len) inext = 0;
+				
 				memcpy(&nextdata, &(pData[izTri[inext]]), sizeof(plasma_data));
 				if (szPBC[inext] != 0) {
 					if (szPBC[inext] == ROTATE_ME_CLOCKWISE) {
@@ -4018,6 +5603,7 @@ void TriMesh::Create_momflux_integral_grad_nT_and_gradA_LapA_CurlA_on_minors(
 					+ (oppdata.pos.x + prevdata.pos.x)*(oppdata.pos.y - prevdata.pos.y)
 					+ (nextdata.pos.x + oppdata.pos.x)*(nextdata.pos.y - oppdata.pos.y)
 					);
+				
 				f64_vec2 grad_Az = integ_grad_Az / area_quadrilateral;
 				Our_integral_Lap_Az += grad_Az.dot(edge_normal);
 				AreaMinor += (0.5*endpt0.x + 0.5*endpt1.x)*edge_normal.x;
@@ -4060,7 +5646,7 @@ void TriMesh::Create_momflux_integral_grad_nT_and_gradA_LapA_CurlA_on_minors(
 				prevdata.pos = oppdata.pos;
 				oppdata.pos = nextdata.pos;
 			};
-			
+
 			if ((pVertex->flags == INNERMOST) || (pVertex->flags == OUTERMOST)) {
 				// Now add on the final sides to give area:
 
@@ -4083,7 +5669,7 @@ void TriMesh::Create_momflux_integral_grad_nT_and_gradA_LapA_CurlA_on_minors(
 
 				// line between out-projected points
 			};
-						
+
 			LapAzArray[iMinor] = Our_integral_Lap_Az / AreaMinor;
 			ROCAzduetoAdvection[iMinor] = 0.0;
 			ROCAzdotduetoAdvection[iMinor] = 0.0;
@@ -4112,6 +5698,7 @@ void TriMesh::Create_momflux_integral_grad_nT_and_gradA_LapA_CurlA_on_minors(
 			ROCAzduetoAdvection[iMinor] = 0.0;
 
 			pData[iMinor].B = Vector3(0.0, 0.0, BZ_CONSTANT);
+
 		}; // was it DOMAIN_VERTEX
 
 		++pVertex;
