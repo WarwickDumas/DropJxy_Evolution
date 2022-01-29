@@ -14,7 +14,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 //#include "lapacke.h"  
-
+ 
 extern void print_matrix(char* desc, int m, int n, double* a, int lda);
 extern void print_int_vector(char* desc, int n, int* a);
 
@@ -65,7 +65,7 @@ template <class T> void SafeRelease(T **ppT)
 		(*ppT)->Release();
 		*ppT = NULL;
 	} 
-}
+} 
 
 f64_vec2 RotateClosest(f64_vec2 pos, f64_vec2 prox)
 {

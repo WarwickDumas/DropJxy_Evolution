@@ -16,10 +16,10 @@
 #define DEBUGTE               0
 #define SQRTNT           1
 #define SQRTNV 
-#define EQNS_TOTAL 384 // 1024
-#define INNER_EQNS 256 // 512   // half inside, half outside
+#define EQNS_TOTAL 320 // 1024
+#define INNER_EQNS 240 // 512   // half inside, half outside
 #define MAXRINGS    96
-#define MAXRINGLEN  512  // Note that this is also the max # on the periphery.
+#define MAXRINGLEN  384  // Note that this is also the max # on the periphery.
 
 #define LIBERALIZED_VISC_SOLVER
 

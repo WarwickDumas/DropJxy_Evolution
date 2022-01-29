@@ -364,7 +364,7 @@ __device__ v4 * p_vie_target, *p_vie_start;
 int * iRing;
 __device__ int * p_iRing;
 bool * bSelected;
-__device__ bool * p_selectflag;
+__device__ bool * p_selectflag_eqnsmatrix;
 short * p_equation_index_host;
 __device__ short *p_equation_index;
 
@@ -12700,7 +12700,7 @@ void PerformCUDA_Invoke_Populate(
 	CallMAC(cudaMalloc((void**)&p_eqns_big, sizeof(double) * 4 * (EQNS_TOTAL + MAXRINGLEN)*4* (EQNS_TOTAL + MAXRINGLEN)));
 	CallMAC(cudaMalloc((void**)&p_eqns2, sizeof(double) * 4 * EQNS_TOTAL * 4 * EQNS_TOTAL));
 
-	CallMAC(cudaMalloc((void**)&p_selectflag, sizeof(bool)*NMINOR));
+	CallMAC(cudaMalloc((void**)&p_selectflag_eqnsmatrix, sizeof(bool)*NMINOR));
 	CallMAC(cudaMalloc((void**)&p_equation_index, sizeof(short) * NMINOR));
 	
 	CallMAC(cudaMalloc((void **)&NT_addition_tri_d2, 3* NMINOR * sizeof(NTrates)));
@@ -13013,7 +13013,7 @@ void PerformCUDA_Invoke_Populate(
 	CallMAC(cudaMalloc((void **)&p_sum_eps_deps_by_dbeta_R_x4, numTilesMinor * sizeof(f64_vec4)));
 	CallMAC(cudaMalloc((void **)&p_sum_depsbydbeta_8x8, numTilesMinor * sizeof(f64) *  REGRESSORS*REGRESSORS));
 	
-	p_eqns_host = (f64 *)malloc(sizeof(f64) * 4 * 4 * EQNS_TOTAL*EQNS_TOTAL);
+	p_eqns_host = (f64 *)malloc(sizeof(f64) * 4 * 4 * (EQNS_TOTAL+MAXRINGLEN)*(EQNS_TOTAL+MAXRINGLEN));
 
 	p_sum_product_matrix_host3 = (Symmetric3 *)malloc(numTilesMinor * sizeof(Symmetric3));
 
@@ -20113,7 +20113,7 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 		int iRingLength[MAXRINGS];
 		long * izArrayPrev;
 
-		int whichRing, ilength, iEqns;
+		int whichRingToPopulate, ilength, iEqns;
 		long j, jMinor;
 		short neigh_len;
 		FILE * fp;
@@ -20156,7 +20156,7 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 		//int *d_info = NULL; /* error info */
 		int lwork = 0;     /* size of workspace */
 						   //double *d_work = NULL; /* device workspace for getrf */
-
+		
 		const int pivot_on = 1;
 
 		cudaMemcpy(p_inthost, p_Selectflag, sizeof(int)*NMINOR, cudaMemcpyDeviceToHost);
@@ -20181,18 +20181,16 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 				for (iMinor = 0; iMinor < NMINOR; iMinor++)
 				{
 					// eps mod:
-					p_temphost1[iMinor] = (p_tempvec2_host[iMinor].dot(p_tempvec2_host[iMinor])
+					epssq = (p_tempvec2_host[iMinor].dot(p_tempvec2_host[iMinor])
 						+ p_temphost1[iMinor] * p_temphost1[iMinor]
 						+ p_temphost2[iMinor] * p_temphost2[iMinor]);
-					if (p_temphost1[iMinor] > maxepssq)
+					if (epssq > maxepssq)
 					{
-						maxepssq = p_temphost1[iMinor];
+						maxepssq = epssq;
 						iMax = iMinor;
 					};
 				};
 
-//			. Did we manage to reinitialize rings?
-								
 				long * longaddress;
 				Call(cudaGetSymbolAddress((void **)(&longaddress), lChosen),
 					"cudaGetSymbolAddress((void **)(&longaddress), lChosen)");
@@ -20202,7 +20200,7 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 				// 2. Spread out around it, add points to equation list (CPU?) 
 				// (within domain only)
 				printf("Add points to eqn list. iMax: %d ; ", iMax);
-				printf("p_tempvec2_host[%d] = %1.10E %1.10E p_temphost1[%d] = %1.10E p_temphost2[%d] = %1.10E\n",
+				printf("eps_xy[%d] = %1.10E %1.10E eps_iz[%d] = %1.10E eps_ez[%d] = %1.10E\n",
 					iMax, p_tempvec2_host[iMax].x, p_tempvec2_host[iMax].y,
 					iMax, p_temphost1[iMax], iMax, p_temphost2[iMax]);
 				CallMAC(cudaMemcpy(cuSyst_host.p_info, pX_use->p_info, sizeof(structural)*NMINOR, cudaMemcpyDeviceToHost));
@@ -20217,7 +20215,6 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 				// Ring 1 is innermost ring because 0 means not in a ring.
 
 				ilengthprev = 1;
-
 				bSelected[iMax] = true;
 				p_equation_index_host[iMax] = 0; // SHORT ARRAY
 				iEqns = 1;
@@ -20227,23 +20224,19 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 				// CASE 5 VERSION HERE:
 #define FACTOR0125  0.1
 				
-				// Just 2 passes:
 				// First pass, collect only points that are above residual modulus threshold.
 				// Second pass, go over all rings again and look for members of a new "ring", with no residual modulus threshold.
 				// From then on all subsequent rings are formed the same way. But for brevity we can then add a ticker to say which
 				// rings are fully surrounded, and go from that ring up.
-
-				// Could we do this at each ring?
-				
-				whichRing = 2;
+								
+				whichRingToPopulate = 2;
 				// 1. What is threshold for 
 				ResidualSqThreshold = FACTOR0125*FACTOR0125*(maxepssq);
 				do {
 					ilength = 0;
-
 					bFoundExtraUnincludedNeighs = false;
-					ilengthprev = iRingLength[whichRing - 1];
-					izArrayPrev = izArray[whichRing-1];
+					ilengthprev = iRingLength[whichRingToPopulate - 1];
+					izArrayPrev = izArray[whichRingToPopulate-1];
 					// each point in previous ring of additions:
 					for (i = 0; ((i < ilengthprev) && (iEqns < EQNS_TOTAL) && (ilength < MAXRINGLEN)); i++)
 					{
@@ -20263,17 +20256,12 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 						for (j = 0; ((j < neigh_len) && (iEqns < EQNS_TOTAL) && (ilength < MAXRINGLEN)); j++)
 						{
 							jMinor = izNeighMinor[j];
-							// For each neighbour:
-							// . Is it within domain? && is it not already selected ?
+							// For each neighbour: . Is it within domain? && is it not already selected ?
 							// Not every CROSSING_INS should be included -- correct?
-							// So we need to do position test as well as check what sort
-							// of flag.
-							if (
-								(	(cuSyst_host.p_info[jMinor].flag == DOMAIN_TRIANGLE)
-									||
-									(cuSyst_host.p_info[jMinor].flag == DOMAIN_VERTEX)
-									||
-									((cuSyst_host.p_info[jMinor].flag == CROSSING_INS) &&
+							// So we need to do position test as well as check what sort of flag.
+							if (	(	(cuSyst_host.p_info[jMinor].flag == DOMAIN_TRIANGLE)
+									||	(cuSyst_host.p_info[jMinor].flag == DOMAIN_VERTEX)
+									||	((cuSyst_host.p_info[jMinor].flag == CROSSING_INS) &&
 										TestDomainPosHost(cuSyst_host.p_info[jMinor].pos))
 									)
 								&& (iRing[jMinor] == 0) // hitherto not chosen for matrix
@@ -20285,8 +20273,8 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 								} else {
 									// . Add it to this ring
 									// . Tell it that it is in this ring
-									iRing[jMinor] = whichRing;
-									izArray[whichRing][ilength] = jMinor;
+									iRing[jMinor] = whichRingToPopulate;
+									izArray[whichRingToPopulate][ilength] = jMinor;
 									ilength++;
 									if (ilength == MAXRINGLEN) printf("ilength == MAXRINGLEN : %d\n", MAXRINGLEN);
 									bSelected[jMinor] = true;
@@ -20299,60 +20287,76 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 						}; // next j in neighs
 					}; // next i in ring prev
 
+					// If we now surrounded the previous ring, note this.
 					if (bFoundExtraUnincludedNeighs == false) {
-						if (iSurroundedRing == whichRing - 2) iSurroundedRing = whichRing - 1;
+						if (iSurroundedRing == whichRingToPopulate - 2) iSurroundedRing = whichRingToPopulate - 1;
 						// Bear in mind we said central point lives in Ring 1, not in Ring 0.
 					};					   
 					if ((ilength == 0) && (iEqns < EQNS_TOTAL)) {
 						bExhaustedUnmasked = true;
 					};
-					iRingLength[whichRing] = ilength;
-			//		printf("iRingLength[%d] = %d\n", whichRing, ilength);
-					if (ilength > 0) ++whichRing; // Added if (ilength>0) as otherwise we always pass through here even if ring 2 contained no members.
+					iRingLength[whichRingToPopulate] = ilength;
+			//		printf("iRingLength[%d] = %d\n", whichRingToPopulate, ilength);
+					if (ilength > 0) ++whichRingToPopulate; // Added if (ilength>0) as otherwise we always pass through here even if ring 2 contained no members.
 					ilengthprev = ilength;
-					//memcpy(izArrayPrev, izArray, sizeof(long)*ilength);
 					
 				} while ((ActualNumberOfEquations < INNER_EQNS) && (!bExhaustedUnmasked));
 				
-			//	store_whichRing = whichRing;
 				printf("INNER_EQNS %d EQNS_TOTAL %d \n", INNER_EQNS, EQNS_TOTAL);
 
-				printf("1st pass: bExhaustedUnmasked = %d ; ActualNumberOfEquations = %d ; whichRing = %d; iSurroundedRing = %d\n",
-					(bExhaustedUnmasked ? 1 : 0), ActualNumberOfEquations, whichRing, iSurroundedRing);
+				printf("1st pass: bExhaustedUnmasked = %d ; ActualNumberOfEquations = %d ; whichRingToPopulate = %d; iSurroundedRing = %d\n",
+					(bExhaustedUnmasked ? 1 : 0), ActualNumberOfEquations, whichRingToPopulate, iSurroundedRing);
+				
+				// Possible cases when we reach here:
+				// 1. We maxed out INNER_EQNS (PROBABLY not EQNS_TOTAL, because at 256 = INNER_EQNS, a ring will be of length only about 100
+				//    (MAXRINGLEN is so large that it almost certainly is not reached.)
+				// 2. A ring was reached where we attributed 0 further members that had high enough residual. Probably we are below INNER_EQNS.
+				
+				// Both here and in the 2nd pass, we usually do whole rings, since the ring will carry on until EQNS_TOTAL but we stop when
+				// the total number of equations assigned is > INNER_EQNS.				
+
+				// Either way iSurroundedRing is the last one that was fully enclosed. 
+				// In case 1, this may be the previous-to-last, if INNER_EQNS just happened to give us a number of whole rings.
+				// In this case we go and look for further values starting from around iSurroundedRing.
+				
 
 				// _____________________________________________________________________________________
-
-				
 				// Note : maybe we reached iEqns == EQNS_TOTAL just as we used up all the unmasked.
 				// What happens in this case? The flag is not set. This will never happen though because EQNS_TOTAL >> INNER_EQNS.
+				
+				// bExhaustedUnmasked is probably always true.
 				
 
 				if (bExhaustedUnmasked == true) {
 					// Now deal with going beyond into where residuals are lower than 1/8 of the maximum residual.
-					// Bear in mind we just said ++whichRing but we actually found 0 things to add to that ring.
-					if (iSurroundedRing < whichRing - 2) {
+					// Bear in mind we just said ++whichRingToPopulate but we actually found 0 things to add to that ring.
+					if (iSurroundedRing < whichRingToPopulate - 1) {
+						// changed 2 to 1.
+						// and this will be always true.
+
 						// Not all previous rings were surrounded.
 						// repeat performance but this time go through all prev rings to populate each ring:
 
-						whichRing--;  // back to filling the one that scored zero.
+						// whichRingToPopulate--; 						
+						// if ring scored zero we never moved on from it.
+						
 						bExhaustedUnmasked = false;
-						do {
+						while ((ActualNumberOfEquations < INNER_EQNS) && (!bExhaustedUnmasked))
+						{
 							ilength = 0;
 
 							// This time go through all prev rings from iSurrounded+1 through to the previous one.
-							for (iPrevRing = iSurroundedRing + 1; iPrevRing < whichRing; iPrevRing++) {
-								//printf("A");
+							for (iPrevRing = iSurroundedRing + 1; (iPrevRing < whichRingToPopulate
+																	&& (ActualNumberOfEquations < INNER_EQNS));
+								iPrevRing++) {
+
 								ilengthprev = iRingLength[iPrevRing];
 								izArrayPrev = izArray[iPrevRing];
 								
-								//printf("B");
-
 								// each point in previous ring of additions:
 								for (i = 0; ((i < ilengthprev) && (iEqns < EQNS_TOTAL) && (ilength < MAXRINGLEN)); i++)
 								{
-							//		printf("gothere 1 i = %d iEqns %d ilengthprev %d izA %d\n", i, iEqns, ilengthprev, izArray[iPrevRing][i]);
 									if (izArray[iPrevRing][i] >= BEGINNING_OF_CENTRAL) {
-										// get izNeighMinor
 										long iVertex = izArray[iPrevRing][i] - BEGINNING_OF_CENTRAL;
 										cudaMemcpy(izNeighMinor, &(pX_use->p_izTri_vert[iVertex * MAXNEIGH]),
 											sizeof(long) * MAXNEIGH, cudaMemcpyDeviceToHost);
@@ -20363,7 +20367,6 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 											sizeof(long) * 6, cudaMemcpyDeviceToHost);
 										neigh_len = 6;
 									};
-								//	printf("gothere 2 i = %d iEqns %d ilengthprev %d izA %d\n", i, iEqns, ilengthprev, izArray[iPrevRing][i]);
 
 									for (j = 0; ((j < neigh_len) && (iEqns < EQNS_TOTAL) && (ilength < MAXRINGLEN)); j++)
 									{
@@ -20379,67 +20382,46 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 										if ((iRing[jMinor] == 0) && // hitherto not chosen for matrix
 											(p_inthost[jMinor] != 0) && // exclude unselected equations
 											((cuSyst_host.p_info[jMinor].flag == DOMAIN_TRIANGLE)
-												||
-												(cuSyst_host.p_info[jMinor].flag == DOMAIN_VERTEX)
-												||
-												((cuSyst_host.p_info[jMinor].flag == CROSSING_INS) &&
-													TestDomainPosHost(cuSyst_host.p_info[jMinor].pos))
-												)						
-											) 
+												||	(cuSyst_host.p_info[jMinor].flag == DOMAIN_VERTEX)
+												||	((cuSyst_host.p_info[jMinor].flag == CROSSING_INS) &&
+															TestDomainPosHost(cuSyst_host.p_info[jMinor].pos))
+											)	)																	 
 										{				
 											// . Add it to this ring
 											// . Tell it that it is in this ring
 
-											//gothere 2 i = 17 iEqns 724 ilengthprev 18 izA 124733
-											//	z'iRingLength[55] = 15
-											//	ABgothere 1 i = 0 iEqns 725 ilengthprev 15 izA 52962
-											//	gothere 2 i = 0 iEqns 725 ilengthprev 15 izA 52962
-											//	zPress any key to continue . . .
-
-
-
-
-										//	printf("z");
-										//	if (whichRing == 56) printf("jMinor %d ilength %d\n", jMinor, ilength);
-											iRing[jMinor] = whichRing;
-											izArray[whichRing][ilength] = jMinor;
+											iRing[jMinor] = whichRingToPopulate;
+											izArray[whichRingToPopulate][ilength] = jMinor;
 											ilength++;
 											if (ilength == MAXRINGLEN) printf("ilength == %d\n", MAXRINGLEN);
-
-
-
-									//		We well exceeded number of rings, hence crash.
-
-
 											bSelected[jMinor] = true;
 											p_equation_index_host[jMinor] = iEqns;
 											eqnlist[iEqns] = jMinor;
 											iEqns++;
 											ActualNumberOfEquations++;
-									//		printf("'");
-									//		if (iEqns % 10 == 0) printf("X");
 										};
 									}; // next j in neighs
 								}; // next i in ring prev
 								if ((i == ilengthprev) && (iSurroundedRing < iPrevRing)) iSurroundedRing = iPrevRing;
-
 							};
 
 							if ((ilength == 0) && (iEqns < EQNS_TOTAL)) {
 								bExhaustedUnmasked = true;
 							};
 
-							iRingLength[whichRing] = ilength;
-						//	printf("iRingLength[%d] = %d\n", whichRing, ilength);
-							++whichRing;
-							ilengthprev = ilength;
-							//memcpy(izArrayPrev, izArray, sizeof(long)*ilength);
-							if (whichRing >= MAXRINGS) bExhaustedUnmasked = true;
+							iRingLength[whichRingToPopulate] = ilength;
+							//	printf("iRingLength[%d] = %d\n", whichRingToPopulate, ilength);
+						
+							if (ilength > 0) {
+								++whichRingToPopulate;
+								ilengthprev = ilength;
+							}
+							if (whichRingToPopulate >= MAXRINGS) bExhaustedUnmasked = true;
 
-						} while ((ActualNumberOfEquations < INNER_EQNS) && (!bExhaustedUnmasked));
+						}; // while ((ActualNumberOfEquations < INNER_EQNS) && (!bExhaustedUnmasked));
 
-						printf("2nd pass: bExhaustedUnmasked = %d ; ActualNumberOfEquations = %d ; whichRing = %d; iSurroundedRing = %d\n",
-							(bExhaustedUnmasked ? 1 : 0), ActualNumberOfEquations, whichRing, iSurroundedRing);
+						printf("2nd pass: bExhaustedUnmasked = %d ; ActualNumberOfEquations = %d ; whichRingToPopulate = %d; iSurroundedRing = %d\n",
+							(bExhaustedUnmasked ? 1 : 0), ActualNumberOfEquations, whichRingToPopulate, iSurroundedRing);
 
 					} else { // whether there is room to add more neighbours around the existing matrix-chosen points.
 
@@ -20448,23 +20430,24 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 				}; 
 
 				ActualNumberOfInnerEquations = ActualNumberOfEquations;
-				StartOfOuterRings = whichRing;
+				StartOfOuterRings = whichRingToPopulate;
 
 				// Note : maybe we reached iEqns == EQNS_TOTAL just as we used up all the unmasked.
-				// What happens in this case? The flag is not set.
+				// MOST UNLIKELY because the final ring has to reach from before INNER_EQNS to EQNS_TOTAL, and it will not.
+				// (What happens in this case? bExhaustedUnmasked is not set.)
 				
 				if (bExhaustedUnmasked == false) {
 
 					// Now, add the optimizing layers.
 					//===================================================================
 
-					// Start from the last ring that was not surrounded.
-					// Go until we reach the last existing ring. Then go on to next 
-
+					// >> Start from the last ring that was not surrounded. <<
+					// These are the outer equations, going up to EQNS_TOTAL. whichRingToPopulate keeps moving on.
+					
 					do {
 						ilength = 0;
 						// This time go through all prev rings from iSurrounded+1 through to the previous one.
-						for (iPrevRing = iSurroundedRing + 1; iPrevRing < whichRing; iPrevRing++) {
+						for (iPrevRing = iSurroundedRing + 1; iPrevRing < whichRingToPopulate; iPrevRing++) {
 							ilengthprev = iRingLength[iPrevRing];
 							izArrayPrev = izArray[iPrevRing];
 							// each point in previous ring of additions:
@@ -20501,8 +20484,8 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 									{
 										// . Add it to this ring
 										// . Tell it that it is in this ring
-										iRing[jMinor] = whichRing;
-										izArray[whichRing][ilength] = jMinor;
+										iRing[jMinor] = whichRingToPopulate;
+										izArray[whichRingToPopulate][ilength] = jMinor;
 										ilength++;
 										if (ilength == MAXRINGLEN) printf("ilength == %d\n", MAXRINGLEN);
 
@@ -20521,25 +20504,26 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 							bExhaustedUnmasked = true;
 						};
 
-						iRingLength[whichRing] = ilength;
-				//		printf("iRingLength[%d] = %d iEqns %d bExhaustedUnmasked %d ANOE %d\n", whichRing, ilength,
+						iRingLength[whichRingToPopulate] = ilength;
+				//		printf("iRingLength[%d] = %d iEqns %d bExhaustedUnmasked %d ANOE %d\n", whichRingToPopulate, ilength,
 				//			iEqns, (bExhaustedUnmasked ? 1 : 0), ActualNumberOfEquations);
-						++whichRing;
+						if (ilength > 0) ++whichRingToPopulate;
+
 						ilengthprev = ilength;
 						//memcpy(izArrayPrev, izArray, sizeof(long)*ilength);
-						if (whichRing >= MAXRINGS) bExhaustedUnmasked = true;
+						if (whichRingToPopulate >= MAXRINGS) bExhaustedUnmasked = true;
 
 					} while ((ActualNumberOfEquations < EQNS_TOTAL) && (!bExhaustedUnmasked)); // more rings
 
 
-					printf("3rd pass: bExhaustedUnmasked = %d ; ActualNumberOfEquations = %d ; whichRing = %d; iSurroundedRing = %d\n",
-						(bExhaustedUnmasked ? 1 : 0), ActualNumberOfEquations, whichRing, iSurroundedRing);
+					printf("3rd pass: bExhaustedUnmasked = %d ; ActualNumberOfEquations = %d ; whichRingToPopulate = %d; iSurroundedRing = %d\n",
+						(bExhaustedUnmasked ? 1 : 0), ActualNumberOfEquations, whichRingToPopulate, iSurroundedRing);
 
 				} else {
 					printf("No 3rd pass for outer equations.\n");
 				};
 
-				iFinalRing = whichRing;
+				iFinalRing = whichRingToPopulate;
 				ActualNumberOfOuterEquations = ActualNumberOfEquations - ActualNumberOfInnerEquations;
 				ActualNumberOfOuterNeighbours = 0;
 				if (!bExhaustedUnmasked) {
@@ -20549,7 +20533,7 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 
 					ilength = 0;
 					// This time go through all prev rings from iSurrounded+1 through to the previous one.
-					for (iPrevRing = iSurroundedRing + 1; iPrevRing < whichRing; iPrevRing++) {
+					for (iPrevRing = iSurroundedRing + 1; iPrevRing < whichRingToPopulate; iPrevRing++) {
 						ilengthprev = iRingLength[iPrevRing];
 						izArrayPrev = izArray[iPrevRing];
 						// each point in previous ring of additions:
@@ -20584,11 +20568,10 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 								{
 									// . Add it to this ring
 									// . Tell it that it is in this ring
-									iRing[jMinor] = whichRing;
-									izArray[whichRing][ilength] = jMinor;
+									iRing[jMinor] = whichRingToPopulate;
+									izArray[whichRingToPopulate][ilength] = jMinor;
 									ilength++;
 									if (ilength == MAXRINGLEN) printf("ilength == %d\n", MAXRINGLEN);
-
 									bSelected[jMinor] = true; // collect equations
 									p_equation_index_host[jMinor] = iEqns;
 									eqnlist[iEqns] = jMinor;										
@@ -20601,16 +20584,16 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 					};
 
 
-					iRingLength[whichRing] = ilength;
-					printf("iRingLength[%d] = %d\n", whichRing, ilength);
+					iRingLength[whichRingToPopulate] = ilength;
+					printf("iRingLength[%d] = %d\n", whichRingToPopulate, ilength);
 
-					printf("4th pass: ActualNumberOfOuterNeighbours = %d ; whichRing = %d; iSurroundedRing = %d\n",
-						ActualNumberOfOuterNeighbours, whichRing, iSurroundedRing);
-
-					// this result is suspish.
-
+					printf("4th pass: ActualNumberOfOuterNeighbours = %d ; whichRingToPopulate = %d; iSurroundedRing = %d\n",
+						ActualNumberOfOuterNeighbours, whichRingToPopulate, iSurroundedRing);
+					
 				} else {
 					printf("No 4th pass for neighbours.\n");
+					whichRingToPopulate--;
+					// Want the same whichRing either way : it rests on the last one used.
 				}
 
 				printf("ActualNumberOfInnerEquations = %d\n", ActualNumberOfInnerEquations);
@@ -20618,7 +20601,7 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 				printf("ActualNumberOfEquations = %d\n", ActualNumberOfEquations);
 				printf("ActualNumberOfOuterNeighbours = %d\n", ActualNumberOfOuterNeighbours);
 				printf("Total iEqns = %d  EQNS_TOTAL %d\n", iEqns, EQNS_TOTAL);
-				printf("Start of outer rings = %d ; last ring = %d", StartOfOuterRings, whichRing);
+				printf("Start of outer rings = %d ; last ring = %d\n", StartOfOuterRings, whichRingToPopulate);
 				
 				// ======================================================================================================
 				// debug:
@@ -20631,7 +20614,7 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 				//i, eqnlist[i], p_temphost1[eqnlist[i]], p_temphost2[eqnlist[i]], p_tempvec2_host[eqnlist[i]].x, p_tempvec2_host[eqnlist[i]].y);
 				//}
 				
-				CallMAC(cudaMemcpy(p_selectflag, bSelected, sizeof(bool)*NMINOR, cudaMemcpyHostToDevice));
+				CallMAC(cudaMemcpy(p_selectflag_eqnsmatrix, bSelected, sizeof(bool)*NMINOR, cudaMemcpyHostToDevice));
 				CallMAC(cudaMemcpy(p_equation_index, p_equation_index_host, sizeof(short)*NMINOR, cudaMemcpyHostToDevice));
 
 				//================================================
@@ -20644,9 +20627,10 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 				//. Dimension these arrays to be bigger.
 				//. Create p_RHS_big, p_eqns_big
 
-
-				CallMAC(cudaMemset(ionmomflux_eqns, 0, sizeof(f64) * 3 * 3 * iEqns*iEqns));
-				CallMAC(cudaMemset(elecmomflux_eqns, 0, sizeof(f64) * 3 * 3 * iEqns*iEqns));
+				//'We were doing memset 0 for only iEqns*iEqns
+				
+				CallMAC(cudaMemset(ionmomflux_eqns, 0, sizeof(f64) * 3 * 3 * (EQNS_TOTAL + MAXRINGLEN)*(EQNS_TOTAL + MAXRINGLEN)));
+				CallMAC(cudaMemset(elecmomflux_eqns, 0, sizeof(f64) * 3 * 3 * (EQNS_TOTAL + MAXRINGLEN)*(EQNS_TOTAL + MAXRINGLEN)));
 				kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species_effect_of_neighs_on_flux
 					<< <numTriTiles, threadsPerTileMinor >> > (
 						pX_use->p_info,
@@ -20654,7 +20638,7 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 						// For neutral it needs a different pointer.
 						pX_use->p_v_n, // not used				
 						ionmomflux_eqns, // 
-						p_selectflag, // whether it's in the smoosh to smash
+						p_selectflag_eqnsmatrix, // whether it's in the smoosh to smash
 						p_equation_index, // each one assigned an equation index				
 						pX_use->p_izTri_vert,
 						pX_use->p_szPBCtri_vert,
@@ -20666,14 +20650,14 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 						1, m_i_, 1.0 / m_i_
 						);
 				Call(cudaThreadSynchronize(), "cudaTS kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species_effect_of_neighs_on_flux");
-				if (ActualNumberOfEquations <= 24) {
+				if (0){//ActualNumberOfEquations <= 24) {
 					printf("ION\n");
-					cudaMemcpy(p_eqns_host, ionmomflux_eqns, 3 * iEqns * 3 * iEqns * sizeof(f64),
+					cudaMemcpy(p_eqns_host, ionmomflux_eqns, 3 * (EQNS_TOTAL + MAXRINGLEN) * 3 * (EQNS_TOTAL + MAXRINGLEN) * sizeof(f64),
 						cudaMemcpyDeviceToHost);
 					for (i = 0; i < 3 * iEqns; i++) {
 						for (j = 0; j < 3 * iEqns; j++)
 						{
-							printf("%1.11E ", p_eqns_host[i * 3 * iEqns + j]);
+							printf("%1.11E ", p_eqns_host[i * 3 * (EQNS_TOTAL + MAXRINGLEN) + j]);
 						};
 						printf("\n");
 					};
@@ -20684,7 +20668,7 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 						p_vie,
 						pX_use->p_v_n, // not used
 						elecmomflux_eqns, // say it is 256*3*256*3. Actually pretty big then. Try 128*128*3*3.
-						p_selectflag, // whether it's in the smoosh to smash
+						p_selectflag_eqnsmatrix, // whether it's in the smoosh to smash
 						p_equation_index, // each one assigned an equation index
 						pX_use->p_izTri_vert,
 						pX_use->p_szPBCtri_vert,
@@ -20696,14 +20680,15 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 						2, m_e_, 1.0 / m_e_
 						);
 				Call(cudaThreadSynchronize(), "cudaTS kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species_effect_of_neighs_on_flux");
-				if (ActualNumberOfEquations <= 24) {
+				
+				if (0){//ActualNumberOfEquations <= 24) {
 					printf("ELECTRON\n");
-					cudaMemcpy(p_eqns_host, elecmomflux_eqns, 3 * iEqns * 3 * iEqns * sizeof(f64),
+					cudaMemcpy(p_eqns_host, elecmomflux_eqns, 3 * (EQNS_TOTAL + MAXRINGLEN) * 3 * (EQNS_TOTAL + MAXRINGLEN) * sizeof(f64),
 						cudaMemcpyDeviceToHost);
 					for (i = 0; i < 3 * iEqns; i++) {
 						for (j = 0; j < 3 * iEqns; j++)
 						{
-							printf("%1.11E ", p_eqns_host[i * 3 * iEqns + j]);
+							printf("%1.11E ", p_eqns_host[i * 3 * (EQNS_TOTAL + MAXRINGLEN) + j]);
 						};
 						printf("\n");
 					};
@@ -20723,12 +20708,11 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 					pX_use->p_AreaMinor,
 					p_d_eps_by_d_MAR_i,
 					p_d_eps_by_d_MAR_e,
-
 					pX_use->p_izNeigh_TriMinor,
 					pX_use->p_izTri_vert,
 					p_equation_index, // each one assigned an equation index
-					p_selectflag,
-					p_eqns_big, 
+					p_selectflag_eqnsmatrix,
+					p_eqns_big,                        // This allows an equation for all of (EQNS_TOTAL+MAXRINGLEN) which can be quite large.
 					p_epsilon_xy,
 					p_epsilon_iz,
 					p_epsilon_ez,
@@ -20736,11 +20720,6 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 					);
 				Call(cudaThreadSynchronize(), "cudaTS kernelCreateEquations");
 
-				//cudaMemcpy(&tempf64, p_eqns_big, sizeof(f64), cudaMemcpyDeviceToHost);
-				//printf("\nelement 0 %1.14E \n\n", tempf64);
-				//cudaMemcpy(&tempf64, p_RHS_big, sizeof(f64), cudaMemcpyDeviceToHost);
-				//printf("\nelement 0RHS %1.14E \n\n", tempf64);
-								
 				if ((iMoveType == 5) && (ActualNumberOfOuterNeighbours > 0)) {
 
 					// add equations together.
@@ -20778,11 +20757,15 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 					// There will be many redundant threads, as we do nothing if within INNER_EQNS,
 					// except copy p_eqns_big to p_eqns.
 				} else {
-					//else <= EQNS_TOTAL; copy from big to eqns and solve them exactly.
+					// else there were no outer neighbours
+					// or, it is iMoveType == 4:
+					// copy from big to eqns and solve them exactly.
+
 					for (i = 0; i < 4*ActualNumberOfEquations; i++)
 						cudaMemcpy(&(p_eqns[4*EQNS_TOTAL*i]), &(p_eqns_big[4 * (EQNS_TOTAL+MAXRINGLEN)*i]),
 							sizeof(f64)*4*EQNS_TOTAL, cudaMemcpyDeviceToDevice);
 					cudaMemcpy(p_RHS, p_RHS_big, sizeof(f64)*4* ActualNumberOfEquations, cudaMemcpyDeviceToDevice);
+
 
 //					if (ActualNumberOfEquations <= 24) {
 //						cudaMemcpy(p_eqns_host, p_eqns, 4 * EQNS_TOTAL * 4 * EQNS_TOTAL * sizeof(f64),
@@ -20851,25 +20834,30 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 					memcpy(&(matLU.LU[i][0]), &(p_eqns_host[i * 4 * EQNS_TOTAL]), 
 						sizeof(f64) * 4 * ActualNumberOfEquations);
 				
-			//	for (int i = 0; i < 4 * EQNS_TOTAL; i++) {
-			//		for (int j = 0; j < 4 * EQNS_TOTAL; j++)
-			//		{
-			//			printf("%1.13E ", matLU.LU[i][j]);
-			//		};
-			//		printf("| %1.13E\n", p_temphost5[i]);
-			//	};
-			//	FILE * fpdbg;
-			//	fpdbg = fopen("matrix.txt", "w");
-			//	for (int i = 0; i < 4 * ActualNumberOfEquations; i++) {
-			//		for (int j = 0; j < 4 * ActualNumberOfEquations; j++)
-			//		{
-			//			fprintf(fpdbg, "%1.13E ", matLU.LU[i][j]);
-			//		};
-			//		fprintf(fpdbg, "| %1.13E\n", p_temphost5[i]);
-			//	};
-			//	fclose(fpdbg);
-			//	printf("spat out matrix.txt\n");
-				 
+				if (ActualNumberOfEquations < 8) {
+					for (int i = 0; i < 4 * ActualNumberOfEquations; i++) {
+						for (int j = 0; j < 4 * ActualNumberOfEquations; j++)
+						{
+							printf("%1.13E ", matLU.LU[i][j]);
+						};
+						printf("| %1.13E\n", p_temphost5[i]);
+					};
+				};
+
+				if (0) {
+					FILE * fpdbg;
+					fpdbg = fopen("matrix.txt", "w");
+					for (int i = 0; i < 4 * ActualNumberOfEquations; i++) {
+						for (int j = 0; j < 4 * ActualNumberOfEquations; j++)
+						{
+							fprintf(fpdbg, "%1.13E ", matLU.LU[i][j]);
+						};
+						fprintf(fpdbg, "| %1.13E\n", p_temphost5[i]);
+					};
+					fclose(fpdbg);
+					printf("spat out matrix.txt\n");
+				};
+
 				int unused;
 				unused = 0;
 				for (int i = 0; i < 4 * ActualNumberOfEquations; i++)
@@ -21122,7 +21110,7 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 			
 				/*
 				kernelAddSolution << <numTilesMinor, threadsPerTileMinor >> > (
-				p_vie, p_selectflag, p_equation_index, p_RHS
+				p_vie, p_selectflag_eqnsmatrix, p_equation_index, p_RHS
 				);
 				Call(cudaThreadSynchronize(), "cudaTS kernelAddSolution");
 				*/
@@ -21139,9 +21127,9 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 				// and apply regressors outside the solution domain before doing anything else
 				// or set the others zero.
 
-				//iRing[jMinor] = whichRing; // Don't see why this belongs here. If anything it's whichRing we want to set.
+				//iRing[jMinor] = whichRingToPopulate; // Don't see why this belongs here. If anything it's whichRingToPopulate we want to set.
 				// Assign different coefficient to last 2 rings.
-				// Remember if whichRing is now at 11 then whichRing == 9 or 10 is where we put different coefficient.
+				// Remember if whichRingToPopulate is now at 11 then whichRingToPopulate == 9 or 10 is where we put different coefficient.
 				
 				CallMAC(cudaMemcpy(p_iRing, iRing, sizeof(int)*NMINOR, cudaMemcpyHostToDevice));
 
@@ -21159,11 +21147,11 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 						p_regressors2 + NMINOR * 2,
 						p_regressors_iz + NMINOR * 2,
 						p_regressors_ez + NMINOR * 2,
-						p_selectflag,
+						p_selectflag_eqnsmatrix,
 						p_equation_index,
 						p_iRing,
 						p_RHS,
-						whichRing,
+						whichRingToPopulate,
 						ActualNumberOfEquations); 
 				// (ring < whicRing - 3) == regressor 0
 				// But when ring == 1 that is ALWAYS regressor 0
@@ -21191,7 +21179,7 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 		//		cudaMemcpy(&temp_ez, p_regressors_ez + NMINOR*2 + izArray[1][0], sizeof(f64), cudaMemcpyDeviceToHost);
 		//		printf("izArray[1][0] %d temp_xy %1.10E %1.10E temp_iz %1.10E temp_ez %1.10E\n",
 		//			izArray[1][0], temp_xy.x, temp_xy.y, temp_iz, temp_ez);
-		//		printf("whichRing %d \n", whichRing);
+		//		printf("whichRingToPopulate %d \n", whichRingToPopulate);
 
 				// For now let's do without Jacobi, to experiment.
 
@@ -21218,7 +21206,7 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 							p_vie2,
 							pX_use->p_v_n, // not used				
 							ionmomflux_eqns, // say it is 256*3*256*3. Actually pretty big then. Try 128*128*3*3.				
-							p_selectflag, // whether it's in the smoosh to smash
+							p_selectflag_eqnsmatrix, // whether it's in the smoosh to smash
 							p_equation_index, // each one assigned an equation index				
 							pX_use->p_izTri_vert, pX_use->p_szPBCtri_vert, pX_use->p_izNeigh_TriMinor, pX_use->p_szPBC_triminor,
 							p_ita_i, // p_ita_parallel_ion_minor,   // nT / nu ready to look up
@@ -21235,7 +21223,7 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 							// For neutral it needs a different pointer.
 							pX_use->p_v_n, // not used
 							elecmomflux_eqns, // say it is 256*3*256*3. Actually pretty big then. Try 128*128*3*3.
-							p_selectflag, // whether it's in the smoosh to smash
+							p_selectflag_eqnsmatrix, // whether it's in the smoosh to smash
 							p_equation_index, // each one assigned an equation index
 							pX_use->p_izTri_vert, pX_use->p_szPBCtri_vert, pX_use->p_izNeigh_TriMinor, pX_use->p_szPBC_triminor,
 							p_ita_e, // p_ita_parallel_ion_minor,   // nT / nu ready to look up
@@ -21258,7 +21246,7 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 						p_d_eps_by_d_MAR_e,
 						pX_use->p_izNeigh_TriMinor, pX_use->p_izTri_vert,
 						p_equation_index, // each one assigned an equation index
-						p_selectflag,
+						p_selectflag_eqnsmatrix,
 						p_eqns2, // 4 x EQNS_TOTAL x 4 x EQNS_TOTAL
 						p_epsilon_xy,
 						p_epsilon_iz,
@@ -21307,15 +21295,15 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 				// Solution --- put final and penultimate ring together in one regressor. Done.
 				kernelZeroWithinRings << <numTilesMinor, threadsPerTileMinor >> > (
 				p_regressors_ez + NMINOR * 3,
-				p_selectflag				);
+				p_selectflag_eqnsmatrix				);
 				Call(cudaThreadSynchronize(), "cudaTS ZeroWithin");
 				kernelZeroWithinRings << <numTilesMinor, threadsPerTileMinor >> > (
 				p_regressors_iz + NMINOR * 3,
-				p_selectflag				);
+				p_selectflag_eqnsmatrix				);
 				Call(cudaThreadSynchronize(), "cudaTS ZeroWithin");
 				kernelZeroWithinRings2 << <numTilesMinor, threadsPerTileMinor >> > (
 				p_regressors2 + NMINOR * 3,
-				p_selectflag				);
+				p_selectflag_eqnsmatrix				);
 				Call(cudaThreadSynchronize(), "cudaTS ZeroWithin");
 				*/
 				// ''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
@@ -21342,7 +21330,7 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 						p_vie2,
 						pX_use->p_v_n, // not used				
 						ionmomflux_eqns, // say it is 256*3*256*3. Actually pretty big then. Try 128*128*3*3.				
-						p_selectflag, // whether it's in the smoosh to smash
+						p_selectflag_eqnsmatrix, // whether it's in the smoosh to smash
 						p_equation_index, // each one assigned an equation index				
 						pX_use->p_izTri_vert, pX_use->p_szPBCtri_vert, pX_use->p_izNeigh_TriMinor, pX_use->p_szPBC_triminor,
 						p_ita_i, // p_ita_parallel_ion_minor,   // nT / nu ready to look up
@@ -21359,7 +21347,7 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 						// For neutral it needs a different pointer.
 						pX_use->p_v_n, // not used
 						elecmomflux_eqns, // say it is 256*3*256*3. Actually pretty big then. Try 128*128*3*3.
-						p_selectflag, // whether it's in the smoosh to smash
+						p_selectflag_eqnsmatrix, // whether it's in the smoosh to smash
 						p_equation_index, // each one assigned an equation index
 						pX_use->p_izTri_vert, pX_use->p_szPBCtri_vert, pX_use->p_izNeigh_TriMinor, pX_use->p_szPBC_triminor,
 						p_ita_e, // p_ita_parallel_ion_minor,   // nT / nu ready to look up
@@ -21383,7 +21371,7 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 					pX_use->p_AreaMinor,
 					pX_use->p_izNeigh_TriMinor, pX_use->p_izTri_vert,
 					p_equation_index, // each one assigned an equation index
-					p_selectflag,
+					p_selectflag_eqnsmatrix,
 					p_eqns2, // 4 x EQNS_TOTAL x 4 x EQNS_TOTAL
 					p_epsilon_xy,
 					p_epsilon_iz,
@@ -21495,11 +21483,11 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 						p_regressors2 + NMINOR * 2,
 						p_regressors_iz + NMINOR * 2,
 						p_regressors_ez + NMINOR * 2,
-						p_selectflag,
+						p_selectflag_eqnsmatrix,
 						p_equation_index,
 						p_iRing,
 						p_RHS,
-						whichRing);
+						whichRingToPopulate);
 				Call(cudaThreadSynchronize(), "cudaTS PopulateRegressors");
 				SubroutineComputeDbyDbeta(hsub, p_regressors2, p_regressors_iz, p_regressors_ez, p_vie, pX_use, 0,
 					1, 1, 1);
@@ -21530,17 +21518,17 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 						Call(cudaThreadSynchronize(), "cudaTS Jacobi xy");
 						kernelZeroWithinRings << <numTilesMinor, threadsPerTileMinor >> > (
 							p_regressors_ez + NMINOR * i,
-							p_selectflag
+							p_selectflag_eqnsmatrix
 							);
 						Call(cudaThreadSynchronize(), "cudaTS ZeroWithin");
 						kernelZeroWithinRings << <numTilesMinor, threadsPerTileMinor >> > (
 							p_regressors_iz + NMINOR * i,
-							p_selectflag
+							p_selectflag_eqnsmatrix
 							);
 						Call(cudaThreadSynchronize(), "cudaTS ZeroWithin");
 						kernelZeroWithinRings2 << <numTilesMinor, threadsPerTileMinor >> > (
 							p_regressors2 + NMINOR * i,
-							p_selectflag
+							p_selectflag_eqnsmatrix
 							);
 						Call(cudaThreadSynchronize(), "cudaTS ZeroWithin");
 						SubroutineComputeDbyDbeta(hsub, p_regressors2, p_regressors_iz, p_regressors_ez, p_vie, pX_use, i,
@@ -21955,6 +21943,7 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 						SplitVector4 << <numTilesMinor, threadsPerTileMinor >> > (
 							p_regressors2 + NMINOR * 6, p_regressors_iz + NMINOR * 7, p_regressors_ez + NMINOR * 7,
 							p_stored_move4, p_Selectflag
+
 							);
 						Call(cudaThreadSynchronize(), "cudaTS SplitVector4");
 					}
@@ -22648,7 +22637,43 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 				printf(" |  %1.9E \n", eps_deps[i]);
 			}
 			printf("\n");
+
+			if (iEqns <= 42) {
+				// DEBUG
+
+
+				FILE * jilli = fopen("jilli.txt", "w");
+				// Get hold of d eps by d beta
+				for (j = 0; j < 3; j++) {
+					cudaMemcpy(::p_tempvec2_host, p_d_epsxy_by_d_beta_i + j*NMINOR, sizeof(f64_vec2)*NMINOR, cudaMemcpyDeviceToHost);
+					cudaMemcpy(p_temphost2, p_d_eps_iz_by_d_beta_i + j*NMINOR, sizeof(f64)*NMINOR, cudaMemcpyDeviceToHost);
+					cudaMemcpy(p_temphost3, p_d_eps_ez_by_d_beta_i + j*NMINOR, sizeof(f64)*NMINOR, cudaMemcpyDeviceToHost);
+
+					for (i = 0; i < NMINOR; i++)
+					{
+						if ((p_tempvec2_host[i].x != 0.0) || (p_tempvec2_host[i].y != 0.0)
+							|| (p_temphost2[i] != 0.0) || (p_temphost3[i] != 0.0))
+						{
+							cudaMemcpy(&tempvec2, p_epsilon_xy + i, sizeof(f64_vec2), cudaMemcpyDeviceToHost);
+							cudaMemcpy(&tempf64, p_epsilon_iz + i, sizeof(f64), cudaMemcpyDeviceToHost);
+							cudaMemcpy(&tempf64_2, p_epsilon_ez + i, sizeof(f64), cudaMemcpyDeviceToHost);
+
+							fprintf(jilli, "i %d Selecteqn %d  iRing %d inthost %d %d-th %1.7E %1.7E %1.7E %1.7E epsilon %1.7E %1.7E %1.7E %1.7E\n",
+								i, (bSelected[i] ? 1 : 0), iRing[i], p_inthost[i],
+								j,
+								p_tempvec2_host[i].x, p_tempvec2_host[i].y,
+								p_temphost2[i], p_temphost3[i],
+								tempvec2.x, tempvec2.y, tempf64, tempf64_2
+							);
+						};
+					};
+				};
+				fclose(jilli);
+				printf("file jilli outputted.\n");
+			};
+
 			getch();
+
 		} else {
 			//	printf("Success? dRSSbydlambda0 %1.9E \n", dRSS0);
 		};
@@ -22927,7 +22952,7 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 				p_vie,
 				pX_use->p_v_n, // not used
 				ionmomflux_eqns, // say it is 256*3*256*3. Actually pretty big then. Try 128*128*3*3.
-				p_selectflag, // whether it's in the smoosh to smash
+				p_selectflag_eqnsmatrix, // whether it's in the smoosh to smash
 				p_equation_index, // each one assigned an equation index
 				pX_use->p_izTri_vert, pX_use->p_szPBCtri_vert, pX_use->p_izNeigh_TriMinor, pX_use->p_szPBC_triminor,
 				p_ita_i, // p_ita_parallel_ion_minor,   // nT / nu ready to look up
@@ -23306,7 +23331,7 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 
 				if (b_vWDB)
 				{
-					printf(" b_vWDB:");
+				//	printf(" b_vWDB:");
 					// Review this whole segment.
 					// Does loop structure work properly?
 
@@ -23347,7 +23372,7 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 					}
 					else {
 						// inverse quadratic:
-						printf("[d]");
+						//printf("[d]");
 						f64 denom = (dRSSa - dRSSb)*(dRSSa - dRSSc)*(dRSSb - dRSSc);
 						lambda = (a_Brent*dRSSb*dRSSc*(dRSSb - dRSSc)
 							+ b_Brent*dRSSa*dRSSc*(dRSSc - dRSSa)
@@ -23396,9 +23421,9 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 						if (dRSSb - dRSSa == 0.0) {
 							lambda = 0.5*(a_Brent + b_Brent); // safe division
 						} else {
-							printf("[b-a]");
+						//	printf("[b-a]");
 							lambda = b_Brent - dRSSb*(b_Brent - a_Brent) / (dRSSb - dRSSa);
-							printf("W");
+						//	printf("W");
 						};
 						f64 delta = 1.0e-14*(fabs(b_Brent) + 1.0);
 						// machine precision tolerance, see p.51 of R.P.Brent (1973)

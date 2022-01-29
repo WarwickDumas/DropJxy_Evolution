@@ -11,7 +11,7 @@
 #include "globals.h"
 
 #include "mesh.h"
-#include "mesh.cu"
+//#include "mesh.cu"
 #include "meshutil.cu"
 
 #define VERBOSEGRAPHICS 0 // also in meshutil

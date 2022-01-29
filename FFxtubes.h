@@ -27,8 +27,8 @@ bool const bScrewPinch = false;
 int const NUMAVI = 9;
 #define FOLDER L"C:/outputs/"
 #define FOLDER2 "C:/outputs/"
-#define INITIALAVI "10200D.avi"		
-#define INITIALMP4 L"10200D.mp4"
+#define INITIALAVI "10200E.avi"		
+#define INITIALMP4 L"10200E.mp4"
 #define STORYFILE "temp.txt"
 #define STORYFILE2 "temp2.txt"
 
@@ -44,8 +44,8 @@ int const NUMAVI = 9;
 #define DATAFILENAME FOLDER2 "Data_"
 #define AUTOSAVE_FILENAME FOLDER2 "bBautosave.dat"
 #define RUNTIME_FILENAME FOLDER2 "bBruntime.dat"
-#define AUTOSAVENAME "cCauto"
-#define VERTAUTOSAVENAME "graph"
+#define AUTOSAVENAME "Tauto"
+#define VERTAUTOSAVENAME "Tgraph"
  
 #endif
 

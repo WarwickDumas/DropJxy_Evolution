@@ -15,6 +15,7 @@
 #define TESTVISCCOEFF (0)
 #define TESTVISCCOEFFX (0)//iMinor == CHOSEN)
 #define TESTVISCCOEFFY (0) //(iVertex == VERTCHOSEN) && (iSpecies == 1))
+#define TESTVISCCOEFFZ (0)
 
 #define TEST_VISC_VERT 0
 #define TEST_EPSILON_Z_VERT 0
@@ -89,13 +90,13 @@ __global__ void kernelCombineEquations(
 
 	if (iEqn < ActualInnerEqnsDevice*4) {
 
-		// If we never reached EQNS_TOTAL
-		// just copy over the line for eqn.
 		memcpy(&(p_eqns_[4 * EQNS_TOTAL*iEqn]),
 			&(p_eqns_big_[4 * (EQNS_TOTAL+MAXRINGLEN)*iEqn]),
 			sizeof(f64) * 4 * EQNS_TOTAL);
 		p_RHS_[iEqn] = p_RHS_big_[iEqn];
 
+	//	For this iEqn < EQNS_TOTAL we just concern with values within EQNS_TOTAL and this row represents the effect of a given INPUT on all epsilon.
+		
 	} else {
 		// go through and look for ones to add.
 
@@ -116,10 +117,16 @@ __global__ void kernelCombineEquations(
 		//Need to bear in mind we may not have populated full set of neighs to be affected.
 		//We get to end of neighs or end of unmasked without reaching MAXRINGLEN.
 		
+		// If we are here then we think ActualInnerEqnsDevice == EQNS_TOTAL ? 
+		
 		for (int j = ActualInnerEqnsDevice*4; j < iEqnsDevice*4; j++) {
 			coefficient = p_eqns_big_[4 * (EQNS_TOTAL + MAXRINGLEN)*j + iEqn];
 			// deps_j/dv_i
-
+		//	Yes the correct one is d eps_j/ dv_i
+		//	and we need to be careful about + or - in RHS so need to write out properly.
+			// Minus epsilon which shuold be +RHS -- 
+		//	checked
+			
 			// Okay, we only want to include equations
 			// whose eqn number is greater than ActualInnerEqnsDevice.
 
@@ -10152,8 +10159,7 @@ kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species_effect_of_neighs_o
 										// z -> z:
 										if (iDimension == 2)
 											eqns[(iEqnOurs * 3 + 2) * 3 * EQNS_TOTAL + iEqnTheirs * 3 + 2] += visc_contrib.z; 
-									}
-									else {
+									} else {
 										if ((VISCMAG == 0) || (omega_c.dot(omega_c) < 0.01*0.1*nu*nu))
 										{
 											// run unmagnetised case (actually same as neutral ... )
@@ -10347,6 +10353,11 @@ kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species_effect_of_neighs_o
 											if ((TESTVISCCOEFFY) && (iDimension == 1) && (iEqnTheirs == 1)) 
 												printf("Dimension %d iOurs %d iTheirs %d contribxyz %1.12E %1.12E %1.12E\n",
 												iDimension, iEqnOurs, iEqnTheirs, visc_contrib.x, visc_contrib.y, visc_contrib.z);
+#endif 
+#if TESTVISCCOEFFZ
+											if ((iVertex == VERTCHOSEN) && (iDimension == 2) && (iWhich == 3))
+												printf("Dimension %d iOurs %d iTheirs %d contribxyz %1.12E %1.12E %1.12E iWhich %d\n",
+													iDimension, iEqnOurs, iEqnTheirs, visc_contrib.x, visc_contrib.y, visc_contrib.z, iWhich);
 #endif
 											// Dimension 1 = change in y in EqnTheirs, effect on xyz of EqnOurs.
 											// Probably won't need to analyze this.
@@ -10359,13 +10370,15 @@ kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species_effect_of_neighs_o
 											eqns[(iEqnOurs * 3 + 1) * 3 * (EQNS_TOTAL + MAXRINGLEN) + iEqnTheirs * 3 + iDimension] += visc_contrib.y; // contrib vz -> eps_y
 											eqns[(iEqnOurs * 3 + 2) * 3 * (EQNS_TOTAL + MAXRINGLEN) + iEqnTheirs * 3 + iDimension] += visc_contrib.z;
 
-											//if (0) // (iVertex == VERTCHOSEN)) 
-											//{
-											//	printf("iEqn %d theirs %d izTri %d which %d Dim %d cont to x %1.10E  pop %d \n",
-											//		iEqnOurs, iEqnTheirs, izTri[i], iWhich, iDimension, visc_contrib.x,
-											//		(iEqnOurs * 3 + 0) * 3 * EQNS_TOTAL + iEqnTheirs * 3 + iDimension
-											//		);
-											//}
+#if TESTVISCCOEFFZ
+											if ((iVertex == VERTCHOSEN) && (iDimension == 2))
+											{
+												printf("iEqn %d theirs %d izTri %d which %d Dim %d cont to z %1.10E  pop %d \n",
+													iEqnOurs, iEqnTheirs, izTri[i], iWhich, iDimension, visc_contrib.z,
+													(iEqnOurs * 3 + 2) * 3 * (EQNS_TOTAL + MAXRINGLEN) + iEqnTheirs * 3 + iDimension
+													);
+											};
+#endif
 
 										};
 									};
@@ -11244,7 +11257,7 @@ __global__ void kernelCreateEquations(
 		//We propose a change in viz. This affects ion pz flux only.
 		coeff.z = factor_i*ionfluxcoeff3.z;
 		coeff.w = factor_e*elecfluxcoeff3.z;
-
+		
 		//Here add 1 or something;
 		f64 sqrtN = sqrt(N);
 		coeff.x += sqrtN;

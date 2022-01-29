@@ -28,6 +28,9 @@
 #define FLAG_CODE_RIGHTBOT 6
 
 
+#define HOSTDEVICE __host__ __device__
+#define QUALS __host__ __device__ inline
+
 #define CP_MAX  16
 
 // 12*32768*5 = 2MB .. just to keep things in perspective.
@@ -138,60 +141,62 @@ public:
 	int status[CP_MAX];
 	int numCoords;
 
-	ConvexPolygon(const Vector2 & x1,const Vector2 & x2,const Vector2 & x3);
-	ConvexPolygon();
+	HOSTDEVICE ConvexPolygon(const Vector2 & x1,const Vector2 & x2,const Vector2 & x3);
+	HOSTDEVICE ConvexPolygon();
 	
-	void SetTri(const Vector2 & x1,const Vector2 & x2, const Vector2 & x3);
-	void CreateClockwiseImage(const ConvexPolygon & cpSrc) ;
-	void CreateAnticlockwiseImage(const ConvexPolygon & cpSrc);
+	void HOSTDEVICE SetTri(const Vector2 & x1,const Vector2 & x2, const Vector2 & x3);
+	void HOSTDEVICE CreateClockwiseImage(const ConvexPolygon & cpSrc) ;
+	void HOSTDEVICE CreateAnticlockwiseImage(const ConvexPolygon & cpSrc);
 	
-	void inline Clear()
+	void HOSTDEVICE Clear()
 	{
 		numCoords = 0;
 	}
 
-	void inline add(real x,real y)
+	void HOSTDEVICE add(real x,real y)
 	{
 		numCoords++;
 		coord[numCoords-1].x = x;
 		coord[numCoords-1].y = y;
 	}
 
-	void inline add(Vector2 u)
+	void HOSTDEVICE add(Vector2 u)
 	{
 		numCoords++;
 		coord[numCoords-1] = u;
 	}
 
-	bool ClipAgainstHalfplane(const Vector2 & r1, const Vector2 & r2, const Vector2 & r3);
-	void CopyFrom(ConvexPolygon & cp);
-	real FindTriangleIntersectionArea(Vector2 & r1, Vector2 & r2, Vector2 & r3);
-	real FindQuadrilateralIntersectionArea(Vector2 & r1, Vector2 & r2, Vector2 & r3, Vector2 & r4);
-	real GetArea();
-	void GetCentre(Vector2 & centre);
+	bool IsConvex();
+
+	int ClipAgainstHalfplane(const Vector2 & r1, const Vector2 & r2, const Vector2 & r3);
+	void HOSTDEVICE CopyFrom(ConvexPolygon & cp);
+	real HOSTDEVICE FindTriangleIntersectionArea(Vector2 & r1, Vector2 & r2, Vector2 & r3);
+	real HOSTDEVICE FindQuadrilateralIntersectionArea(Vector2 & r1, Vector2 & r2, Vector2 & r3, Vector2 & r4);
+	real HOSTDEVICE GetArea();
+	void HOSTDEVICE GetCentre(Vector2 & centre);
 	bool GetIntersectionWithTriangle(ConvexPolygon * pPoly,Vector2 & r1, Vector2 & r2, Vector2 & r3);
 	bool GetIntersectionWithPolygon(ConvexPolygon * pPoly, ConvexPolygon * pClip);
 	
-	void Integrate_Planes(Vector2 & r1, Vector2 & r2, Vector2 & r3,
+	void HOSTDEVICE Integrate_Planes(Vector2 & r1, Vector2 & r2, Vector2 & r3,
 										real yvals1[],
 										real yvals2[],
 										real yvals3[],	
 										real results[],
 										long N_planes);
-	void IntegrateMass(Vector2 & r1, Vector2 & r2, Vector2 & r3,
+	void HOSTDEVICE IntegrateMass(Vector2 & r1, Vector2 & r2, Vector2 & r3,
 									real yvals1, real yvals2, real yvals3, real * pResult);
 	//real GetSideLength(int side);
-	real GetPrecedingSideLength(int side);
-	real GetSucceedingSideLength(int side);
+	real HOSTDEVICE GetPrecedingSideLength(int side);
+	real HOSTDEVICE GetSucceedingSideLength(int side);
 	
-	Vector3 Get_curl2D_from_anticlockwise_array(Vector3 A[]);
-	Vector2 Get_grad_from_anticlockwise_array(real Te[]);
-	Vector2 Get_Integral_grad_from_anticlockwise_array(real Te[]);
+	Vector3 HOSTDEVICE Get_curl2D_from_anticlockwise_array(Vector3 A[]);
+	Vector2 HOSTDEVICE Get_grad_from_anticlockwise_array(real Te[]);
+	Vector2 HOSTDEVICE Get_Integral_grad_from_anticlockwise_array(real Te[]);
 
-	void Get_Bxy_From_Az(real Az_array[], real * pBx,real * pBy);
+	void HOSTDEVICE Get_Bxy_From_Az(real Az_array[], real * pBx,real * pBy);
 	
-	Vector2 CalculateBarycenter();
-	real minmod(real n[], // output array
+	Vector2 HOSTDEVICE CalculateBarycenter();
+	real HOSTDEVICE minmod(real n[], // output array
 					  real ndesire[], real N, 
 					  Vector2 central );
 };
@@ -704,6 +709,15 @@ public:
 		// can same class access object's private data?
 	}
 
+	long inline GetNeighLen(void)
+	{
+		return neigh_len;
+	}
+
+	long inline GetTriLen(void)
+	{
+		return tri_len;
+	}
 	long inline GetNeighIndexArray(long * arr) const
 	{
 		memcpy(arr,izNeigh,sizeof(long)*neigh_len);
@@ -903,11 +917,29 @@ public:
 			printf("error: neigh_len >= MAXNEIGH and attempted add neigh\n");
 		};
 	}
+
+	void inline AddUniqueNeighbourIndex(long index)
+	{
+		for (int i = 0; i < neigh_len; i++)
+			if (izNeigh[i] == index) return;
+
+		if (neigh_len < MAXNEIGH) {
+			izNeigh[neigh_len] = index;
+
+			// need this on some occasion:
+			//			memset(&(coeff[neigh_len].co[0][0]),0,sizeof(real)*NUM_EQNS_1*NUM_AFFECTORS_1);
+
+			neigh_len++;
+		}
+		else {
+			printf("error: neigh_len >= MAXNEIGH and attempted add neigh\n");
+		};
+	}
 	// Only the stupid edge points make us need a separate neigh_len,tri_len.
 	bool inline RemoveNeighIndexIfExists(long index)
 	{
 		int i = 0;
-		while ((i < neigh_len) && (izTri[i] != index)) ++i;
+		while ((i < neigh_len) && (izNeigh[i] != index)) ++i;
 		if (i == neigh_len) return false;
 		neigh_len--;
 		memmove(izNeigh+i,izNeigh+i+1,sizeof(long)*(neigh_len-i));
@@ -966,6 +998,31 @@ public:
 	Triangle()	;	
 	
 	// change most of these to inline and put them here:
+
+	bool inline MakeSureCornersAnticlockwise()
+	{
+		f64_vec2 pos0, pos1, pos2;
+		this->MapLeftIfNecessary(pos0, pos1, pos2);
+		// dot product of vectors from pos2 should be...
+
+		f64_vec2 vec01 = pos1 - pos0; 
+		f64_vec2 vec02 = pos2 - pos0;
+		f64 cross = vec01.x*vec02.y - vec01.y*vec02.x;
+
+		// Let's say 1 is to right of 0, 2 is up. Then cross is +. So we want cross to be +.
+		if (cross < 0.0) {
+			Vertex * temp = cornerptr[1];
+			cornerptr[1] = cornerptr[2];
+			cornerptr[2] = temp;
+			return true;
+		};
+		return false;
+	}
+
+	bool inline has_corner(Vertex * pTest)
+	{
+		return ((cornerptr[0] == pTest) || (cornerptr[1] == pTest) || (cornerptr[2] == pTest));
+	}
 
 	void PopulatePositions(Vector2 & u0, Vector2 & u1, Vector2 & u2) const
 	{
@@ -1185,7 +1242,8 @@ public:
 // prefer array of struct.
 */
 
-
+real CalculateAngle(real x, real y);
+real GetPossiblyPeriodicDistSq(Vector2 & vec1, Vector2 & vec2);
 
 class TriMesh
 {
@@ -1286,6 +1344,9 @@ public:
 	
 	// For now, get rid of most member functions and keep only those that we know we shall use.
 
+	void TriMesh::RebuildNeighbourList(Vertex * pVertex);
+	long TriMesh::Flips(long Trilist[], short num);
+
 	void CalcUpwindDensity_on_tris(f64 * p_n_upwind, f64 * p_nn_upwind, f64_vec2 * p_v_overall_tris);
 
 	void CompareSystems();
@@ -1314,6 +1375,8 @@ public:
 	void EnsureAnticlockwiseTriangleCornerSequences();
 	void AdvanceDensityAndTemperature(f64 h_use, TriMesh * pUseMesh, TriMesh * pDestMesh, NTrates NTadditionrate[NUMVERTICES]);
 
+	void TriMesh::Integrate_using_iScratch(TriMesh * pX_src, bool bIntegrate_all);
+
 	// *******************************************************************
 	// *****																	  *****
 	// *********            Initialisation functions:            *********
@@ -1337,11 +1400,14 @@ public:
 	// *******************************************************************
 	
 	void Wrap(void);
-	
+	void Resprinkle(TriMesh * pX_src, TriMesh * pX_aux); 
+
 	void CreateTilingAndResequence(TriMesh * pDestMesh);
 
 	void CreateTilingAndResequence2(TriMesh * pDestMesh);
 
+	void CreateTilingAndResequence_with_data(TriMesh * pDestMesh);
+	
 	// in MeshUtil.cpp:
 	int Load(const char * filename);
 	int Save(const char * filename);
@@ -1363,11 +1429,13 @@ public:
 
 	// void ShiftVertexPositionsEquanimity(); // no
 	
-	void ResetTriangleNeighbours(Triangle * pTri); 
+	int ResetTriangleNeighbours(Triangle * pTri); 
 
 	// this is for if first, triangles are sorted anticlockwise: (??)
-	void RefreshVertexNeighboursOfVerticesOrdered(void) ; // ??
-		
+	void RefreshVertexNeighboursOfVerticesOrdered(void) ; // TRIANGLE CORNERS must already be sorted anticlockwise each triangle.
+	
+	void ReorderTriAndNeighLists(Vertex * pVertex);
+
 	void RefreshHasPeriodic(); // see if any triangles had by a vertex are periodic triangles.
 
 	void RecalculateEdgeNormals(bool bNormalise);

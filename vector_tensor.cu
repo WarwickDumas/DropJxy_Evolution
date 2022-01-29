@@ -108,6 +108,8 @@ struct Vector2
 	}
 	real QUALIFIERS modulus() const
 	{
+		real modsq = x*x + y*y;
+		if (modsq <= 0.0) return 0.0;
 		return sqrt(x*x+y*y);
 	}
 
@@ -238,6 +240,8 @@ struct Vector3
 	
 	real QUALIFIERS modulus()
 	{
+		real modsq = x*x + y*y + z*z;
+		if (modsq <= 0.0) return 0.0;
 		return sqrt(x*x+y*y+z*z);
 	}
 
