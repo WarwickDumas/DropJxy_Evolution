@@ -20,10 +20,11 @@
 #define TEST_VISC_VERT 0
 #define TEST_EPSILON_Z_VERT 0
 #define TEST_EPSILON_Z_MINOR 0
+#define TEST_EPSILON_Y_MINOR 0
 // with this 1, or 0, it failed umder TEST_VISC
 
 #define TEST_VISC_VERT_deep (0)
-#define TEST_VISC_MINOR 0
+#define TEST_VISC_MINOR (0)
 #define TEST_VISC_deep (0)//(iMinor == CHOSEN) && (iSpecies == 1))
 #define DBG_ROC  (0) // (1)
 
@@ -33,9 +34,6 @@
 #define ALLOWABLE_v_DRIFT_RATE 1.0e9
 #define ALLOWABLE_v_DRIFT_RATE_ez 1.0e11
 
-#define SQRTNV
-#define SQRTNT           1
-//#define LIBERALIZED_VISC_SOLVER 
 
 // Note that we have not reconditioned the solver to aim to reduce epsilon in different dimensions differently. It is a bit iffy to have a solver
 // that aims at a different criterion than the threshold applied.
@@ -4616,7 +4614,7 @@ kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species(
 					next_v = shared_v[izTri[inext] - StartMinor];
 					nextpos = shared_pos[izTri[inext] - StartMinor];
 #if TEST_VISC_VERT
-					if ((iVertex == VERTCHOSEN) && (iSpecies == 2)) 
+					if ((iVertex == lChosen - BEGINNING_OF_CENTRAL) && (iSpecies == 2))
 						printf("inext %d  izTri[inext] %d tri_len %d nextpos %1.9E %1.9E\n", inext, izTri[inext], tri_len,
 						nextpos.x, nextpos.y);
 #endif
@@ -4628,7 +4626,7 @@ kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species(
 					else { next_v.z = temp.vez; };
 					nextpos = p_info_minor[izTri[inext]].pos;
 #if TEST_VISC_VERT
-					if ((iVertex == VERTCHOSEN) && (iSpecies == 2)) 
+					if ((iVertex == lChosen - BEGINNING_OF_CENTRAL) && (iSpecies == 2))
 						printf("inext %d II izTri[inext] %d tri_len %d\n", inext, izTri[inext], tri_len);
 #endif
 				}
@@ -4688,7 +4686,7 @@ kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species(
 						if (TestDomainPos(prevpos) == false) {
 
 #if TEST_VISC_VERT
-							if ((iVertex == VERTCHOSEN) && (iSpecies == 2))
+							if ((iVertex == lChosen - BEGINNING_OF_CENTRAL) && (iSpecies == 2))
 								printf("(TestDomainPos(prevpos) == false) vx ours next opp %1.10E %1.10E %1.10E\n",
 									shared_v_verts[threadIdx.x].x, next_v.x, opp_v.x);
 #endif
@@ -4716,7 +4714,7 @@ kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species(
 						else {
 							if (TestDomainPos(nextpos) == false) {
 #if TEST_VISC_VERT
-								if ((iVertex == VERTCHOSEN) && (iSpecies == 2))
+								if ((iVertex == lChosen - BEGINNING_OF_CENTRAL) && (iSpecies == 2))
 									printf("(TestDomainPos(nextpos) == false) vx prev ours opp %1.10E %1.10E %1.10E\n",
 										prev_v.x, shared_v_verts[threadIdx.x].x, opp_v.x);
 #endif
@@ -4741,7 +4739,7 @@ kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species(
 							}
 							else {
 #if TEST_VISC_VERT
-								if ((iVertex == VERTCHOSEN) && (iSpecies == 2))
+								if ((iVertex == lChosen - BEGINNING_OF_CENTRAL) && (iSpecies == 2))
 									printf("standard edge izTri[i] %d ; vy prev ours next opp %1.10E %1.10E %1.10E %1.10E\n",
 										izTri[i], prev_v.y, shared_v_verts[threadIdx.x].y, next_v.y, opp_v.y);
 #endif
@@ -4768,7 +4766,7 @@ kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species(
 							};
 						};
 #if TEST_VISC_VERT
-						if ((iVertex == VERTCHOSEN) && (iSpecies == 2))
+						if ((iVertex == lChosen - BEGINNING_OF_CENTRAL) && (iSpecies == 2))
 							printf("%d %d %d vz psno %1.12E %1.12E %1.12E %1.12E gradvz %1.12E %1.12E\n"
 								"prevpos %1.10E %1.10E info.pos %1.10E %1.10E nextpos %1.10E %1.10E opppos %1.10E %1.10E\n",
 								//"gradvx %1.12E %1.12E gradvz %1.12E %1.12E vz %1.9E %1.9E %1.9E %1.9E\n"
@@ -4897,7 +4895,7 @@ kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species(
 
 						// check result is the same when this printf is added:
 
-							if ((iVertex == VERTCHOSEN) && (iSpecies == 2))
+							if ((iVertex == lChosen - BEGINNING_OF_CENTRAL) && (iSpecies == 2))
 							{
 								//f64 Pi_zx, Pi_zy;
 								f64 Pi_xx, Pi_xy; f64 Pi_yx, Pi_yy, Pi_zx, Pi_zy;
@@ -5165,7 +5163,7 @@ kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species(
 
 								//if (((TEST_EPSILON_Y) || (TEST_EPSILON_X)) && (iSpecies == 1)) 
 #if TEST_VISC_VERT
-							if ((iVertex == VERTCHOSEN) && (iSpecies == 2)) {
+							if ((iVertex == lChosen - BEGINNING_OF_CENTRAL) && (iSpecies == 2)) {
 								printf("iVertex %d %d tri %d species %d ita_par %1.9E \n"
 									"omega %1.9E %1.9E %1.9E nu %1.11E ourpos %1.8E %1.8E \n"
 									"unit_b %1.8E %1.8E %1.8E unit_perp %1.8E %1.7E %1.7E unit_Hall %1.6E %1.6E %1.6E\n",
@@ -5555,7 +5553,7 @@ kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species(
 #endif
 
 #if TEST_VISC_MINOR
-						if ((iMinor == CHOSEN) && (iSpecies == 2))
+						if ((iMinor == lChosen) && (iSpecies == 2))
 
 							printf("%d %d %d "
 								"prevpos %1.10E %1.10E info.pos %1.10E %1.10E nextpos %1.10E %1.10E opppos %1.10E %1.10E\n"
@@ -5634,7 +5632,7 @@ kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species(
 
 							ownrates_visc += visc_contrib;
 #if TEST_VISC_MINOR
-							if ((iMinor == CHOSEN) && (iSpecies == 2))
+							if ((iMinor == lChosen) && (iSpecies == 2))
 								printf("%d %d %d unmag visc_contrib.z %1.10E Pi_zx %1.10E Pi_zy %1.10E edgenml %1.8E %1.8E\n",
 									iMinor, i, izNeighMinor[i], visc_contrib.z, -ita_par*gradvz.x*edge_normal.x, -ita_par*gradvz.y*edge_normal.y, edge_normal.x, edge_normal.y);
 							// This is the guilty one -- on its own it makes the difference.
@@ -5781,7 +5779,7 @@ kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species(
 										W_PP -= 2.0*THIRD*dvb_by_db;
 										W_HH -= 2.0*THIRD*dvb_by_db;
 #if TEST_VISC_MINOR
-										if (0)//iMinor == CHOSEN) 
+										if ((iMinor == lChosen) && (iSpecies == 2))
 											printf("%d %d : dvb/db %1.10E dvP/db %1.10E dvH/db %1.10E --> \n"
 												"Wbb %1.9E WbP %1.9E WbH %1.9E WPP %1.9E WHH %1.9E \n",
 												iMinor, i, dvb_by_db, dvperp_by_db, dvHall_by_db, W_bb, W_bP, W_bH, W_PP, W_HH);
@@ -5807,7 +5805,7 @@ kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species(
 										W_PH += dvHall_by_dperp;
 
 #if TEST_VISC_MINOR
-										if (0)//((iMinor == CHOSEN) && (iSpecies == 2))
+										if ((iMinor == lChosen) && (iSpecies == 2))
 											printf("%d %d : dvb/dP %1.10E dvP/dP %1.10E dvH/dP %1.10E --> \n"
 												"Wbb %1.9E WbP %1.9E WPP %1.9E WHH %1.9E WPH %1.9E\n",
 												iMinor, i, dvb_by_dperp, dvperp_by_dperp, dvHall_by_dperp,
@@ -5885,9 +5883,10 @@ kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species(
 								momflux_Hall = -(Pi_H_b*mag_edge.x + Pi_H_P*mag_edge.y + Pi_H_H*mag_edge.z);
 
 #if TEST_VISC_MINOR
-								if (0) printf("%d %d %d mag_edge.bPH %1.8E %1.8E %1.8E momflux.bPH %1.9E %1.9E %1.9E\n",
-									iMinor, i, izNeighMinor[i], mag_edge.x, mag_edge.y, mag_edge.z,
-									momflux_b, momflux_perp, momflux_Hall);
+								if ((iMinor == lChosen) && (iSpecies == 2)) 
+									printf("%d %d %d mag_edge.bPH %1.8E %1.8E %1.8E momflux.bPH %1.9E %1.9E %1.9E\n",
+										iMinor, i, izNeighMinor[i], mag_edge.x, mag_edge.y, mag_edge.z,
+										momflux_b, momflux_perp, momflux_Hall);
 #endif
 							}
 
@@ -5905,7 +5904,7 @@ kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species(
 							visc_contrib.z = over_m_s*(unit_b.z*momflux_b + unit_perp.z*momflux_perp + unit_Hall.z*momflux_Hall);
 
 #if TEST_VISC_MINOR
-							if ((iMinor == CHOSEN) && (iSpecies == 2))
+							if ((iMinor == lChosen) && (iSpecies == 2))
 								printf("%d %d : mag visc_ctb xyz %1.10E %1.10E %1.10E | unit_b %1.9E %1.9E unit_P %1.9E %1.9E\n"
 									"=================================+++++++++++++++\n",
 									iMinor, i, visc_contrib.x, visc_contrib.y, visc_contrib.z, unit_b.x, unit_b.y, unit_perp.x, unit_perp.y);
@@ -9365,7 +9364,11 @@ kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species_dbydbeta_z(
 								);
 							};
 						};
-
+						
+#if TESTZDERIVZVISCVERT
+						if (iMinor == CHOSEN) printf("prev_v %1.9E ours %1.9E next %1.9E opp %1.9E REGR %1.9E %1.9E %1.9E %1.9E\n",
+							prev_v, shared_vz[threadIdx.x], next_v, opp_v, prev_x, shared_regr[threadIdx.x], next_x, opp_x);
+#endif
 #else
 						if (bLongi)
 						{
@@ -9460,8 +9463,8 @@ kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species_dbydbeta_z(
 								//visc_contrib.y = 0.0;
 								visc_contrib = -over_m_s*(Pi_zx*edge_normal.x + Pi_zy*edge_normal.y);
 
-								//	if (0)//iMinor == CHOSEN)
-								//		printf("CHOSEN unmag visc_contrib.z %1.8E \n", visc_contrib);
+									if (iMinor == CHOSEN)
+										printf("CHOSEN unmag visc_contrib.z %1.8E \n", visc_contrib);
 
 								ownrates_visc.z += visc_contrib;
 
@@ -9598,8 +9601,9 @@ kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species_dbydbeta_z(
 								visc_contrib.y = over_m_s*(unit_b.y*momflux_b + unit_perp.y*momflux_perp + unit_Hall.y*momflux_Hall);
 								visc_contrib.z = over_m_s*(unit_b.z*momflux_b + unit_perp.z*momflux_perp + unit_Hall.z*momflux_Hall);
 
-								//	if ((0) && (iMinor == CHOSEN)) printf("CHOSEN mag visc_contrib.z %1.8E \n", visc_contrib.z);
-
+#if TESTZDERIVZVISCVERT
+								if ((iMinor == CHOSEN)) printf("CHOSEN mag visc_contrib.z %1.8E \n", visc_contrib.z);
+#endif
 								ownrates_visc += visc_contrib;
 							};
 						};
@@ -9614,7 +9618,9 @@ kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species_dbydbeta_z(
 				opp_x = next_x;
 			};
 
-			//if (iMinor == CHOSEN) printf("CHOSEN ROCMAR.z %1.8E \n", ownrates_visc.z);
+#if TESTZDERIVZVISCVERT
+			if (iMinor == CHOSEN) printf("CHOSEN ROCMAR.z %1.8E \n", ownrates_visc.z);
+#endif
 
 			// UPDATE:
 			memcpy(&(p_ROCMAR[iMinor]), &(ownrates_visc), sizeof(f64_vec3));
@@ -11263,16 +11269,13 @@ __global__ void kernelCreateEquations(
 		coeff.x += sqrtN;
 		// Note that whereas ion flux was 3 dimensions contributing to 3 dimensions of flux,
 		// the equations are 4 dimensions contributing to 4 dimensions of residual.
-
-
+		
 		memcpy(&(eqns[4 * (EQNS_TOTAL + MAXRINGLEN)*(iOurEqn*4) + 4 * iOurEqn]), &coeff, sizeof(double4));
-
 		// Contribs to y residual:
 		memcpy(&ionfluxcoeff3, &(p_ionmomflux[3 * (EQNS_TOTAL + MAXRINGLEN)*(iOurEqn*3 + 1) + 3 * iOurEqn]),
 			sizeof(double3)); // half a bus!
 		memcpy(&elecfluxcoeff3, &(p_elecmomflux[3 * (EQNS_TOTAL + MAXRINGLEN)*(iOurEqn*3+1) + 3 * iOurEqn]),
-			sizeof(double3));
-		
+			sizeof(double3));		
 		coeff.x = factor_i*ionfluxcoeff3.x + factor_e*elecfluxcoeff3.x;
 		coeff.y = factor_i*ionfluxcoeff3.y + factor_e*elecfluxcoeff3.y;
 		coeff.z = factor_i*ionfluxcoeff3.z;
@@ -11325,7 +11328,6 @@ __global__ void kernelCreateEquations(
 		coeff.w = ROC_e*elecfluxcoeff3.z; // z component is viz -> eps iz , there is no vez->eps iz
 													 //Here add 1 or something;
 		coeff.w += sqrtN;
-//
 //#ifdef SQRTNV
 //		coeff.x *= sqrtN;
 //		coeff.y *= sqrtN;
@@ -11350,10 +11352,8 @@ __global__ void kernelCreateEquations(
 		{
 			iNeigh = izNeigh[j];
 			if (p_bSelectFlag[iNeigh]) {
-
 				// Note: there are 3 rows and 3 columns per cell.
 				iTheirIndex = p_eqn_index[iNeigh];
-
 				// contribution to x residual:
 				memcpy(&ionfluxcoeff3, &(p_ionmomflux[3 * (EQNS_TOTAL + MAXRINGLEN)*(iOurEqn*3) + 3 * iTheirIndex]),
 					sizeof(double3)); // half a bus!
@@ -11363,7 +11363,6 @@ __global__ void kernelCreateEquations(
 				coeff.y = factor_i*ionfluxcoeff3.y + factor_e*elecfluxcoeff3.y;
 				coeff.z = factor_i*ionfluxcoeff3.z;
 				coeff.w = factor_e*elecfluxcoeff3.z;
-//
 //#ifdef SQRTNV
 //				coeff.x *= sqrtN;
 //				coeff.y *= sqrtN;
@@ -13077,6 +13076,12 @@ __global__ void kernelComputeCombinedDEpsByDBeta(
 		Depsilon.viz = sqrtN*regriz + MAR_ion.z*ROC_i;
 		Depsilon.vez = sqrtN*regrez + MAR_elec.z*ROC_e;
 
+#if TESTZDERIVZVISCVERT
+		if (iMinor == CHOSEN) printf("\n&&&&&&&&&&&&&&&&&&&&&&&----------\n"
+			"iMinor %d Depsilon.vez %1.9E sqrtN %1.9E regrez %1.9E MAR_elec.z %1.9E ROC_e %1.9E\n",
+			iMinor, Depsilon.vez, sqrtN, regrez, MAR_elec.z, ROC_e);
+#endif
+
 #endif
 		//if ((iMinor == CHOSEN) && (DebugFlag))
 		//	printf("\nkernelCCdepsbydbeta %d regr.y %1.10E Depsilon.vxy.y %1.10E MAR_ion.y %1.10E MAR_elec.y %1.10E hsub/N %1.9E\n", CHOSEN, regrxy.y, Depsilon.vxy.y,
@@ -13091,6 +13096,12 @@ __global__ void kernelComputeCombinedDEpsByDBeta(
 	p_Depsilon_xy[iMinor] = Depsilon.vxy;
 	p_Depsilon_iz[iMinor] = Depsilon.viz;
 	p_Depsilon_ez[iMinor] = Depsilon.vez;
+
+#if TESTZDERIVZVISCVERT
+	if (iMinor == CHOSEN) printf("\n$$$$$$$$$$$$$$$$$$$$\n%d Depsilon.vez %1.10E\n", CHOSEN,
+		Depsilon.vez);
+#endif
+
 }
 
 // not beta
@@ -13677,6 +13688,25 @@ __global__ void kernelCreateNeutralInverseCoeffself(
 }
 
 
+__global__ void kernelCreateJacobiRegressorz_failonly
+(f64 * __restrict__ p_regr,
+	f64 * __restrict__ p_factor1,
+	f64 * __restrict__ p_factor2,
+	bool * __restrict__ p_bInclude
+	)
+{
+	long const iMinor = blockDim.x * blockIdx.x + threadIdx.x;
+	if (p_bInclude[iMinor]) {
+		p_regr[iMinor] = p_factor1[iMinor] * p_factor2[iMinor];
+	} else {
+		p_regr[iMinor] = 0.0;
+	};
+	//	if (0) { //((iMinor > BEGINNING_OF_CENTRAL) && ((iMinor - BEGINNING_OF_CENTRAL) % 8000 == 0)) {
+	//		printf("iVertex %d regr %1.10E factor1 %1.9E factor2 %1.9E \n",
+	//			iMinor-BEGINNING_OF_CENTRAL, p_regr[iMinor], p_factor1[iMinor], p_factor2[iMinor]);
+	//	}
+}
+
 __global__ void kernelCreateJacobiRegressorz
 (f64 * __restrict__ p_regr,
 	f64 * __restrict__ p_factor1,
@@ -13691,6 +13721,21 @@ __global__ void kernelCreateJacobiRegressorz
 
 }
 
+
+__global__ void kernelCreateJacobiRegressorxy_failonly
+(f64_vec2 * __restrict__ p_regr,
+	f64_vec2 * __restrict__ p_factoreps,
+	f64_tens2 * __restrict__ p_factor2,
+	bool * __restrict__ p_bInclude)
+{
+	long const iMinor = blockDim.x * blockIdx.x + threadIdx.x;
+	if (p_bInclude[iMinor]) {
+		p_regr[iMinor] = p_factor2[iMinor] * p_factoreps[iMinor];
+	} else {
+		f64_vec2 zero(0.0, 0.0);
+		p_regr[iMinor] = zero;
+	};
+}
 
 __global__ void kernelCreateJacobiRegressorxy
 (f64_vec2 * __restrict__ p_regr,
@@ -15035,7 +15080,7 @@ __global__ void kernelCreate_v_k_modified_with_fixed_flows(
 		vie.vxy += hsub*((MAR_ion.xypart()*m_ion + MAR_elec.xypart()*m_e) /
 			((m_ion + m_e)*N));
 		vie.viz += hsub*(MAR_ion.z / N);
-		vie.vez += + hsub*(MAR_elec.z / N);
+		vie.vez += hsub*(MAR_elec.z / N);
 
 		v_n += hsub*MAR_neut / Nn;
 
@@ -15197,6 +15242,11 @@ __global__ void kernelCreateEpsilon_Visc(
 
 		epsilon.vez = sqrtN*(vie.vez - vie_k.vez) + ROC_e * MAR_elec.z;
 
+#if TEST_EPSILON_Z_MINOR
+		if (iMinor == lChosen) printf("iMinor %d epsilon.vez %1.9E sqrtN %1.9E vie.vez %1.9E MAR_elec.z %1.9E ROC_e %1.9E\n",
+			iMinor, epsilon.vez, sqrtN, vie.vez, MAR_elec.z, ROC_e);
+#endif
+
 		f64_vec2 putative = ((MAR_ion.xypart()*m_ion + MAR_elec.xypart()*m_e) /
 			(m_ion + m_e));
 			
@@ -15204,7 +15254,7 @@ __global__ void kernelCreateEpsilon_Visc(
 		//((m_ion + m_e)*N));
 
 		epsilon.vxy = sqrtN*
-			(vie.vxy - vie_k.vxy) + putative*ROC_i;
+			(vie.vxy - vie_k.vxy) + putative*ROC_i; // ROC = -h/(sqrt(N) (1 + factor))
 		
 		//-(putative) /	(1.0 + FACTOR_DECAY*0.5*hsub*nu_in_MT*ratio_nn_ntot)
 				
@@ -15251,17 +15301,29 @@ __global__ void kernelCreateEpsilon_Visc(
 
 		}
 #endif
+#if TEST_EPSILON_Y_MINOR
+if (iMinor == lChosen) {
+	printf("%d epsxy %1.10E %1.10E vie.vxy %1.10E %1.10E vxyk %1.10E %1.10E sqrtN %1.9E \n"
+		"MAR_ion %1.10E %1.10E elec %1.8E %1.8E hsub %1.8E ROC_e %1.10E n.n %1.8E %1.8E AreaMinor %1.8E\n",
+		iMinor, epsilon.vxy.x, epsilon.vxy.y,
+		vie.vxy.x, vie.vxy.y, vie_k.vxy.x, vie_k.vxy.y,
+		sqrtN,
+		MAR_ion.x, MAR_ion.y, MAR_elec.x, MAR_elec.y,
+		hsub, ROC_e,
+		n_use.n, n_use.n_n, p_AreaMinor[iMinor]
+	);
+}
+#endif
 #if TEST_EPSILON_Z_MINOR
-		if (iMinor == CHOSEN) {
-			printf("%d epsilon.ez %1.10E move %1.9E vie.vez %1.12E vie_k.vez %1.12E sqrtN %1.10E hsub/N %1.14E N %1.9E "
-				"MAR_elec.z %1.10E factor %1.10E \n----------\n",
+		if (iMinor == lChosen) {
+			printf("%d epsilon.ez %1.10E vie.vez %1.12E vie_k.vez %1.12E rootNdiff %1.11E pred_diff %1.11E sqrtN %1.10E\n"
+				"MAR_elec.z %1.10E  hsub %1.8E ROC_e %1.10E \n--------n n.n %1.8E %1.8E AreaMinor %1.8E--------\n",
 				iMinor, epsilon.vez,
-				hsub*(MAR_elec.z) /
-				(N + N*FACTOR_DECAY*hsub*nu_en_MT*ratio_nn_ntot),
-				vie.vez, vie_k.vez, sqrtN, hsub / N, N,
-				MAR_elec.z, (1.0 + FACTOR_DECAY*hsub*nu_en_MT*ratio_nn_ntot)
-			);
-				
+				vie.vez, vie_k.vez, sqrtN*(vie.vez-vie_k.vez),
+				ROC_e * MAR_elec.z, sqrtN,							
+				MAR_elec.z, hsub, ROC_e,
+				n_use.n, n_use.n_n, p_AreaMinor[iMinor]
+			);				
 		}
 #endif
 		
@@ -15298,35 +15360,37 @@ __global__ void kernelCreateEpsilon_Visc(
 
 			// New test:
 			// Trouble is if we redefine the test then we have to redefine epsilon, which affects every routine.
-#ifndef SQRTNV
-			if (epsilon.vxy.x*epsilon.vxy.x > 0.0001*(hsub*hsub / (N*N))*mix.x*mix.x
-				+ ALLOWABLE_v_DRIFT_RATE*hsub*ALLOWABLE_v_DRIFT_RATE*hsub) bFail = true;
-			if (epsilon.vxy.y*epsilon.vxy.y > 0.0001*(hsub*hsub / (N*N))*mix.y*mix.y
-				+ ALLOWABLE_v_DRIFT_RATE*hsub*ALLOWABLE_v_DRIFT_RATE*hsub) bFail = true;
-
-			if (epsilon.viz*epsilon.viz > 0.0001*(hsub*hsub / (N*N))*MAR_ion.z*MAR_ion.z
-				+ ALLOWABLE_v_DRIFT_RATE*hsub*ALLOWABLE_v_DRIFT_RATE*hsub) bFail = true;
-			if (epsilon.vez*epsilon.vez > 0.0001*(hsub*hsub / (N*N))*MAR_elec.z*MAR_elec.z
-				+ ALLOWABLE_v_DRIFT_RATE_ez*hsub*ALLOWABLE_v_DRIFT_RATE_ez*hsub) bFail = true;
-
-
-			if (epsmixz*epsmixz > 0.00001*(hsub*hsub / (N*N))*mix.z*mix.z
-				+ ALLOWABLE_v_DRIFT_RATE*hsub*ALLOWABLE_v_DRIFT_RATE*hsub) bFail = true;
-			if (epsilon.vxy.dot(epsilon.vxy) > 0.00001*(hsub*hsub / (N*N))*mix.dotxy(mix)
-				+ ALLOWABLE_v_DRIFT_RATE*hsub*ALLOWABLE_v_DRIFT_RATE*hsub) bFail = true;
-#else
+//#ifndef SQRTNV
+//		//	if (epsilon.vxy.x*epsilon.vxy.x > 0.0001*(hsub*hsub / (N*N))*mix.x*mix.x
+//		//		+ ALLOWABLE_v_DRIFT_RATE*hsub*ALLOWABLE_v_DRIFT_RATE*hsub) bFail = true;
+//		//	if (epsilon.vxy.y*epsilon.vxy.y > 0.0001*(hsub*hsub / (N*N))*mix.y*mix.y
+//		//		+ ALLOWABLE_v_DRIFT_RATE*hsub*ALLOWABLE_v_DRIFT_RATE*hsub) bFail = true;
+//			if (epsilon.vxy.dot(epsilon.vxy) > 0.0001*(hsub*hsub / (N*N))*mix.dotxy(mix)
+//				+ ALLOWABLE_v_DRIFT_RATE*hsub*ALLOWABLE_v_DRIFT_RATE*hsub) bFail = true;
+//
+//			if (epsilon.viz*epsilon.viz > 0.0001*(hsub*hsub / (N*N))*MAR_ion.z*MAR_ion.z
+//				+ ALLOWABLE_v_DRIFT_RATE*hsub*ALLOWABLE_v_DRIFT_RATE*hsub) bFail = true;
+//			if (epsilon.vez*epsilon.vez > 0.0001*(hsub*hsub / (N*N))*MAR_elec.z*MAR_elec.z
+//				+ ALLOWABLE_v_DRIFT_RATE_ez*hsub*ALLOWABLE_v_DRIFT_RATE_ez*hsub) bFail = true;
+//
+//
+//			//Here is the thing --- we are comparing apples and oranges.
+//			//We actually need to compare epsilon with the change in v that is seen.
+//			// sqrtN* (vie.viz-vie_k.viz)
+//
+//
+//			//if (epsmixz*epsmixz > 0.0001*(hsub*hsub / (N*N))*mix.z*mix.z
+//			//	+ ALLOWABLE_v_DRIFT_RATE*hsub*ALLOWABLE_v_DRIFT_RATE*hsub) bFail = true;
+//#else
 
 #define RELPPN 1.0e-7
 #define LARGEPPN 1.0e-4
 #define FACTOR_D 8.0e14
-#define FACTOR_C 1.0e13
-			// FACTOR_C STEPPED UP FROM 1e12
+#define FACTOR_C 1.0e13  // FACTOR_C STEPPED UP FROM 1e12
 
-
-			// ie sqrtN putative/factor has to be close to sqrtN(vie-vie_k)
-
-			// OK -- did we ever take account of FACTOR_DECAY when we anticipated deps/dbeta? yes
-
+#define VERYLARGEPPN (0.08*0.08)
+#define PRETTYLARGEPPN (0.025*0.025)
+			
 			// Now suppose v-v_k < 0
 			// We allow for any putative/factor that is between 0 and v-v_k
 			// That means epsilon < 0 as v-v_k is greater in magnitude
@@ -15339,8 +15403,7 @@ __global__ void kernelCreateEpsilon_Visc(
 			// But epsilon < SQRTN v-vk as putation > 0
 			// So basically epsilon lies between 0 and sqrtN v-v_k
 
-
-
+			
 			// Fail :
 			// You are too far away on the perfect backward test
 			//    &&
@@ -15351,160 +15414,258 @@ __global__ void kernelCreateEpsilon_Visc(
 			//     AND
 			// EITHER you are NOT in the robust region
 			// OR you also fail a pansified test
-
-
-			if ((epsilon.vxy.x*epsilon.vxy.x > RELPPN*hsub*hsub*mix.x*mix.x / N
-				+ FACTOR_C*hsub*FACTOR_C*hsub)
 			
-				&&			
 
-#ifdef LIBERALIZED_VISC_SOLVER
-			// We do not fail if we pass the liberalized test:
-			// Accept move if MAR is within where backward thinks it should be, and 0.
-
-				// Now suppose v-v_k < 0
-				// We allow for any putative/factor that is between 0 and v-v_k
-				// That means epsilon < 0 as v-v_k is greater in magnitude
-				// But epsilon > sqrtN v-vk as putative < 0
-				// e.g. epsilon = -5 - (-3) = -2
-			(	(
-					(
-				(vie.vxy.x > vie_k.vxy.x) && 					
-				((epsilon.vxy.x < 0.0) || (putative.x < 0.0))					
-					) || (
-				(vie.vxy.x < vie_k.vxy.x) &&
-				((epsilon.vxy.x > 0.0) || (putative.x > 0.0))
-					)
-				)
-				||
-				((epsilon.vxy.x*epsilon.vxy.x > LARGEPPN*hsub*hsub*mix.x*mix.x / N
-					+ FACTOR_D*hsub*FACTOR_D*hsub))
-			)
-#else 
-				(1)
-#endif
-				)
-				bFail = true;
-
-			if ((epsilon.vxy.y*epsilon.vxy.y > RELPPN*hsub*hsub*mix.y*mix.y/N
+			bool bFail_x = true;
+			bool bFail_y = true;
+			bool bFail_iz = true;
+			bool bFail_ez = true;
+			
+			if (epsilon.vxy.x*epsilon.vxy.x < RELPPN*hsub*hsub*mix.x*mix.x / N
 				+ FACTOR_C*hsub*FACTOR_C*hsub)
-				&&
-#ifdef LIBERALIZED_VISC_SOLVER
-				// We do not fail if we pass the liberalized test:
-				// Accept move if MAR is within where backward thinks it should be, and 0.
+			{
+				// Note that not incorporating ROC factor means that this is quite a generous criterion?
+				bFail_x = false;
+			} else {
 
-				// Now suppose v-v_k < 0
-				// We allow for any putative/factor that is between 0 and v-v_k
-				// That means epsilon < 0 as v-v_k is greater in magnitude
-				// But epsilon > sqrtN v-vk as putative < 0
-				// e.g. epsilon = -5 - (-3) = -2
-			(	(
-				(
-					(vie.vxy.y > vie_k.vxy.y) &&
-					((epsilon.vxy.y < 0.0) || (putative.y < 0.0))
-					) || (
-					(vie.vxy.y < vie_k.vxy.y) &&
-					((epsilon.vxy.y > 0.0) || (putative.y > 0.0))
+#ifdef LIBERALIZED_VISC_SOLVER
+
+				if (!((
+					(
+					(vie.vxy.x > vie_k.vxy.x) &&
+						((epsilon.vxy.x < 0.0) || (putative.x < 0.0))
+						) || (
+						(vie.vxy.x < vie_k.vxy.x) &&
+							((epsilon.vxy.x > 0.0) || (putative.x > 0.0))
+							)
 					)
-				) ||
-				(epsilon.vxy.y*epsilon.vxy.y > LARGEPPN*hsub*hsub*mix.y*mix.y / N
-					+ FACTOR_D*hsub*FACTOR_D*hsub)
-			)
-#else 
-				(1)
+					||
+					((epsilon.vxy.x*epsilon.vxy.x > LARGEPPN*hsub*hsub*mix.x*mix.x / N
+						+ FACTOR_D*hsub*FACTOR_D*hsub))
+					))
+					bFail_x = false;
+				// putative = mixed MAR
+
 #endif
-				)
-				bFail = true;
+#ifdef VERY_LIBERALIZED_VISC_SOLVER
+				if ((vie.vxy.x - vie_k.vxy.x)*epsilon.vxy.x < 0.0)
+				{
+					// proposal is between bwd and fwd
+					if ((epsilon.vxy.x*epsilon.vxy.x < VERYLARGEPPN*hsub*hsub*mix.x*mix.x / N
+						+ FACTOR_D*hsub*FACTOR_D*hsub))
+						bFail_x = false;
+				} else {
+					// proposal is beyond bwd
+					if ((epsilon.vxy.x*epsilon.vxy.x < PRETTYLARGEPPN*hsub*hsub*mix.x*mix.x / N
+						+ FACTOR_D*hsub*FACTOR_D*hsub))
+						bFail_x = false;
+				};
+#endif
+			};
+#if TEST_EPSILON_Y_MINOR
 
-			// whoa having to use braincells, could we just have put difference in sqrt N * 
-
-
-			// Why do we not have 2 goes of RELPPN?
-		
-
-			if ( (epsilon.viz*epsilon.viz > RELPPN*hsub*hsub*MAR_ion.z*MAR_ion.z / N
-				+ FACTOR_C*hsub*FACTOR_C*hsub) 
-
-				&&
+			if (iMinor == lChosen) printf("%d : relthresh1 %1.10E relthresh2 %1.10E absthresh %1.10E eps_vx^2 %1.10E %s\n",
+				iMinor,
+				VERYLARGEPPN*hsub*hsub*mix.x*mix.x / N,
+				PRETTYLARGEPPN*hsub*hsub*mix.x*mix.x / N,
+				FACTOR_D*hsub*FACTOR_D*hsub, epsilon.vxy.x*epsilon.vxy.x,
+				(bFail_x ? "True" : "False")
+			);
+#endif
+			if (epsilon.vxy.y*epsilon.vxy.y < RELPPN*hsub*hsub*mix.y*mix.y / N
+				+ FACTOR_C*hsub*FACTOR_C*hsub)
+			{
+				// Note that not incorporating ROC factor means that this is quite a generous criterion?
+				bFail_y = false;
+			} else {
 
 #ifdef LIBERALIZED_VISC_SOLVER
-				// We do not fail if we pass the liberalized test:
-				// Accept move if MAR is within where backward thinks it should be, and 0.
 
-				// Now suppose v-v_k < 0
-				// We allow for any putative/factor that is between 0 and v-v_k
-				// That means epsilon < 0 as v-v_k is greater in magnitude
-				// But epsilon > sqrtN v-vk as putative < 0
-				// e.g. epsilon = -5 - (-3) = -2
-			(	(
+				if (!((
+					(
+					(vie.vxy.y > vie_k.vxy.y) &&
+						((epsilon.vxy.y < 0.0) || (putative.y < 0.0))
+						) || (
+						(vie.vxy.y < vie_k.vxy.y) &&
+							((epsilon.vxy.y > 0.0) || (putative.y > 0.0))
+							)
+					) ||
+					(epsilon.vxy.y*epsilon.vxy.y > LARGEPPN*hsub*hsub*mix.y*mix.y / N
+						+ FACTOR_D*hsub*FACTOR_D*hsub)
+					))
+					bFail_y = false;
+				// putative = mixed MAR
+
+#endif
+#ifdef VERY_LIBERALIZED_VISC_SOLVER
+				if ((vie.vxy.y - vie_k.vxy.y)*epsilon.vxy.y < 0.0)
+				{
+					// proposal is between bwd and fwd
+					if ((epsilon.vxy.y*epsilon.vxy.y < VERYLARGEPPN*hsub*hsub*mix.y*mix.y / N
+						+ FACTOR_D*hsub*FACTOR_D*hsub))
+						bFail_y = false;
+				}
+				else {
+					// proposal is beyond bwd
+					if ((epsilon.vxy.y*epsilon.vxy.y < PRETTYLARGEPPN*hsub*hsub*mix.y*mix.y / N
+						+ FACTOR_D*hsub*FACTOR_D*hsub))
+						bFail_y = false;
+				};
+#endif
+			};
+#if TEST_EPSILON_Y_MINOR
+
+			if (iMinor == lChosen) printf("%d : relthresh1 %1.10E relthresh2 %1.10E absthresh %1.10E eps_vy^2 %1.10E %s\n",
+				iMinor,
+				VERYLARGEPPN*hsub*hsub*mix.y*mix.y / N,
+				PRETTYLARGEPPN*hsub*hsub*mix.y*mix.y / N,
+				FACTOR_D*hsub*FACTOR_D*hsub, epsilon.vxy.y*epsilon.vxy.y,
+				(bFail_y?"True":"False")
+			);
+#endif
+
+			if (epsilon.viz*epsilon.viz < RELPPN*hsub*hsub*MAR_ion.z*MAR_ion.z / N
+				+ FACTOR_C*hsub*FACTOR_C*hsub)
+			{
+				// Note that not incorporating ROC factor means that this is quite a generous criterion?
+				bFail_iz = false;
+			}
+			else {
+
+#ifdef LIBERALIZED_VISC_SOLVER
+
+				if (!((
 					(
 					(vie.viz > vie_k.viz) &&
-					((epsilon.viz < 0.0) || (MAR_ion.z < 0.0))
-					) || (
-					(vie.viz < vie_k.viz) &&
-					((epsilon.viz > 0.0) || (MAR_ion.z > 0.0))
-					)
-				) || 
-				(epsilon.viz*epsilon.viz > LARGEPPN*hsub*hsub*MAR_ion.z*MAR_ion.z / N
-					+ FACTOR_D*hsub*FACTOR_D*hsub)
-			)
-#else 
-				(1)
+						((epsilon.viz < 0.0) || (MAR_ion.z < 0.0))
+						) || (
+						(vie.viz < vie_k.viz) &&
+							((epsilon.viz > 0.0) || (MAR_ion.z > 0.0))
+							)
+					) ||
+					(epsilon.viz*epsilon.viz > LARGEPPN*hsub*hsub*MAR_ion.z*MAR_ion.z / N
+						+ FACTOR_D*hsub*FACTOR_D*hsub)
+					))
+					bFail_iz = false;
+				// putative = mixed MAR
+
 #endif
-				)
-				bFail = true;
+#ifdef VERY_LIBERALIZED_VISC_SOLVER
+				if ((vie.viz - vie_k.viz)*epsilon.viz < 0.0)
+				{
+					// proposal is between bwd and fwd
+					if ((epsilon.viz*epsilon.viz < VERYLARGEPPN*hsub*hsub*MAR_ion.z*MAR_ion.z / N
+						+ FACTOR_D*hsub*FACTOR_D*hsub))
+						bFail_iz = false;
+				}
+				else {
+					// proposal is beyond bwd
+					if ((epsilon.viz*epsilon.viz < PRETTYLARGEPPN*hsub*hsub*MAR_ion.z*MAR_ion.z / N
+						+ FACTOR_D*hsub*FACTOR_D*hsub))
+						bFail_iz = false;
+				};
+#endif
+			};
+#if TEST_EPSILON_Z_MINOR
 
-			if ((epsilon.vez*epsilon.vez > RELPPN*hsub*hsub*MAR_elec.z*MAR_elec.z/N
-				+ FACTOR_C*hsub*FACTOR_C*hsub) 
+			if (iMinor == lChosen) printf("%d : relthresh1 %1.10E relthresh2 %1.10E absthresh %1.10E eps_viz^2 %1.10E %s\n",
+				iMinor,
+				VERYLARGEPPN*hsub*hsub*MAR_ion.z*MAR_ion.z/N,
+				PRETTYLARGEPPN*hsub*hsub*MAR_ion.z*MAR_ion.z / N,
+				FACTOR_D*hsub*FACTOR_D*hsub, epsilon.viz*epsilon.viz,
+				(bFail_iz?"True":"False")
+			);
+#endif
 
-				&&
+			if (epsilon.vez*epsilon.vez < RELPPN*hsub*hsub*MAR_elec.z*MAR_elec.z / N
+				+ FACTOR_C*hsub*FACTOR_C*hsub)
+			{
+				// Note that not incorporating ROC factor means that this is quite a generous criterion?
+				bFail_ez = false;
+			}
+			else {
 
 #ifdef LIBERALIZED_VISC_SOLVER
-				// We do not fail if we pass the liberalized test:
-				// Accept move if MAR is within where backward thinks it should be, and 0.
 
-				// Now suppose v-v_k < 0
-				// We allow for any putative/factor that is between 0 and v-v_k
-				// That means epsilon < 0 as v-v_k is greater in magnitude
-				// But epsilon > sqrtN v-vk as putative < 0
-				// e.g. epsilon = -5 - (-3) = -2
-			(	(
-				(
+				if (!((
+					(
 					(vie.vez > vie_k.vez) &&
-					((epsilon.vez < 0.0) || (MAR_elec.z < 0.0))
-					) || (
-					(vie.vez < vie_k.vez) &&
-					((epsilon.vez > 0.0) || (MAR_elec.z > 0.0))
+						((epsilon.vez < 0.0) || (MAR_elec.z < 0.0))
+						) || (
+						(vie.vez < vie_k.vez) &&
+							((epsilon.vez > 0.0) || (MAR_elec.z > 0.0))
+							)
 					)
-				)
-				|| ((epsilon.vez*epsilon.vez > LARGEPPN*hsub*hsub*MAR_elec.z*MAR_elec.z / N
-					+ FACTOR_D*hsub*FACTOR_D*hsub))
-			)
-#else 
-				(1)
+					|| ((epsilon.vez*epsilon.vez > LARGEPPN*hsub*hsub*MAR_elec.z*MAR_elec.z / N
+						+ FACTOR_D*hsub*FACTOR_D*hsub))
+					))
+					bFail_ez = false;
+
 #endif
-				)				
-				bFail = true;
+#ifdef VERY_LIBERALIZED_VISC_SOLVER
+				if ((vie.vez - vie_k.vez)*epsilon.vez < 0.0)
+				{
+					// proposal is between bwd and fwd
+					if ((epsilon.vez*epsilon.vez < VERYLARGEPPN*hsub*hsub*MAR_elec.z*MAR_elec.z / N
+						+ FACTOR_D*hsub*FACTOR_D*hsub))
+						bFail_ez = false;
+
+					// Maybe not leaving enough tolerance for FP error.
+
+					// FP error = vez*1e-13*sqrtN. So This could be 1e-2.
+					// But we already have FACTOR_D*hsub which is more like 1e+2.
+
+
+					// Improvement needed: go back and make it so that we do not assume
+					// that MAR is small side; take geometric average ie product of MAR with vdiff.
+					
+				}
+				else {
+					// proposal is beyond bwd
+					if ((epsilon.vez*epsilon.vez < PRETTYLARGEPPN*hsub*hsub*MAR_elec.z*MAR_elec.z / N
+						+ FACTOR_D*hsub*FACTOR_D*hsub))
+						bFail_ez = false;
+				};
+#endif
+			};
+#if TEST_EPSILON_Z_MINOR
+
+			if (iMinor == lChosen) printf("%d : relthresh1 %1.10E relthresh2 %1.10E absthresh %1.10E eps_vez^2 %1.10E %s \n",
+				iMinor,
+				VERYLARGEPPN*hsub*hsub*MAR_elec.z*MAR_elec.z / N,
+				PRETTYLARGEPPN*hsub*hsub*MAR_elec.z*MAR_elec.z / N,
+				FACTOR_D*hsub*FACTOR_D*hsub, epsilon.vez*epsilon.vez,
+				(bFail_ez ? "True" : "False")
+			);
+#endif
+
+
+			bFail = (bFail_x || bFail_y || bFail_iz || bFail_ez);
+
+			// Trying to do this now.
 			
-			// we multiplied target by sqrtN*sqrtN.
-
-		//	if (epsmixz*epsmixz > RELPPN*hsub*hsub*mix.z*mix.z/N
-		//		+ FACTOR_C*hsub*FACTOR_C*hsub) bFail = true;
-			// That serves no obvious purpose, we have fail tests for viz and vez individually.
-
-#ifndef LIBERALIZED_VISC_SOLVER
-			if (epsilon.vxy.dot(epsilon.vxy) > RELPPN*hsub*hsub*mix.dotxy(mix)/N
-				+ FACTOR_C*hsub*FACTOR_C*hsub) bFail = true;
-#endif
+				// We do not fail if we pass the liberalized test:
 			
-#endif
-			// We allow a 0.1-1% deviation from trajectory over time.
-
-			// Previous threshold: 1e-14*(v^2 + 1e4) . absolute part 1e-10 vs
+				// Previous threshold: 1e-14*(v^2 + 1e4) . absolute part 1e-10 vs
 			// 1e(18-24).
 			// REL_THRESHOLD_VISC*REL_THRESHOLD_VISC*(v_n.dot(v_n) + 1.0e4))))
 
-			if (bFail) p_bFailedTest[blockIdx.x] = true;
+//
+//			For debugging purposes we are going to need to modify this to outputting individual
+//				values.
+//				We could do with going further to output a code to see which things failed.
+//
+//				need to be real about FP error in eps as a result of FP error in velocity.
+//				Are we being ?
+//
+
+				/*
+				if (bFail) p_bFailedTest[blockIdx.x] = true;
+				*/
+			p_bFailedTest[iMinor] = bFail;
+
+			// 20:11
+
 		};
 
 	} else {
@@ -15738,7 +15899,8 @@ __global__ void kernelCreateEpsilon_NeutralVisc(
 			if (epsilon.x*epsilon.x > 0.0001*(hsub*hsub / (N*N))*MAR_neut.x*MAR_neut.x
 				+ ALLOWABLE_v_DRIFT_RATE*hsub*ALLOWABLE_v_DRIFT_RATE*hsub) {
 
-#ifdef LIBERALIZED_VISC_SOLVER
+#ifdef VERY_LIBERALIZED_VISC_SOLVER_NEUT
+//#ifdef LIBERALIZED_VISC_SOLVER 
 				if ((
 					(	
 						((v_n.x > v_n_k.x) && 
@@ -15752,12 +15914,13 @@ __global__ void kernelCreateEpsilon_NeutralVisc(
 				   ) ||
 					(epsilon.x*epsilon.x > 0.001*(hsub*hsub / (N*N))*MAR_neut.x*MAR_neut.x
 						+ 80.0*80.0*ALLOWABLE_v_DRIFT_RATE*hsub*ALLOWABLE_v_DRIFT_RATE*hsub))
+//#endif
 #endif
 				bFail = true;
 			}
 			if (epsilon.y*epsilon.y > 0.0001*(hsub*hsub / (N*N))*MAR_neut.y*MAR_neut.y
 				+ ALLOWABLE_v_DRIFT_RATE*hsub*ALLOWABLE_v_DRIFT_RATE*hsub) {
-#ifdef LIBERALIZED_VISC_SOLVER
+#ifdef VERY_LIBERALIZED_VISC_SOLVER_NEUT
 				if ((
 					(
 					((v_n.y > v_n_k.y) &&
@@ -15775,7 +15938,7 @@ __global__ void kernelCreateEpsilon_NeutralVisc(
 			};
 			if (epsilon.z*epsilon.z > 0.0001*(hsub*hsub / (N*N))*MAR_neut.z*MAR_neut.z
 				+ ALLOWABLE_v_DRIFT_RATE*hsub*ALLOWABLE_v_DRIFT_RATE*hsub) {
-#ifdef LIBERALIZED_VISC_SOLVER
+#ifdef VERY_LIBERALIZED_VISC_SOLVER_NEUT
 				if ( (
 					(
 					((v_n.z > v_n_k.z) &&
@@ -15792,7 +15955,7 @@ __global__ void kernelCreateEpsilon_NeutralVisc(
 				bFail = true;
 			};
 
-#ifndef LIBERALIZED_VISC_SOLVER
+#ifndef VERY_LIBERALIZED_VISC_SOLVER_NEUT
 			if (epsilon.dot(epsilon) > (0.00001*(hsub*hsub / (N*N))*MAR_neut.dot(MAR_neut)
 				+ ALLOWABLE_v_DRIFT_RATE*hsub*ALLOWABLE_v_DRIFT_RATE*hsub)) bFail = true;
 #endif
@@ -15815,7 +15978,7 @@ __global__ void kernelCreateEpsilon_NeutralVisc(
 			//			epsilon.x, epsilon.y, epsilon.z, v_n.x - v_n_k.x, v_n.y - v_n_k.y, v_n.z - v_n_k.z
 			//			);
 
-			if (bFail) p_bFailedTest[blockIdx.x] = true;
+			if (bFail) p_bFailedTest[iMinor] = true;
 		};
 	}
 	else {
@@ -17024,14 +17187,14 @@ __global__ void CreateLC4(
 	for (int i = 0; i < REGRESSORS; i++)
 	{
 		xy = p_regr2[NMINOR*i + iMinor];
-iz = p_regr_iz[NMINOR*i + iMinor];
-ez = p_regr_ez[NMINOR*i + iMinor];
-lcxy += beta_n_c[i] * xy;
-lciz += beta_n_c[i] * iz;
-lcez += beta_n_c[i] * ez;
-
-//		if (iMinor == VERTCHOSEN + BEGINNING_OF_CENTRAL) printf("iMinor %d: ez %1.8E beta[i] %1.8E lcez %1.8E\n",
-//			iMinor, ez, beta_n_c[i], lcez);
+		iz = p_regr_iz[NMINOR*i + iMinor];
+		ez = p_regr_ez[NMINOR*i + iMinor];
+		lcxy += beta_n_c[i] * xy;
+		lciz += beta_n_c[i] * iz;
+		lcez += beta_n_c[i] * ez;
+		
+		//if (iMinor == CHOSEN) printf("iMinor %d: ez %1.8E beta[i] %1.8E lcez %1.8E\n",
+		//								iMinor, ez, beta_n_c[i], lcez);
 	};
 	p_regrlc2_[iMinor] = lcxy;
 	p_regrlc_iz_[iMinor] = lciz;

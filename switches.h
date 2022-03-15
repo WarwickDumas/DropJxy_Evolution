@@ -16,16 +16,19 @@
 #define DEBUGTE               0
 #define SQRTNT           1
 #define SQRTNV 
-#define EQNS_TOTAL 320 // 1024
-#define INNER_EQNS 240 // 512   // half inside, half outside
+#define EQNS_TOTAL 288 // 1024
+#define INNER_EQNS 192 // 512   // half inside, half outside
 #define MAXRINGS    96
-#define MAXRINGLEN  384  // Note that this is also the max # on the periphery.
+#define MAXRINGLEN  256  // Note that this is also the max # on the periphery.
 
-#define LIBERALIZED_VISC_SOLVER
+#define VERY_LIBERALIZED_VISC_SOLVER
+#define VERY_LIBERALIZED_VISC_SOLVER_NEUT
+//#define NO_ION_ELEC_VISC
 
-#define CHOSEN 8
-#define CHOSEN1 14332
-#define CHOSEN2 14334 
+
+#define CHOSEN 120659
+#define CHOSEN1 52911
+#define CHOSEN2 52876 
 
 #define VERTCHOSEN 8
 #define VERTCHOSEN2 50
@@ -41,6 +44,7 @@
 #define TEST_OVERALL_V (0) //index == 38799)
 #define FOUR_PI 12.5663706143592
 
+#define TESTZDERIVZVISCVERT (0)
 #define TEST  (0) // iVertex == VERTCHOSEN) 
 #define TEST_ELEC_VISC_TRI (0) //iMinor == CHOSEN)
 #define TESTNEUTVISC2 (0) // iMinor == CHOSEN)
@@ -54,7 +58,7 @@
 #define TESTADVECTNEUT (0) //iVertex == VERTCHOSEN)
 #define TESTIONVERTVISC (0)//(iVertex == VERTCHOSEN)
 #define TESTNEUTVISC (0) // iVertex == VERTCHOSEN) 
-#define TESTVISC (0) // iMinor == VERTCHOSEN + BEGINNING_OF_CENTRAL)
+#define TESTVISC (0)
 #define TESTIONVISC (0) 
 #define TESTHEAT (0)
 #define TESTHEATFULL (0)

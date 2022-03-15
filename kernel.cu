@@ -31507,6 +31507,8 @@ __global__ void kernelAccumulateSummandsVisc(
 	f64 * __restrict__ p_sum_product_matrix_
 )
 {
+	// Called with << <numTilesMinor, threadsPerTileMinor / 4 >> >
+
 	__shared__ f64 sumdata_eps_deps[threadsPerTileMinor / 4][REGRESSORS];
 	__shared__ f64 sum_product[threadsPerTileMinor / 4][REGRESSORS][REGRESSORS];
 	// Call with threadsPerTileMinor/4
@@ -31564,8 +31566,6 @@ __global__ void kernelAccumulateSummandsVisc(
 			sum_product[threadIdx.x][i][j] += depsbydbeta2[i].dot(depsbydbeta2[j])
 			+ depsbydbeta[i] * depsbydbeta[j] + depsbydbeta_e[i] * depsbydbeta_e[j];
 	};
-
-
 
 
 	eps_xy = p_eps_xy[iMinor + threadsPerTileMinor / 2];

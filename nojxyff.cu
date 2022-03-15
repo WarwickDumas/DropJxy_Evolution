@@ -195,13 +195,19 @@ bool boolGlobalHistory, GlobalboolDisplayMeshWireframe;
 // avi file -oriented variables
 //HAVI hAvi[NUMAVI + 1]; // does it work without OHMSLAW? //  OHMSLAW,
 int const GraphFlags[NUMAVI] = { SPECIES_ION, OVERALL, JZAZBXYEZ, ONE_D, IONIZEGRAPH,
-DTGRAPH, ACCELGRAPHS, OHMS2, ARELZ };
+DTGRAPH, ACCELGRAPHS, OHMS2, ARELZ, PLAN_N };
 #ifdef OSCILLATE_IZ
+#ifdef NO_ION_ELEC_VISC
+
+WCHAR szmp4[NUMAVI][128] = { L"onElec",L"onTotal",L"onJzAzBxy",L"onTest",
+L"onIonize", L"ondT", L"onAccel", L"onOhms", L"onarelz", L"on_dens" };
+#else
 WCHAR szmp4[NUMAVI][128] = { L"oElec",L"oTotal",L"oJzAzBxy",L"oTest",
-L"oIonize", L"odT", L"oAccel", L"oOhms", L"oarelz" };
+L"oIonize", L"odT", L"oAccel", L"oOhms", L"oarelz", L"o_dens" };
+#endif
 #else
 WCHAR szmp4[NUMAVI][128] = { L"Elec",L"Total",L"JzAzBxy",L"Test",
-L"Ionize", L"dT", L"Accel",	L"Ohms", L"arelz" };
+L"Ionize", L"dT", L"Accel",	L"Ohms", L"arelz", L"dens" };
 #endif
 //AVICOMPRESSOPTIONS opts;
 int counter;
@@ -425,20 +431,20 @@ HRESULT InitializeSinkWriter(
 		printf("pSinkWriter->BeginWriting() failed!\n");
 		return hr;
 	}
-
+	   
 	// Return the pointer to the caller.
 	if (SUCCEEDED(hr)) {
 		*ppWriter = pSinkWriter;
 		(*ppWriter)->AddRef();
 		*pStreamIndex = streamIndex;
 	}
-
+	   
 	SafeRelease(&pSinkWriter);
 	SafeRelease(&pMediaTypeOut);
 	SafeRelease(&pMediaTypeIn);
 	return hr;
 }
-
+   
 HRESULT WriteFrame(
 	IMFSinkWriter *pWriter,
 	DWORD streamIndex,
@@ -642,6 +648,7 @@ void Draw1Dgraph(int iWhichGraph, int flag)
 		"Ez_ext effect", "dAz/dt effect","v x B effect", "thermal force effect", "friction to neutrals",
 		"friction_ei", "sum of effects", "difference (error)" };
 
+	char densgraphname[5][128] = { "n_ion", "n_total", "vr_ion", "vr_total", "ionization dn/dt" };
 
 	char buffer[256];
 	float x, y, z;
@@ -666,6 +673,18 @@ void Draw1Dgraph(int iWhichGraph, int flag)
 		colourlist[2] = 0xffff0055;
 		colourlist[3] = 0xff22ff00;
 	};
+	if (flag == DENS1DGRAPH) {
+		numgraphs = 2;// debug
+		for (int i = 0; i < numgraphs; i++)
+			sprintf(namelist[i], "%s   : graph max&min = +- %1.3E",
+				densgraphname[i], maximum[i]);
+		colourlist[0] = 0xff0000ff; // n
+		colourlist[1] = 0xff000000; // total
+//		colourlist[2] = 0xff00dd44; // vr_ion
+//		colourlist[3] = 0xff00ff00; // vr_total
+//		colourlist[4] = 0xffee3300; // ionization dn/dt
+	};
+
 	if (flag == DTGRAPH) {
 		numgraphs = 8;
 		for (int i = 0; i < numgraphs; i++)
@@ -770,6 +789,7 @@ void Draw1Dgraph(int iWhichGraph, int flag)
 	Direct3D.pd3dDevice->Clear(0, NULL, D3DCLEAR_TARGET | D3DCLEAR_ZBUFFER,
 		D3DCOLOR_XRGB(250, 255, 250), 1.0f, 0);
 
+
 	if (SUCCEEDED(Direct3D.pd3dDevice->BeginScene()))
 	{
 		Direct3D.pd3dDevice->SetFVF(point_fvf);
@@ -819,7 +839,6 @@ void Draw1Dgraph(int iWhichGraph, int flag)
 
 			Graph[iWhichGraph].RenderLabel2(namelist[iGraph], linedata[2].x + 0.1f, linedata[1].y - 0.3f, linedata[1].z, 0, 0xff000000, true);
 
-
 			int asdf;
 
 			if (flag != OHMSLAW) {
@@ -834,6 +853,8 @@ void Draw1Dgraph(int iWhichGraph, int flag)
 					linedata[asdf].z = 3.44f*xzscale;
 					linedata[asdf].colour = colourlist[iGraph];
 					if ((bAlternating[iGraph]) && (asdf % 3 == 1)) linedata[asdf].colour = 0xffffffff;
+
+
 				};
 				Direct3D.pd3dDevice->DrawPrimitiveUP(D3DPT_LINESTRIP, num_graph_data_points - 1, linedata, sizeof(vertex1));
 			}
@@ -911,8 +932,48 @@ void Draw1Dgraph(int iWhichGraph, int flag)
 }
 #endif
 
+
+void CreateFunctionals(TriMesh * pX)
+{
+	// Integrate and find total ion density:
+	// Find total ion heat energy;
+	// Find total ion outward momentum
+	plasma_data * p = pX->pData;
+	f64 N = 0.0, NT = 0.0, Nvr = 0.0, nr = 0.0, Nn = 0.0, NnTn = 0.0;
+	for (long i = 0; i < NUMVERTICES; i++)
+	{
+		f64_vec2 rhat = p[i + BEGINNING_OF_CENTRAL].pos;
+		f64 r = rhat.modulus();
+		if (r < 4.5) {
+			f64 N_ = p[i + BEGINNING_OF_CENTRAL].n*pX->X[i].AreaCell;
+			NT += N_*p[i + BEGINNING_OF_CENTRAL].Ti;
+			rhat /= r;
+			Nvr += N_*p[i + BEGINNING_OF_CENTRAL].vxy.dot(rhat);
+			nr += N_*r;
+			N += N_;
+
+			f64 Nn_ = p[i + BEGINNING_OF_CENTRAL].n_n*pX->X[i].AreaCell;
+			NnTn += Nn_*p[i + BEGINNING_OF_CENTRAL].Tn;
+			Nn += Nn_;
+		};
+	}
+	nr /= N;
+	f64 vir = Nvr / N;
+	f64 Ti = NT / N;
+	f64 Tn = NnTn / Nn;
+	printf("evaltime %1.10E N = %1.10E  NT = %1.10E Ti = %1.10E vr = %1.10E  avg r = %1.10E \n"
+		"Nn = %1.10E  NnTn = %1.10E Tn = %1.10E \n",
+		evaltime, N, NT, Ti, vir, nr, Nn, NnTn, Tn);
+	FILE * fp = fopen(Functionalfilename, "a");
+	fprintf(fp,"evaltime %1.10E N %1.10E  NT %1.10E Ti %1.10E vr %1.10E  avg r %1.10E "
+		"Nn %1.10E  NnTn %1.10E Tn %1.10E\n",
+		evaltime, N, NT, Ti, vir, nr, Nn, NnTn, Tn);
+	fclose(fp);
+}
+
+
 void Create1DGraphingData(TriMesh * pX, bool bTdata = false, bool bAcceldata = false,
-	bool bOhmsData = false, bool b_arelz_data = false)
+	bool bOhmsData = false, bool b_arelz_data = false, bool b_density = false)
 {
 	// Takes p_temphost3,4,5,6 and turns them into graphdata[iGraph=0,1,2,3][]
 
@@ -928,7 +989,7 @@ void Create1DGraphingData(TriMesh * pX, bool bTdata = false, bool bAcceldata = f
 
 	num_graph_data_points = pX->GetVertsRightOfCutawayLine_Sorted(VertexIndexArray, graph_r, true);
 
-	printf("Xebeques furious\n Number of points %d\n", num_graph_data_points);
+	printf("Xebeques furious. Number of points %d\n", num_graph_data_points);
 
 	memset(maximum, 0, sizeof(f64) * 20);
 
@@ -1032,7 +1093,7 @@ void Create1DGraphingData(TriMesh * pX, bool bTdata = false, bool bAcceldata = f
 
 
 			if ((bTdata == false) && (bAcceldata == false) && (bOhmsData == false)
-				&& (b_arelz_data == false)) {
+				&& (b_arelz_data == false) && (b_density == false)) {
 				y0 = p_temphost3[(pTri->cornerptr[0] - pX->X) + BEGINNING_OF_CENTRAL];
 				y1 = p_temphost3[(pTri->cornerptr[1] - pX->X) + BEGINNING_OF_CENTRAL];
 				y2 = p_temphost3[(pTri->cornerptr[2] - pX->X) + BEGINNING_OF_CENTRAL];
@@ -1065,108 +1126,160 @@ void Create1DGraphingData(TriMesh * pX, bool bTdata = false, bool bAcceldata = f
 			else {
 				// go through from 0 = conduction to 5 = dTe/dt itself
 				// we have missed out compressive...
+				if (b_density) {
 
-				if (bTdata) {
-					for (int j = 0; j < 8; j++)
-					{
-						y0 = p_Tgraph_host[j][(pTri->cornerptr[0] - pX->X)];
-						y1 = p_Tgraph_host[j][(pTri->cornerptr[1] - pX->X)];
-						y2 = p_Tgraph_host[j][(pTri->cornerptr[2] - pX->X)];
-						graphdata[j][asdf] = wt0*y0 + wt1*y1 + wt2*y2;
-						if (fabs(graphdata[j][asdf]) > maximum[j]) maximum[j] = fabs(graphdata[j][asdf]);
-					}
-				}
-				else {
-					if (bAcceldata) {
-						int j;
-						j = 1; // total
-						y0 = p_accelgraph_host[j][(pTri->cornerptr[0] - pX->X)];
-						y1 = p_accelgraph_host[j][(pTri->cornerptr[1] - pX->X)];
-						y2 = p_accelgraph_host[j][(pTri->cornerptr[2] - pX->X)];
-						graphdata[0][asdf] = wt0*y0 + wt1*y1 + wt2*y2;
+					y0 = pX->pData[(pTri->cornerptr[0] - pX->X) + BEGINNING_OF_CENTRAL].n;
+					y1 = pX->pData[(pTri->cornerptr[1] - pX->X) + BEGINNING_OF_CENTRAL].n;
+					y2 = pX->pData[(pTri->cornerptr[2] - pX->X) + BEGINNING_OF_CENTRAL].n;
+					graphdata[0][asdf] = wt0*y0 + wt1*y1 + wt2*y2;
+					if (fabs(graphdata[0][asdf]) > maximum[0]) maximum[0] = fabs(graphdata[0][asdf]);
+					
+					y0 = pX->pData[(pTri->cornerptr[0] - pX->X) + BEGINNING_OF_CENTRAL].n + 
+						pX->pData[(pTri->cornerptr[0] - pX->X) + BEGINNING_OF_CENTRAL].n_n;
+					y1 = pX->pData[(pTri->cornerptr[1] - pX->X) + BEGINNING_OF_CENTRAL].n + 
+						pX->pData[(pTri->cornerptr[1] - pX->X) + BEGINNING_OF_CENTRAL].n_n;
+					y2 = pX->pData[(pTri->cornerptr[2] - pX->X) + BEGINNING_OF_CENTRAL].n + 
+						pX->pData[(pTri->cornerptr[2] - pX->X) + BEGINNING_OF_CENTRAL].n_n;
+					graphdata[1][asdf] = wt0*y0 + wt1*y1 + wt2*y2;
+					if (fabs(graphdata[1][asdf]) > maximum[1]) maximum[1] = fabs(graphdata[1][asdf]);
 
-						j = 3; // vxB
-						y0 = p_accelgraph_host[j][(pTri->cornerptr[0] - pX->X)];
-						y1 = p_accelgraph_host[j][(pTri->cornerptr[1] - pX->X)];
-						y2 = p_accelgraph_host[j][(pTri->cornerptr[2] - pX->X)];
-						graphdata[1][asdf] = wt0*y0 + wt1*y1 + wt2*y2;
-						j = 5; // pressure
-						y0 = p_accelgraph_host[j][(pTri->cornerptr[0] - pX->X)];
-						y1 = p_accelgraph_host[j][(pTri->cornerptr[1] - pX->X)];
-						y2 = p_accelgraph_host[j][(pTri->cornerptr[2] - pX->X)];
-						graphdata[2][asdf] = wt0*y0 + wt1*y1 + wt2*y2;
-						j = 6; // neutral soak
-						y0 = p_accelgraph_host[j][(pTri->cornerptr[0] - pX->X)];
-						y1 = p_accelgraph_host[j][(pTri->cornerptr[1] - pX->X)];
-						y2 = p_accelgraph_host[j][(pTri->cornerptr[2] - pX->X)];
-						graphdata[3][asdf] = wt0*y0 + wt1*y1 + wt2*y2;
+					//// vr_ion:
+					//y0 = pX->pData[(pTri->cornerptr[0] - pX->X) + BEGINNING_OF_CENTRAL].vxy.y;
+					//y1 = pX->pData[(pTri->cornerptr[1] - pX->X) + BEGINNING_OF_CENTRAL].vxy.y;
+					//y2 = pX->pData[(pTri->cornerptr[2] - pX->X) + BEGINNING_OF_CENTRAL].vxy.y;
+					//graphdata[2][asdf] = wt0*y0 + wt1*y1 + wt2*y2;
+					//if (fabs(graphdata[2][asdf]) > maximum[2]) maximum[2] = fabs(graphdata[2][asdf]);
 
-						j = 8; // viscosity
-						y0 = p_accelgraph_host[j][(pTri->cornerptr[0] - pX->X)];
-						y1 = p_accelgraph_host[j][(pTri->cornerptr[1] - pX->X)];
-						y2 = p_accelgraph_host[j][(pTri->cornerptr[2] - pX->X)];
-						graphdata[4][asdf] = wt0*y0 + wt1*y1 + wt2*y2;
+					//// vr_total:
+					//f64 n0, nn0, n1, nn1, n2, nn2;
+					//n0 = pX->pData[(pTri->cornerptr[0] - pX->X) + BEGINNING_OF_CENTRAL].n;
+					//nn0 = pX->pData[(pTri->cornerptr[0] - pX->X) + BEGINNING_OF_CENTRAL].n_n;
+					//y0 = (pX->pData[(pTri->cornerptr[0] - pX->X) + BEGINNING_OF_CENTRAL].vxy.y*n0
+					//	+ pX->pData[(pTri->cornerptr[0] - pX->X) + BEGINNING_OF_CENTRAL].v_n.y*nn0) / (1.0 + n0 + nn0);	
+					//n1 = pX->pData[(pTri->cornerptr[1] - pX->X) + BEGINNING_OF_CENTRAL].n;
+					//nn1 = pX->pData[(pTri->cornerptr[1] - pX->X) + BEGINNING_OF_CENTRAL].n_n;
+					//y1 = (pX->pData[(pTri->cornerptr[1] - pX->X) + BEGINNING_OF_CENTRAL].vxy.y*n1
+					//	+ pX->pData[(pTri->cornerptr[1] - pX->X) + BEGINNING_OF_CENTRAL].v_n.y*nn1) / (1.1 + n1 + nn1);
+					//n2 = pX->pData[(pTri->cornerptr[2] - pX->X) + BEGINNING_OF_CENTRAL].n;
+					//nn2 = pX->pData[(pTri->cornerptr[2] - pX->X) + BEGINNING_OF_CENTRAL].n_n;
+					//y2 = (pX->pData[(pTri->cornerptr[2] - pX->X) + BEGINNING_OF_CENTRAL].vxy.y*n2
+					//	+ pX->pData[(pTri->cornerptr[2] - pX->X) + BEGINNING_OF_CENTRAL].v_n.y*nn2) / (1.2 + n2 + nn2);
 
-						j = 9; // ionization
-						y0 = p_accelgraph_host[j][(pTri->cornerptr[0] - pX->X)];
-						y1 = p_accelgraph_host[j][(pTri->cornerptr[1] - pX->X)];
-						y2 = p_accelgraph_host[j][(pTri->cornerptr[2] - pX->X)];
-						graphdata[5][asdf] = wt0*y0 + wt1*y1 + wt2*y2;
+					//graphdata[3][asdf] = wt0*y0 + wt1*y1 + wt2*y2;
+					//if (fabs(graphdata[3][asdf]) > maximum[3]) maximum[3] = fabs(graphdata[3][asdf]);
 
-						j = 10; // advection
-						y0 = p_accelgraph_host[j][(pTri->cornerptr[0] - pX->X)];
-						y1 = p_accelgraph_host[j][(pTri->cornerptr[1] - pX->X)];
-						y2 = p_accelgraph_host[j][(pTri->cornerptr[2] - pX->X)];
-						graphdata[6][asdf] = wt0*y0 + wt1*y1 + wt2*y2;
-
-						// works if comment here
-
-						//	printf("%d ", asdf);
-						for (int j = 0; j < 7; j++)
+					//y0 = p_accelgraph_host[9][(pTri->cornerptr[0] - pX->X)];
+					//y1 = p_accelgraph_host[9][(pTri->cornerptr[1] - pX->X)];
+					//y2 = p_accelgraph_host[9][(pTri->cornerptr[2] - pX->X)];
+					//graphdata[4][asdf] = wt0*y0 + wt1*y1 + wt2*y2;
+					//if (fabs(graphdata[4][asdf]) > maximum[4]) maximum[4] = fabs(graphdata[4][asdf]);
+					
+				} else {
+					if (bTdata) {
+						for (int j = 0; j < 8; j++)
 						{
-							//		printf("%d", j);
-							if (fabs(graphdata[j][asdf]) > maximum[0]) {
-								maximum[0] = fabs(graphdata[j][asdf]);
-								//			printf("maximum %1.9E\n", maximum[0]);
-							}
+							y0 = p_Tgraph_host[j][(pTri->cornerptr[0] - pX->X)];
+							y1 = p_Tgraph_host[j][(pTri->cornerptr[1] - pX->X)];
+							y2 = p_Tgraph_host[j][(pTri->cornerptr[2] - pX->X)];
+							graphdata[j][asdf] = wt0*y0 + wt1*y1 + wt2*y2;
+							if (fabs(graphdata[j][asdf]) > maximum[j]) maximum[j] = fabs(graphdata[j][asdf]);
 						}
-
-						// does it work if comment here? no
-
-						j = 11; // grad_y Az
-						y0 = p_accelgraph_host[j][(pTri->cornerptr[0] - pX->X)];
-						y1 = p_accelgraph_host[j][(pTri->cornerptr[1] - pX->X)];
-						y2 = p_accelgraph_host[j][(pTri->cornerptr[2] - pX->X)];
-						graphdata[7][asdf] = wt0*y0 + wt1*y1 + wt2*y2;
-						if (fabs(graphdata[7][asdf]) > maximum[7]) maximum[7] = fabs(graphdata[7][asdf]);
-					}
-					else {
-						if (bOhmsData) {
+					} else {
+						if (bAcceldata) {
 							int j;
-							for (j = 0; j < 19; j++) {
-								y0 = p_Ohmsgraph_host[j][(pTri->cornerptr[0] - pX->X)];
-								y1 = p_Ohmsgraph_host[j][(pTri->cornerptr[1] - pX->X)];
-								y2 = p_Ohmsgraph_host[j][(pTri->cornerptr[2] - pX->X)];
-								graphdata[j][asdf] = wt0*y0 + wt1*y1 + wt2*y2;
-								if ((pos.y < 4.6) && (pos.y > 3.44) && (fabs(graphdata[j][asdf]) > maximum[j])) maximum[j] = fabs(graphdata[j][asdf]);
-							};
+							j = 1; // total
+							y0 = p_accelgraph_host[j][(pTri->cornerptr[0] - pX->X)];
+							y1 = p_accelgraph_host[j][(pTri->cornerptr[1] - pX->X)];
+							y2 = p_accelgraph_host[j][(pTri->cornerptr[2] - pX->X)];
+							graphdata[0][asdf] = wt0*y0 + wt1*y1 + wt2*y2;
+
+							j = 3; // vxB
+							y0 = p_accelgraph_host[j][(pTri->cornerptr[0] - pX->X)];
+							y1 = p_accelgraph_host[j][(pTri->cornerptr[1] - pX->X)];
+							y2 = p_accelgraph_host[j][(pTri->cornerptr[2] - pX->X)];
+							graphdata[1][asdf] = wt0*y0 + wt1*y1 + wt2*y2;
+							j = 5; // pressure
+							y0 = p_accelgraph_host[j][(pTri->cornerptr[0] - pX->X)];
+							y1 = p_accelgraph_host[j][(pTri->cornerptr[1] - pX->X)];
+							y2 = p_accelgraph_host[j][(pTri->cornerptr[2] - pX->X)];
+							graphdata[2][asdf] = wt0*y0 + wt1*y1 + wt2*y2;
+							j = 6; // neutral soak
+							y0 = p_accelgraph_host[j][(pTri->cornerptr[0] - pX->X)];
+							y1 = p_accelgraph_host[j][(pTri->cornerptr[1] - pX->X)];
+							y2 = p_accelgraph_host[j][(pTri->cornerptr[2] - pX->X)];
+							graphdata[3][asdf] = wt0*y0 + wt1*y1 + wt2*y2;
+
+							j = 8; // viscosity
+							y0 = p_accelgraph_host[j][(pTri->cornerptr[0] - pX->X)];
+							y1 = p_accelgraph_host[j][(pTri->cornerptr[1] - pX->X)];
+							y2 = p_accelgraph_host[j][(pTri->cornerptr[2] - pX->X)];
+							graphdata[4][asdf] = wt0*y0 + wt1*y1 + wt2*y2;
+
+							j = 9; // ionization
+							y0 = p_accelgraph_host[j][(pTri->cornerptr[0] - pX->X)];
+							y1 = p_accelgraph_host[j][(pTri->cornerptr[1] - pX->X)];
+							y2 = p_accelgraph_host[j][(pTri->cornerptr[2] - pX->X)];
+							graphdata[5][asdf] = wt0*y0 + wt1*y1 + wt2*y2;
+
+							j = 10; // advection
+							y0 = p_accelgraph_host[j][(pTri->cornerptr[0] - pX->X)];
+							y1 = p_accelgraph_host[j][(pTri->cornerptr[1] - pX->X)];
+							y2 = p_accelgraph_host[j][(pTri->cornerptr[2] - pX->X)];
+							graphdata[6][asdf] = wt0*y0 + wt1*y1 + wt2*y2;
+
+							// works if comment here
+
+							//	printf("%d ", asdf);
+							for (int j = 0; j < 7; j++)
+							{
+								//		printf("%d", j);
+								if (fabs(graphdata[j][asdf]) > maximum[0]) {
+									maximum[0] = fabs(graphdata[j][asdf]);
+									//			printf("maximum %1.9E\n", maximum[0]);
+								}
+							}
+
+							// does it work if comment here? no
+
+							j = 11; // grad_y Az
+							y0 = p_accelgraph_host[j][(pTri->cornerptr[0] - pX->X)];
+							y1 = p_accelgraph_host[j][(pTri->cornerptr[1] - pX->X)];
+							y2 = p_accelgraph_host[j][(pTri->cornerptr[2] - pX->X)];
+							graphdata[7][asdf] = wt0*y0 + wt1*y1 + wt2*y2;
+							if (fabs(graphdata[7][asdf]) > maximum[7]) maximum[7] = fabs(graphdata[7][asdf]);
 						}
 						else {
-							int j;
-							for (j = 0; j < 12; j++) {
-								y0 = p_arelz_graph_host[j][(pTri->cornerptr[0] - pX->X)];
-								y1 = p_arelz_graph_host[j][(pTri->cornerptr[1] - pX->X)];
-								y2 = p_arelz_graph_host[j][(pTri->cornerptr[2] - pX->X)];
-								graphdata[j][asdf] = wt0*y0 + wt1*y1 + wt2*y2;
-								if ((pos.y < 4.8) && (pos.y > 3.44) && (fabs(graphdata[j][asdf]) > maximum[j])) maximum[j] = fabs(graphdata[j][asdf]);
+							if (bOhmsData) {
+								int j;
+								for (j = 0; j < 19; j++) {
+									y0 = p_Ohmsgraph_host[j][(pTri->cornerptr[0] - pX->X)];
+									y1 = p_Ohmsgraph_host[j][(pTri->cornerptr[1] - pX->X)];
+									y2 = p_Ohmsgraph_host[j][(pTri->cornerptr[2] - pX->X)];
+									graphdata[j][asdf] = wt0*y0 + wt1*y1 + wt2*y2;
+									if ((pos.y < 4.6) && (pos.y > 3.44) && (fabs(graphdata[j][asdf]) > maximum[j])) maximum[j] = fabs(graphdata[j][asdf]);
+								};
+							}
+							else {
+								int j;
+								for (j = 0; j < 12; j++) {
+									y0 = p_arelz_graph_host[j][(pTri->cornerptr[0] - pX->X)];
+									y1 = p_arelz_graph_host[j][(pTri->cornerptr[1] - pX->X)];
+									y2 = p_arelz_graph_host[j][(pTri->cornerptr[2] - pX->X)];
+									graphdata[j][asdf] = wt0*y0 + wt1*y1 + wt2*y2;
+									if ((pos.y < 4.8) && (pos.y > 3.44) && (fabs(graphdata[j][asdf]) > maximum[j])) maximum[j] = fabs(graphdata[j][asdf]);
+								};
 							};
 						};
 					};
+
 				};
 			};
-		}; // found triangle		
+		}; // found triangle	
+
 	}; // asdf	
-	if ((bTdata == false) && (bAcceldata == false) && (bOhmsData == false) && (b_arelz_data == false)) {
+
+
+	if ((bTdata == false) && (bAcceldata == false) && (bOhmsData == false) && (b_arelz_data == false) && (b_density == false)) {
 		maximum[3] = max(maximum[3], maximum[2]);
 		maximum[2] = maximum[3];
 	}
@@ -1213,24 +1326,34 @@ void Create1DGraphingData(TriMesh * pX, bool bTdata = false, bool bAcceldata = f
 					temp = max(maximum[15], maximum[16]);
 					maximum[15] = temp;
 					maximum[16] = temp;
-				}
+				} 
 				else {
-					// All same scale except for "difference" = element 10
-					// ... and the arelz itself?
-					int j;
-					f64 temp = maximum[1];
-					for (j = 2; j < 9; j++)
-						temp = max(temp, maximum[j]);
-					for (j = 1; j < 9; j++)
-						maximum[j] = temp;
-					temp = max(maximum[0], maximum[9]);
-					maximum[0] = temp;
-					maximum[9] = temp; // actual vs sum
-
+					
+					if (b_density) {
+						maximum[0] = max(maximum[0], maximum[1]);
+						f64 temp0 = maximum[0] / 0.5e18;
+						int inttemp = ((int)temp0);
+						maximum[0] = ((f64)inttemp)*0.5e18; // the one just below it!
+						maximum[1] = maximum[0];
+						
+					} else {
+						// All same scale except for "difference" = element 10
+						// ... and the arelz itself?
+						int j;
+						f64 temp = maximum[1];
+						for (j = 2; j < 9; j++)
+							temp = max(temp, maximum[j]);
+						for (j = 1; j < 9; j++)
+							maximum[j] = temp;
+						temp = max(maximum[0], maximum[9]);
+						maximum[0] = temp;
+						maximum[9] = temp; // actual vs sum
+					};
 				}
 			}
 		}
 	}
+
 }
 
 
@@ -1259,6 +1382,103 @@ void RefreshGraphs(TriMesh & X, // only not const because of such as Reset_verte
 	long iMinor;
 
 	switch (iGraphsFlag) {
+
+	case PLAN_N:
+
+		Create1DGraphingData(&X,false, false, false,false, true); 
+		
+		Draw1Dgraph(6, DENS1DGRAPH);
+
+		// Note that if we have not dimensioned Accelgraph data it will fail.
+
+		pVertex = X.X;
+		pdata = X.pData + BEGINNING_OF_CENTRAL;
+		for (iVertex = 0; iVertex < NUMVERTICES; iVertex++)
+		{
+			if ((pVertex->flags == DOMAIN_VERTEX) || (pVertex->flags == OUTERMOST))
+			{
+				pdata->temp.x = pdata->n;
+				pdata->temp.y = pdata->n * (1.0e-11 / 2.8e+18);
+				// mapping here.
+			}
+			else {
+				pdata->temp.x = 0.0;
+				pdata->temp.y = 0.0;
+			}
+			++pVertex;
+			++pdata;
+		}
+
+		Graph[4].DrawSurface("n_ion",
+			DATA_HEIGHT, (real *)(&(X.pData[0].temp.x)),
+			SEGUE_COLOUR, (real *)(&(X.pData[0].temp.y)),
+			false,
+			GRAPH_ION_N, &X);
+
+		// Add strip.
+
+
+		Graph[5].boolDisplayKeyButton = false;
+		Graph[5].SetEyePlan(GlobalPlanEye);
+		Graph[5].boolDisplayMeshWireframe = true;
+		Graph[5].boolClearZBufferBeforeWireframe = true;
+		Graph[5].boolDisplayMainMesh = true;
+		Graph[5].boolDisplayInnerMesh = false;
+		Graph[5].boolDisplayScales = false;
+
+		Graph[5].mhTech = Graph[5].mFX->GetTechniqueByName("SegueTech");
+
+		
+		Graph[5].SetDataWithColour(X, FLAG_SEGUE_COLOUR, FLAG_FLAT_MESH,
+			(real *)(&(X.pData[0].temp.y)) - (real *)(&(X.pData[0])),
+			(real *)(&(X.pData[0].temp.y)) - (real *)(&(X.pData[0])),
+			GRAPH_FLAT_WIRE_MESH);
+		Graph[5].Render(buff, GlobalRenderLabels, &X);
+
+		pVertex = X.X;
+		pdata = X.pData + BEGINNING_OF_CENTRAL;
+		for (iVertex = 0; iVertex < NUMVERTICES; iVertex++)
+		{
+			if ((pVertex->flags == DOMAIN_VERTEX) || (pVertex->flags == OUTERMOST))
+			{
+				pdata->temp.x = pdata->n;
+				pdata->temp.y = sqrt(pdata->n) * (1.0e-11 / 1.7e+9);
+				// mapping here.
+			}
+			else {
+				pdata->temp.x = 0.0;
+				pdata->temp.y = 0.0;
+			}
+			++pVertex;
+			++pdata;
+		}
+
+		Graph[3].DrawSurface("n_ion",
+			DATA_HEIGHT, (real *)(&(X.pData[0].temp.x)),
+			SEGUE_COLOUR, (real *)(&(X.pData[0].temp.y)),
+			false,
+			GRAPH_ION_N, &X);
+
+
+		Graph[1].boolDisplayKeyButton = false;
+		Graph[1].SetEyePlan(GlobalPlanEye);
+		Graph[1].boolDisplayMeshWireframe = true;
+		Graph[1].boolClearZBufferBeforeWireframe = true;
+		Graph[1].boolDisplayMainMesh = true;
+		Graph[1].boolDisplayInnerMesh = false;
+		Graph[1].boolDisplayScales = false;
+
+		Graph[1].mhTech = Graph[1].mFX->GetTechniqueByName("SegueTech");
+
+		Graph[1].SetDataWithColour(X, FLAG_SEGUE_COLOUR, FLAG_FLAT_MESH,
+
+			(real *)(&(X.pData[0].temp.y)) - (real *)(&(X.pData[0])),
+			(real *)(&(X.pData[0].temp.y)) - (real *)(&(X.pData[0])),
+			GRAPH_FLAT_WIRE_MESH);
+		Graph[1].Render(buff, GlobalRenderLabels, &X);
+		break;
+
+
 
 	case ONE_D:
 
@@ -2906,9 +3126,10 @@ int main()
 	else {
 		printf("opened %s \n", Functionalfilename);
 	};
-	fprintf(fp, "GSC evaltime Area neut.N ion.N elec.N neut.r ion.r elec.r SDneut.r SDion.r SDelec.r "
-		" neut.vr neut.vth neut.vz  ion.vr ion.vth ion.vz elec.vr elec.vth elec.vz neut.heat ion.heat elec.heat neut.T ion.T elec.T "
-		" neut.mnvv/3 ion.mnvv/3 elec.mnvv/3 elec.force(vxB)r within3.6 elec.Bth EE BB Heatings and dT changes - see code \n");
+	//fprintf(fp, "GSC evaltime Area neut.N ion.N elec.N neut.r ion.r elec.r SDneut.r SDion.r SDelec.r "
+	//	" neut.vr neut.vth neut.vz  ion.vr ion.vth ion.vz elec.vr elec.vth elec.vz neut.heat ion.heat elec.heat neut.T ion.T elec.T "
+	//	" neut.mnvv/3 ion.mnvv/3 elec.mnvv/3 elec.force(vxB)r within3.6 elec.Bth EE BB Heatings and dT changes - see code \n");
+	fprintf(fp, "Functional file.\n");
 	fclose(fp);
 
 	X1.Initialise(1); // Set evaltime first
@@ -3186,15 +3407,14 @@ int main()
 
 	// DEBUG:
 	long izNeigh[MAXNEIGH];
-	long number = X1.X[26090].GetNeighIndexArray(izNeigh);
-	printf("X1.X[26090].neigh_len = %d", number);
-	number = X2.X[26090].GetNeighIndexArray(izNeigh);
-	printf("X2.X[26090].neigh_len = %d", number);
-	number = X3.X[26090].GetNeighIndexArray(izNeigh);
-	printf("X3.X[26090].neigh_len = %d", number);
-	number = X4.X[26090].GetNeighIndexArray(izNeigh);
-	printf("X4.X[26090].neigh_len = %d", number);
-
+//	long number = X1.X[26090].GetNeighIndexArray(izNeigh);
+//	printf("X1.X[26090].neigh_len = %d", number);
+//	number = X2.X[26090].GetNeighIndexArray(izNeigh);
+//	printf("X2.X[26090].neigh_len = %d", number);
+//	number = X3.X[26090].GetNeighIndexArray(izNeigh);
+//	printf("X3.X[26090].neigh_len = %d", number);
+//	number = X4.X[26090].GetNeighIndexArray(izNeigh);
+//	printf("X4.X[26090].neigh_len = %d", number);
 
 	// 1000/25 = 40
 	//ZeroMemory(&opts, sizeof(opts));
@@ -3512,8 +3732,18 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			printf("\nGlobalSpeciesToGraph = %d \n", GlobalSpeciesToGraph);
 			RefreshGraphs(*pX, GlobalSpeciesToGraph);
 			Direct3D.pd3dDevice->Present(NULL, NULL, NULL, NULL);
+
+
 			break;
 			// int const GraphFlags[NUMAVI] = { SPECIES_ION, OVERALL, JZAZBXYEZ, OHMSLAW, ONE_D, IONIZEGRAPH };
+		case ID_DISPLAY_DENSITY:
+			GlobalSpeciesToGraph = PLAN_N;
+			printf("\nGlobalSpeciesToGraph = %d \n", GlobalSpeciesToGraph);
+			RefreshGraphs(*pX, GlobalSpeciesToGraph);
+			Direct3D.pd3dDevice->Present(NULL, NULL, NULL, NULL);
+
+
+			break;
 		case ID_DISPLAY_ION:
 			GlobalSpeciesToGraph = SPECIES_ION;
 			printf("\nGlobalSpeciesToGraph = %d \n", GlobalSpeciesToGraph);
@@ -3829,7 +4059,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			printf("X2.X[26090].neigh_len = %d", number);
 
 
-
 			break;
 		case ID_FILE_SAVEBINARY:
 			// Initialize OPENFILENAME
@@ -3918,6 +4147,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 				pX->Load(ofn.lpstrFile);
 				printf("\ndoing nothing...");
 			};
+
+
 			break;
 
 		case ID_RUN_SIMULATIONSTEPS:
@@ -4051,8 +4282,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 				cuSyst_host.PopulateTriMesh(pX); // vertex n is populated into the minor array available on CPU
 				printf("pulled back to host\n");
 			}
-		}
-		else {
+		} else {
 			pX->Advance(pXnew, &X3);
 			temp = pX;
 			pX = pXnew;
@@ -4079,8 +4309,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 												   //	::PlanViewGraphs1(*pX);
 				printf(".DISHMOPS.\n");
 				Direct3D.pd3dDevice->Present(NULL, NULL, NULL, NULL);
-				printf("got to here 7\n");
-
+				
 				if (DXChk(p_backbuffer_surface->GetDC(&surfdc), 100))
 					MessageBox(NULL, "GetDC failed", "oh dear", MB_OK);
 				//SelectObject(surfdc,surfbit);
@@ -4100,9 +4329,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 				if (hresult != 0) printf("\n******************************************************* \n"
 					"hresult = %d\n********************************************** \n", hresult);
 
+
 			};
 			rtStart += VIDEO_FRAME_DURATION;
-
+			CreateFunctionals(pX);
 			// sprintf(szFile, "System_%d", GlobalStepsCounter);
 			// pX->SaveText(szFile);
 		};
