@@ -2246,11 +2246,35 @@ void RefreshGraphs(TriMesh & X, // only not const because of such as Reset_verte
 			VELOCITY_COLOUR, (real *)(&(X.pData[0].vxy)),
 			false, // no inner mesh display
 			GRAPH_ION_N, &X);
-		Graph[1].DrawSurface("Ion v",
-			VELOCITY_HEIGHT, (real *)(&(X.pData[0].vxy)),
-			VELOCITY_COLOUR, (real *)(&(X.pData[0].vxy)),
+
+		
+		pVertex = X.X;
+		pdata = X.pData + BEGINNING_OF_CENTRAL;
+		for (iVertex = 0; iVertex < NUMVERTICES; iVertex++)
+		{
+			if ((pVertex->flags == DOMAIN_VERTEX) || (pVertex->flags == OUTERMOST))
+			{
+				pdata->temp.x = pdata->vxy.x*pdata->n*1.0e-12;
+				pdata->temp.y = pdata->vxy.y*pdata->n*1.0e-12;
+			}
+			else {
+				pdata->temp.x = 0.0; pdata->temp.y = 0.0;
+			}
+			++pVertex;
+			++pdata;
+		}
+		Graph[1].DrawSurface("Ion nv over 1e12",
+			VELOCITY_HEIGHT, (real *)(&(X.pData[0].temp.x)),
+			VELOCITY_COLOUR, (real *)(&(X.pData[0].temp.x)),
 			false, // no inner mesh display
-			GRAPH_ION_V, &X);
+			GRAPH_NV, &X);
+		printf("float : Graph[1].colourmax %f \n", Graph[1].colourmax);
+
+		//Graph[1].DrawSurface("Ion v",
+		//	VELOCITY_HEIGHT, (real *)(&(X.pData[0].vxy)),
+		//	VELOCITY_COLOUR, (real *)(&(X.pData[0].vxy)),
+		//	false, // no inner mesh display
+		//	GRAPH_ION_V, &X);
 
 		// These are same so double up with elec.
 

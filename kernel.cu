@@ -12581,6 +12581,10 @@ __global__ void kernelCollectOhmsGraphs(
 			(nu_eHeart*nu_eHeart + qovermc*BZ_CONSTANT*qovermc*BZ_CONSTANT) /
 				(nu_eHeart*(nu_eHeart*nu_eHeart + omega_ce.dot(omega_ce))));
 
+#ifndef ALLOW_NEGATIVE_VEZ
+		if (vie_k.vez < 0.0) nu_ei_effective *= (-vie_k.vez*0.5 + 1.0);
+#endif
+
 		p_Ohmsgraph_0[iVertex] = nu_ei_effective + M_n_over_ne*(cross_section_times_thermal_en*n_use.n_n);
 
 		AAdot AAzdot_kplus = p_AAdot_kplus[iVertex];
@@ -12772,6 +12776,9 @@ __global__ void MeasureAccelz(
 			nu_eiBar * (1.0 - 0.9*nu_eiBar*(nu_eHeart*nu_eHeart + omega_ce.z*omega_ce.z) /
 			                (nu_eHeart*(nu_eHeart*nu_eHeart + omega_ce.dot(omega_ce) )) );
 
+#ifndef ALLOW_NEGATIVE_VEZ
+		if (vie_i.vez < 0.0) nu_ei_effective *= (-vie_i.vez*0.5 + 1.0);
+#endif
 
 			// ARTIFICIAL CHANGE TO STOP IONS SMEARING AWAY OFF OF NEUTRAL BACKGROUND:
 		if (n_use.n_n > ARTIFICIAL_RELATIVE_THRESH *n_use.n) {
@@ -13419,8 +13426,19 @@ __global__ void kernelPopulateBackwardOhmsLaw_noadvect(
 
 		omega[threadIdx.x] = qovermc*p_B[iMinor].xypart();
 
+
+		// Note that because e and i are stuck together in the plane,
+		// nu_ei_effective does only affect z.
+		// We now wish to cancel out the unwanted phenomenon of negative vez, by increasing nu in this instance.
+
 		f64 nu_ei_effective = nu_eiBar * (1.0 - 0.9*nu_eiBar*(nu_eHeart*nu_eHeart + qovermc*BZ_CONSTANT*qovermc*BZ_CONSTANT) /
 			(nu_eHeart*(nu_eHeart*nu_eHeart + omega[threadIdx.x].x*omega[threadIdx.x].x + omega[threadIdx.x].y*omega[threadIdx.x].y + qovermc*BZ_CONSTANT*qovermc*BZ_CONSTANT)));
+
+#ifndef ALLOW_NEGATIVE_VEZ
+		if (vie_k.vez < 0.0) nu_ei_effective *= (-vie_k.vez*0.5 + 1.0);
+#endif
+		// So if vie_k.vez is at -1e6 then we boost up as if n is 1e18 not 1e12.
+		// This should be foolproof?
 
 		AAdot AAzdot_k = p_AAdot_src[iMinor];
 
@@ -14047,6 +14065,9 @@ __global__ void kernelPopulateBackwardOhmsLaw(
 		f64 nu_ei_effective = nu_eiBar * (1.0 - 0.9*nu_eiBar*(nu_eHeart*nu_eHeart + qovermc*BZ_CONSTANT*qovermc*BZ_CONSTANT) /
 			(nu_eHeart*(nu_eHeart*nu_eHeart + omega[threadIdx.x].x*omega[threadIdx.x].x + omega[threadIdx.x].y*omega[threadIdx.x].y + qovermc*BZ_CONSTANT*qovermc*BZ_CONSTANT)));
 
+#ifndef ALLOW_NEGATIVE_VEZ
+		if (vie_k.vez < 0.0) nu_ei_effective *= (-vie_k.vez*0.5 + 1.0);
+#endif
 		//	if (nu_ei_effective != nu_ei_effective) printf("nu_ei NaN: omega %1.8E %1.8E nu_eHeart %1.8E nu_eiBar %1.8E\n",
 		//		omega[threadIdx.x].x, omega[threadIdx.x].y, nu_eHeart, nu_eiBar);
 

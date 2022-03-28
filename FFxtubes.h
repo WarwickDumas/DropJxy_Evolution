@@ -22,13 +22,19 @@ bool const bScrewPinch = false;
 #define EULERIAN
 // change to #define LAGRANGIAN
 
+// Model parameters:
+//===============================
+
+#define EULERIAN       1
+#define OSCILLATE_IZ   1
+
 //#define FLATAZBC
 
-int const NUMAVI = 9;
+int const NUMAVI = 10;
 #define FOLDER L"C:/outputs/"
 #define FOLDER2 "C:/outputs/"
-#define INITIALAVI "10200E.avi"		
-#define INITIALMP4 L"10200E.mp4"
+#define INITIALAVI "13520A.avi"		
+#define INITIALMP4 L"13520A.mp4"
 #define STORYFILE "temp.txt"
 #define STORYFILE2 "temp2.txt"
 
@@ -37,14 +43,14 @@ int const NUMAVI = 9;
 #define DATAFILENAME FOLDER2 "oData_"
 #define AUTOSAVE_FILENAME FOLDER2 "oautosave.dat"
 #define RUNTIME_FILENAME FOLDER2 "oruntime.dat"
-#define AUTOSAVENAME "oauto"
-#define VERTAUTOSAVENAME "ograph"
+#define AUTOSAVENAME "ontestauto"
+#define VERTAUTOSAVENAME "otestgraph"
 #else
 #define FUNCTIONALFILE_START FOLDER2 "bfunctionals"
 #define DATAFILENAME FOLDER2 "Data_"
 #define AUTOSAVE_FILENAME FOLDER2 "bBautosave.dat"
 #define RUNTIME_FILENAME FOLDER2 "bBruntime.dat"
-#define AUTOSAVENAME "Tauto"
+#define AUTOSAVENAME "noosc_auto"
 #define VERTAUTOSAVENAME "Tgraph"
  
 #endif
@@ -58,14 +64,14 @@ int const NUMAVI = 9;
 #define REDELAUN_FREQUENCY				10 
 #define STEPS_PER_LOOP                  1    // soon change to 500
 // frames between file pinch-offs:
-#define AVI_FILE_PINCHOFF_FREQUENCY     125 // 50 = 1 ns
+#define AVI_FILE_PINCHOFF_FREQUENCY     100 // 50 = 1 ns
 
 // 1 frame = 0.01 so 100 frames == 1 ns
 
 // milliseconds between frames:
 #define AVIFRAMEPERIOD                     15  // milliseconds; 20 ms => 50 fps.
 #define VERTDATA_SAVE_FREQUENCY            5
-#define DATA_SAVE_FREQUENCY					1
+#define DATA_SAVE_FREQUENCY					4
 // For debug. For production change it to 25
 
 // Program Mechanics:
@@ -96,6 +102,7 @@ long const numTilesMajorClever = 192;
 
 long const SIZE_OF_MAJOR_PER_TRI_TILE = 128;
 long const SIZE_OF_TRI_TILE_FOR_MAJOR = 256;
+
 long const BEGINNING_OF_CENTRAL = threadsPerTileMinor*numTriTiles;
  
 long const NUMVERTICES = numTilesMajor*threadsPerTileMajor;//36864; //36000; // particularly applies for polar?
@@ -112,11 +119,6 @@ double const RELTHRESH_AZ =  1.0e-9;
 // Note that getting it wrong should mean that subsequently we will correct for the error.
  
 
-// Model parameters:
-//===============================
-
-#define EULERIAN       1
-#define OSCILLATE_IZ   1
 
  // radii in cm from anode centre : 
 #define DOMAIN_OUTER_RADIUS  10.0   // Assume cold neutrals looking out from this point.
@@ -273,8 +275,9 @@ real const RELATIVEINITIALJZUNIFORM = 0.0;
 
 real const  ZCURRENTBASETIME = 0.0;      //18.0e-9; // start from 0 -- 16/10/17
 real const  PEAKCURRENT_AMP = 88000.0;   // 88000 Amp - 2 filaments
+
 // Note that the current is negative from this.
-real const  PEAKCURRENT_STATCOULOMB = PEAKCURRENT_AMP * sC_;
+real const  PEAKCURRENT_STATCOULOMB = PEAKCURRENT_AMP * sC_; // This is statamp
 real const  PEAKTIME  = 18.0e-7;
 real const  PIOVERPEAKTIME = PI/PEAKTIME;
 // should have mapped peak to pi/2
@@ -294,11 +297,11 @@ real const FULLANGLE = 2.0*PI/16.0;
 // Need to be careful in case of thermal pressure messing up mesh.
 // Let's assume we do recalculation of parameters as often as we do recalculation of pressure.
 
-real const TIMESTEP = 2.5e-12;// 7.8125e-14; 
+real const TIMESTEP = 1.0e-12;// 7.8125e-14; 
 real const SUBSTEP = 1.0e-13; // 7.8125e-14;
-int const SUBCYCLES = 25; 
-int const GPU_STEPS = 10; // 2.5e-11
-int const ADVECT_FREQUENCY = 10; // 5e-12; 1e-11 = 1e-4/1e7 // 64
+int const SUBCYCLES = 10; // SUBSTEP/TIMESTEP 
+int const GPU_STEPS = 25; // 2.5e-11             NOTEZ BENE NOT 2.5e-11
+int const ADVECT_FREQUENCY = 25; // 5e-12; 1e-11 = 1e-4/1e7 // 64
 int const ADVECT_STEPS_PER_GPU_VISIT = 1;
 
 

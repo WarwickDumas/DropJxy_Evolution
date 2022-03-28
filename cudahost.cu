@@ -11264,7 +11264,6 @@ void RunBackwardJLSForNeutralViscosity(f64_vec3 * p_v_n_k, f64_vec3 * p_v_n, f64
 
 void RunBackward8LSForNeutralViscosity_Geometric(f64_vec3 * p_v_n_k, f64_vec3 * p_v_n,
 	f64 const hsub, cuSyst * pX_use)
-// BE SURE ABOUT PARAMETER ORDER -- CHECK IT CHECK IT
 {
 	// ***************************************************
 	// Requires averaging of n,T to triangles first. & ita
@@ -11314,12 +11313,12 @@ void RunBackward8LSForNeutralViscosity_Geometric(f64_vec3 * p_v_n_k, f64_vec3 * 
 		p_ita_n, // ita
 		p_nu_n,
 		p_MAR_neut2, // just accumulates
-		NT_addition_rates_d_2,
+		NT_addition_rates_d_2, 
 		NT_addition_tri_d2,
 		p_SelectflagNeut
 		);
 	Call(cudaThreadSynchronize(), "cudaTS visccontrib neut");
-
+	 
 	cudaMemset(p_epsilon3, 0, sizeof(f64_vec3)*NMINOR);
 	cudaMemset(p_epsilon_x, 0, sizeof(f64)*NMINOR);
 	cudaMemset(p_epsilon_y, 0, sizeof(f64)*NMINOR);
@@ -16293,6 +16292,8 @@ void cuSyst::PerformCUDA_Advance_noadvect(//const
 	kernelAdd3 << <numTilesMinor, threadsPerTileMinor >> > (p_MAR_neut2, p_MAR_neut3);
 	Call(cudaThreadSynchronize(), "cudaTS addMAR");
 	
+
+
 	// Get seed:
 	/*
 	kernelPutativeAccel << <numTilesMinor, threadsPerTileMinor >> >(

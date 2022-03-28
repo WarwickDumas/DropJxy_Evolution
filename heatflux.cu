@@ -7517,8 +7517,7 @@ kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species_dbydbeta_xy(
 			
 			if ((izTri[i] >= StartMinor) && (izTri[i] < EndMinor))
 			{
-				opp_v = shared_v[izTri[i] - StartMinor];
-				
+				opp_v = shared_v[izTri[i] - StartMinor];				
 				opppos = shared_pos[izTri[i] - StartMinor];
 				opp_x = shared_regr[izTri[i] - StartMinor];
 			} else {
