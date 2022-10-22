@@ -35,7 +35,9 @@ real GlobalIzElasticity;
 extern f64_vec2 RotateClosest(f64_vec2 pos, f64_vec2 prox);
 
 f64 inline GetEzShape__(f64 r) {
-	return 1.0 - 1.0 / (1.0 + exp(-24.0*(r - 4.32))); // At 4.0cm it is 96% as strong as at tooth. At 4.4 it is 4%.
+	return 1.0 - 1.0 / (1.0 + exp(-24.0*(r - 4.48))); // At 4.0cm it is 96% as strong as at tooth. At 4.4 it is 4%.
+	// 4.48 -- used to say 4.32 before 377 ns
+
 }  
 
 //class nvT_data {

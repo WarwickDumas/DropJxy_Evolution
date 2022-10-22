@@ -108,6 +108,7 @@ __device__ ShardModel *p_n_shards_II, *p_n_shards_n_II;
 
 // Global variables:
 // =================
+
 //extern f64_vec3 * p_B_host;
 extern f64 EzStrength_;
 extern cuSyst cuSyst1, cuSyst2, cuSyst3;
@@ -120,11 +121,6 @@ extern f64_vec2 p_v[NMINOR];
 
 extern f64 * p_temphost1, *p_temphost2,
 *p_temphost3, *p_temphost4, *p_temphost5, *p_temphost6;
-
-////extern __device__ f64 * p_LapCoeffself;
-////extern __device__ f64 * p_temp1;
-////extern __device__ long * p_longtemp;
-////extern __device__ f64 * p_Az, *p_LapAz;
 
 extern bool bDebugReorder;
 
@@ -196,7 +192,7 @@ bool boolGlobalHistory, GlobalboolDisplayMeshWireframe;
 //HAVI hAvi[NUMAVI + 1]; // does it work without OHMSLAW? //  OHMSLAW,
 int const GraphFlags[NUMAVI] = { SPECIES_ION, OVERALL, JZAZBXYEZ, ONE_D, IONIZEGRAPH,
 DTGRAPH, ACCELGRAPHS, OHMS2, ARELZ, PLAN_N };
-#ifdef OSCILLATE_IZ
+#if OSCILLATE_IZ
 #ifdef NO_ION_ELEC_VISC
 
 WCHAR szmp4[NUMAVI][128] = { L"onElec",L"onTotal",L"onJzAzBxy",L"onTest",
@@ -206,8 +202,8 @@ WCHAR szmp4[NUMAVI][128] = { L"oElec",L"oTotal",L"oJzAzBxy",L"oTest",
 L"oIonize", L"odT", L"oAccel", L"oOhms", L"oarelz", L"o_dens" };
 #endif
 #else
-WCHAR szmp4[NUMAVI][128] = { L"Elec",L"Total",L"JzAzBxy",L"Test",
-L"Ionize", L"dT", L"Accel",	L"Ohms", L"arelz", L"dens" };
+WCHAR szmp4[NUMAVI][128] = { L"n_Elec",L"n_Total",L"n_JzAzBxy",L"n_Test",
+L"n_Ionize", L"n_dT", L"nAccel",	L"n_Ohms", L"n_arelz", L"n_dens" };
 #endif
 //AVICOMPRESSOPTIONS opts;
 int counter;
@@ -939,35 +935,57 @@ void CreateFunctionals(TriMesh * pX)
 	// Find total ion heat energy;
 	// Find total ion outward momentum
 	plasma_data * p = pX->pData;
-	f64 N = 0.0, NT = 0.0, Nvr = 0.0, nr = 0.0, Nn = 0.0, NnTn = 0.0;
+	f64 N = 0.0, NTi = 0.0, NTe = 0.0, Nvr = 0.0, nr = 0.0, Nn = 0.0, NnTn = 0.0;
+	f64 Nnvv = 0.0, Nivv = 0.0, Nevv = 0.0, Mageng = 0.0, Indeng = 0.0;
 	for (long i = 0; i < NUMVERTICES; i++)
 	{
 		f64_vec2 rhat = p[i + BEGINNING_OF_CENTRAL].pos;
 		f64 r = rhat.modulus();
 		if (r < 4.5) {
 			f64 N_ = p[i + BEGINNING_OF_CENTRAL].n*pX->X[i].AreaCell;
-			NT += N_*p[i + BEGINNING_OF_CENTRAL].Ti;
+			
+			NTi += N_*p[i + BEGINNING_OF_CENTRAL].Ti;
+			NTe += N_*p[i + BEGINNING_OF_CENTRAL].Te;
 			rhat /= r;
 			Nvr += N_*p[i + BEGINNING_OF_CENTRAL].vxy.dot(rhat);
 			nr += N_*r;
 			N += N_;
-
+			
 			f64 Nn_ = p[i + BEGINNING_OF_CENTRAL].n_n*pX->X[i].AreaCell;
 			NnTn += Nn_*p[i + BEGINNING_OF_CENTRAL].Tn;
 			Nn += Nn_;
+			
+			// Kinetic energy
+
+			Nnvv += Nn_*p[i + BEGINNING_OF_CENTRAL].v_n.dot(p[i + BEGINNING_OF_CENTRAL].v_n);
+			Nivv += N_*(p[i + BEGINNING_OF_CENTRAL].vxy.dot(p[i + BEGINNING_OF_CENTRAL].vxy)
+						+ p[i + BEGINNING_OF_CENTRAL].viz*p[i + BEGINNING_OF_CENTRAL].viz);
+			Nevv += N_*(p[i + BEGINNING_OF_CENTRAL].vxy.dot(p[i + BEGINNING_OF_CENTRAL].vxy)
+				+ p[i + BEGINNING_OF_CENTRAL].vez*p[i + BEGINNING_OF_CENTRAL].vez);
+
+			// Magnetic energy
+
+			Mageng += 0.0397887357729738*p[i + BEGINNING_OF_CENTRAL].B.dot(p[i + BEGINNING_OF_CENTRAL].B);
+			Indeng += 0.0397887357729738*p[i + BEGINNING_OF_CENTRAL].Azdot*(p[i + BEGINNING_OF_CENTRAL].Azdot)/
+				(c_*c_); // -Azdot/c is inductive field.
 		};
 	}
 	nr /= N;
 	f64 vir = Nvr / N;
-	f64 Ti = NT / N;
+	f64 Ti = NTi / N;
+	f64 Te = NTe / N;
 	f64 Tn = NnTn / Nn;
-	printf("evaltime %1.10E N = %1.10E  NT = %1.10E Ti = %1.10E vr = %1.10E  avg r = %1.10E \n"
-		"Nn = %1.10E  NnTn = %1.10E Tn = %1.10E \n",
-		evaltime, N, NT, Ti, vir, nr, Nn, NnTn, Tn);
 	FILE * fp = fopen(Functionalfilename, "a");
-	fprintf(fp,"evaltime %1.10E N %1.10E  NT %1.10E Ti %1.10E vr %1.10E  avg r %1.10E "
-		"Nn %1.10E  NnTn %1.10E Tn %1.10E\n",
-		evaltime, N, NT, Ti, vir, nr, Nn, NnTn, Tn);
+
+	fprintf(fp,"evaltime %1.10E N %1.10E  NTi %1.10E NTe %1.10E Ti %1.10E Te %1.10E vir %1.10E  avg_r %1.10E "
+		"Nn %1.10E NnTn %1.10E Tn %1.10E m_i %1.10E m_n %1.10E m_e %1.10E Nnvv %1.10E Nivv %1.10E Nevv %1.10E "
+		"Mageng %1.10E Indeng %1.10E Prescribed_Iz %1.10E Statvolt %1.10E \n",
+		evaltime, N, NTi, NTe, Ti, Te, vir, nr, 
+		Nn, NnTn, Tn, m_ion_, m_n_, m_e_, Nnvv, Nivv, Nevv,
+		Mageng, Indeng, pX->Iz_prescribed, ::EzStrength_
+		);
+	
+
 	fclose(fp);
 }
 
@@ -1722,10 +1740,15 @@ void RefreshGraphs(TriMesh & X, // only not const because of such as Reset_verte
 		{
 			pdata->temp.x = p_accelgraph_host[0][iVertex];
 			pdata->temp.y = p_accelgraph_host[1][iVertex];
+			if (pdata->temp.x > 1.0e15) pdata->temp.x = 1.0e15;
+			if (pdata->temp.y > 1.0e15) pdata->temp.y = 1.0e15;
+			if (pdata->temp.x < -1.0e15) pdata->temp.x = -1.0e15;
+			if (pdata->temp.y < -1.0e15) pdata->temp.y = -1.0e15;
+			
 			++pVertex;
 			++pdata;
 		}
-		Graph[4].DrawSurface("dvxy/dt",
+		Graph[4].DrawSurface("dvxy/dt [max 1e15]",
 			VELOCITY_HEIGHT, (real *)(&(X.pData[0].temp.x)),
 			VELOCITY_COLOUR, (real *)(&(X.pData[0].temp.x)),
 			false,
@@ -1737,10 +1760,14 @@ void RefreshGraphs(TriMesh & X, // only not const because of such as Reset_verte
 		{
 			pdata->temp.x = p_accelgraph_host[2][iVertex];
 			pdata->temp.y = p_accelgraph_host[3][iVertex];
+			if (pdata->temp.x > 1.0e15) pdata->temp.x = 1.0e15;
+			if (pdata->temp.y > 1.0e15) pdata->temp.y = 1.0e15;
+			if (pdata->temp.x < -1.0e15) pdata->temp.x = -1.0e15;
+			if (pdata->temp.y < -1.0e15) pdata->temp.y = -1.0e15;
 			++pVertex;
 			++pdata;
 		}
-		Graph[1].DrawSurface("axy : v x B",
+		Graph[1].DrawSurface("axy : v x B [max 1e15]",
 			VELOCITY_HEIGHT, (real *)(&(X.pData[0].temp.x)),
 			VELOCITY_COLOUR, (real *)(&(X.pData[0].temp.x)),
 			false,
@@ -1751,9 +1778,13 @@ void RefreshGraphs(TriMesh & X, // only not const because of such as Reset_verte
 		{
 			pdata->temp.x = p_accelgraph_host[4][iVertex];
 			pdata->temp.y = p_accelgraph_host[5][iVertex];
+			if (pdata->temp.x > 1.0e15) pdata->temp.x = 1.0e15;
+			if (pdata->temp.y > 1.0e15) pdata->temp.y = 1.0e15;
+			if (pdata->temp.x < -1.0e15) pdata->temp.x = -1.0e15;
+			if (pdata->temp.y < -1.0e15) pdata->temp.y = -1.0e15;
 			++pdata;
 		}
-		Graph[3].DrawSurface("axy : pressure",
+		Graph[3].DrawSurface("axy : pressure [max 1e15]",
 			VELOCITY_HEIGHT, (real *)(&(X.pData[0].temp.x)),
 			VELOCITY_COLOUR, (real *)(&(X.pData[0].temp.x)),
 			false,
@@ -2246,14 +2277,16 @@ void RefreshGraphs(TriMesh & X, // only not const because of such as Reset_verte
 			VELOCITY_COLOUR, (real *)(&(X.pData[0].vxy)),
 			false, // no inner mesh display
 			GRAPH_ION_N, &X);
-
-		
+		 
+		    
 		pVertex = X.X;
 		pdata = X.pData + BEGINNING_OF_CENTRAL;
 		for (iVertex = 0; iVertex < NUMVERTICES; iVertex++)
-		{
+		{	
 			if ((pVertex->flags == DOMAIN_VERTEX) || (pVertex->flags == OUTERMOST))
 			{
+				//pdata->temp.x = pdata->vxy.x;
+				//pdata->temp.y = pdata->vxy.y;
 				pdata->temp.x = pdata->vxy.x*pdata->n*1.0e-12;
 				pdata->temp.y = pdata->vxy.y*pdata->n*1.0e-12;
 			}
@@ -2261,7 +2294,7 @@ void RefreshGraphs(TriMesh & X, // only not const because of such as Reset_verte
 				pdata->temp.x = 0.0; pdata->temp.y = 0.0;
 			}
 			++pVertex;
-			++pdata;
+			++pdata; 
 		}
 		Graph[1].DrawSurface("Ion nv over 1e12",
 			VELOCITY_HEIGHT, (real *)(&(X.pData[0].temp.x)),
@@ -2461,7 +2494,7 @@ void RefreshGraphs(TriMesh & X, // only not const because of such as Reset_verte
 			AZSEGUE_COLOUR, (real *)(&(X.pData[0].temp.x)),
 			false, // no inner mesh display.
 			GRAPH_JZ, &X);
-
+		  
 		// create graph data for Ez : add Ez_strength*Ezshape to -Azdot/c
 		overc = 1.0 / c_;
 		for (iVertex = 0; iVertex < NUMVERTICES; iVertex++)
@@ -3080,25 +3113,37 @@ int main()
 	int nDevices, iWhich;
 	cudaDeviceProp prop;
 	cudaGetDeviceCount(&nDevices);
-	for (int i = 0; i < nDevices; i++) {
 
-		cudaGetDeviceProperties(&prop, i);
-		printf("Device Number: %d\n", i);
-		printf("  Device name: %s\n", prop.name);
-		printf("  Memory Clock Rate (KHz): %d\n",
-			prop.memoryClockRate);
-		printf("  Memory Bus Width (bits): %d\n",
-			prop.memoryBusWidth);
-		printf("  Peak Memory Bandwidth (GB/s): %f\n\n",
-			2.0*prop.memoryClockRate*(prop.memoryBusWidth / 8) / 1.0e6);
+	printf("nDevices = %d\n", nDevices);
 
-		if (prop.memoryBusWidth == 384) iWhich = i;
+	for (int i = 0; i < 2; i++) {
+
+		if (!SUCCEEDED(cudaGetDeviceProperties(&prop, i))) printf("cudaGetDeviceProperties failed\n");
+		else {
+			printf("Device Number: %d\n", i);
+			printf("  Device name: %s\n", prop.name);
+			printf("  Memory Clock Rate (KHz): %d\n",
+				prop.memoryClockRate);
+			printf("  Memory Bus Width (bits): %d\n",
+				prop.memoryBusWidth);
+			printf("  Peak Memory Bandwidth (GB/s): %f\n\n",
+				2.0*prop.memoryClockRate*(prop.memoryBusWidth / 8) / 1.0e6);
+
+			if (prop.memoryBusWidth == 384) iWhich = i;
+		};
 	}
 	printf("Picked %d \n", iWhich);
-	getch();
 
 	cudaSetDevice(iWhich); // K40?
-	cudaDeviceReset();
+
+	printf("Would you like to reset the device?");
+	char o = ' ';
+	while ((o != 'y') && (o != 'n')) o = getch();
+	printf("%c\n", o);
+	if (o == 'y') {
+		cudaDeviceReset();
+		printf("Device refreshed.\n");
+	};
 
 	size_t uFree, uTotal;
 	cudaMemGetInfo(&uFree, &uTotal);
@@ -3134,7 +3179,7 @@ int main()
 	MoveWindow(hwndConsole, 0, 0, SCREEN_WIDTH - VIDEO_WIDTH - 10, SCREEN_HEIGHT - 30, TRUE);
 
 	report_time(0);
-
+	 
 	int filetag = 0;
 	do {
 		filetag++;
@@ -3222,7 +3267,7 @@ int main()
 		char buff[128];
 		MessageBox(NULL, "RegisterClassEx failed", itoa(GetLastError(), buff, 10), MB_OK);
 	};
-
+	  
 	printf("SCREEN_WIDTH %d VIDEO_WIDTH %d VIDEO_HEIGHT %d \n",
 		SCREEN_WIDTH, VIDEO_WIDTH, VIDEO_HEIGHT);
 
@@ -3383,7 +3428,7 @@ int main()
 
 	long VideoWidth = VIDEO_WIDTH;
 	long VideoHeight = VIDEO_HEIGHT;
-
+	 
 	// pasted here just to set up format:
 	bitmapinfo.bmiHeader.biSize = sizeof(BITMAPINFO);
 	bitmapinfo.bmiHeader.biWidth = VideoWidth;
@@ -3431,31 +3476,31 @@ int main()
 
 	// DEBUG:
 	long izNeigh[MAXNEIGH];
-//	long number = X1.X[26090].GetNeighIndexArray(izNeigh);
-//	printf("X1.X[26090].neigh_len = %d", number);
-//	number = X2.X[26090].GetNeighIndexArray(izNeigh);
-//	printf("X2.X[26090].neigh_len = %d", number);
-//	number = X3.X[26090].GetNeighIndexArray(izNeigh);
-//	printf("X3.X[26090].neigh_len = %d", number);
-//	number = X4.X[26090].GetNeighIndexArray(izNeigh);
-//	printf("X4.X[26090].neigh_len = %d", number);
+	//	long number = X1.X[26090].GetNeighIndexArray(izNeigh);
+	//	printf("X1.X[26090].neigh_len = %d", number);
+	//	number = X2.X[26090].GetNeighIndexArray(izNeigh);
+	//	printf("X2.X[26090].neigh_len = %d", number);
+	//	number = X3.X[26090].GetNeighIndexArray(izNeigh);
+	//	printf("X3.X[26090].neigh_len = %d", number);
+	//	number = X4.X[26090].GetNeighIndexArray(izNeigh);
+	//	printf("X4.X[26090].neigh_len = %d", number);
 
-	// 1000/25 = 40
-	//ZeroMemory(&opts, sizeof(opts));
-	//opts.fccHandler = mmioFOURCC('D', 'I', 'B', ' ');//('d','i','v','x');
-	//opts.dwFlags = 8;
+		// 1000/25 = 40
+		//ZeroMemory(&opts, sizeof(opts));
+		//opts.fccHandler = mmioFOURCC('D', 'I', 'B', ' ');//('d','i','v','x');
+		//opts.dwFlags = 8;
 
-	//for (i = 0; i < NUMAVI; i++)
-	//{
-	//	hresult = SetAviVideoCompression(hAvi[i], dib, &opts, false, hWnd); // always run this for every avi file but can
-	//															  // call with false as long as we know opts contains valid information. 
-	//	if (hresult != 0) {
-	//		printf("error: i = %d, hresult = %d", i, (long)hresult);
-	//		getch(); getch(); getch();
-	//	};
-	//};
+		//for (i = 0; i < NUMAVI; i++)
+		//{
+		//	hresult = SetAviVideoCompression(hAvi[i], dib, &opts, false, hWnd); // always run this for every avi file but can
+		//															  // call with false as long as we know opts contains valid information. 
+		//	if (hresult != 0) {
+		//		printf("error: i = %d, hresult = %d", i, (long)hresult);
+		//		getch(); getch(); getch();
+		//	};
+		//};
 
-	//ReleaseDC(hWnd,surfdc);
+		//ReleaseDC(hWnd,surfdc);
 	p_backbuffer_surface->ReleaseDC(surfdc);
 	GlobalCutaway = true; // dies if true
 
@@ -3484,14 +3529,19 @@ int main()
 
 	UnregisterClass(szWindowClass, wcex.hInstance);
 
-	// cudaDeviceReset must be called before exiting in order for profiling and
-	// tracing tools such as Nsight and Visual Profiler to show complete traces.
-
-	cudaStatus = cudaDeviceReset();
-	if (cudaStatus != cudaSuccess) {
-		fprintf(stderr, "cudaDeviceReset failed!");
-		return 1;
-	}
+	printf("cudaDeviceReset must be called before exiting in order for profiling and"
+		" tracing tools such as Nsight and Visual Profiler to show complete traces.\n");
+	printf("Would you like to reset the device?");
+	o = ' ';
+	while ((o != 'y') && (o != 'n')) o = getch();
+	printf("%c\n", o);
+	if (o == 'y') {
+		cudaStatus = cudaDeviceReset();
+		if (cudaStatus != cudaSuccess) {
+			fprintf(stderr, "cudaDeviceReset failed!");
+			return 1;
+		}
+	};
 
 	return 0;
 }
