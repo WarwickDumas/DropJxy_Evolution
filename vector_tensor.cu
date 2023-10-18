@@ -2,8 +2,6 @@
 #define VECTOR_TENSOR_H
 
 #include "FFxtubes.h"
-#include <conio.h>
-#include <stdio.h>
 
 // will want to do #include type.h
 // for #define real, qd_or_d
@@ -108,8 +106,6 @@ struct Vector2
 	}
 	real QUALIFIERS modulus() const
 	{
-		real modsq = x*x + y*y;
-		if (modsq <= 0.0) return 0.0;
 		return sqrt(x*x+y*y);
 	}
 
@@ -240,8 +236,6 @@ struct Vector3
 	
 	real QUALIFIERS modulus()
 	{
-		real modsq = x*x + y*y + z*z;
-		if (modsq <= 0.0) return 0.0;
 		return sqrt(x*x+y*y+z*z);
 	}
 
@@ -386,27 +380,15 @@ struct Tensor3
 		result.yz = yx*xz-xx*yz;
 		result.zz = xx*yy-yx*xy;
 
-		if (det != 0.0) {
-			result = result / det;
-		} else {
-			printf("\n\nMATRIX INVERSE FAILED. Det==0\n\n\n");
-			memset(&result, 0, sizeof(Tensor3));
-			result.xx = 1.0; result.yy = 1.0; result.zz = 1.0;
-		}
+		result = result / det;
 		return result; // inline so return object doesn't matter
 	};
 
 	QUALIFIERS void Inverse(Tensor3 & result)
 	{
-		real det = (xx*(yy*zz - yz*zy)
-			+ xy*(zx*yz - yx*zz)
-			+ xz*(yx*zy - yy*zx));
-
-		if (det == 0.0) {
-			printf("\n\nMATRIX INVERSE FAILED II. Det == 0\n\n\n");
-			return;
-		}
-		real over =	1.0/det;
+		real over =	1.0/(  xx*(yy*zz-yz*zy)
+					+ xy*(zx*yz-yx*zz)
+					+ xz*(yx*zy-yy*zx) );
 		
 		// Fill in matrix of minor determinants; 
 		// transposed with applied cofactors (signs)

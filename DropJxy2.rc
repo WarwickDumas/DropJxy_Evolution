@@ -71,6 +71,7 @@ BEGIN
         MENUITEM "DTgraph",                     ID_DISPLAY_DTGRAPH
         MENUITEM "Accelgraph",                  ID_RUN_SIMULATIONSTEPS_CPU
         MENUITEM "TensorOhms",                  ID_DISPLAY_TENSOROHMS
+        MENUITEM "accel rel z",                 ID_DISPLAY_ACCELRELZ
     END
     POPUP "Help"
     BEGIN

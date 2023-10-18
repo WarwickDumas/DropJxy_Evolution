@@ -42,7 +42,7 @@
 #define IDC_STATIC                      -1
 #define ID_RUN_CPUSTEP                  40021
 #define ID_FILE_LOADGPU                 40022
-#define ID_RUN_RESPRINKLE               40034
+
 // Next default values for new objects
 // 
 //#ifdef APSTUDIO_INVOKED
