@@ -8633,7 +8633,7 @@ kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species_dbydbeta_z(
 	shared_ita_par[threadIdx.x] = p_ita_parallel_minor[iMinor];
 	shared_nu[threadIdx.x] = p_nu_minor[iMinor];
 
-	// Perhaps the real answer is this. Advection and therefore advective momflux
+	// Perhaps the f64 answer is this. Advection and therefore advective momflux
 	// do not need to be recalculated very often at all. At 1e6 cm/s, we aim for 1 micron,
 	// get 1e-10s to actually do the advection !!
 	// So an outer cycle. Still limiting the number of total things in a minor tile. We might like 384 = 192*2.
@@ -9740,7 +9740,7 @@ kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species_effect_of_neighs_o
 	//	shared_nu[threadIdx.x]);
 
 
-	// Perhaps the real answer is this. Advection and therefore advective momflux
+	// Perhaps the f64 answer is this. Advection and therefore advective momflux
 	// do not need to be recalculated very often at all. At 1e6 cm/s, we aim for 1 micron,
 	// get 1e-10s to actually do the advection !!
 	// So an outer cycle. Still limiting the number of total things in a minor tile. We might like 384 = 192*2.
@@ -11558,7 +11558,7 @@ __global__ void CalculateCoeffself(
 	shared_ita_par[threadIdx.x] = p_ita_parallel_minor[iMinor];
 	shared_nu[threadIdx.x] = p_nu_minor[iMinor];
 
-	// Perhaps the real answer is this. Advection and therefore advective momflux
+	// Perhaps the f64 answer is this. Advection and therefore advective momflux
 	// do not need to be recalculated very often at all. At 1e6 cm/s, we aim for 1 micron,
 	// get 1e-10s to actually do the advection !!
 	// So an outer cycle. Still limiting the number of total things in a minor tile. We might like 384 = 192*2.
@@ -15654,7 +15654,7 @@ if (iMinor == lChosen) {
 //				values.
 //				We could do with going further to output a code to see which things failed.
 //
-//				need to be real about FP error in eps as a result of FP error in velocity.
+//				need to be f64 about FP error in eps as a result of FP error in velocity.
 //				Are we being ?
 //
 
@@ -16294,7 +16294,7 @@ __global__ void kernelCalc_Matrices_for_Jacobi_NeutralViscosity(
 	shared_ita_par[threadIdx.x] = p_ita_minor[iMinor];
 	shared_nu[threadIdx.x] = p_nu_minor[iMinor];
 
-	// Perhaps the real answer is this. Advection and therefore advective momflux
+	// Perhaps the f64 answer is this. Advection and therefore advective momflux
 	// do not need to be recalculated very often at all. At 1e6 cm/s, we aim for 1 micron,
 	// get 1e-10s to actually do the advection !!
 	// So an outer cycle. Still limiting the number of total things in a minor tile. We might like 384 = 192*2.
@@ -16762,7 +16762,7 @@ __global__ void kernelCalc_Matrices_for_Jacobi_NeutralViscosity_SYMM(
 	shared_ita_par[threadIdx.x] = p_ita_minor[iMinor];
 	shared_nu[threadIdx.x] = p_nu_minor[iMinor];
 
-	// Perhaps the real answer is this. Advection and therefore advective momflux
+	// Perhaps the f64 answer is this. Advection and therefore advective momflux
 	// do not need to be recalculated very often at all. At 1e6 cm/s, we aim for 1 micron,
 	// get 1e-10s to actually do the advection !!
 	// So an outer cycle. Still limiting the number of total things in a minor tile. We might like 384 = 192*2.

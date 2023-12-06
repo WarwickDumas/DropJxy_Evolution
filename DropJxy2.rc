@@ -59,6 +59,7 @@ BEGIN
         MENUITEM "STOP",                        ID_RUN_STOP
         MENUITEM "Simulation steps",            ID_RUN_SIMULATIONSTEPS
         MENUITEM "CPU step",                    ID_RUN_SIMULATIONSTEPS_CPU
+        MENUITEM "Resprinkle",                  ID_RUN_RESPRINKLE
     END
     POPUP "Display"
     BEGIN
@@ -72,6 +73,7 @@ BEGIN
         MENUITEM "Accelgraph",                  ID_RUN_SIMULATIONSTEPS_CPU
         MENUITEM "TensorOhms",                  ID_DISPLAY_TENSOROHMS
         MENUITEM "accel rel z",                 ID_DISPLAY_ACCELRELZ
+        MENUITEM "Density",                     ID_DISPLAY_DENSITY
     END
     POPUP "Help"
     BEGIN

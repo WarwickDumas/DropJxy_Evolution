@@ -9,7 +9,7 @@
 #include "qd/dd_real.h"
 //#include "qd/qd_real.h"
 #include "qd/fpu.h"
-#define real double
+#define f64 double
 #define qd_or_d dd_real
 
 
@@ -107,9 +107,9 @@ private:
 	long * indx;   // the index array when decomposed
 	
 public:
-	real ** LU; // the elements
+	f64 ** LU; // the elements
 	long LUSIZE;  // the size of the matrix
-	real * vv;
+	f64 * vv;
 
 	Matrix_real ();
 
@@ -121,8 +121,8 @@ public:
 
 	long LUdecomp() ;
 
-	long LUSolve (real b[], real x[]);
-	long LUSolveII (real b[], real x[],int iWhich, real value);
+	long LUSolve (f64 b[], f64 x[]);
+	long LUSolveII (f64 b[], f64 x[],int iWhich, f64 value);
 
 };
 

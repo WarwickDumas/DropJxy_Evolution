@@ -68,26 +68,26 @@ extern bool flaglist[NMINOR];
 	};
 
 
-real inline distsq(Vector2 const u1, Vector2 const u2)
+f64 inline distsq(Vector2 const u1, Vector2 const u2)
 {
 	return (u1.x-u2.x)*(u1.x-u2.x)+(u1.y-u2.y)*(u1.y-u2.y);
 };
 
-real GetCos(const Vector2 & u1, const Vector2 & centre, const Vector2 & u2)
+f64 GetCos(const Vector2 & u1, const Vector2 & centre, const Vector2 & u2)
 {
 	Vector2 diff1 = u1-centre;
 	Vector2 diff2 = u2-centre;
 
 	// a.b = |a| |b| cos theta
 
-	real a_dot_b = diff1.x*diff2.x+diff1.y*diff2.y;
-	real costheta = a_dot_b/sqrt((diff1.x*diff1.x+diff1.y*diff1.y)*(diff2.x*diff2.x+diff2.y*diff2.y));
+	f64 a_dot_b = diff1.x*diff2.x+diff1.y*diff2.y;
+	f64 costheta = a_dot_b/sqrt((diff1.x*diff1.x+diff1.y*diff1.y)*(diff2.x*diff2.x+diff2.y*diff2.y));
 	return costheta;
 };
 
-real GetCos(const Vector2 & v1, const Vector2 & v2)
+f64 GetCos(const Vector2 & v1, const Vector2 & v2)
 {
-	real costheta = v1.dot(v2)/sqrt(
+	f64 costheta = v1.dot(v2)/sqrt(
 		(v1.x*v1.x+v1.y*v1.y)*(v2.x*v2.x+v2.y*v2.y));
 	// for this version, send the 2 difference vectors.
 	return costheta;
@@ -479,10 +479,10 @@ int TriMesh::ExamineNeighbourAndDisconnectIfNeeded(Triangle * pTri, int opp, int
 			
 			// kill the further one
 
-			real dist1sq = distsq(pTri->cornerptr[opp]->pos,pTri->cornerptr[c1]->pos)
+			f64 dist1sq = distsq(pTri->cornerptr[opp]->pos,pTri->cornerptr[c1]->pos)
 				          + distsq(pTri->cornerptr[opp]->pos,pTri->cornerptr[c2]->pos);
 
-			real dist2sq = distsq(q2->pos,pTri->cornerptr[c1]->pos) + distsq(q2->pos,pTri->cornerptr[c2]->pos);
+			f64 dist2sq = distsq(q2->pos,pTri->cornerptr[c1]->pos) + distsq(q2->pos,pTri->cornerptr[c2]->pos);
 			
 			if (dist1sq > dist2sq)
 			{
@@ -499,8 +499,8 @@ int TriMesh::ExamineNeighbourAndDisconnectIfNeeded(Triangle * pTri, int opp, int
 		{
 			// an unshared point --
 			// choose the closer of shared points for pVertUse
-			real dist1sq = distsq(pVertRogue->pos,pTri->cornerptr[c1]->pos);
-			real dist2sq = distsq(pVertRogue->pos,pTri->cornerptr[c2]->pos);
+			f64 dist1sq = distsq(pVertRogue->pos,pTri->cornerptr[c1]->pos);
+			f64 dist2sq = distsq(pVertRogue->pos,pTri->cornerptr[c2]->pos);
 			if (dist1sq < dist2sq)
 			{
 				pVertUse = pTri->cornerptr[c1];
@@ -1325,7 +1325,7 @@ void TriMesh::ReconnectLastPointInDiscoArray()
 	//            Triangle::transvec,periodic,flag
 	//            Triangle::neighbours
 
-	real grad,gradleft,gradmid,gradright;
+	f64 grad,gradleft,gradmid,gradright;
 	int i,ii,iWhich;
 	int additional, valueone, valuetwo;
 	long lendisc = Disconnected.len;
@@ -1341,7 +1341,7 @@ void TriMesh::ReconnectLastPointInDiscoArray()
 	
 	Triangle * pTri, *pTri2, *pTriCopy, *pTriNeigh;
 	int BaseFlag;
-	real grad1, grad2;
+	f64 grad1, grad2;
 	int found,c1,c2,iApex,use;
 	Vector2 u[3];
 
@@ -1848,8 +1848,8 @@ long TriMesh::Flips(long Trilist[], short num)
 	Triangle * pTri2, * pTri;
 	Vertex * pVertq;
 	Vector2 cc;
-	real pdistsq;
-	real qdistx,qdisty;//,pdistx,pdisty;
+	f64 pdistsq;
+	f64 qdistx,qdisty;//,pdistx,pdisty;
 	long flips;
 	int side;
 	Vertex tempV;
@@ -1862,7 +1862,7 @@ long TriMesh::Flips(long Trilist[], short num)
 	bool to_flip,perflag;
 	Triangle newtri;
 
-	static real const REL_TOLERANCE = 1.0e-11; 
+	static f64 const REL_TOLERANCE = 1.0e-11; 
 	// 5e-13 does not seem to avoid back-and-forward flips due to rounding.
 
 	long flip_tri_to_tri = 0;
@@ -1871,7 +1871,7 @@ long TriMesh::Flips(long Trilist[], short num)
 	long lowflip_tri_to_wedge = 0;
 	long lowflip_wedge_to_tri = 0;
 
-	static real const COS60 = 0.5;
+	static f64 const COS60 = 0.5;
 	long iTri;
 	// whereas cos 90 = 0
 	int iTriCaret;
@@ -1928,7 +1928,7 @@ long TriMesh::Flips(long Trilist[], short num)
 
 						pVertq = pTri2->ReturnUnsharedVertex(pTri);
 							// we compare two triangles							
-						real qdistsq = GetPossiblyPeriodicDistSq(pVertq->pos,cc); // less elegant but should still work.
+						f64 qdistsq = GetPossiblyPeriodicDistSq(pVertq->pos,cc); // less elegant but should still work.
 						if (qdistsq < pdistsq-pdistsq*REL_TOLERANCE)
 						{
 							++flips;
@@ -1977,8 +1977,8 @@ long TriMesh::Redelaunerize(bool exhaustion, bool bReplace)
 	Triangle * pTri2, * pTri;
 	Vertex * pVertq;
 	Vector2 cc;
-	real pdistsq;
-	real qdistx,qdisty;//,pdistx,pdisty;
+	f64 pdistsq;
+	f64 qdistx,qdisty;//,pdistx,pdisty;
 	long flips;
 	int side;
 	Vertex tempV;
@@ -1991,7 +1991,7 @@ long TriMesh::Redelaunerize(bool exhaustion, bool bReplace)
 	bool to_flip,perflag;
 	Triangle newtri;
 
-	static real const REL_TOLERANCE = 1.0e-11; 
+	static f64 const REL_TOLERANCE = 1.0e-11; 
 	// 5e-13 does not seem to avoid back-and-forward flips due to rounding.
 
 	long flip_tri_to_tri = 0;
@@ -2000,7 +2000,7 @@ long TriMesh::Redelaunerize(bool exhaustion, bool bReplace)
 	long lowflip_tri_to_wedge = 0;
 	long lowflip_wedge_to_tri = 0;
 
-	static real const COS60 = 0.5;
+	static f64 const COS60 = 0.5;
 	long iTri;
 	// whereas cos 90 = 0
 
@@ -2061,7 +2061,7 @@ long TriMesh::Redelaunerize(bool exhaustion, bool bReplace)
 						// one of the neighbours is across PBC
 						// in which case we should map q to same side as p
 
-						real qdistsq = GetPossiblyPeriodicDistSq(pVertq->pos,cc); // less elegant but should still work.
+						f64 qdistsq = GetPossiblyPeriodicDistSq(pVertq->pos,cc); // less elegant but should still work.
 						
 						if (qdistsq < pdistsq-pdistsq*REL_TOLERANCE)
 						{
@@ -2337,10 +2337,10 @@ void TriMesh::GiveAndTake(ShardData & shard_data, Vertex * pVDest,Vertex * pVSrc
 			
 			cpIntersection.Integrate_Planes(
 							cptri.coord[0],cptri.coord[1],cptri.coord[2],
-							(real *)(&(shard_data.cdata)), // pass object as array of reals
-							(real *)(&(shard_data.fluidnvT[i])),
-							(real *)(&(shard_data.fluidnvT[inext])),
-							(real *)(&integrals),// output - this is of form {N,NT,Nv} x 3.
+							(f64 *)(&(shard_data.cdata)), // pass object as array of reals
+							(f64 *)(&(shard_data.fluidnvT[i])),
+							(f64 *)(&(shard_data.fluidnvT[inext])),
+							(f64 *)(&integrals),// output - this is of form {N,NT,Nv} x 3.
 							15);
 			// Give, and take:
 			pVDest->Neut.mass += integrals.N[0];
@@ -2385,10 +2385,10 @@ void TriMesh::GiveAndTake(ShardData & shard_data, Vertex * pVDest,Vertex * pVSrc
 							cptri2.coord[0],
 							cptri2.coord[1],
 							cptri2.coord[2],
-							(real *)(&vals0),
-							(real *)(&vals1),
-							(real *)(&vals2),
-							(real *)(&integrals),// output
+							(f64 *)(&vals0),
+							(f64 *)(&vals1),
+							(f64 *)(&vals2),
+							(f64 *)(&integrals),// output
 							15);
 					// Give, and take:
 					pVDest->Neut.mass += integrals.N[0];
@@ -2430,10 +2430,10 @@ void TriMesh::GiveAndTake(ShardData & shard_data, Vertex * pVDest,Vertex * pVSrc
 
 					cpIntersection.Integrate_Planes(
 							cptri2.coord[0],cptri2.coord[1],cptri2.coord[2],
-							(real *)(&vals0),
-							(real *)(&vals1),
-							(real *)(&vals2),
-							(real *)(&integrals),// output
+							(f64 *)(&vals0),
+							(f64 *)(&vals1),
+							(f64 *)(&vals2),
+							(f64 *)(&integrals),// output
 							15);
 
 					// Give, and take:
@@ -2470,9 +2470,9 @@ void TriMesh::CreateShards(Vertex * pVertex, ShardData & shard_data)
 	int tri_len, i;
 	Triangle * pTri;
 	int parity[3];
-	real beta[3];
+	f64 beta[3];
 	bool found;
-	real coeffremain;
+	f64 coeffremain;
 
 	// ASSUMES TRI CENTROIDS POPULATED
 	// DOES NOT ASSUME VERTEX CENTROIDS POPULATED
@@ -2564,7 +2564,7 @@ void TriMesh::CreateShards(Vertex * pVertex, ShardData & shard_data)
 	Triangle * pDomainTri;
 	int numIntermed = 0;
 	int iWhich, iNeigh, ii;
-	real dist1, dist2, wt1, wt2, wtsum;
+	f64 dist1, dist2, wt1, wt2, wtsum;
 	int index_edge1 = -1, index_edge2 = -1;
 	for (i = 0; i < tri_len; i++)
 	{
@@ -2725,7 +2725,7 @@ void TriMesh::CreateShards(Vertex * pVertex, ShardData & shard_data)
 
 	//shard_data.Minmod(temp);
 
-	real y[128], result[128];
+	f64 y[128], result[128];
 	for (i = 0; i < tri_len; i++)
 		y[i] = temp.fluidnvT[i].n[0];// temp.fluidnvT are the desired values.
 	shard_data.cp.minmod(result,y,pVertex->Neut.mass,pVertex->pos);
@@ -2817,9 +2817,9 @@ void TriMesh::CreateShards(Vertex * pVertex, ShardData & shard_data)
 
 
 
-real ConvexPolygon::minmod(real n[], // output array
-					  real ndesire[], // array of desired values 
-						real N,      // total mass N
+f64 ConvexPolygon::minmod(f64 n[], // output array
+					  f64 ndesire[], // array of desired values 
+						f64 N,      // total mass N
 					  Vector2 central // central position
 ) // returns centre n
 {
@@ -2834,11 +2834,11 @@ real ConvexPolygon::minmod(real n[], // output array
 
 	// Note: if n_avg < all desired corners, that is a sign we have to default to say 
 	// constant-in-cell.
-	real coeff[128];
+	f64 coeff[128];
 	bool fixed[128];
 	ConvexPolygon cptri;
-	real tri_area, coeffcent, N0, n_C,n_acceptable,N_attained, coeffremain;
-	real low_n,high_n;
+	f64 tri_area, coeffcent, N0, n_C,n_acceptable,N_attained, coeffremain;
+	f64 low_n,high_n;
 	int i,inext;
 	bool found;
 		
@@ -2852,8 +2852,8 @@ real ConvexPolygon::minmod(real n[], // output array
 		++i;
 	};
 	
-	real area = GetArea();
-	real n_avg = N/area;
+	f64 area = GetArea();
+	f64 n_avg = N/area;
 	if ((n_avg > high_n) || (n_avg < low_n)){
 		// above/below all of them: minmod says give up and set constant
 		for (i = 0;i < numCoords; i++)
@@ -2866,7 +2866,7 @@ real ConvexPolygon::minmod(real n[], // output array
 	// work up a coefficient on n_C as well as what ndesire is giving us.
 
 	// We assign to each corner a coefficient to make life easier.
-	memset(coeff,0,sizeof(real)*128);
+	memset(coeff,0,sizeof(f64)*128);
 	coeffcent = 0.0;
 	N0 = 0.0;
 	for (i = 0; i < numCoords; i++)
@@ -2885,7 +2885,7 @@ real ConvexPolygon::minmod(real n[], // output array
 		coeffcent += tri_area*THIRD;
 	};
 	
-	real n_C_need = (N-N0)/coeffcent;
+	f64 n_C_need = (N-N0)/coeffcent;
 	if ((n_C_need > low_n) && (n_C_need < high_n))
 	{
 		// accept:
@@ -3616,12 +3616,12 @@ void TriMesh::ShiftVertexPositionsEquanimity()
 	long iVertex, i, inext;
 	ConvexPolygon cp;
 	Vector2 u, u2, sum, avg, direction, cand, oldpos;
-	real distsq, area, r, to_move, newdist, maxratio, dist, maxdist;
+	f64 distsq, area, r, to_move, newdist, maxratio, dist, maxdist;
 	bool bNo;
 	long izNeighs[128];
 	long neigh_len;
 
-	real maxrat[3] = {0.38,0.3,0.24};
+	f64 maxrat[3] = {0.38,0.3,0.24};
 
 	for (int iLoop = 0; iLoop < 3; iLoop++)
 	{
@@ -3668,7 +3668,7 @@ void TriMesh::ShiftVertexPositionsEquanimity()
 						cp.add(u);
 						sum += u;
 					};
-					avg = sum/(real)neigh_len;
+					avg = sum/(f64)neigh_len;
 					distsq = (avg.x-pVertex->pos.x)*(avg.x-pVertex->pos.x)
 						+ (avg.y-pVertex->pos.y)*(avg.y-pVertex->pos.y);
 					

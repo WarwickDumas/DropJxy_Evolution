@@ -10,6 +10,7 @@
 
 #define HISTORY	4
 #define VERBOSEGRAPHICS 0
+int const NUMAVI = 10;
 
 #include <stdlib.h>
 #include <stdio.h>
@@ -86,7 +87,7 @@ void RefreshGraphs(TriMesh & X, const int iGraphsFlag);
 LRESULT CALLBACK	WndProc(HWND, UINT, WPARAM, LPARAM);
 INT_PTR CALLBACK	About(HWND, UINT, WPARAM, LPARAM);
 INT_PTR CALLBACK	SetupBox(HWND, UINT, WPARAM, LPARAM);
-extern f64 GetEzShape__(f64 r);
+extern f64 GetEzShape__(f64 x, f64 y);
 extern void Zap_the_back();
 extern void Ampere_solve();
 
@@ -2501,7 +2502,8 @@ void RefreshGraphs(TriMesh & X, // only not const because of such as Reset_verte
 		{
 			X.pData[iVertex + BEGINNING_OF_CENTRAL].temp.y =
 				-X.pData[iVertex + BEGINNING_OF_CENTRAL].Azdot*overc
-				+ GetEzShape__(X.pData[iVertex + BEGINNING_OF_CENTRAL].pos.modulus())*EzStrength_;
+				+ GetEzShape__(X.pData[iVertex + BEGINNING_OF_CENTRAL].pos.x,
+					X.pData[iVertex + BEGINNING_OF_CENTRAL].pos.y)*EzStrength_;
 		}
 		Graph[2].DrawSurface("Ez",
 			DATA_HEIGHT, (real *)(&(X.pData[0].temp.y)),

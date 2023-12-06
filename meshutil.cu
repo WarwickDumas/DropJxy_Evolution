@@ -9,6 +9,7 @@
 
 // include here only:
 #include "constant.h"
+
 //#include "cppconst.h"
 
 //		This file to contain 4 types of functions:
@@ -26,6 +27,7 @@ long GlobalVerticesInRange;
 long GlobalTrianglesInfluencing;
 bool GlobalPeriodicSearch;
 extern int globaldebugswitch ;
+bool bDebugReorder = false;
 
 extern long numVerticesKey;
 
@@ -38,23 +40,57 @@ bool IsInsideCathodePos(f64_vec2 pos)
 	return false;
 }
 
-real InitialIonDensity(real x, real y)
+f64 InitialIonDensity(f64 x, f64 y)
 {
-	static const real XCENTRE2 = DEVICE_RADIUS_INITIAL_FILAMENT_CENTRE*sin(PI/32.0);
-	static const real XCENTRE1 = -XCENTRE2;
-//	static const real YCENTRE = DEVICE_RADIUS_INITIAL_FILAMENT_CENTRE*cos(PI/32.0);
-	static const real YCENTRE_ROT = DEVICE_RADIUS_INITIAL_FILAMENT_CENTRE*cos(PI/32.0+PI/16.0);
-	static const real XCENTRE3 = DEVICE_RADIUS_INITIAL_FILAMENT_CENTRE*sin(PI/32.0+PI/16.0);
-	static const real XCENTRE4 = -XCENTRE3;
+	static const f64 XCENTRE2 = DEVICE_RADIUS_INITIAL_FILAMENT_CENTRE*sin(PI/32.0);
+	static const f64 XCENTRE1 = -XCENTRE2;
+//	static const f64 YCENTRE = DEVICE_RADIUS_INITIAL_FILAMENT_CENTRE*cos(PI/32.0);
+	static const f64 YCENTRE_ROT = DEVICE_RADIUS_INITIAL_FILAMENT_CENTRE*cos(PI/32.0+PI/16.0);
+	static const f64 XCENTRE3 = DEVICE_RADIUS_INITIAL_FILAMENT_CENTRE*sin(PI/32.0+PI/16.0);
+	static const f64 XCENTRE4 = -XCENTRE3;
 
-	static const real XCENTRE = 0.0;
-	static const real YCENTRE = DEVICE_RADIUS_INITIAL_FILAMENT_CENTRE;
-	real n,xdist,ydist;
+	static const f64 XCENTRE = 0.0;
+	static const f64 YCENTRE = DEVICE_RADIUS_INITIAL_FILAMENT_CENTRE;
+	f64 n,xdist,ydist;
 	xdist = x-XCENTRE;
 	ydist = y-YCENTRE;
 	n = UNIFORM_n;
-	n += FILAMENT_OWN_PEAK_n*DEFINEexp(-(xdist*xdist+ydist*ydist)/(2.0*INITIALnSD*INITIALnSD));
 	
+#ifdef CENTRAL_FILAMENT	
+	n += FILAMENT_OWN_PEAK_n*DEFINEexp(-(xdist*xdist+ydist*ydist)/(2.0*INITIALnSD*INITIALnSD));
+#else
+#ifdef FILAMENT_WALL
+	// Filament wall
+	f64 r = sqrt(x*x + y*y);
+	f64 rdist = r - DEVICE_RADIUS_INITIAL_FILAMENT_CENTRE;
+	n += FILAMENT_OWN_PEAK_n*DEFINEexp(-(rdist*rdist) / (2.0*WALL_SD_RADIAL*WALL_SD_RADIAL));
+	// 18% enhancements:
+	for (int i = 0; i < NUMBER_OF_OSCILLATIONS+2; i++)
+	{
+		// our angle goes from -HALFANGLE to + HALFANGLE
+		// theta must go from -HALFANGLE + 0.5*spacing
+		// We must carry on outside the domain.
+		f64 theta_spacing = FULLANGLE / (double)NUMBER_OF_OSCILLATIONS; // the number of gaps is equal to number of peaks
+		f64 theta = -HALFANGLE + 0.5*theta_spacing + ((double)(i-1))*theta_spacing;
+		f64 xpeak = DEVICE_RADIUS_INITIAL_FILAMENT_CENTRE*cos(theta + PI*0.5);
+		f64 ypeak = DEVICE_RADIUS_INITIAL_FILAMENT_CENTRE*sin(theta + PI*0.5);
+		xdist = x - xpeak;
+		ydist = y - ypeak;
+		n += 0.18*FILAMENT_OWN_PEAK_n*DEFINEexp(-(xdist*xdist+ydist*ydist) / (2.0*WALL_SD_RADIAL*WALL_SD_RADIAL));
+	}
+#else
+	// Dispersed initial n,T
+	f64 r = sqrt(x*x + y*y);
+	if (r < DEVICE_RADIUS_INITIAL_FILAMENT_CENTRE) {
+		n += FILAMENT_OWN_PEAK_n;
+	} else {
+		f64 rdist = r - DEVICE_RADIUS_INITIAL_FILAMENT_CENTRE;
+		n += FILAMENT_OWN_PEAK_n*DEFINEexp(-(rdist*rdist) / (2.0*WALL_SD_RADIAL*WALL_SD_RADIAL));
+	};
+#endif
+#endif
+
+
 //	xdist = x-XCENTRE2;
 //	n += FILAMENT_OWN_PEAK_n*DEFINEexp(-(xdist*xdist+ydist*ydist)/(2.0*INITIALnSD*INITIALnSD));
 //	xdist = x-XCENTRE3;
@@ -64,32 +100,53 @@ real InitialIonDensity(real x, real y)
 //	n += FILAMENT_OWN_PEAK_n*DEFINEexp(-(xdist*xdist+ydist*ydist)/(2.0*INITIALnSD*INITIALnSD));
 	return n;
 }		
-real InitialIonDensityScrewPinch(real x,real y)
+f64 InitialIonDensityScrewPinch(f64 x,f64 y)
 {
 	y -= 3.61; // origin
 
-	real n = N0_centre_SP*exp(-(x*x+y*y)/(a_nSD*a_nSD)) + n_UNIFORM_SP;
+	f64 n = N0_centre_SP*exp(-(x*x+y*y)/(a_nSD*a_nSD)) + n_UNIFORM_SP;
 	return n;
 }
 
-real InitialTemperature(real x, real y)
+f64 InitialTemperature(f64 x, f64 y)
 {
-	static const real XCENTRE2 = DEVICE_RADIUS_INITIAL_FILAMENT_CENTRE*sin(PI/32.0);
-	static const real XCENTRE1 = -XCENTRE2;
-//	static const real YCENTRE = DEVICE_RADIUS_INITIAL_FILAMENT_CENTRE*cos(PI/32.0);
-	static const real YCENTRE_ROT = DEVICE_RADIUS_INITIAL_FILAMENT_CENTRE*cos(PI/32.0+PI/16.0);
-	static const real XCENTRE3 = DEVICE_RADIUS_INITIAL_FILAMENT_CENTRE*sin(PI/32.0+PI/16.0);
-	static const real XCENTRE4 = -XCENTRE3;
+	static const f64 XCENTRE2 = DEVICE_RADIUS_INITIAL_FILAMENT_CENTRE*sin(PI/32.0);
+	static const f64 XCENTRE1 = -XCENTRE2;
+//	static const f64 YCENTRE = DEVICE_RADIUS_INITIAL_FILAMENT_CENTRE*cos(PI/32.0);
+	static const f64 YCENTRE_ROT = DEVICE_RADIUS_INITIAL_FILAMENT_CENTRE*cos(PI/32.0+PI/16.0);
+	static const f64 XCENTRE3 = DEVICE_RADIUS_INITIAL_FILAMENT_CENTRE*sin(PI/32.0+PI/16.0);
+	static const f64 XCENTRE4 = -XCENTRE3;
 
-	static const real XCENTRE = 0.0;
-	static const real YCENTRE = DEVICE_RADIUS_INITIAL_FILAMENT_CENTRE;
+	static const f64 XCENTRE = 0.0;
+	static const f64 YCENTRE = DEVICE_RADIUS_INITIAL_FILAMENT_CENTRE;
 
-	real T,xdist,ydist;
+	f64 T,xdist,ydist;
 	xdist = x-XCENTRE;
 	ydist = y-YCENTRE;
 	T = UNIFORM_T;
+#ifdef CENTRAL_FILAMENT	
 	T += FILAMENT_OWN_PEAK_T*DEFINEexp(-(xdist*xdist+ydist*ydist)/(2.0*INITIALTSD*INITIALTSD));
-//	xdist = x-XCENTRE2;
+#else
+	f64 r = sqrt(x*x + y*y);
+	f64 rdist = r - DEVICE_RADIUS_INITIAL_FILAMENT_CENTRE;
+	// Filament wall
+#ifdef FILAMENT_WALL
+	T += FILAMENT_OWN_PEAK_T*DEFINEexp(-(rdist*rdist) / (2.0*WALL_SD_RADIAL*WALL_SD_RADIAL));
+#else
+	if (r < DEVICE_RADIUS_INITIAL_FILAMENT_CENTRE) {
+		T += FILAMENT_OWN_PEAK_T;
+	} else {
+		T += FILAMENT_OWN_PEAK_T*DEFINEexp(-(rdist*rdist) / (2.0*WALL_SD_RADIAL*WALL_SD_RADIAL));
+	};
+#endif
+
+	// 18% enhancements not applied
+
+#endif
+
+	
+	
+	//	xdist = x-XCENTRE2;
 //	T += FILAMENT_OWN_PEAK_T*DEFINEexp(-(xdist*xdist+ydist*ydist)/(2.0*INITIALTSD*INITIALTSD));
 //	xdist = x-XCENTRE3;
 //	ydist = y-YCENTRE_ROT;
@@ -99,7 +156,7 @@ real InitialTemperature(real x, real y)
 	return T;
 }		
 
-real InitialNeutralDensity(real x, real y)
+f64 InitialNeutralDensity(f64 x, f64 y)
 {
 	return 1.0e18 - InitialIonDensity(x, y);
 }				
@@ -186,9 +243,9 @@ void Triangle::GetOuterMedian(Vector2 * pResult, Vertex * pContig)
 /*void TriMesh::InitialiseScrewPinch()
 {
 	
-	static real const TWOOVERSQRT3 = 2.0/sqrt(3.0);
-	static real const OVERSQRT3 = 1.0/sqrt(3.0);
-	static real const SQRT3OVER2 = sqrt(3.0)/2.0;
+	static f64 const TWOOVERSQRT3 = 2.0/sqrt(3.0);
+	static f64 const OVERSQRT3 = 1.0/sqrt(3.0);
+	static f64 const SQRT3OVER2 = sqrt(3.0)/2.0;
 
 	// can't be equilateral mesh because it's fully ionised.
 
@@ -202,12 +259,12 @@ void Triangle::GetOuterMedian(Vector2 * pResult, Vertex * pContig)
 	// Can take some liberties with density per tri further out. Take maximum spacing.
 
 	long iRow, i, prev_N_points, N_points;
-	real angle;
-	static real const TWOPI = 2.0*PI;
+	f64 angle;
+	static f64 const TWOPI = 2.0*PI;
 
 	long iVertex, iNext, iStartCircle ,	iStartInner,iVertexInside,
 				iNextCircle,iVertexPrev,iTri,iprev,iNextInner;
-	real newr2;
+	f64 newr2;
 	Tensor2 rotate;
 	Triangle * pTri;
 	Vertex * pVertex;
@@ -226,20 +283,20 @@ void Triangle::GetOuterMedian(Vector2 * pResult, Vertex * pContig)
 		// Gaussian = 1/(2 pi a^2) exp(-r^2 / a^2)
 		// n = N0_centre exp(-r^2 / a^2) 
 
-		real TotalMass = N0_centre_SP* PI*a_nSD*a_nSD;
+		f64 TotalMass = N0_centre_SP* PI*a_nSD*a_nSD;
 		// hang on: this isn't with x^2/2 sigma^2 in exponent -- careful what it integrates to:
 		// 2 sigma^2 = a^2 ; integral of exp(-) is 2 pi sigma^2 = pi a^2
 		
 		long TotalTrisAim = NUMVERTICES*2;
-		real AverageMass = TotalMass/((real)TotalTrisAim);
+		f64 AverageMass = TotalMass/((f64)TotalTrisAim);
 
 		// Now decide the radius for these innermost tris;
 		// Assume density here is close to the max.
 
-		real DesiredArea = AverageMass/N0_centre_SP;
+		f64 DesiredArea = AverageMass/N0_centre_SP;
 		Vector2 firstpoint, origin;
 
-		real target, twovar, r1, r2, argument, lnarg, relerr, r_spacing, InnerDelta;
+		f64 target, twovar, r1, r2, argument, lnarg, relerr, r_spacing, InnerDelta;
 		
 		// mass = n0*area ; area = mass/n0
 		// Area of equi triangle = 0.5*0.866*delta^2 
@@ -295,8 +352,8 @@ void Triangle::GetOuterMedian(Vector2 * pResult, Vertex * pContig)
 			iVertex = numRow[0]+numRow[1];
 			bool bReachedMaximum = false;
 			
-			real f;
-			real r1part, f_inner, r2low, r2high;
+			f64 f;
+			f64 r1part, f_inner, r2low, r2high;
 
 			r1 = InnerDelta;
 			target = 4.0*0.866*AverageMass/(a_nSD*a_nSD*N0_centre_SP);
@@ -374,13 +431,13 @@ void Triangle::GetOuterMedian(Vector2 * pResult, Vertex * pContig)
 
 				// first point: take half the previous angle that was away from its first point.
 				// Don't know if that's always best or not.
-				real desired_theta_spacing = r_spacing/0.866;
+				f64 desired_theta_spacing = r_spacing/0.866;
 				N_points = (long)( (TWOPI*r2)/desired_theta_spacing );
 				
 				firstpoint = (firstpoint)*(r2/r1);
 				
 				if (iPass == 1) {
-					angle = PI/(real)(N_points); // half (new) angle
+					angle = PI/(f64)(N_points); // half (new) angle
 					rotate.xx = cos(angle);
 					rotate.xy = -sin(angle);
 					rotate.yx = sin(angle);
@@ -388,7 +445,7 @@ void Triangle::GetOuterMedian(Vector2 * pResult, Vertex * pContig)
 					
 					firstpoint = rotate*firstpoint;
 					
-					angle = TWOPI/(real)(N_points);
+					angle = TWOPI/(f64)(N_points);
 					rotate.xx = cos(angle);
 					rotate.xy = -sin(angle);
 					rotate.yx = sin(angle);
@@ -487,9 +544,9 @@ void Triangle::GetOuterMedian(Vector2 * pResult, Vertex * pContig)
 					iNextInner = iVertexInside + 1; if (iNextInner == iStartCircle) iNextInner = iStartInner;
 					iNext = iVertex + 1; if (iNext == iNextCircle) iNext = iStartCircle;
 					
-					real anglenext_inner = atan2(X[iNextInner].y-origin.y,X[iNextInner].x-origin.x);
+					f64 anglenext_inner = atan2(X[iNextInner].y-origin.y,X[iNextInner].x-origin.x);
 					if (anglenext_inner <= 0.0) anglenext_inner += TWOPI;
-					real anglenext_outer = atan2(X[iNext].y-origin.y,X[iNext].x-origin.x);
+					f64 anglenext_outer = atan2(X[iNext].y-origin.y,X[iNext].x-origin.x);
 					if (anglenext_outer <= 0.0) anglenext_outer += TWOPI;
 
 					// To compare angles, put in similar quadrant:
@@ -582,7 +639,7 @@ void Triangle::GetOuterMedian(Vector2 * pResult, Vertex * pContig)
 
 		// Coordinates from - to + horizontally, 0 to max vertically.
 
-		static real const NUMBER_OF_VERTICES = NUMVERTICES;
+		static f64 const NUMBER_OF_VERTICES = NUMVERTICES;
 		
 		// number in square that is x by x, given delta: x^2/(0.866 delta^2)
 		// 36000/x^2 = 1/ 0.866 delta^2
@@ -670,33 +727,33 @@ void Triangle::GetOuterMedian(Vector2 * pResult, Vertex * pContig)
 
 int TriMesh::Initialise(int token)
 {
-	real x, y, rr, r;
+	f64 x, y, rr, r;
 	long i, iRow, iTri;
-	real spacing, theta_spacing, theta, r_spacing;
+	f64 spacing, theta_spacing, theta, r_spacing;
 	long numRowprev;
 	bool stop;
 	long iVertex, iVertexLow, iVertexFirst, iVertexNextFirst, iVertexLowFirst;
 	bool inner_stop;
-	real xdist, ydist;
-	real vertex_density_per_cm_sq;
+	f64 xdist, ydist;
+	f64 vertex_density_per_cm_sq;
 	Vertex * vert, *pVertex;
 	Triangle * tri, *pTri;
 
-	real R_aim, r_use1, r_use2;
+	f64 R_aim, r_use1, r_use2;
 	long numRow1, numRow2, numRowPrev;
 
-	real r_row[1024];
+	f64 r_row[1024];
 
-	static real const TWOOVERSQRT3 = 2.0 / sqrt(3.0);
-	static real const OVERSQRT3 = 1.0 / sqrt(3.0);
-	static real const SQRT3OVER2 = sqrt(3.0) / 2.0;
+	static f64 const TWOOVERSQRT3 = 2.0 / sqrt(3.0);
+	static f64 const OVERSQRT3 = 1.0 / sqrt(3.0);
+	static f64 const SQRT3OVER2 = sqrt(3.0) / 2.0;
 
-	//	real XCENTRE2 = DEVICE_RADIUS_INITIAL_FILAMENT_CENTRE*sin(PI/32.0);
-	//	real XCENTRE1 = -XCENTRE2;
-	//	real YCENTRE = DEVICE_RADIUS_INITIAL_FILAMENT_CENTRE*cos(PI/32.0);
+	//	f64 XCENTRE2 = DEVICE_RADIUS_INITIAL_FILAMENT_CENTRE*sin(PI/32.0);
+	//	f64 XCENTRE1 = -XCENTRE2;
+	//	f64 YCENTRE = DEVICE_RADIUS_INITIAL_FILAMENT_CENTRE*cos(PI/32.0);
 
-	real XCENTRE = 0.0;
-	real YCENTRE = DEVICE_RADIUS_INITIAL_FILAMENT_CENTRE;
+	f64 XCENTRE = 0.0;
+	f64 YCENTRE = DEVICE_RADIUS_INITIAL_FILAMENT_CENTRE;
 
 	// New approach:
 
@@ -705,14 +762,14 @@ int TriMesh::Initialise(int token)
 
 	// Nvertices = Nrows(Nrows-1)(pi/(8 sqrt 3))((R2+R1)/(R2-R1))
 
-	//real const R2 = DOMAIN_OUTER_RADIUS;
-	//real const R1 = INNER_A_BOUNDARY;
-	//Numrows = (int)(0.5 + sqrt(0.25 + ((real)NUMVERTICES)*(R2-R1)*8.0*SQRT3/(PI*(R2+R1)));
+	//f64 const R2 = DOMAIN_OUTER_RADIUS;
+	//f64 const R1 = INNER_A_BOUNDARY;
+	//Numrows = (int)(0.5 + sqrt(0.25 + ((f64)NUMVERTICES)*(R2-R1)*8.0*SQRT3/(PI*(R2+R1)));
 	//// Chose too few, so the triangles will be longer and thinner than otherwise.
 	//// Maybe Nrow = 200.99 so we ought to go to the nearer # rows.
 
 	//// azimuthal:
-	//spacing = ((real)Numrows)*PI_OVER_16*(R2+R1)/(real)NUMVERTICES;
+	//spacing = ((f64)Numrows)*PI_OVER_16*(R2+R1)/(f64)NUMVERTICES;
 
 	// Oh dear --- we missed a trick: a row has to be put on REVERSE_ZCURRENT_RADIUS and rows have to be
 	// halfway before and after insulator.
@@ -727,12 +784,12 @@ int TriMesh::Initialise(int token)
 	// 1. Do a dry run to determine how many vertices we WILL ACTUALLY use.
 	// ____________________________________________________________________________
 
-	real TotalArea = PI * (START_SPREADING_OUT_RADIUS*START_SPREADING_OUT_RADIUS - INNER_A_BOUNDARY * INNER_A_BOUNDARY) / 16.0;
-	real NUM_VERTICES_PER_CM_SQ = ((real)NUMVERTICES_WITHIN) / TotalArea;
+	f64 TotalArea = PI * (START_SPREADING_OUT_RADIUS*START_SPREADING_OUT_RADIUS - INNER_A_BOUNDARY * INNER_A_BOUNDARY) / 16.0;
+	f64 NUM_VERTICES_PER_CM_SQ = ((f64)NUMVERTICES_WITHIN) / TotalArea;
 
 	iRow = 0;
 	// PREVIOUS VERSION:
-	//	spacing = sqrt((1.0/(real)NUM_VERTICES_PER_CM_SQ)*TWOOVERSQRT3); 
+	//	spacing = sqrt((1.0/(f64)NUM_VERTICES_PER_CM_SQ)*TWOOVERSQRT3); 
 	//	r_spacing = spacing*SQRT3OVER2; // equilateral triangles
 
 	// ---------------------------------------------------------------
@@ -741,7 +798,7 @@ int TriMesh::Initialise(int token)
 	// Note (R1+R2)(R2-R1) = (R2*R2-R1*R1)
 
 	// OLD, wrong:
-	//	r_spacing = sqrt(3.0/16.0 + TotalArea*SQRT3OVER2/(real)NUMVERTICES) - SQRT3OVER2*0.5;
+	//	r_spacing = sqrt(3.0/16.0 + TotalArea*SQRT3OVER2/(f64)NUMVERTICES) - SQRT3OVER2*0.5;
 
 	// Let's say there will be (4.3-2.72)/r_spacing rows, each containing (arc length/theta spacing) = arc length/(r_spacing/0.866)
 	// Thus we want
@@ -762,8 +819,8 @@ int TriMesh::Initialise(int token)
 
 	const int ROW_INC_FREQ = 6;
 
-	//f64 temp = 0.5*(PI / 16.0)*(START_SPREADING_OUT_RADIUS + INNER_A_BOUNDARY) / (real)NUMVERTICES_WITHIN;
-	//r_spacing = sqrt(temp*temp + SQRT3OVER2 * TotalArea / (real)NUMVERTICES_WITHIN) + temp;
+	//f64 temp = 0.5*(PI / 16.0)*(START_SPREADING_OUT_RADIUS + INNER_A_BOUNDARY) / (f64)NUMVERTICES_WITHIN;
+	//r_spacing = sqrt(temp*temp + SQRT3OVER2 * TotalArea / (f64)NUMVERTICES_WITHIN) + temp;
 	
 	printf("r_spacing %f \n", r_spacing);
 
@@ -782,8 +839,8 @@ int TriMesh::Initialise(int token)
 	f64 rAim = REVERSE_ZCURRENT_RADIUS - r_spacing * 0.5; // so it goes through middle of triangles - tick
 
 	numRow1 = (int)((rAim - INNER_A_BOUNDARY) / r_spacing); // too few - squeeze out
-	if ((rAim - INNER_A_BOUNDARY) / r_spacing - (real)numRow1 > 0.5) numRow1++; // squeeze in instead
-	r_use1 = (rAim - INNER_A_BOUNDARY) / (real)numRow1;
+	if ((rAim - INNER_A_BOUNDARY) / r_spacing - (f64)numRow1 > 0.5) numRow1++; // squeeze in instead
+	r_use1 = (rAim - INNER_A_BOUNDARY) / (f64)numRow1;
 
 	numVertices = 0;
 
@@ -826,9 +883,9 @@ int TriMesh::Initialise(int token)
 
 	R_aim = DEVICE_RADIUS_INSULATOR_OUTER - 0.5*r_spacing;
 	numRow2 = (int)((R_aim - r) / r_spacing); // number of FURTHER rows to reach R_aim
-	if (((R_aim - r) / r_spacing) - (real)numRow2 > 0.5) numRow2++;
+	if (((R_aim - r) / r_spacing) - (f64)numRow2 > 0.5) numRow2++;
 	// Now stretch them:
-	r_use2 = (DEVICE_RADIUS_INSULATOR_OUTER - r) / (((real)numRow2) + 0.5); // numRow2+0.5 actual amount of rows to reach DRIO from r
+	r_use2 = (DEVICE_RADIUS_INSULATOR_OUTER - r) / (((f64)numRow2) + 0.5); // numRow2+0.5 actual amount of rows to reach DRIO from r
 	numRow2++; //include the row we already stepped forward.
 
 	for (iRow = numRow1 + 1; iRow <= numRow1 + numRow2; iRow++) // 0,1,2,3,4=numRow1 , 5, 6,7,8,9 [numRow2++ == 5]
@@ -845,7 +902,7 @@ int TriMesh::Initialise(int token)
 	}; // numRow1+numRow2 is the last row inside the ins.
 
 	   // Domain rows:
-	   //	spacing = sqrt((1.0/(real)NUM_VERTICES_PER_CM_SQ)*TWOOVERSQRT3); 
+	   //	spacing = sqrt((1.0/(f64)NUM_VERTICES_PER_CM_SQ)*TWOOVERSQRT3); 
 	   //	r_spacing = spacing*SQRT3OVER2; // equilateral triangles
 	   // Why did we ever do that????
 
@@ -855,7 +912,7 @@ int TriMesh::Initialise(int token)
 //	r = START_SPREADING_OUT_RADIUS + r_spacing * 0.5;
 
 	int numUse = (int)((START_SPREADING_OUT_RADIUS - r) / r_spacing) ;// excludes 0th row
-	real r_use3 = (START_SPREADING_OUT_RADIUS - r) / numUse;
+	f64 r_use3 = (START_SPREADING_OUT_RADIUS - r) / numUse;
 
 	for (i = 0; //r < DOMAIN_OUTER_RADIUS; r += r_use3)
 		i <= numUse; i++)
@@ -900,7 +957,7 @@ int TriMesh::Initialise(int token)
 		long iHigh = 0;
 		for (i = numRow1 + 1; i < numRows; i++) // if we adjust more-inner rows, then we'd have to change StartZCurrentRow
 		{
-			density = ((real)numRow[i]) / r_row[i];
+			density = ((f64)numRow[i]) / r_row[i];
 			if (density > highdens) {
 				highdens = density;
 				iHigh = i;
@@ -916,7 +973,7 @@ int TriMesh::Initialise(int token)
 		long iLow = 0;
 		for (i = numRow1 + 1; i < numRows; i++)
 		{
-			density = ((real)numRow[i]) / r_row[i];
+			density = ((f64)numRow[i]) / r_row[i];
 			if (density < lowdens) {
 				lowdens = density;
 				iLow = i;
@@ -1043,7 +1100,7 @@ int TriMesh::Initialise(int token)
 	numOutermostRow = numRow[numRows - 1]; // store
 
 										   // PREVIOUS VERS:
-										   //numTrianglesAllocated = (long)(2.02*(real)(numVertices+numRows
+										   //numTrianglesAllocated = (long)(2.02*(f64)(numVertices+numRows
 										   //	+ numRow[0] + numRow[numRows-1])); 	
 	if (numVertices != NUMVERTICES) {
 		printf("error: numVertices %d NUM_AIMED %d \n",
@@ -1118,8 +1175,8 @@ int TriMesh::Initialise(int token)
 
 		if (iRow == numRows - 1) StartAvgRow = iVertex;
 
-		theta_spacing = FULLANGLE / (real)numRow[iRow]; // roughly
-		real theta_aim;
+		theta_spacing = FULLANGLE / (f64)numRow[iRow]; // roughly
+		f64 theta_aim;
 
 		// Ways to get symmetric:
 		// if there is a gap at the edge, then we need a gap in the middle
@@ -1133,7 +1190,7 @@ int TriMesh::Initialise(int token)
 			theta = -HALFANGLE + 0.01*theta_spacing;
 			theta_aim = -theta_spacing; // in this case we fitted half the points into left half;
 		};
-		theta_spacing = (theta_aim - theta) / (real)(numRow[iRow] / 2 - 1);
+		theta_spacing = (theta_aim - theta) / (f64)(numRow[iRow] / 2 - 1);
 
 		for (i = 0; i < numRow[iRow] / 2; i++) // say numRow == 100, go 0 through 49
 		{
@@ -1257,7 +1314,7 @@ int TriMesh::Initialise(int token)
 	iRow = 0;
 	iVertexLowFirst = 0;
 	int top_circled, bot_circled, top_advance;
-	real gradient1, gradient2, anglenext, anglenextlow,
+	f64 gradient1, gradient2, anglenext, anglenextlow,
 		anglelow, angle;
 	Vertex * pNext, *pNextLow;
 	iTri = 0;
@@ -1607,33 +1664,33 @@ Previous version before spreading out.
 
 int TriMesh::Initialise(int token)
 {
-	real x, y, rr, r;
+	f64 x, y, rr, r;
 	long i, iRow, iTri;
-	real spacing, theta_spacing, theta, r_spacing;
+	f64 spacing, theta_spacing, theta, r_spacing;
 	long numRowprev;
 	bool stop;
 	long iVertex, iVertexLow, iVertexFirst, iVertexNextFirst, iVertexLowFirst;
 	bool inner_stop;
-	real xdist, ydist;
-	real vertex_density_per_cm_sq;
+	f64 xdist, ydist;
+	f64 vertex_density_per_cm_sq;
 	Vertex * vert, *pVertex;
 	Triangle * tri, *pTri;
 
-	real R_aim, r_use1, r_use2;
+	f64 R_aim, r_use1, r_use2;
 	long numRow1, numRow2, numRowPrev;
 
-	real r_row[1024];
+	f64 r_row[1024];
 
-	static real const TWOOVERSQRT3 = 2.0 / sqrt(3.0);
-	static real const OVERSQRT3 = 1.0 / sqrt(3.0);
-	static real const SQRT3OVER2 = sqrt(3.0) / 2.0;
+	static f64 const TWOOVERSQRT3 = 2.0 / sqrt(3.0);
+	static f64 const OVERSQRT3 = 1.0 / sqrt(3.0);
+	static f64 const SQRT3OVER2 = sqrt(3.0) / 2.0;
 
-	//	real XCENTRE2 = DEVICE_RADIUS_INITIAL_FILAMENT_CENTRE*sin(PI/32.0);
-	//	real XCENTRE1 = -XCENTRE2;
-	//	real YCENTRE = DEVICE_RADIUS_INITIAL_FILAMENT_CENTRE*cos(PI/32.0);
+	//	f64 XCENTRE2 = DEVICE_RADIUS_INITIAL_FILAMENT_CENTRE*sin(PI/32.0);
+	//	f64 XCENTRE1 = -XCENTRE2;
+	//	f64 YCENTRE = DEVICE_RADIUS_INITIAL_FILAMENT_CENTRE*cos(PI/32.0);
 
-	real XCENTRE = 0.0;
-	real YCENTRE = DEVICE_RADIUS_INITIAL_FILAMENT_CENTRE;
+	f64 XCENTRE = 0.0;
+	f64 YCENTRE = DEVICE_RADIUS_INITIAL_FILAMENT_CENTRE;
 
 	// New approach:
 
@@ -1642,14 +1699,14 @@ int TriMesh::Initialise(int token)
 
 	// Nvertices = Nrows(Nrows-1)(pi/(8 sqrt 3))((R2+R1)/(R2-R1))
 
-	//real const R2 = DOMAIN_OUTER_RADIUS;
-	//real const R1 = INNER_A_BOUNDARY;
-	//Numrows = (int)(0.5 + sqrt(0.25 + ((real)NUMVERTICES)*(R2-R1)*8.0*SQRT3/(PI*(R2+R1)));
+	//f64 const R2 = DOMAIN_OUTER_RADIUS;
+	//f64 const R1 = INNER_A_BOUNDARY;
+	//Numrows = (int)(0.5 + sqrt(0.25 + ((f64)NUMVERTICES)*(R2-R1)*8.0*SQRT3/(PI*(R2+R1)));
 	//// Chose too few, so the triangles will be longer and thinner than otherwise.
 	//// Maybe Nrow = 200.99 so we ought to go to the nearer # rows.
 
 	//// azimuthal:
-	//spacing = ((real)Numrows)*PI_OVER_16*(R2+R1)/(real)NUMVERTICES;
+	//spacing = ((f64)Numrows)*PI_OVER_16*(R2+R1)/(f64)NUMVERTICES;
 
 	// Oh dear --- we missed a trick: a row has to be put on REVERSE_ZCURRENT_RADIUS and rows have to be
 	// halfway before and after insulator.
@@ -1664,12 +1721,12 @@ int TriMesh::Initialise(int token)
 	// 1. Do a dry run to determine how many vertices we WILL ACTUALLY use.
 	// ____________________________________________________________________________
 
-	real TotalArea = PI * (DOMAIN_OUTER_RADIUS*DOMAIN_OUTER_RADIUS - INNER_A_BOUNDARY * INNER_A_BOUNDARY) / 16.0;
-	real NUM_VERTICES_PER_CM_SQ = ((real)NUMVERTICES) / TotalArea;
+	f64 TotalArea = PI * (DOMAIN_OUTER_RADIUS*DOMAIN_OUTER_RADIUS - INNER_A_BOUNDARY * INNER_A_BOUNDARY) / 16.0;
+	f64 NUM_VERTICES_PER_CM_SQ = ((f64)NUMVERTICES) / TotalArea;
 
 	iRow = 0;
 	// PREVIOUS VERSION:
-	//	spacing = sqrt((1.0/(real)NUM_VERTICES_PER_CM_SQ)*TWOOVERSQRT3); 
+	//	spacing = sqrt((1.0/(f64)NUM_VERTICES_PER_CM_SQ)*TWOOVERSQRT3); 
 	//	r_spacing = spacing*SQRT3OVER2; // equilateral triangles
 
 	// ---------------------------------------------------------------
@@ -1678,12 +1735,12 @@ int TriMesh::Initialise(int token)
 	// Note (R1+R2)(R2-R1) = (R2*R2-R1*R1)
 
 	// OLD, wrong:
-	//	r_spacing = sqrt(3.0/16.0 + TotalArea*SQRT3OVER2/(real)NUMVERTICES) - SQRT3OVER2*0.5;
+	//	r_spacing = sqrt(3.0/16.0 + TotalArea*SQRT3OVER2/(f64)NUMVERTICES) - SQRT3OVER2*0.5;
 
 	const int ROW_INC_FREQ = 6;
 
-	f64 temp = 0.5*(PI / 16.0)*(DOMAIN_OUTER_RADIUS + INNER_A_BOUNDARY) / (real)NUMVERTICES;
-	r_spacing = sqrt(temp*temp + SQRT3OVER2 * TotalArea / (real)NUMVERTICES) + temp;
+	f64 temp = 0.5*(PI / 16.0)*(DOMAIN_OUTER_RADIUS + INNER_A_BOUNDARY) / (f64)NUMVERTICES;
+	r_spacing = sqrt(temp*temp + SQRT3OVER2 * TotalArea / (f64)NUMVERTICES) + temp;
 
 	spacing = r_spacing / SQRT3OVER2;
 
@@ -1700,8 +1757,8 @@ int TriMesh::Initialise(int token)
 	f64 rAim = REVERSE_ZCURRENT_RADIUS - r_spacing * 0.5; // so it goes through middle of triangles - tick
 
 	numRow1 = (int)((rAim - INNER_A_BOUNDARY) / r_spacing); // too few - squeeze out
-	if ((rAim - INNER_A_BOUNDARY) / r_spacing - (real)numRow1 > 0.5) numRow1++; // squeeze in instead
-	r_use1 = (rAim - INNER_A_BOUNDARY) / (real)numRow1;
+	if ((rAim - INNER_A_BOUNDARY) / r_spacing - (f64)numRow1 > 0.5) numRow1++; // squeeze in instead
+	r_use1 = (rAim - INNER_A_BOUNDARY) / (f64)numRow1;
 
 	numVertices = 0;
 
@@ -1743,9 +1800,9 @@ int TriMesh::Initialise(int token)
 
 	R_aim = DEVICE_RADIUS_INSULATOR_OUTER - 0.5*r_spacing;
 	numRow2 = (int)((R_aim - r) / r_spacing); // number of FURTHER rows to reach R_aim
-	if (((R_aim - r) / r_spacing) - (real)numRow2 > 0.5) numRow2++;
+	if (((R_aim - r) / r_spacing) - (f64)numRow2 > 0.5) numRow2++;
 	// Now stretch them:
-	r_use2 = (DEVICE_RADIUS_INSULATOR_OUTER - r) / (((real)numRow2) + 0.5); // numRow2+0.5 actual amount of rows to reach DRIO from r
+	r_use2 = (DEVICE_RADIUS_INSULATOR_OUTER - r) / (((f64)numRow2) + 0.5); // numRow2+0.5 actual amount of rows to reach DRIO from r
 	numRow2++; //include the row we already stepped forward.
 
 	for (iRow = numRow1 + 1; iRow <= numRow1 + numRow2; iRow++) // 0,1,2,3,4=numRow1 , 5, 6,7,8,9 [numRow2++ == 5]
@@ -1762,7 +1819,7 @@ int TriMesh::Initialise(int token)
 	}; // numRow1+numRow2 is the last row inside the ins.
 
 	   // Domain rows:
-	   //	spacing = sqrt((1.0/(real)NUM_VERTICES_PER_CM_SQ)*TWOOVERSQRT3); 
+	   //	spacing = sqrt((1.0/(f64)NUM_VERTICES_PER_CM_SQ)*TWOOVERSQRT3); 
 	   //	r_spacing = spacing*SQRT3OVER2; // equilateral triangles
 	   // Why did we ever do that????
 
@@ -1772,7 +1829,7 @@ int TriMesh::Initialise(int token)
 	r = DEVICE_RADIUS_INSULATOR_OUTER + r_spacing * 0.5;
 
 	int numUse = (int)((DOMAIN_OUTER_RADIUS - r) / r_spacing); // excludes 0th row
-	real r_use3 = (DOMAIN_OUTER_RADIUS - r) / numUse;
+	f64 r_use3 = (DOMAIN_OUTER_RADIUS - r) / numUse;
 
 	for (i = 0; //r < DOMAIN_OUTER_RADIUS; r += r_use3)
 		i <= numUse; i++)
@@ -1814,7 +1871,7 @@ int TriMesh::Initialise(int token)
 		long iHigh = 0;
 		for (i = numRow1 + 1; i < numRows; i++) // if we adjust more-inner rows, then we'd have to change StartZCurrentRow
 		{
-			density = ((real)numRow[i]) / r_row[i];
+			density = ((f64)numRow[i]) / r_row[i];
 			if (density > highdens) {
 				highdens = density;
 				iHigh = i;
@@ -1831,7 +1888,7 @@ int TriMesh::Initialise(int token)
 		long iLow = 0;
 		for (i = numRow1 + 1; i < numRows; i++)
 		{
-			density = ((real)numRow[i]) / r_row[i];
+			density = ((f64)numRow[i]) / r_row[i];
 			if (density < lowdens) {
 				lowdens = density;
 				iLow = i;
@@ -1848,7 +1905,7 @@ int TriMesh::Initialise(int token)
 	numOutermostRow = numRow[numRows - 1]; // store
 
 										   // PREVIOUS VERS:
-										   //numTrianglesAllocated = (long)(2.02*(real)(numVertices+numRows
+										   //numTrianglesAllocated = (long)(2.02*(f64)(numVertices+numRows
 										   //	+ numRow[0] + numRow[numRows-1])); 	
 	if (numVertices != NUMVERTICES) {
 		printf("error: numVertices %d NUM_AIMED %d \n",
@@ -1923,8 +1980,8 @@ int TriMesh::Initialise(int token)
 
 		if (iRow == numRows - 1) StartAvgRow = iVertex;
 
-		theta_spacing = FULLANGLE / (real)numRow[iRow]; // roughly
-		real theta_aim;
+		theta_spacing = FULLANGLE / (f64)numRow[iRow]; // roughly
+		f64 theta_aim;
 
 			// Ways to get symmetric:
 			// if there is a gap at the edge, then we need a gap in the middle
@@ -1938,7 +1995,7 @@ int TriMesh::Initialise(int token)
 			theta = -HALFANGLE + 0.01*theta_spacing;
 			theta_aim = -theta_spacing; // in this case we fitted half the points into left half;
 		};
-		theta_spacing = (theta_aim - theta) / (real)(numRow[iRow] / 2 - 1);
+		theta_spacing = (theta_aim - theta) / (f64)(numRow[iRow] / 2 - 1);
 		
 		for (i = 0; i < numRow[iRow]/2; i++) // say numRow == 100, go 0 through 49
 		{
@@ -2055,7 +2112,7 @@ int TriMesh::Initialise(int token)
 	iRow = 0;
 	iVertexLowFirst = 0;
 	int top_circled, bot_circled, top_advance;
-	real gradient1, gradient2, anglenext, anglenextlow,
+	f64 gradient1, gradient2, anglenext, anglenextlow,
 		anglelow, angle;
 	Vertex * pNext, *pNextLow;
 	iTri = 0;
@@ -2399,33 +2456,33 @@ int TriMesh::Initialise(int token)
 }*/
 int TriMesh::InitialiseOriginal(int token)
 {
-	real x,y,rr,r;
+	f64 x,y,rr,r;
 	long i,iRow,iTri;
-	real spacing, theta_spacing, theta, r_spacing;
+	f64 spacing, theta_spacing, theta, r_spacing;
 	long numRowprev;
 	bool stop;
 	long iVertex,iVertexLow,iVertexFirst,iVertexNextFirst,iVertexLowFirst;
 	bool inner_stop;
-	real xdist,ydist;
-	real vertex_density_per_cm_sq;	
+	f64 xdist,ydist;
+	f64 vertex_density_per_cm_sq;	
 	Vertex * vert, *pVertex;
 	Triangle * tri, *pTri;
 
-	real R_aim, r_use1, r_use2;
+	f64 R_aim, r_use1, r_use2;
 	long numRow1, numRow2, numRowPrev;
 
-	real r_row[1024];
+	f64 r_row[1024];
 
-	static real const TWOOVERSQRT3 = 2.0/sqrt(3.0);
-	static real const OVERSQRT3 = 1.0/sqrt(3.0);
-	static real const SQRT3OVER2 = sqrt(3.0)/2.0;
+	static f64 const TWOOVERSQRT3 = 2.0/sqrt(3.0);
+	static f64 const OVERSQRT3 = 1.0/sqrt(3.0);
+	static f64 const SQRT3OVER2 = sqrt(3.0)/2.0;
 
-//	real XCENTRE2 = DEVICE_RADIUS_INITIAL_FILAMENT_CENTRE*sin(PI/32.0);
-//	real XCENTRE1 = -XCENTRE2;
-//	real YCENTRE = DEVICE_RADIUS_INITIAL_FILAMENT_CENTRE*cos(PI/32.0);
+//	f64 XCENTRE2 = DEVICE_RADIUS_INITIAL_FILAMENT_CENTRE*sin(PI/32.0);
+//	f64 XCENTRE1 = -XCENTRE2;
+//	f64 YCENTRE = DEVICE_RADIUS_INITIAL_FILAMENT_CENTRE*cos(PI/32.0);
 
-	real XCENTRE = 0.0;
-	real YCENTRE = DEVICE_RADIUS_INITIAL_FILAMENT_CENTRE;
+	f64 XCENTRE = 0.0;
+	f64 YCENTRE = DEVICE_RADIUS_INITIAL_FILAMENT_CENTRE;
 
 	// New approach:
 
@@ -2434,14 +2491,14 @@ int TriMesh::InitialiseOriginal(int token)
 
 	// Nvertices = Nrows(Nrows-1)(pi/(8 sqrt 3))((R2+R1)/(R2-R1))
 
-	//real const R2 = DOMAIN_OUTER_RADIUS;
-	//real const R1 = INNER_A_BOUNDARY;
-	//Numrows = (int)(0.5 + sqrt(0.25 + ((real)NUMVERTICES)*(R2-R1)*8.0*SQRT3/(PI*(R2+R1)));
+	//f64 const R2 = DOMAIN_OUTER_RADIUS;
+	//f64 const R1 = INNER_A_BOUNDARY;
+	//Numrows = (int)(0.5 + sqrt(0.25 + ((f64)NUMVERTICES)*(R2-R1)*8.0*SQRT3/(PI*(R2+R1)));
 	//// Chose too few, so the triangles will be longer and thinner than otherwise.
 	//// Maybe Nrow = 200.99 so we ought to go to the nearer # rows.
 
 	//// azimuthal:
-	//spacing = ((real)Numrows)*PI_OVER_16*(R2+R1)/(real)NUMVERTICES;
+	//spacing = ((f64)Numrows)*PI_OVER_16*(R2+R1)/(f64)NUMVERTICES;
 
 	// Oh dear --- we missed a trick: a row has to be put on REVERSE_ZCURRENT_RADIUS and rows have to be
 	// halfway before and after insulator.
@@ -2456,12 +2513,12 @@ int TriMesh::InitialiseOriginal(int token)
 	// 1. Do a dry run to determine how many vertices we WILL ACTUALLY use.
 	// ____________________________________________________________________________
 	
-	real TotalArea = PI*(DOMAIN_OUTER_RADIUS*DOMAIN_OUTER_RADIUS-INNER_A_BOUNDARY*INNER_A_BOUNDARY)/16.0;
-	real NUM_VERTICES_PER_CM_SQ = ((real)NUMVERTICES)/TotalArea;
+	f64 TotalArea = PI*(DOMAIN_OUTER_RADIUS*DOMAIN_OUTER_RADIUS-INNER_A_BOUNDARY*INNER_A_BOUNDARY)/16.0;
+	f64 NUM_VERTICES_PER_CM_SQ = ((f64)NUMVERTICES)/TotalArea;
 
 	iRow = 0;
 	// PREVIOUS VERSION:
-//	spacing = sqrt((1.0/(real)NUM_VERTICES_PER_CM_SQ)*TWOOVERSQRT3); 
+//	spacing = sqrt((1.0/(f64)NUM_VERTICES_PER_CM_SQ)*TWOOVERSQRT3); 
 //	r_spacing = spacing*SQRT3OVER2; // equilateral triangles
 
 	// ---------------------------------------------------------------
@@ -2470,10 +2527,10 @@ int TriMesh::InitialiseOriginal(int token)
 	// Note (R1+R2)(R2-R1) = (R2*R2-R1*R1)
 
 	// OLD, wrong:
-//	r_spacing = sqrt(3.0/16.0 + TotalArea*SQRT3OVER2/(real)NUMVERTICES) - SQRT3OVER2*0.5;
+//	r_spacing = sqrt(3.0/16.0 + TotalArea*SQRT3OVER2/(f64)NUMVERTICES) - SQRT3OVER2*0.5;
 
-	f64 temp = 0.5*(PI/16.0)*(DOMAIN_OUTER_RADIUS+INNER_A_BOUNDARY)/(real)NUMVERTICES;
-	r_spacing = sqrt(temp*temp + SQRT3OVER2*TotalArea/(real)NUMVERTICES) + temp;
+	f64 temp = 0.5*(PI/16.0)*(DOMAIN_OUTER_RADIUS+INNER_A_BOUNDARY)/(f64)NUMVERTICES;
+	r_spacing = sqrt(temp*temp + SQRT3OVER2*TotalArea/(f64)NUMVERTICES) + temp;
 
 	spacing = r_spacing/SQRT3OVER2;
 		
@@ -2490,8 +2547,8 @@ int TriMesh::InitialiseOriginal(int token)
 	f64 rAim = REVERSE_ZCURRENT_RADIUS-r_spacing*0.5; // so it goes through middle of triangles - tick
 
 	numRow1 = (int)((rAim-INNER_A_BOUNDARY)/r_spacing); // too few - squeeze out
-	if ((rAim-INNER_A_BOUNDARY)/r_spacing -(real)numRow1 > 0.5) numRow1++; // squeeze in instead
-	r_use1 = (rAim-INNER_A_BOUNDARY)/(real)numRow1;
+	if ((rAim-INNER_A_BOUNDARY)/r_spacing -(f64)numRow1 > 0.5) numRow1++; // squeeze in instead
+	r_use1 = (rAim-INNER_A_BOUNDARY)/(f64)numRow1;
 	
 	numVertices = 0;
 	
@@ -2501,7 +2558,7 @@ int TriMesh::InitialiseOriginal(int token)
 	numRowprev = (int)(FULLANGLE*r/spacing)+1;
 	for (iRow = 0; iRow <= numRow1; iRow++)
 	{
-		if (FULLANGLE/(real)numRowprev > spacing/r) 
+		if (FULLANGLE/(f64)numRowprev > spacing/r) 
 		{
 			numRow[iRow] = numRowprev+1; 
 			// note that r_spacing < spacing and fullangle < 45 degrees, so 1 is enough
@@ -2528,14 +2585,14 @@ int TriMesh::InitialiseOriginal(int token)
 
 	R_aim = DEVICE_RADIUS_INSULATOR_OUTER - 0.5*r_spacing;
 	numRow2 = (int)((R_aim-r)/r_spacing); // number of FURTHER rows to reach R_aim
-	if (((R_aim-r)/r_spacing) - (real)numRow2 > 0.5) numRow2++;
+	if (((R_aim-r)/r_spacing) - (f64)numRow2 > 0.5) numRow2++;
 	// Now stretch them:
-	r_use2 = (DEVICE_RADIUS_INSULATOR_OUTER-r)/(((real)numRow2)+0.5); // numRow2+0.5 actual amount of rows to reach DRIO from r
+	r_use2 = (DEVICE_RADIUS_INSULATOR_OUTER-r)/(((f64)numRow2)+0.5); // numRow2+0.5 actual amount of rows to reach DRIO from r
 	numRow2++; //include the row we already stepped forward.
 
 	for (iRow = numRow1 + 1; iRow <= numRow1+numRow2; iRow++) // 0,1,2,3,4=numRow1 , 5, 6,7,8,9 [numRow2++ == 5]
 	{
-		if (FULLANGLE/(real)numRowprev > spacing/r) 
+		if (FULLANGLE/(f64)numRowprev > spacing/r) 
 		{
 			numRow[iRow] = numRowprev+1; 
 			// note that r_spacing < spacing and fullangle < 45 degrees, so 1 is enough
@@ -2550,7 +2607,7 @@ int TriMesh::InitialiseOriginal(int token)
 	}; // numRow1+numRow2 is the last row inside the ins.
 	
 	// Domain rows:
-//	spacing = sqrt((1.0/(real)NUM_VERTICES_PER_CM_SQ)*TWOOVERSQRT3); 
+//	spacing = sqrt((1.0/(f64)NUM_VERTICES_PER_CM_SQ)*TWOOVERSQRT3); 
 //	r_spacing = spacing*SQRT3OVER2; // equilateral triangles
 	// Why did we ever do that????
 	
@@ -2560,12 +2617,12 @@ int TriMesh::InitialiseOriginal(int token)
 	r = DEVICE_RADIUS_INSULATOR_OUTER + r_spacing*0.5;
 	
 	int numUse = (int)((DOMAIN_OUTER_RADIUS-r)/r_spacing); // excludes 0th row
-	real r_use3 = (DOMAIN_OUTER_RADIUS-r)/numUse;
+	f64 r_use3 = (DOMAIN_OUTER_RADIUS-r)/numUse;
 	
 	for (i = 0; //r < DOMAIN_OUTER_RADIUS; r += r_use3)
 				i <= numUse; i++)
 	{
-		if (FULLANGLE/(real)numRowprev > spacing/r) 
+		if (FULLANGLE/(f64)numRowprev > spacing/r) 
 		{
 			numRow[iRow] = numRowprev+1; // note that r_spacing < spacing and fullangle < 45 degrees, so 1 is enough
 		} else {
@@ -2602,7 +2659,7 @@ int TriMesh::InitialiseOriginal(int token)
 		long iHigh = 0;
 		for (i = numRow1+1; i < numRows; i++) // if we adjust more-inner rows, then we'd have to change StartZCurrentRow
 		{
-			density = ((real)numRow[i])/r_row[i];
+			density = ((f64)numRow[i])/r_row[i];
 			if (density > highdens) {
 				highdens = density;
 				iHigh = i;
@@ -2618,7 +2675,7 @@ int TriMesh::InitialiseOriginal(int token)
 		long iLow = 0;
 		for (i = numRow1+1; i < numRows; i++)
 		{
-			density = ((real)numRow[i])/r_row[i];
+			density = ((f64)numRow[i])/r_row[i];
 			if (density < lowdens) {
 				lowdens = density;
 				iLow = i;				
@@ -2635,7 +2692,7 @@ int TriMesh::InitialiseOriginal(int token)
 	numOutermostRow = numRow[numRows-1]; // store
 	
 	// PREVIOUS VERS:
-	//numTrianglesAllocated = (long)(2.02*(real)(numVertices+numRows
+	//numTrianglesAllocated = (long)(2.02*(f64)(numVertices+numRows
 	//	+ numRow[0] + numRow[numRows-1])); 	
 	if (numVertices != NUMVERTICES) {
 		printf("error: numVertices %d NUM_AIMED %d \n",
@@ -2708,7 +2765,7 @@ int TriMesh::InitialiseOriginal(int token)
 
 		if (iRow == numRows-1) StartAvgRow = iVertex;
 
-		theta_spacing = FULLANGLE/(real)numRow[iRow];
+		theta_spacing = FULLANGLE/(f64)numRow[iRow];
 		theta = -HALFANGLE + ((iRow % 2 == 1)?(0.5*theta_spacing):(0.01*theta_spacing));
 		// pls don't put exactly on boundary - just asking for trouble!!!
 		// Offsetting at left side guarantees there is at least one place that consecutive rows are antiphased.
@@ -2763,7 +2820,7 @@ int TriMesh::InitialiseOriginal(int token)
 	iRow = 0;
 	iVertexLowFirst = 0;
 	int top_circled, bot_circled, top_advance;
-	real gradient1, gradient2, anglenext, anglenextlow,
+	f64 gradient1, gradient2, anglenext, anglenextlow,
 		anglelow, angle;
 	Vertex * pNext, *pNextLow;
 	iTri = 0;
@@ -3211,17 +3268,17 @@ void TriMesh::Create4Volleys()
 	// For now start with always equilateral aux mesh, no following fine mesh.
 
 	
-	static real const TWOOVERSQRT3 = 2.0/sqrt(3.0);
-	static real const OVERSQRT3 = 1.0/sqrt(3.0);
-	static real const SQRT3OVER2 = sqrt(3.0)/2.0;
+	static f64 const TWOOVERSQRT3 = 2.0/sqrt(3.0);
+	static f64 const OVERSQRT3 = 1.0/sqrt(3.0);
+	static f64 const SQRT3OVER2 = sqrt(3.0)/2.0;
 
 	long iRow, i, prev_N_points, N_points;
-	real theta;
-	static real const TWOPI = 2.0*PI;
+	f64 theta;
+	static f64 const TWOPI = 2.0*PI;
 
 	long iVertex, iNext, iStartCircle ,	iStartInner,iVertexInside,
 				iNextCircle,iVertexPrev,iTri,iprev,iNextInner;
-	real newr2;
+	f64 newr2;
 	Tensor2 rotate;
 
 		AuxTriangle *pTri;
@@ -3232,7 +3289,7 @@ void TriMesh::Create4Volleys()
 	{
 		// circular domain version
 		
-		real target, twovar, r1, r2, argument, lnarg, relerr, r_spacing, InnerDelta;
+		f64 target, twovar, r1, r2, argument, lnarg, relerr, r_spacing, InnerDelta;
 
 		// Edge length: given delta, number of verts will be
 		// sum [2 pi (r=k delta 0.866) / delta] for k = 0 until k delta 0.866 == R
@@ -3243,7 +3300,7 @@ void TriMesh::Create4Volleys()
 		// therefore delta^2 # = (pi/0.866) R^2 
 		// therefore delta = sqrt ((pi/0.866) R^2 / #)
 
-		real EdgeLen = sqrt((PI/0.866)*OUTER_RADIUS*OUTER_RADIUS/
+		f64 EdgeLen = sqrt((PI/0.866)*OUTER_RADIUS*OUTER_RADIUS/
 			NUM_AUX_VERTS[iLevel]);
 
 		InnerDelta = EdgeLen;
@@ -3277,7 +3334,7 @@ void TriMesh::Create4Volleys()
 			prev_N_points = 6;
 			iRow = 2;
 			iVertex = numAuxRow[0]+numAuxRow[1];
-			real r_outer;
+			f64 r_outer;
 
 			r1 = InnerDelta;
 					
@@ -3297,7 +3354,7 @@ void TriMesh::Create4Volleys()
 				firstpoint = (firstpoint)*(r2/r1);
 				
 				if (iPass == 1) {
-					theta = PI/(real)(N_points); // half (new) angle
+					theta = PI/(f64)(N_points); // half (new) angle
 					rotate.xx = cos(theta);
 					rotate.xy = -sin(theta);
 					rotate.yx = sin(theta);
@@ -3305,7 +3362,7 @@ void TriMesh::Create4Volleys()
 					
 					firstpoint = rotate*firstpoint;
 					
-					theta = TWOPI/(real)(N_points);
+					theta = TWOPI/(f64)(N_points);
 					rotate.xx = cos(theta);
 					rotate.xy = -sin(theta);
 					rotate.yx = sin(theta);
@@ -3408,9 +3465,9 @@ void TriMesh::Create4Volleys()
 					iNextInner = iVertexInside + 1; if (iNextInner == iStartCircle) iNextInner = iStartInner;
 					iNext = iVertex + 1; if (iNext == iNextCircle) iNext = iStartCircle;
 					
-					real anglenext_inner = atan2(AuxX[iLevel][iNextInner].y-origin.y,AuxX[iLevel][iNextInner].x-origin.x);
+					f64 anglenext_inner = atan2(AuxX[iLevel][iNextInner].y-origin.y,AuxX[iLevel][iNextInner].x-origin.x);
 					if (anglenext_inner <= 0.0) anglenext_inner += TWOPI;
-					real anglenext_outer = atan2(AuxX[iLevel][iNext].y-origin.y,AuxX[iLevel][iNext].x-origin.x);
+					f64 anglenext_outer = atan2(AuxX[iLevel][iNext].y-origin.y,AuxX[iLevel][iNext].x-origin.x);
 					if (anglenext_outer <= 0.0) anglenext_outer += TWOPI;
 
 					// To compare angles, put in similar quadrant:
@@ -3534,7 +3591,7 @@ void TriMesh::Create4Volleys()
 	long iCaret;
 	long j,k;
 	Vector2 cc;
-	real angle[9];
+	f64 angle[9];
 	long index[9], tempind[9];
 	
 	pAux = AuxX[iLevel]; 
@@ -3703,7 +3760,7 @@ void TriMesh::Create4Volleys()
 
 	AuxVertex * pAux0,*pAux1,*pAux2;
 	Vector2 u0,u1,u2,u;
-	real dist0sq, dist1sq, dist2sq, sum, area0, area1, area2;
+	f64 dist0sq, dist1sq, dist2sq, sum, area0, area1, area2;
 
 	if (iLevel == 0) {
 	// do in code
@@ -3817,16 +3874,16 @@ int TriMesh::CreateEquilateralAuxMesh(int iLevel)
 	// For the domain we have to reassign every go.
 	AuxVertex * pAux0, * pAux1, * pAux2;
 	Vector2 u0,u1,u2,u;
-	real dist0sq, dist1sq, dist2sq, area0, area1, area2, sum;
-		real x,y,rr,r;
+	f64 dist0sq, dist1sq, dist2sq, area0, area1, area2, sum;
+		f64 x,y,rr,r;
 	long i,iRow,iTri;
-	real spacing, theta_spacing, theta, r_spacing;
+	f64 spacing, theta_spacing, theta, r_spacing;
 	long numRowprev;
 	bool stop;
 	long iVertex,iVertexLow,iVertexFirst,iVertexNextFirst,iVertexLowFirst;
 	bool inner_stop;
-	real xdist,ydist;
-	real vertex_density_per_cm_sq;	
+	f64 xdist,ydist;
+	f64 vertex_density_per_cm_sq;	
 	Vertex * vert, *pVertex;
 	Triangle * tri, *pTri;
 	AuxVertex * pInner, * pAux;
@@ -3837,13 +3894,13 @@ int TriMesh::CreateEquilateralAuxMesh(int iLevel)
 	long startrow[10000];
 
 
-	static real const TWOOVERSQRT3 = 2.0/sqrt(3.0);
-	static real const OVERSQRT3 = 1.0/sqrt(3.0);
-	static real const SQRT3OVER2 = sqrt(3.0)/2.0;
+	static f64 const TWOOVERSQRT3 = 2.0/sqrt(3.0);
+	static f64 const OVERSQRT3 = 1.0/sqrt(3.0);
+	static f64 const SQRT3OVER2 = sqrt(3.0)/2.0;
 	
 	// 1. Set up mesh (see preceding routine)
 	
-	spacing = sqrt((1.0/((real)(NUM_AUX_VERTS_PER_CM_SQ[iLevel])))*TWOOVERSQRT3); 
+	spacing = sqrt((1.0/((f64)(NUM_AUX_VERTS_PER_CM_SQ[iLevel])))*TWOOVERSQRT3); 
 	r_spacing = spacing*SQRT3OVER2; // equilateral triangles
 
 	// we will modify it: stretch it out to ensure lowest row is inside of the finer lowest row
@@ -3864,7 +3921,7 @@ int TriMesh::CreateEquilateralAuxMesh(int iLevel)
 	// We want to go further in than the level below. But that is addressed by a stretch, which follows.
 	for (; ((r > INNER_A_BOUNDARY) && (numRowprev >= 5)); r -= r_spacing) 
 	{		
-		if (FULLANGLE/(real)numRowprev < spacing/r)
+		if (FULLANGLE/(f64)numRowprev < spacing/r)
 		{
 			numRowAux[iRow] = numRowprev-1;
 		} else {
@@ -3877,7 +3934,7 @@ int TriMesh::CreateEquilateralAuxMesh(int iLevel)
 		++iRow;
 	};
 	numRowsAux[iLevel] = iRow; 
-	numTrianglesAuxAllocated[iLevel] = (long)(2.02*(real)(numAuxVertices[iLevel]) );
+	numTrianglesAuxAllocated[iLevel] = (long)(2.02*(f64)(numAuxVertices[iLevel]) );
 	
 	r += r_spacing; // the lowest r, that would be.
 	
@@ -3891,7 +3948,7 @@ int TriMesh::CreateEquilateralAuxMesh(int iLevel)
 		{
 			// stretch down:	
 			r_AuxInner[iLevel] = Innermost_r_achieved-0.25*r_spacing;
-			r_spacing = (r_AuxOuter[iLevel]-r_AuxInner[iLevel])/(real)(numRowsAux[iLevel]-1);
+			r_spacing = (r_AuxOuter[iLevel]-r_AuxInner[iLevel])/(f64)(numRowsAux[iLevel]-1);
 			// note, -1 because if we had 4 rows of vertices then the space is divided into 3.
 		} else {
 		};
@@ -3900,7 +3957,7 @@ int TriMesh::CreateEquilateralAuxMesh(int iLevel)
 		{
 			// stretch down:
 			r_AuxInner[iLevel] = r_AuxInner[iLevel-1]-0.25*r_spacing;
-			r_spacing = (r_AuxOuter[iLevel]-r_AuxInner[iLevel])/(real)(numRowsAux[iLevel]-1);
+			r_spacing = (r_AuxOuter[iLevel]-r_AuxInner[iLevel])/(f64)(numRowsAux[iLevel]-1);
 		} else {
 			r_AuxInner[iLevel] = r;
 		};
@@ -3962,7 +4019,7 @@ int TriMesh::CreateEquilateralAuxMesh(int iLevel)
 
 	for (iRow = numRowsAux[iLevel]-1; iRow >= 0; iRow--)			// define them from the bottom up
 	{
-		theta_spacing = FULLANGLE/(real)numRowAux[iRow];
+		theta_spacing = FULLANGLE/(f64)numRowAux[iRow];
 		// now since we ensured that we have an integer division of the row
 		// it follows that we can be safe from PB funny triangles if we do this:
 		theta = -HALFANGLE + ((iRow % 2 == 1)?(0.5*theta_spacing):(0.01*theta_spacing));
@@ -3998,7 +4055,7 @@ int TriMesh::CreateEquilateralAuxMesh(int iLevel)
 	};
 	
 	int top_circled, bot_circled, top_advance;
-	real gradient1, gradient2;
+	f64 gradient1, gradient2;
 
 	// Create triangles between central point and innermost row:
 			
@@ -4179,7 +4236,7 @@ int TriMesh::CreateEquilateralAuxMesh(int iLevel)
 	long iCaret;
 	long j,k;
 	Vector2 cc;
-	real angle[9];
+	f64 angle[9];
 	long index[9], tempind[9];
 	
 	pAux = AuxX[iLevel]; // do for centre vertex
@@ -4361,7 +4418,7 @@ int TriMesh::CreateEquilateralAuxMesh(int iLevel)
 		// inner vertices-- but do not do this at first.
 
 //
-//		real r0 = r_AuxOuter[iLevel];//DOMAIN_OUTER_RADIUS+0.2*r_spacing;
+//		f64 r0 = r_AuxOuter[iLevel];//DOMAIN_OUTER_RADIUS+0.2*r_spacing;
 //
 //		//pInner = InnerX;
 //		//pInner->iCoarseTriangle = 0;
@@ -4535,20 +4592,20 @@ int TriMesh::CreateEquilateralAuxMesh(int iLevel)
 	return 0;
 }
 
-long TriMesh::SearchForAuxTriangleContainingPoint(real x, real y, int iLevel)
+long TriMesh::SearchForAuxTriangleContainingPoint(f64 x, f64 y, int iLevel)
 {
 	// to return the triangle index
 
 	//// (r_Outer[iLevel]-r) / r_spacing[iLevel] is number of vertex rows down from top r
 	//// suppose that the triangle row beneath row i is given tristartrow[i]
 
-	static real const angleright = atan2(1.0,GRADIENT_X_PER_Y);
+	static f64 const angleright = atan2(1.0,GRADIENT_X_PER_Y);
 
 	long iTri;
 	AuxTriangle * pITri;
 	
 	if (bScrewPinch) {
-		real r = sqrt(x*x+(y-SP_CENTRE_Y)*(y-SP_CENTRE_Y));
+		f64 r = sqrt(x*x+(y-SP_CENTRE_Y)*(y-SP_CENTRE_Y));
 
 		long iRow = (long)(r / r_AuxSpacing[iLevel]);
 		if (iRow > numRowsAux[iLevel]-1) iRow = numRowsAux[iLevel]-1;
@@ -4558,29 +4615,29 @@ long TriMesh::SearchForAuxTriangleContainingPoint(real x, real y, int iLevel)
 		pITri = &(AuxT[iLevel][iTri]);
 	
 		if (iRow > 2) {
-			real angle1 = atan2(pITri->cornerptr[0]->y-SP_CENTRE_Y,pITri->cornerptr[0]->x);
+			f64 angle1 = atan2(pITri->cornerptr[0]->y-SP_CENTRE_Y,pITri->cornerptr[0]->x);
 			//if (angle1 < 0.0) angle1 += 2.0*PI;
-			real angle = atan2(y-SP_CENTRE_Y,x);
+			f64 angle = atan2(y-SP_CENTRE_Y,x);
 			//if (angle < 0.0) angle += 2.0*PI;
 			// now both between 0 and 2PI
-			real diff = angle-angle1;
+			f64 diff = angle-angle1;
 			if (diff < 0.0) diff += 2.0*PI; // anticlockwise only
 
-			iTri += (long)((diff/(2.0*PI)) * (real)NumTrisInRow[iLevel][iRow]);
+			iTri += (long)((diff/(2.0*PI)) * (f64)NumTrisInRow[iLevel][iRow]);
 			if (iTri >= numAuxTriangles[iLevel]) iTri = numAuxTriangles[iLevel]-1;
 		};
 		
 	} else {
 
-		real r = sqrt(x*x+y*y);
+		f64 r = sqrt(x*x+y*y);
 		long iRow = (long)((r_AuxOuter[iLevel]-r) / r_AuxSpacing[iLevel]);
 		if (r < r_AuxInner[iLevel]) iRow = numRowsAux[iLevel]-1; // last, innermost row against centre.
 	
 
-		real angle = atan2(y,x);
+		f64 angle = atan2(y,x);
 	
-		real ppn = 1.0-((angle-angleright)/(FULLANGLE));
-		iTri = TriStartRow[iLevel][iRow] + (long)(ppn*((real)NumTrisInRow[iLevel][iRow]));
+		f64 ppn = 1.0-((angle-angleright)/(FULLANGLE));
+		iTri = TriStartRow[iLevel][iRow] + (long)(ppn*((f64)NumTrisInRow[iLevel][iRow]));
 		if (iTri - TriStartRow[iLevel][iRow] > NumTrisInRow[iLevel][iRow]-1) iTri = TriStartRow[iLevel][iRow];
 
 	};
@@ -4623,13 +4680,13 @@ long TriMesh::SearchForAuxTriangleContainingPoint(real x, real y, int iLevel)
 	return -1;
 }
 
-long TriMesh::SearchForAuxTriangleContainingPoint(real x, real y, 
+long TriMesh::SearchForAuxTriangleContainingPoint(f64 x, f64 y, 
 												  int iLevel,
 										AuxTriangle * pTriSeed)
 {
 	// The above function cannot work unless equilateral aux mesh.
 
-	static real const angleright = atan2(1.0,GRADIENT_X_PER_Y);
+	static f64 const angleright = atan2(1.0,GRADIENT_X_PER_Y);
 
 	long iTri;
 	AuxTriangle * pITri;
@@ -4683,7 +4740,7 @@ long TriMesh::SearchForAuxTriangleContainingPoint(real x, real y,
 }
 
 */
-/*long TriMesh::SearchInnerInterval(real theta)
+/*long TriMesh::SearchInnerInterval(f64 theta)
 {
 	static long index = 0;
 	
@@ -4760,10 +4817,10 @@ void TriMesh::SetVerticesAndIndices(VertexPNT3 * vertices[],			// better to do i
 									long numVerticesMax,
 									int colourflag,
 									int heightflag,
-									int offset_data,			// how far data is from start of Vertex, for real*
+									int offset_data,			// how far data is from start of Vertex, for f64*
 									int offset_species,
-									real zeroplane,
-									real yscale)		
+									f64 zeroplane,
+									f64 yscale)		
 {	
 
 	VertexPNT3 * pPNT = vertices;
@@ -4772,9 +4829,9 @@ void TriMesh::SetVerticesAndIndices(VertexPNT3 * vertices[],			// better to do i
 	AuxVertex * pVertex = InnerX;
 	AuxTriangle * pTri;
 	Vector2 position;
-	real data0,data1,data2;
+	f64 data0,data1,data2;
 
-	real x0,x1;
+	f64 x0,x1;
 	Vector2 tempvec;
 	AuxVertex tempvert;
 	D3DXVECTOR3 vec1, vec2;
@@ -4782,8 +4839,8 @@ void TriMesh::SetVerticesAndIndices(VertexPNT3 * vertices[],			// better to do i
 	AuxVertex *pVert1,*pVert2;
 	D3DXVECTOR3 normalnext;
 	int quad1,quad2;//quad3,quad4;
-	real grad1,grad2;
-	real * ptr;
+	f64 grad1,grad2;
+	f64 * ptr;
 	int ii,i;
 	float vx,vy,one,two;
 
@@ -4812,11 +4869,11 @@ void TriMesh::SetVerticesAndIndices(VertexPNT3 * vertices[],			// better to do i
 
 			break;
 		case FLAG_DATA_HEIGHT:
-			pPNT->pos.y = zeroplane+(float)(*(((real *)pVertex)+offset_data))*yscale;
+			pPNT->pos.y = zeroplane+(float)(*(((f64 *)pVertex)+offset_data))*yscale;
 			break;
 
 		case FLAG_VELOCITY_HEIGHT:
-			ptr = (real *)pVertex + offset_data; // note: we have to be passing offset_data rel to slim vertex !
+			ptr = (f64 *)pVertex + offset_data; // note: we have to be passing offset_data rel to slim vertex !
 			vx = (float)(*ptr);
 			++ptr;
 			vy = (float)(*ptr);
@@ -4858,21 +4915,21 @@ void TriMesh::SetVerticesAndIndices(VertexPNT3 * vertices[],			// better to do i
 					{
 					case FLAG_DATA_HEIGHT:
 
-						data1 = *(((real *)pVert1) + offset_data);
-						data2 = *(((real *)pVert1) + offset_data);
-						data0 = *(((real *)pVertex) + offset_data);
+						data1 = *(((f64 *)pVert1) + offset_data);
+						data2 = *(((f64 *)pVert1) + offset_data);
+						data0 = *(((f64 *)pVertex) + offset_data);
 
 						vec1.y = zeroplane+(float)((data1-data0))*yscale;
 						vec2.y = zeroplane+(float)((data2-data0))*yscale; // got to set Factor somewhere
 						break;
 					case FLAG_VELOCITY_HEIGHT:
-						ptr = (real *)pVert1 + offset_data;
+						ptr = (f64 *)pVert1 + offset_data;
 						vx = (float)(*ptr);
 						++ptr;
 						vy = (float)(*ptr);
 						one = zeroplane+sqrt(vx*vx+vy*vy)*yscale;
 						
-						ptr = (real *)pVert2 + offset_data;
+						ptr = (f64 *)pVert2 + offset_data;
 						vx = (float)(*ptr);
 						++ptr;
 						vy = (float)(*ptr);
@@ -4985,13 +5042,13 @@ void TriMesh::SetVerticesAndIndices(VertexPNT3 * vertices[],			// better to do i
 				// This is mightily strange ??
 				// need to go over shader behaviour.
 
-				pPNT->tex0.x = (float)(*(((real *)pVertex) + offset_data));
+				pPNT->tex0.x = (float)(*(((f64 *)pVertex) + offset_data));
 			};
 			if (colourflag == FLAG_VELOCITY_COLOUR)
 			{
-				pPNT->tex0.x =(float)(*(((real *)pVertex) + offset_data));
-				pPNT->tex0.y =(float)(*(((real *)pVertex) + offset_data+1));
-				pPNT->tex0.z =(float)(*(((real *)pVertex) + offset_data+2));
+				pPNT->tex0.x =(float)(*(((f64 *)pVertex) + offset_data));
+				pPNT->tex0.y =(float)(*(((f64 *)pVertex) + offset_data+1));
+				pPNT->tex0.z =(float)(*(((f64 *)pVertex) + offset_data+2));
 			};
 		};
 		//SetVertexColour(pPNT,pVertex,colourflag,offset_species);
@@ -5038,11 +5095,11 @@ void TriMesh::SetVerticesAndIndices(VertexPNT3 * vertices[],			// better to do i
 					pTri->cornerptr[j]->periodic_image(temp,0,1);
 					pPNT->pos.x = ((float)(temp.x))*xzscale;
 					pPNT->pos.z = ((float)(temp.y))*xzscale;
-					pPNT->pos.y = zeroplane+(float)((*(((real *)pVertex) + offset_data))*yscale);
+					pPNT->pos.y = zeroplane+(float)((*(((f64 *)pVertex) + offset_data))*yscale);
 
 					if (heightflag == FLAG_VELOCITY_HEIGHT)
 					{
-						ptr = ((real *)pVertex) + offset_data;
+						ptr = ((f64 *)pVertex) + offset_data;
 						vx = (float)(*ptr);
 						++ptr;
 						vy = (float)(*ptr);
@@ -5060,13 +5117,13 @@ void TriMesh::SetVerticesAndIndices(VertexPNT3 * vertices[],			// better to do i
 					} else {
 						if  (colourflag == FLAG_AZSEGUE_COLOUR)
 						{
-							pPNT->tex0.x = (float)((*(((real *)pVertex) + offset_data)));
+							pPNT->tex0.x = (float)((*(((f64 *)pVertex) + offset_data)));
 						};
 						if (colourflag == FLAG_VELOCITY_COLOUR)
 						{
-							pPNT->tex0.x =(float)((*(((real *)pVertex) + offset_data)));
-							pPNT->tex0.y =(float)((*(((real *)pVertex) + offset_data+1)));
-							pPNT->tex0.z =(float)((*(((real *)pVertex) + offset_data+2)));
+							pPNT->tex0.x =(float)((*(((f64 *)pVertex) + offset_data)));
+							pPNT->tex0.y =(float)((*(((f64 *)pVertex) + offset_data+1)));
+							pPNT->tex0.z =(float)((*(((f64 *)pVertex) + offset_data+2)));
 						};
 					};		
 					//SetVertexColour(pPNT,pVertex,colourflag,offset_species);
@@ -5094,7 +5151,7 @@ void TriMesh::SetVerticesAndIndicesAux(int iLevel,
 									long numTrianglesMax,
 									int colourflag,
 									int heightflag,
-									int offset_data,			// how far data is from start of Vertex, for real*
+									int offset_data,			// how far data is from start of Vertex, for f64*
 									int offset_vcolour,
 									float zeroplane,
 									float yscale,
@@ -5106,9 +5163,9 @@ void TriMesh::SetVerticesAndIndicesAux(int iLevel,
 	Vertex * pVertex = AuxX[iLevel];
 	Triangle * pTri;
 	Vector2 position;
-	real data0,data1,data2;
+	f64 data0,data1,data2;
 
-	real x0,x1;
+	f64 x0,x1;
 	Vector2 tempvec;
 	Vertex tempvert;
 	D3DXVECTOR3 vec1, vec2;
@@ -5116,8 +5173,8 @@ void TriMesh::SetVerticesAndIndicesAux(int iLevel,
 	Vertex *pVert1,*pVert2;
 	D3DXVECTOR3 normalnext;
 	int quad1,quad2;//quad3,quad4;
-	real grad1,grad2;
-	real * ptr;
+	f64 grad1,grad2;
+	f64 * ptr;
 	int ii,i;
 	float vx,vy,one,two;
 	long tri_len, izTri[128];
@@ -5142,11 +5199,11 @@ void TriMesh::SetVerticesAndIndicesAux(int iLevel,
 
 			break;
 		case FLAG_DATA_HEIGHT:
-			pPNT->pos.y = zeroplane + (float)(*(((real *)pVertex)+offset_data))*yscale;
+			pPNT->pos.y = zeroplane + (float)(*(((f64 *)pVertex)+offset_data))*yscale;
 			break;
 
 		case FLAG_VELOCITY_HEIGHT:
-			ptr = (real *)pVertex + offset_data; // note: we have to be passing offset_data rel to slim vertex !
+			ptr = (f64 *)pVertex + offset_data; // note: we have to be passing offset_data rel to slim vertex !
 			vx = (float)(*ptr);
 			++ptr;
 			vy = (float)(*ptr);
@@ -5184,21 +5241,21 @@ void TriMesh::SetVerticesAndIndicesAux(int iLevel,
 				{
 				case FLAG_DATA_HEIGHT:
 
-					data1 = *(((real *)pVert1) + offset_data);
-					data2 = *(((real *)pVert2) + offset_data);
-					data0 = *(((real *)pVertex) + offset_data);
+					data1 = *(((f64 *)pVert1) + offset_data);
+					data2 = *(((f64 *)pVert2) + offset_data);
+					data0 = *(((f64 *)pVertex) + offset_data);
 
 					vec1.y = zeroplane + (float)((data1-data0))*yscale;
 					vec2.y = zeroplane + (float)((data2-data0))*yscale; 
 					break;
 				case FLAG_VELOCITY_HEIGHT:
-					ptr = (real *)pVert1 + offset_data;
+					ptr = (f64 *)pVert1 + offset_data;
 					vx = (float)(*ptr);
 					++ptr;
 					vy = (float)(*ptr);
 					one = zeroplane + sqrt(vx*vx+vy*vy)*yscale;
 					
-					ptr = (real *)pVert2 + offset_data;
+					ptr = (f64 *)pVert2 + offset_data;
 					vx = (float)(*ptr);
 					++ptr;
 					vy = (float)(*ptr);
@@ -5339,12 +5396,12 @@ void TriMesh::SetVerticesAndIndicesAux(int iLevel,
 		} else {
 			if  (colourflag == FLAG_AZSEGUE_COLOUR)
 			{
-				ptr = ((real *)pVertex) + offset_vcolour;
+				ptr = ((f64 *)pVertex) + offset_vcolour;
 				pPNT->tex0.x = (float)(*ptr);
 			};
 			if ((colourflag == FLAG_VELOCITY_COLOUR) || (colourflag == FLAG_CURRENT_COLOUR))
 			{
-				ptr = ((real *)pVertex) + offset_vcolour;
+				ptr = ((f64 *)pVertex) + offset_vcolour;
 				pPNT->tex0.x = (float)(*ptr);
 				++ptr;
 				pPNT->tex0.y = (float)(*ptr);
@@ -5412,11 +5469,11 @@ void TriMesh::SetVerticesAndIndicesAux(int iLevel,
 					pPNT->pos.x = ((float)(temp.x))*xzscale;
 					pPNT->pos.z = ((float)(temp.y))*xzscale;
 					// altered:
-					pPNT->pos.y = zeroplane + (float)((*(((real *)pVertex) + offset_data)))*yscale;
+					pPNT->pos.y = zeroplane + (float)((*(((f64 *)pVertex) + offset_data)))*yscale;
 
 					if (heightflag == FLAG_VELOCITY_HEIGHT)
 					{
-						ptr = ((real *)pVertex) + offset_data;
+						ptr = ((f64 *)pVertex) + offset_data;
 						vx = (float)(*ptr);
 						++ptr;
 						vy = (float)(*ptr);
@@ -5434,13 +5491,13 @@ void TriMesh::SetVerticesAndIndicesAux(int iLevel,
 					} else {
 						if  (colourflag == FLAG_AZSEGUE_COLOUR)
 						{
-							pPNT->tex0.x = zeroplane + (float)(*(((real *)pVertex) + offset_vcolour));
+							pPNT->tex0.x = zeroplane + (float)(*(((f64 *)pVertex) + offset_vcolour));
 						};
 						if ((colourflag == FLAG_VELOCITY_COLOUR) || (colourflag == FLAG_CURRENT_COLOUR))
 						{
-							pPNT->tex0.x = zeroplane + (float)((*(((real *)pVertex) + offset_vcolour)));
-							pPNT->tex0.y = zeroplane + (float)((*(((real *)pVertex) + offset_vcolour+1)));
-							pPNT->tex0.z = zeroplane + (float)((*(((real *)pVertex) + offset_vcolour+2)));
+							pPNT->tex0.x = zeroplane + (float)((*(((f64 *)pVertex) + offset_vcolour)));
+							pPNT->tex0.y = zeroplane + (float)((*(((f64 *)pVertex) + offset_vcolour+1)));
+							pPNT->tex0.z = zeroplane + (float)((*(((f64 *)pVertex) + offset_vcolour+2)));
 						};
 					};		
 					//SetVertexColour(pPNT,pVertex,colourflag,offset_species);
@@ -5502,26 +5559,26 @@ void TriMesh::SetVerticesAndIndicesAux(int iLevel,
 
 }
 
-real TriMesh::SolveConsistentTemperature(real n, real n_n)
+f64 TriMesh::SolveConsistentTemperature(f64 n, f64 n_n)
 {
 	// Given two densities, what T makes the net rate of ionisation equal to zero?
 	
 	// start with T that is small because although it's unlikely there are multiple equilibria,
 	// given the choice we will take the coldest.
 
-	real TeV = 3.0*4.0e-14/5.0e-12; // initial T[eV]
-	real temp, dFbydT, TeV_NR,expfrac;
+	f64 TeV = 3.0*4.0e-14/5.0e-12; // initial T[eV]
+	f64 temp, dFbydT, TeV_NR,expfrac;
 	bool not_converged = true;
 	// ionisation threshold: 0.1% to ionise in 1e-6 s
-	static real const F_THRESHOLD = 1.0e3; 
-	static real const SQRT2 = sqrt(2.0);
-	static real const SQRTHALF = 1.0/SQRT2;
+	static f64 const F_THRESHOLD = 1.0e3; 
+	static f64 const SQRT2 = sqrt(2.0);
+	static f64 const SQRTHALF = 1.0/SQRT2;
 	
-	//static real const E0 = 13.6; // eV
+	//static f64 const E0 = 13.6; // eV
 	// Use secant bisection method since I'm not absolutely 100% that Newton-Raphson
 	// will not go mad.
 
-	real sqrtTeV, TeVsq, TeV45, F, Left, Right, FLeft, FRight;
+	f64 sqrtTeV, TeVsq, TeV45, F, Left, Right, FLeft, FRight;
 	
 	sqrtTeV = sqrt(TeV);
 	TeVsq = TeV*TeV;
@@ -5620,7 +5677,7 @@ real TriMesh::SolveConsistentTemperature(real n, real n_n)
 //
 //	Vertex * pVert = X;
 //	Triangle * pTri = T;
-//	real n_ion,T_ion,n_neut,T_neut;
+//	f64 n_ion,T_ion,n_neut,T_neut;
 //
 //	for (long iVertex = 0; iVertex < numVertices; iVertex++)
 //	{
@@ -5644,7 +5701,7 @@ real TriMesh::SolveConsistentTemperature(real n, real n_n)
 //		pVert++;
 //	};
 //
-//	real totalmass = 0.0;
+//	f64 totalmass = 0.0;
 //	pTri = T;
 //	for (long iTri = 0; iTri < numTriangles; iTri++)
 //	{
@@ -5689,7 +5746,7 @@ void TriMesh::InitialPopulate(void)
 	TriMesh * pOtherMesh;
 	Vertex * pVert = X;
 	Triangle * pTri = T;
-	real n_ion,T_ion,n_neut,T_neut;
+	f64 n_ion,T_ion,n_neut,T_neut;
 	plasma_data ourdata;
 
 	// FIRST FILL IN VERTEX DATA THEN SET TRIANGLE MINOR DATA BY SOME MEANS...
@@ -5706,7 +5763,7 @@ void TriMesh::InitialPopulate(void)
 		memset(&ourdata, 0, sizeof(plasma_data)); // v= 0
 		ourdata.n_n = n_neut;
 		ourdata.n = n_ion;
-		ourdata.Tn = UNIFORM_T;
+		ourdata.Tn = T_ion;
 		ourdata.Ti = T_ion;
 		ourdata.Te = T_ion;
 		// Az = Azdot = 0 since J=0
@@ -5736,7 +5793,7 @@ void TriMesh::InitialPopulate(void)
 		memset(&(pVert->E),0,sizeof(Vector3));
 		pVert->phi = 0.0; 
 		
-		memset(&(pVert->epsilon),0,sizeof(real)*4);
+		memset(&(pVert->epsilon),0,sizeof(f64)*4);
 		*/
 		pVert++;
 	};
@@ -5820,11 +5877,248 @@ void TriMesh::InitialPopulate(void)
 //	};
 //}*/
 
+void TriMesh::ReorderTriAndNeighLists(Vertex * pVertex)
+{
+	int EdgeFlag;
+	Triangle * pTri, *pTriPrev;
+	long iVertex, iCaret;
+	long i, j, k;
+	Vector2 cent;
+	Vertex *pVertPrev, *relevant, *Xwhich;
+	f64 theta, angle[100];
+	long index[100];
+	long izTri[128], tri_len;
+	long templong[128];
+
+	// 1. Sort triangle lists anticlockwise!!!
+	// ________________________________
+
+	tri_len = pVertex->GetTriIndexArray(izTri);
+
+	if (bDebugReorder) {
+		printf("Tri list for %d flag %d before Reorder code:\n", pVertex - X, pVertex->flags);
+
+		for (i = 0; i < tri_len; i++)
+			printf("izTri[%d] %d : %d %d %d %1.10E %1.10E %1.10E %1.10E %1.10E %1.10E\n", i, izTri[i],
+				T[izTri[i]].cornerptr[0] - X,
+				T[izTri[i]].cornerptr[1] - X,
+				T[izTri[i]].cornerptr[2] - X,
+				T[izTri[i]].cornerptr[0]->pos.x,
+				T[izTri[i]].cornerptr[0]->pos.y,
+				T[izTri[i]].cornerptr[1]->pos.x,
+				T[izTri[i]].cornerptr[1]->pos.y,
+				T[izTri[i]].cornerptr[2]->pos.x,
+				T[izTri[i]].cornerptr[2]->pos.y);
+	};
+	
+	// a. The first triangle stays the same
+
+	iCaret = 0;
+	templong[iCaret] = izTri[0];
+
+	// b. Detect which other corner is more anticlockwise.
+	f64_vec2 pos1, pos2;
+	int i1, i2;
+	f64_vec2 vec1, vec2;
+
+	pTri = T + izTri[0];
+	if (pTri->cornerptr[0] == pVertex) {
+		i1 = 1; i2 = 2;
+	} else {
+		if (pTri->cornerptr[1] == pVertex) {
+			i1 = 0; i2 = 2;
+		} else {
+			i1 = 0; i2 = 1;
+		};
+	};
+	
+	// Take cross product of vectors.
+
+	// . Find and use closest image of other corners
+	pos1 = pTri->cornerptr[i1]->pos;
+	pos2 = pTri->cornerptr[i2]->pos;
+	Vector2 pos1c, pos1a, pos2c, pos2a;
+	pos1c = Clockwise*pos1; pos1a = Anticlockwise*pos1;
+	if ((pos1c - pVertex->pos).dot(pos1c - pVertex->pos) < (pos1 - pVertex->pos).dot(pos1 - pVertex->pos)) {
+		// clockwise will be nearer
+		vec1 = pos1c - pVertex->pos;
+	} else {
+		if ((pos1a - pVertex->pos).dot(pos1a - pVertex->pos) < (pos1 - pVertex->pos).dot(pos1 - pVertex->pos)) {
+			// anticlockwise nearest
+			vec1 = pos1a - pVertex->pos;
+		} else {
+			vec1 = pos1 - pVertex->pos;
+		};
+	};
+	pos2c = Clockwise*pos2; pos2a = Anticlockwise*pos2;		
+	if ((pos2c - pVertex->pos).dot(pos2c - pVertex->pos) < (pos2 - pVertex->pos).dot(pos2 - pVertex->pos)) {
+		// clockwise will be nearer
+		vec2 = pos2c - pVertex->pos;
+	} else {
+		if ((pos2a - pVertex->pos).dot(pos2a - pVertex->pos) < (pos2 - pVertex->pos).dot(pos2 - pVertex->pos)) {
+			// anticlockwise nearest
+			vec2 = pos2a - pVertex->pos;
+		} else {
+			vec2 = pos2 - pVertex->pos;
+		};
+	};
+
+	int iAnti;
+	// cross product element z
+	if (vec1.x*vec2.y - vec1.y*vec2.x > 0.0) {
+		// Let's think this through.
+		// Say our point is the origin. pos1 is at (1,0). pos2 is at (1,1). Then (1*1 - 0*1 > 0.0).
+		// So a positive value here means pos2 is anticlockwise.
+		iAnti = i2;
+	} else {
+		iAnti = i1;
+	}
+	Vertex * pCorner = pTri->cornerptr[iAnti];
+	// c. Keep seeking tri in list which possesses same other corner.
+	int iWhich;
+	do {
+		pTriPrev = pTri;
+		int found = 0; iWhich = 0;
+		for (int ii = 0; ii < tri_len; ii++) {
+			pTri = T + izTri[ii];
+			if ((pTri != pTriPrev) && (pTri->has_corner(pCorner))) {
+				found++;
+				iWhich = ii;
+			};
+		};
+		if (found == 0) {
+			printf("corner %d only found in one triangle at vertex %d. STOPPING REORDER.\n", pCorner - X, pVertex-X);
+			return;
+		} else {
+			if (found > 1) {
+				printf("corner %d found in %d triangles at %d. STOPPING REORDER.\n", pCorner - X, found + 1, pVertex-X);
+				return;
+			} else {
+				// make pTri the next one in the list
+				iCaret++;
+				templong[iCaret] = izTri[iWhich];
+				pTri = T + izTri[iWhich];
+				if ((pTri->cornerptr[0] != pCorner) && (pTri->cornerptr[0] != pVertex)) {
+					pCorner = pTri->cornerptr[0];
+				} else {
+					if ((pTri->cornerptr[1] != pCorner) && (pTri->cornerptr[1] != pVertex)) {
+						pCorner = pTri->cornerptr[1];
+					} else {
+						pCorner = pTri->cornerptr[2];
+					};
+				};
+			};
+		};
+	} while (iWhich != 0); 
+	
+	//
+	//if (tri_len >= 100)
+	//{
+	//	printf("\ncannot do it - static array not big enough\n");
+	//	getch();
+	//}
+
+	//for (i = 0; i < tri_len; i++)
+	//{
+	//	pTri = T + izTri[i];
+	//	cent = pTri->GetContiguousCent_AssumingCentroidsSet(pVertex);
+	//	theta = CalculateAngle(cent.x - pVertex->pos.x, cent.y - pVertex->pos.y);
+	//	if (bDebugReorder) printf("i %d %d theta %1.10E cent %1.10E %1.10E vertexpos %1.10E %1.10E\n", i, izTri[i], theta,
+	//		cent.x, cent.y, pVertex->pos.x, pVertex->pos.y);
+	//	// debug:
+	//	if (_isnan(theta)) {
+	//		printf("theta nan! iVertex %d i %d \n", iVertex, i);
+	//		getch();
+	//	};
+	//	j = 0;
+	//	while ((j < i) && (theta > angle[j])) j++; // if i == 1 then we can only move up to place 1, since we have 1 element already
+	//	if (j < i) {
+	//		// move the rest of them forward in the list:
+	//		for (k = i; k > j; k--)
+	//		{
+	//			index[k] = index[k - 1];
+	//			angle[k] = angle[k - 1];
+	//		};
+	//	}
+	//	angle[j] = theta;
+	//	index[j] = i;
+	//};
+	//for (i = 0; i < tri_len; i++)
+	//	templong[i] = izTri[index[i]];
+
+	// And now we come to have problems.
+	pVertex->SetTriIndexArray(templong, tri_len);
+	pVertex->GetTriIndexArray(izTri);
+	//for (i = 0; i < tri_len; i++)
+	//	pVertex->izTri[i] = tempint[i];			
+
+		// Make sure the 0th triangle to be the most clockwise one if we are at edge.
+		// .. CalculateAngle should generally work, but just in case a centre can come out below 0 angle.
+	if ((pVertex->flags == CONCAVE_EDGE_VERTEX) || (pVertex->flags == CONVEX_EDGE_VERTEX))
+	{
+		// Find one with neighbour == itself
+		// Choose the last such one to be the first element
+
+		// Specification calls for:
+		// The 0th tri should be one that is not a frill itself
+		// but is as anticlockwise as it can go and not be a frill.
+
+		// Hopefully we got the correct ordering from the above.
+
+		// Find tri:
+		i = -1;
+		// 1. Move clockwise until we get to a frill
+		do {
+			i++;
+			pTri = T + izTri[i];
+		} while ((pTri->u8domain_flag != OUTER_FRILL) && (pTri->u8domain_flag != INNER_FRILL));
+
+		// 2. Carry on until we get to not a frill
+		do {
+			i++; if (i == tri_len) i = 0;
+			pTri = T + izTri[i];
+		} while ((pTri->u8domain_flag == OUTER_FRILL) || (pTri->u8domain_flag == INNER_FRILL));
+
+		// 3. Go and check what centroid will have been applied for a frill. Match GPU.
+		// We assigned it FRILL_CENTROID_OUTER_RADIUS
+	
+		// Now rotate list:
+		iCaret = i;
+		for (i = 0; i < tri_len; i++)
+			templong[i] = izTri[i];
+		for (i = 0; i < tri_len; i++)
+		{
+			izTri[i] = templong[iCaret];
+			iCaret++;
+			if (iCaret == tri_len) iCaret = 0;
+		};
+		pVertex->SetTriIndexArray(izTri, tri_len);
+	};
+
+	if (bDebugReorder) {
+		printf("Tri list for %d after Reorder code:\n", pVertex - X);
+
+		for (i = 0; i < tri_len; i++)
+			printf("izTri[%d] %d : %d %d %d\n", i, izTri[i],
+				T[izTri[i]].cornerptr[0]-X,
+				T[izTri[i]].cornerptr[1] - X, 
+				T[izTri[i]].cornerptr[2] - X);
+	};
+
+	
+	RebuildNeighbourList(pVertex);	
+}
+
+
+
 void TriMesh::RefreshVertexNeighboursOfVerticesOrdered(void) 
 {
 	// Triangle list must already be anticlockwise sorted for each vertex.
 	// ^^ Therefore do that here.
 	
+
+	// TRIANGLE CORNERS must already be sorted anticlockwise each triangle.
+
 	// We should only need to call this function once we have altered a mesh.
 		
 	printf("Start RVNOVO ... ");
@@ -5835,58 +6129,183 @@ void TriMesh::RefreshVertexNeighboursOfVerticesOrdered(void)
 	long i,j,k;
 	Vector2 cent;
 	Vertex * pVertex, * pVertPrev, *relevant,*Xwhich;
-	real theta, angle[100];
+	f64 theta, angle[100];
 	long index[100];
 	long tempint[100];
 	long izTri[128],tri_len;
+	long templong[128];
 
 	// 1. Sort triangle lists anticlockwise!!!
 	// ________________________________
-
-	memset(angle,0,sizeof(real)*100);
-	
+	 
 	pVertex = X;
 	for (iVertex = 0; iVertex < numVertices; iVertex++)
-	{
+	{		
+		// Let's try replacing this with my corner-linking method and see what happens.
 		
+		// 1. Sort triangle lists anticlockwise!!!
+		// ________________________________
+
 		tri_len = pVertex->GetTriIndexArray(izTri);
-		if (tri_len >= 100)
+
+
+		if ((pVertex->flags == INNERMOST) || (pVertex->flags == OUTERMOST))
 		{
-			printf("\ncannot do it - static array not big enough\n");
-			getch();
-		}
-		
-		for (i = 0; i < tri_len; i++)
-		{
-			pTri = T+izTri[i];
 			
-			cent = pTri->GetContiguousCent_AssumingCentroidsSet(pVertex);
-			theta = CalculateAngle(cent.x-pVertex->pos.x,cent.y-pVertex->pos.y);		
-			
-			// debug:
-			if (_isnan(theta) ) {
-				printf("theta nan! iVertex %d i %d \n",iVertex,i);
-				getch();
+			memset(angle, 0, sizeof(f64) * 100);
+						
+			for (i = 0; i < tri_len; i++)
+			{
+				pTri = T+izTri[i];
+				
+				cent = pTri->GetContiguousCent_AssumingCentroidsSet(pVertex);
+				theta = CalculateAngle(cent.x-pVertex->pos.x,cent.y-pVertex->pos.y);		
+				
+				// debug:
+				if (_isnan(theta) ) {
+					printf("theta nan! iVertex %d i %d \n",iVertex,i);
+					getch();
+				};
+
+				j = 0;
+				while ((j < i) && (theta > angle[j])) j++; // if i == 1 then we can only move up to place 1, since we have 1 element already
+				if (j < i) {
+					// move the rest of them forward in the list:
+					for (k = i; k > j ; k--)
+					{
+						index[k] = index[k-1];
+						angle[k] = angle[k-1];
+					};
+				}
+				angle[j] = theta;
+				index[j] = i;
+
 			};
 
-			j = 0;
-			while ((j < i) && (theta > angle[j])) j++; // if i == 1 then we can only move up to place 1, since we have 1 element already
-			if (j < i) {
-				// move the rest of them forward in the list:
-				for (k = i; k > j ; k--)
-				{
-					index[k] = index[k-1];
-					angle[k] = angle[k-1];
-				};
-			}
-			angle[j] = theta;
-			index[j] = i;
-		};
-		for (i = 0; i < tri_len; i++)
-			tempint[i] = izTri[index[i]];
 
+			for (i = 0; i < tri_len; i++)
+				templong[i] = izTri[index[i]];
+		}
+		else {
+
+			// a. The first triangle stays the same
+
+			iCaret = 0;
+			templong[iCaret] = izTri[0];
+
+			// b. Detect which other corner is more anticlockwise.
+			f64_vec2 pos1, pos2;
+			int i1, i2;
+			f64_vec2 vec1, vec2;
+
+			pTri = T + izTri[0];
+			if (pTri->cornerptr[0] == pVertex) {
+				i1 = 1; i2 = 2;
+			}
+			else {
+				if (pTri->cornerptr[1] == pVertex) {
+					i1 = 0; i2 = 2;
+				}
+				else {
+					i1 = 0; i2 = 1;
+				};
+			};
+
+			// Take cross product of vectors.
+
+			// . Find and use closest image of other corners
+			pos1 = pTri->cornerptr[i1]->pos;
+			pos2 = pTri->cornerptr[i2]->pos;
+			Vector2 pos1c, pos1a, pos2c, pos2a;
+			pos1c = Clockwise*pos1; pos1a = Anticlockwise*pos1;
+			if ((pos1c - pVertex->pos).dot(pos1c - pVertex->pos) < (pos1 - pVertex->pos).dot(pos1 - pVertex->pos)) {
+				// clockwise will be nearer
+				vec1 = pos1c - pVertex->pos;
+			}
+			else {
+				if ((pos1a - pVertex->pos).dot(pos1a - pVertex->pos) < (pos1 - pVertex->pos).dot(pos1 - pVertex->pos)) {
+					// anticlockwise nearest
+					vec1 = pos1a - pVertex->pos;
+				}
+				else {
+					vec1 = pos1 - pVertex->pos;
+				};
+			};
+			pos2c = Clockwise*pos2; pos2a = Anticlockwise*pos2;
+			if ((pos2c - pVertex->pos).dot(pos2c - pVertex->pos) < (pos2 - pVertex->pos).dot(pos2 - pVertex->pos)) {
+				// clockwise will be nearer
+				vec2 = pos2c - pVertex->pos;
+			}
+			else {
+				if ((pos2a - pVertex->pos).dot(pos2a - pVertex->pos) < (pos2 - pVertex->pos).dot(pos2 - pVertex->pos)) {
+					// anticlockwise nearest
+					vec2 = pos2a - pVertex->pos;
+				}
+				else {
+					vec2 = pos2 - pVertex->pos;
+				};
+			};
+
+			int iAnti;
+			// cross product element z
+			if (vec1.x*vec2.y - vec1.y*vec2.x > 0.0) {
+				// Let's think this through.
+				// Say our point is the origin. pos1 is at (1,0). pos2 is at (1,1). Then (1*1 - 0*1 > 0.0).
+				// So a positive value here means pos2 is anticlockwise.
+				iAnti = i2;
+			}
+			else {
+				iAnti = i1;
+			};
+			
+
+			Vertex * pCorner = pTri->cornerptr[iAnti];
+			// c. Keep seeking tri in list which possesses same other corner.
+			int iWhich;
+			do {
+				pTriPrev = pTri;
+				int found = 0; iWhich = 0;
+				for (int ii = 0; ii < tri_len; ii++) {
+					pTri = T + izTri[ii];
+					if ((pTri != pTriPrev) && (pTri->has_corner(pCorner))) {
+						found++;
+						iWhich = ii;
+					};
+				};
+				if (found == 0) {
+					printf("corner %d only found in one triangle at vertex %d. STOPPING REORDER.\n", pCorner - X, pVertex - X);
+					return;
+				}
+				else {
+					if (found > 1) {
+						printf("corner %d found in %d triangles at %d. STOPPING REORDER.\n", pCorner - X, found + 1, pVertex - X);
+						return;
+					}
+					else {
+						// make pTri the next one in the list
+						iCaret++;
+						templong[iCaret] = izTri[iWhich];
+						pTri = T + izTri[iWhich];
+						if ((pTri->cornerptr[0] != pCorner) && (pTri->cornerptr[0] != pVertex)) {
+							pCorner = pTri->cornerptr[0];
+						} else {
+							if ((pTri->cornerptr[1] != pCorner) && (pTri->cornerptr[1] != pVertex)) {
+								pCorner = pTri->cornerptr[1];
+							}
+							else {
+								pCorner = pTri->cornerptr[2];
+							};
+						};
+
+					};
+				};
+			} while (iWhich != 0);
+		};
+		// I guess it fails where we do not connect back -- it only works for domain vertices and away from the edge.
+
+		
 		// And now we come to have problems.
-		pVertex->SetTriIndexArray(tempint,tri_len);
+		pVertex->SetTriIndexArray(templong,tri_len);
 		pVertex->GetTriIndexArray(izTri);
 		//for (i = 0; i < tri_len; i++)
 		//	pVertex->izTri[i] = tempint[i];			
@@ -5973,157 +6392,171 @@ void TriMesh::RefreshVertexNeighboursOfVerticesOrdered(void)
 	pVertex = X;
 	for (iVertex = 0; iVertex < numVertices; iVertex++)
 	{		
-		// Decide for triangle 0 which is the most clockwise other vertex
-		pVertex->ClearNeighs(); 
-		tri_len = pVertex->GetTriIndexArray(izTri);
-		int trimax;
-
-		pTri = T + izTri[0];
-		pTriPrev = T + izTri[tri_len-1];
-		
-		// periodic makes testing angles awkward, so :
-		// For domain vertex: just see which vertex also belongs to previous triangle.
-		// For boundary vertex: just test which neighbour vertex is also on the boundary.
-
-		if ((pVertex->flags == OUTERMOST) || (pVertex->flags == INNERMOST)) {
-			
-			// 25/05/17: New behaviour is different.
-			
-			// We only want to add an anticlockwise point for tris 0,...,tri_len-2
-		/*	
-			trimax = tri_len; // each further triangle adds a further neighbour.
-			if (pTri->cornerptr[0] == pVertex) {
-				if ( pTri->cornerptr[2]->flags == pVertex->flags ) {
-					pVertex->AddNeighbourIndex(pTri->cornerptr[2]- X);
-					pVertex->AddNeighbourIndex(pTri->cornerptr[1]- X);
-					pVertPrev = pTri->cornerptr[1]; 
-				} else {
-					pVertex->AddNeighbourIndex(pTri->cornerptr[1]- X);
-					pVertex->AddNeighbourIndex(pTri->cornerptr[2]- X);
-					pVertPrev = pTri->cornerptr[2];
-				};
-			} else {
-				if (pTri->cornerptr[1] == pVertex) {
-					if ( pTri->cornerptr[2]->flags == pVertex->flags ) {
-						pVertex->AddNeighbourIndex(pTri->cornerptr[2]-X);
-						pVertex->AddNeighbourIndex(pTri->cornerptr[0]-X);
-						pVertPrev = pTri->cornerptr[0];
-					} else {
-						pVertex->AddNeighbourIndex(pTri->cornerptr[0]-X);
-						pVertex->AddNeighbourIndex(pTri->cornerptr[2]-X);
-						pVertPrev = pTri->cornerptr[2];
-					};
-				} else {
-					if ( pTri->cornerptr[1]->flags == pVertex->flags ) {
-						pVertex->AddNeighbourIndex(pTri->cornerptr[1]-X);
-						pVertex->AddNeighbourIndex(pTri->cornerptr[0]-X);
-						pVertPrev = pTri->cornerptr[0];
-					} else {
-						pVertex->AddNeighbourIndex(pTri->cornerptr[0]-X);
-						pVertex->AddNeighbourIndex(pTri->cornerptr[1]-X);
-						pVertPrev = pTri->cornerptr[1];
-					};
-				};
-			};*/
-
-			trimax = tri_len-2;
-			// And now will execute the standard code below.
-
-		} else {
-			// domain vertex: adds the more anticlockwise one only.
-			// WHY??? Probably because I wanted to make this code simple.
-			// So then Tri 0 will contain neighs 0 and N-1, not 0 and 1.
-			// But what we want is to be CONSISTENT. So we want to add 0 first
-			// Make it have 0 and 1 in first triangle.
-
-			trimax = tri_len-1; // below, only add a point for each triangle up to the last one.
-		};
-
-		if (pTri->cornerptr[0] == pVertex) {
-			if ( pTriPrev->has_vertex(pTri->cornerptr[1]) ) {
-				pVertex->AddNeighbourIndex(pTri->cornerptr[1]- X);
-				pVertex->AddNeighbourIndex(pTri->cornerptr[2]- X);
-				pVertPrev = pTri->cornerptr[2];
-			} else {
-				pVertex->AddNeighbourIndex(pTri->cornerptr[2]- X);
-				pVertex->AddNeighbourIndex(pTri->cornerptr[1]- X);
-				pVertPrev = pTri->cornerptr[1];
-			};
-		} else {
-			if (pTri->cornerptr[1] == pVertex) {
-				if (pTriPrev->has_vertex(pTri->cornerptr[0]) ) {
-					pVertex->AddNeighbourIndex(pTri->cornerptr[0]-X);
-					pVertex->AddNeighbourIndex(pTri->cornerptr[2]-X);
-					pVertPrev = pTri->cornerptr[2];
-				} else {
-					pVertex->AddNeighbourIndex(pTri->cornerptr[2]-X);
-					pVertex->AddNeighbourIndex(pTri->cornerptr[0]-X);
-					pVertPrev = pTri->cornerptr[0];
-				};
-			} else {
-				if (pTriPrev->has_vertex(pTri->cornerptr[0]) ) {
-					pVertex->AddNeighbourIndex(pTri->cornerptr[0]-X);
-					pVertex->AddNeighbourIndex(pTri->cornerptr[1]-X);
-					pVertPrev = pTri->cornerptr[1];
-				} else {
-					pVertex->AddNeighbourIndex(pTri->cornerptr[1]-X);
-					pVertex->AddNeighbourIndex(pTri->cornerptr[0]-X);
-					pVertPrev = pTri->cornerptr[0];
-				};
-			};
-		};
-		
-
-		for (int i = 1; i < trimax; i++)
-		{
-			pTri = T+izTri[i];
-			
-			// whichever point is neither pVertex nor pVertPrev
-			if (pTri->cornerptr[0] == pVertex) 
-			{
-				if (pTri->cornerptr[1] == pVertPrev)
-				{
-					pVertex->AddNeighbourIndex(pTri->cornerptr[2]-X);
-					pVertPrev = pTri->cornerptr[2];
-				} else {
-					pVertex->AddNeighbourIndex(pTri->cornerptr[1]-X);
-					pVertPrev = pTri->cornerptr[1];
-				};
-			} else {
-				if (pTri->cornerptr[1] == pVertex)
-				{
-					if (pTri->cornerptr[0] == pVertPrev)
-					{
-						pVertex->AddNeighbourIndex(pTri->cornerptr[2]-X);
-						pVertPrev = pTri->cornerptr[2];
-					} else {
-						pVertex->AddNeighbourIndex(pTri->cornerptr[0]-X);
-						pVertPrev = pTri->cornerptr[0];
-					};
-				} else {
-					if (pTri->cornerptr[0] == pVertPrev)
-					{
-						pVertex->AddNeighbourIndex(pTri->cornerptr[1]-X);
-						pVertPrev = pTri->cornerptr[1];
-					} else {
-						pVertex->AddNeighbourIndex(pTri->cornerptr[0]-X);
-						pVertPrev = pTri->cornerptr[0];
-					};
-				};
-			};
-		};
-		
-		//DebugDetectDuplicateNeighbourInList(pVertex);
-		
+		RebuildNeighbourList(pVertex);
+		//DebugDetectDuplicateNeighbourInList(pVertex);		
 		++pVertex;
 	};	
 	
 }
 
+void TriMesh::RebuildNeighbourList(Vertex * pVertex)
+{
+
+	int EdgeFlag;
+	Triangle * pTri, *pTriPrev;
+	long iVertex, iCaret;
+	long i, j, k;
+	Vector2 cent;
+	Vertex *pVertPrev, *relevant, *Xwhich;
+	long izTri[128], tri_len;
+
+	// Decide for triangle 0 which is the most clockwise other vertex
+	pVertex->ClearNeighs();
+	tri_len = pVertex->GetTriIndexArray(izTri);
+	int trimax;
+
+	pTri = T + izTri[0];
+	pTriPrev = T + izTri[tri_len - 1];
+
+	// periodic makes testing angles awkward, so :
+	// For domain vertex: just see which vertex also belongs to previous triangle.
+	// For boundary vertex: just test which neighbour vertex is also on the boundary.
+
+	if ((pVertex->flags == OUTERMOST) || (pVertex->flags == INNERMOST)) {
+
+		// 25/05/17: New behaviour is different.
+
+		// We only want to add an anticlockwise point for tris 0,...,tri_len-2
+		/*
+		trimax = tri_len; // each further triangle adds a further neighbour.
+		if (pTri->cornerptr[0] == pVertex) {
+		if ( pTri->cornerptr[2]->flags == pVertex->flags ) {
+		pVertex->AddNeighbourIndex(pTri->cornerptr[2]- X);
+		pVertex->AddNeighbourIndex(pTri->cornerptr[1]- X);
+		pVertPrev = pTri->cornerptr[1];
+		} else {
+		pVertex->AddNeighbourIndex(pTri->cornerptr[1]- X);
+		pVertex->AddNeighbourIndex(pTri->cornerptr[2]- X);
+		pVertPrev = pTri->cornerptr[2];
+		};
+		} else {
+		if (pTri->cornerptr[1] == pVertex) {
+		if ( pTri->cornerptr[2]->flags == pVertex->flags ) {
+		pVertex->AddNeighbourIndex(pTri->cornerptr[2]-X);
+		pVertex->AddNeighbourIndex(pTri->cornerptr[0]-X);
+		pVertPrev = pTri->cornerptr[0];
+		} else {
+		pVertex->AddNeighbourIndex(pTri->cornerptr[0]-X);
+		pVertex->AddNeighbourIndex(pTri->cornerptr[2]-X);
+		pVertPrev = pTri->cornerptr[2];
+		};
+		} else {
+		if ( pTri->cornerptr[1]->flags == pVertex->flags ) {
+		pVertex->AddNeighbourIndex(pTri->cornerptr[1]-X);
+		pVertex->AddNeighbourIndex(pTri->cornerptr[0]-X);
+		pVertPrev = pTri->cornerptr[0];
+		} else {
+		pVertex->AddNeighbourIndex(pTri->cornerptr[0]-X);
+		pVertex->AddNeighbourIndex(pTri->cornerptr[1]-X);
+		pVertPrev = pTri->cornerptr[1];
+		};
+		};
+		};*/
+
+		trimax = tri_len - 2;
+		// And now will execute the standard code below.
+
+	} else {
+		// domain vertex: adds the more anticlockwise one only.
+		// WHY??? Probably because I wanted to make this code simple.
+		// So then Tri 0 will contain neighs 0 and N-1, not 0 and 1.
+		// But what we want is to be CONSISTENT. So we want to add 0 first
+		// Make it have 0 and 1 in first triangle.
+
+		trimax = tri_len - 1; // below, only add a point for each triangle up to the last one.
+	};
+
+	if (pTri->cornerptr[0] == pVertex) {
+		if (pTriPrev->has_vertex(pTri->cornerptr[1])) {
+			pVertex->AddNeighbourIndex(pTri->cornerptr[1] - X);
+			pVertex->AddNeighbourIndex(pTri->cornerptr[2] - X);
+			pVertPrev = pTri->cornerptr[2];
+		} else {
+			pVertex->AddNeighbourIndex(pTri->cornerptr[2] - X);
+			pVertex->AddNeighbourIndex(pTri->cornerptr[1] - X);
+			pVertPrev = pTri->cornerptr[1];
+		};
+	} else {
+		if (pTri->cornerptr[1] == pVertex) {
+			if (pTriPrev->has_vertex(pTri->cornerptr[0])) {
+				pVertex->AddNeighbourIndex(pTri->cornerptr[0] - X);
+				pVertex->AddNeighbourIndex(pTri->cornerptr[2] - X);
+				pVertPrev = pTri->cornerptr[2];
+			} else {
+				pVertex->AddNeighbourIndex(pTri->cornerptr[2] - X);
+				pVertex->AddNeighbourIndex(pTri->cornerptr[0] - X);
+				pVertPrev = pTri->cornerptr[0];
+			};
+		} else {
+			if (pTriPrev->has_vertex(pTri->cornerptr[0])) {
+				pVertex->AddNeighbourIndex(pTri->cornerptr[0] - X);
+				pVertex->AddNeighbourIndex(pTri->cornerptr[1] - X);
+				pVertPrev = pTri->cornerptr[1];
+			} else {
+				pVertex->AddNeighbourIndex(pTri->cornerptr[1] - X);
+				pVertex->AddNeighbourIndex(pTri->cornerptr[0] - X);
+				pVertPrev = pTri->cornerptr[0];
+			};
+		};
+	};
+
+	for (int i = 1; i < trimax; i++)
+	{
+		pTri = T + izTri[i];
+
+		// whichever point is neither pVertex nor pVertPrev
+		if (pTri->cornerptr[0] == pVertex)
+		{
+			if (pTri->cornerptr[1] == pVertPrev)
+			{
+				pVertex->AddNeighbourIndex(pTri->cornerptr[2] - X);
+				pVertPrev = pTri->cornerptr[2];
+			} else {
+				pVertex->AddNeighbourIndex(pTri->cornerptr[1] - X);
+				pVertPrev = pTri->cornerptr[1];
+			};
+		} else {
+			if (pTri->cornerptr[1] == pVertex)
+			{
+				if (pTri->cornerptr[0] == pVertPrev)
+				{
+					pVertex->AddNeighbourIndex(pTri->cornerptr[2] - X);
+					pVertPrev = pTri->cornerptr[2];
+				}
+				else {
+					pVertex->AddNeighbourIndex(pTri->cornerptr[0] - X);
+					pVertPrev = pTri->cornerptr[0];
+				};
+			}
+			else {
+				if (pTri->cornerptr[0] == pVertPrev)
+				{
+					pVertex->AddNeighbourIndex(pTri->cornerptr[1] - X);
+					pVertPrev = pTri->cornerptr[1];
+				}
+				else {
+					pVertex->AddNeighbourIndex(pTri->cornerptr[0] - X);
+					pVertPrev = pTri->cornerptr[0];
+				};
+			};
+		};
+	};
+
+}
 
 Triangle * TriMesh::ReturnPointerToTriangleContainingPoint(
 				Triangle * pTri,             // seed for beginning triangle search
-				real x, real y
+				f64 x, f64 y
 				)
 {
 
@@ -6143,15 +6576,15 @@ Triangle * TriMesh::ReturnPointerToTriangleContainingPoint(
 	bool test;
 //	bool changed;
 	Triangle * pNeigh;
-	real destx,desty,newdestx,newdesty;
-	static real const RIGHTGRAD = GRADIENT_X_PER_Y*0.5;
-	static real const LEFTGRAD = -RIGHTGRAD;
+	f64 destx,desty,newdestx,newdesty;
+	static f64 const RIGHTGRAD = GRADIENT_X_PER_Y*0.5;
+	static f64 const LEFTGRAD = -RIGHTGRAD;
 	int Tranche, unsh_ind;
 	long izTriPrev[128], tri_len_prev;
 
 	Triangle * pPrevious = 0;
 
-	static const real theta = 2.0*PI/16.0;
+	static const f64 theta = 2.0*PI/16.0;
 	static const Tensor2 anticlock(cos(theta),-sin(theta),sin(theta),cos(theta));
 	static const Tensor2 clock(cos(theta),sin(theta),-sin(theta),cos(theta));
 	FILE  * file;
@@ -6171,9 +6604,9 @@ Triangle * TriMesh::ReturnPointerToTriangleContainingPoint(
 	//if (pTri->periodic == 0)
 	//{
 	//	
-	//	real grad1 = pTri->cornerptr[0]->x/pTri->cornerptr[0]->y;
-	//	real grad2 = pTri->cornerptr[1]->x/pTri->cornerptr[1]->y;
-	//	real grad3 = pTri->cornerptr[2]->x/pTri->cornerptr[2]->y;
+	//	f64 grad1 = pTri->cornerptr[0]->x/pTri->cornerptr[0]->y;
+	//	f64 grad2 = pTri->cornerptr[1]->x/pTri->cornerptr[1]->y;
+	//	f64 grad3 = pTri->cornerptr[2]->x/pTri->cornerptr[2]->y;
 
 	//	// Usual case: put ourselves in Tranche 0.
 	//	Tranche = 0;
@@ -6294,9 +6727,9 @@ Triangle * TriMesh::ReturnPointerToTriangleContainingPoint(
 
 				// Find azimuthally correct edge cell .
 
-				real grad = x/y;
+				f64 grad = x/y;
 				int BaseFlag, c1, c2, iApex, iWhich;
-				real grad1, grad2;
+				f64 grad1, grad2;
 				Vector2 u[3];
 				int found, use;				
 
@@ -6438,19 +6871,19 @@ Triangle * TriMesh::ReturnPointerToTriangleContainingPoint(
 												Vertex * pVertTest,
 												Triangle * pTriSrc,
 												//long iSrcVertex,
-												real Tmax,
+												f64 Tmax,
 												int iCode)
 {
-	real radius;
-	real dist_src_to_dest_sq,rhosq,distx,disty,exponent;
+	f64 radius;
+	f64 dist_src_to_dest_sq,rhosq,distx,disty,exponent;
 	Symmetric2 kappasum;
-	real rr;
+	f64 rr;
 	int indexlist;
-	real dist_src_to_dest,dist_refl_to_dest,hdest,SDsq;
+	f64 dist_src_to_dest,dist_refl_to_dest,hdest,SDsq;
 	Vertex vert_temp0, vert_temp1, vert_temp2;
-	real factor;
-	static real const INSULATOR_RADIUS_SQ = DEVICE_RADIUS_INSULATOR_OUTER*DEVICE_RADIUS_INSULATOR_OUTER;
-	real rr0,rr1,rr2;
+	f64 factor;
+	static f64 const INSULATOR_RADIUS_SQ = DEVICE_RADIUS_INSULATOR_OUTER*DEVICE_RADIUS_INSULATOR_OUTER;
+	f64 rr0,rr1,rr2;
 
 	long index = (long)(pVertTest-X);
 	if (GlobalVertexScratchList.contains(index)) return; // already been here
@@ -6659,10 +7092,10 @@ long TriMesh::GetNumVerticesGraphicsAux(int iLevel)
 
 void SetVertexColour(VertexPNT3 * pPNT, const plasma_data * pdata, int colourflag, int offset_data, int offset_vcolour)
 {
-	real vx;
-	static real * ptr;
+	f64 vx;
+	static f64 * ptr;
 	
-	static real const RR = (3.61+3.61-3.44)*(3.61+3.61-3.44);
+	static f64 const RR = (3.61+3.61-3.44)*(3.61+3.61-3.44);
 	//pvars = (vertvars *)(ptr + offset_species);
 
 		switch (colourflag)
@@ -6675,7 +7108,7 @@ void SetVertexColour(VertexPNT3 * pPNT, const plasma_data * pdata, int colourfla
 			break;
 		case FLAG_VELOCITY_COLOUR:
 			
-			ptr = ((real *)pdata) + offset_vcolour;
+			ptr = ((f64 *)pdata) + offset_vcolour;
 			pPNT->tex0.x = (float)(*ptr);
 			++ptr;
 			pPNT->tex0.y = (float)(*ptr);
@@ -6683,7 +7116,7 @@ void SetVertexColour(VertexPNT3 * pPNT, const plasma_data * pdata, int colourfla
 			break;
 		case FLAG_CURRENT_COLOUR:
 				
-			ptr = ((real *)pdata) + offset_vcolour;
+			ptr = ((f64 *)pdata) + offset_vcolour;
 			pPNT->tex0.x = (float)(*ptr);
 			++ptr;
 			pPNT->tex0.y = (float)(*ptr);
@@ -6701,20 +7134,20 @@ void SetVertexColour(VertexPNT3 * pPNT, const plasma_data * pdata, int colourfla
 
 		case FLAG_PPN_COLOUR:
 
-			ptr = ((real *)pdata) + offset_vcolour;
+			ptr = ((f64 *)pdata) + offset_vcolour;
 			pPNT->tex0.x = (float)(*ptr);
 			
 			break;
 		case FLAG_SEGUE_COLOUR:
 		case FLAG_AZSEGUE_COLOUR:
 
-			ptr = ((real *)pdata) + offset_vcolour;
+			ptr = ((f64 *)pdata) + offset_vcolour;
 			pPNT->tex0.x = (float)(*ptr);
 
 			break;
 		case FLAG_IONISE_COLOUR:
 
-			ptr = ((real *)pdata) + offset_vcolour;
+			ptr = ((f64 *)pdata) + offset_vcolour;
 			pPNT->tex0.x = (float)(*ptr);
 			ptr++;
 			pPNT->tex0.y = (float)(*ptr);
@@ -6743,22 +7176,22 @@ long TriMesh::GetNumKeyVerticesGraphics(long * pnumTrianglesKey) const
 }
 
 
-void TriMesh::SetVerticesKeyButton(VertexPNT3 * vertices, DWORD * indices, real maximum_v,int colourflag) const
+void TriMesh::SetVerticesKeyButton(VertexPNT3 * vertices, DWORD * indices, f64 maximum_v,int colourflag) const
 {
 	// FLAG_VELOCITY_COLOUR vs FLAG_CURRENT_COLOUR
 	VertexPNT3 * pPNT = vertices;
 	DWORD * pIndex = indices;
 	long iRing,iAngle;
-	real KeyRadius = 0.1; // 0.1 cm
-	real KeyCentre_x = 0.0;
-	real KeyCentre_y = 3.25;
-	real r,theta,x,y,z,vmag;
+	f64 KeyRadius = 0.1; // 0.1 cm
+	f64 KeyCentre_x = 0.0;
+	f64 KeyCentre_y = 3.25;
+	f64 r,theta,x,y,z,vmag;
 	int iOuter,iInner,iPrevOuter,iNext;
 	long totalVertices = 0;
 	long triCount = 0;
 
-	real RSTEP = KeyRadius/(real)(NUMRINGS);  
-	real THETASTEP = 2.0*PI/(real)(NUMANGLES);
+	f64 RSTEP = KeyRadius/(f64)(NUMRINGS);  
+	f64 THETASTEP = 2.0*PI/(f64)(NUMANGLES);
 	x = KeyCentre_x;
 	z = KeyCentre_y;
 	y = 0.0f;
@@ -6785,8 +7218,8 @@ void TriMesh::SetVerticesKeyButton(VertexPNT3 * vertices, DWORD * indices, real 
 		{
 			if (totalVertices >= 1998) printf("%d ", totalVertices);
 	
-			r = RSTEP*(real)(iRing+1);           // 1/20 to 20/20
-			theta = THETASTEP*(real)iAngle + 0.5*(real)(iRing % 2); // 0/100 to 99/100
+			r = RSTEP*(f64)(iRing+1);           // 1/20 to 20/20
+			theta = THETASTEP*(f64)iAngle + 0.5*(f64)(iRing % 2); // 0/100 to 99/100
 			x = KeyCentre_x + r*cos(theta);
 			z = KeyCentre_y + r*sin(theta);
 			
@@ -6821,7 +7254,7 @@ void TriMesh::SetVerticesKeyButton(VertexPNT3 * vertices, DWORD * indices, real 
 	};
 	
 	--pPNT;
-//	printf("tex0.x tex0.y tex0.z %1.9E %1.9E %1.9E \n",(real)(pPNT->tex0.x),(real)(pPNT->tex0.y),(real)(pPNT->tex0.z));
+//	printf("tex0.x tex0.y tex0.z %1.9E %1.9E %1.9E \n",(f64)(pPNT->tex0.x),(f64)(pPNT->tex0.y),(f64)(pPNT->tex0.z));
 	++pPNT;
 
 	// Now set up the triangles.
@@ -6903,9 +7336,9 @@ void TriMesh::SetVerticesKeyButton(VertexPNT3 * vertices, DWORD * indices, real 
 									long numVerticesMax,
 									int colourflag,
 									int heightflag,
-									int offset_data,			// how far data is from start of Vertex, for real*
+									int offset_data,			// how far data is from start of Vertex, for f64*
 									int offset_species,
-									real heightscale)		
+									f64 heightscale)		
 {
 	
 	VertexPNT3 * pPNT = vertices;
@@ -6914,9 +7347,9 @@ void TriMesh::SetVerticesKeyButton(VertexPNT3 * vertices, DWORD * indices, real 
 	Vertex * pVertex = &(X[0]);
 	Triangle * pTri;
 	Vector2 position;
-	real data0,data1,data2;
+	f64 data0,data1,data2;
 
-	real x0,x1;
+	f64 x0,x1;
 	Vector2 tempvec;
 	Vertex tempvert;
 	D3DXVECTOR3 vec1, vec2;
@@ -6924,8 +7357,8 @@ void TriMesh::SetVerticesKeyButton(VertexPNT3 * vertices, DWORD * indices, real 
 	Vertex *pVert1,*pVert2;
 	D3DXVECTOR3 normalnext;
 	int quad1,quad2;//quad3,quad4;
-	real grad1,grad2;
-	real * ptr;
+	f64 grad1,grad2;
+	f64 * ptr;
 	int ii,i;
 	float vx,vy,one,two;
 
@@ -6950,11 +7383,11 @@ void TriMesh::SetVerticesKeyButton(VertexPNT3 * vertices, DWORD * indices, real 
 
 			break;
 		case FLAG_DATA_HEIGHT:
-			pPNT->pos.y = (float)(*(((real *)pVertex)+offset_data))*heightscale;
+			pPNT->pos.y = (float)(*(((f64 *)pVertex)+offset_data))*heightscale;
 			break;
 
 		case FLAG_VELOCITY_HEIGHT:
-			ptr = (real *)pVertex + offset_data;
+			ptr = (f64 *)pVertex + offset_data;
 			vx = (float)(*ptr);
 			++ptr;
 			vy = (float)(*ptr);
@@ -7017,9 +7450,9 @@ void TriMesh::SetVerticesKeyButton(VertexPNT3 * vertices, DWORD * indices, real 
 					{
 					case FLAG_DATA_HEIGHT:
 
-						data1 = *(((real *)pVert1) + offset_data);
-						data2 = *(((real *)pVert1) + offset_data);
-						data0 = *(((real *)pVertex) + offset_data);
+						data1 = *(((f64 *)pVert1) + offset_data);
+						data2 = *(((f64 *)pVert1) + offset_data);
+						data0 = *(((f64 *)pVertex) + offset_data);
 
 						vec1.y = (float)((data1-data0)*heightscale);
 						vec2.y = (float)((data2-data0)*heightscale); // got to set Factor somewhere
@@ -7030,13 +7463,13 @@ void TriMesh::SetVerticesKeyButton(VertexPNT3 * vertices, DWORD * indices, real 
 					//	vec2.y = (float)((pVert2->T - pVertex->T)*Tfactor);
 					//	break;
 					case FLAG_VELOCITY_HEIGHT:
-						ptr = (real *)pVert1 + offset_data;
+						ptr = (f64 *)pVert1 + offset_data;
 						vx = (float)(*ptr);
 						++ptr;
 						vy = (float)(*ptr);
 						one = sqrt(vx*vx+vy*vy)*(float)heightscale;
 						
-						ptr = (real *)pVert2 + offset_data;
+						ptr = (f64 *)pVert2 + offset_data;
 						vx = (float)(*ptr);
 						++ptr;
 						vy = (float)(*ptr);
@@ -7145,13 +7578,13 @@ void TriMesh::SetVerticesKeyButton(VertexPNT3 * vertices, DWORD * indices, real 
 		} else {
 			if  (colourflag == FLAG_AZSEGUE_COLOUR)
 			{
-				pPNT->tex0.x = (float)((*(((real *)pVertex) + offset_data))*heightscale);
+				pPNT->tex0.x = (float)((*(((f64 *)pVertex) + offset_data))*heightscale);
 			};
 			if (colourflag == FLAG_VELOCITY_COLOUR)
 			{
-				pPNT->tex0.x =(float)((*(((real *)pVertex) + offset_data)));
-				pPNT->tex0.y =(float)((*(((real *)pVertex) + offset_data+1)));
-				pPNT->tex0.z =(float)((*(((real *)pVertex) + offset_data+2)));
+				pPNT->tex0.x =(float)((*(((f64 *)pVertex) + offset_data)));
+				pPNT->tex0.y =(float)((*(((f64 *)pVertex) + offset_data+1)));
+				pPNT->tex0.z =(float)((*(((f64 *)pVertex) + offset_data+2)));
 			};
 		};
 		//SetVertexColour(pPNT,pVertex,colourflag,offset_species);
@@ -7205,11 +7638,11 @@ void TriMesh::SetVerticesKeyButton(VertexPNT3 * vertices, DWORD * indices, real 
 					pPNT->pos.x = ((float)(temp.x))*xzscale;
 					pPNT->pos.z = ((float)(temp.y))*xzscale;
 					// altered:
-					pPNT->pos.y = (float)((*(((real *)pVertex) + offset_data))*heightscale);
+					pPNT->pos.y = (float)((*(((f64 *)pVertex) + offset_data))*heightscale);
 
 					if (heightflag == FLAG_VELOCITY_HEIGHT)
 					{
-						ptr = ((real *)pVertex) + offset_data;
+						ptr = ((f64 *)pVertex) + offset_data;
 						vx = (float)(*ptr);
 						++ptr;
 						vy = (float)(*ptr);
@@ -7227,13 +7660,13 @@ void TriMesh::SetVerticesKeyButton(VertexPNT3 * vertices, DWORD * indices, real 
 					} else {
 						if  (colourflag == FLAG_AZSEGUE_COLOUR)
 						{
-							pPNT->tex0.x = (float)((*(((real *)pVertex) + offset_data))*heightscale);
+							pPNT->tex0.x = (float)((*(((f64 *)pVertex) + offset_data))*heightscale);
 						};
 						if (colourflag == FLAG_VELOCITY_COLOUR)
 						{
-							pPNT->tex0.x =(float)((*(((real *)pVertex) + offset_data)));
-							pPNT->tex0.y =(float)((*(((real *)pVertex) + offset_data+1)));
-							pPNT->tex0.z =(float)((*(((real *)pVertex) + offset_data+2)));
+							pPNT->tex0.x =(float)((*(((f64 *)pVertex) + offset_data)));
+							pPNT->tex0.y =(float)((*(((f64 *)pVertex) + offset_data+1)));
+							pPNT->tex0.z =(float)((*(((f64 *)pVertex) + offset_data+2)));
 						};
 					};		
 					//SetVertexColour(pPNT,pVertex,colourflag,offset_species);
@@ -7263,7 +7696,7 @@ void TriMesh::SetVerticesAndIndices(VertexPNT3 * vertices[],			// better to do i
 									long numTrianglesUsed[],
 									int colourflag,
 									int heightflag,
-									int offset_data,			// how far data is from start of Vertex, for real*
+									int offset_data,			// how far data is from start of Vertex, for f64*
 									int offset_vcolour,
 									float zeroplane, float yscale,
 									bool boolDisplayInnerMesh)		const
@@ -7276,7 +7709,7 @@ void TriMesh::SetVerticesAndIndices(VertexPNT3 * vertices[],			// better to do i
 	// Populate the INDEX 1 array not the INDEX 0 one which is for key button and that kind of thing.
 	// Note that instead of Direct2D we can make segue bar by using the straight-to-screen coords(?)
 
-	real shoelace;
+	f64 shoelace;
 	Vector2 u[3];
 
 	VertexPNT3 * pPNT = vertices[1];
@@ -7286,13 +7719,13 @@ void TriMesh::SetVerticesAndIndices(VertexPNT3 * vertices[],			// better to do i
 	const Vertex * pVertex = &(X[0]);
 	const Triangle * pTri;
 	Vector2 position;
-	real data0,data1,data2, vz;
+	f64 data0,data1,data2, vz;
 
-	real XCENTRE2 = DEVICE_RADIUS_INITIAL_FILAMENT_CENTRE*sin(PI/32.0);
-	real XCENTRE1 = 0.0;//-XCENTRE2;
-	real YCENTRE = DEVICE_RADIUS_INITIAL_FILAMENT_CENTRE*cos(PI/32.0);
+	f64 XCENTRE2 = DEVICE_RADIUS_INITIAL_FILAMENT_CENTRE*sin(PI/32.0);
+	f64 XCENTRE1 = 0.0;//-XCENTRE2;
+	f64 YCENTRE = DEVICE_RADIUS_INITIAL_FILAMENT_CENTRE*cos(PI/32.0);
 
-	real x0,x1;
+	f64 x0,x1;
 	Vector2 tempvec;
 	Vertex tempvert;
 	D3DXVECTOR3 vec1, vec2;
@@ -7301,10 +7734,10 @@ void TriMesh::SetVerticesAndIndices(VertexPNT3 * vertices[],			// better to do i
 	const plasma_data * pdata1, *pdata2;
 	D3DXVECTOR3 normalnext;
 	int quad1,quad2;//quad3,quad4;
-	real grad1,grad2;
-	real doublevx, doublevy, doublevz; // avoid fp overflow so easily from float
+	f64 grad1,grad2;
+	f64 doublevx, doublevy, doublevz; // avoid fp overflow so easily from float
 	float v;
-	real * ptr;
+	f64 * ptr;
 	int ii;
 	float vx,vy,one,two;
 	const Vertex * pBegin;
@@ -7339,7 +7772,7 @@ void TriMesh::SetVerticesAndIndices(VertexPNT3 * vertices[],			// better to do i
 		if (1) //(pVertex->flags == DOMAIN_VERTEX) || (pVertex->flags == OUTERMOST)
 			//|| (boolDisplayInnerMesh == true)) {
 		{
-			ydata = (float)(*(((real *)pdata) + offset_data));
+			ydata = (float)(*(((f64 *)pdata) + offset_data));
 
 			pPNT->pos.x = ((float)(pVertex->pos.x))*xzscale;
 			pPNT->pos.z = ((float)(pVertex->pos.y))*xzscale;
@@ -7398,7 +7831,7 @@ void TriMesh::SetVerticesAndIndices(VertexPNT3 * vertices[],			// better to do i
 				break;
 
 			case FLAG_VELOCITY_HEIGHT:
-				ptr = (real *)pdata + offset_data;
+				ptr = (f64 *)pdata + offset_data;
 				doublevx = (*ptr);
 				++ptr;
 				doublevy = (*ptr);
@@ -7426,7 +7859,7 @@ void TriMesh::SetVerticesAndIndices(VertexPNT3 * vertices[],			// better to do i
 			*/
 				break;
 			case FLAG_VEC3_HEIGHT:
-				ptr = (real *)pdata + offset_data;
+				ptr = (f64 *)pdata + offset_data;
 				doublevx = (*ptr);
 				++ptr;
 				doublevy = (*ptr);
@@ -7471,17 +7904,17 @@ void TriMesh::SetVerticesAndIndices(VertexPNT3 * vertices[],			// better to do i
 					{
 					case FLAG_DATA_HEIGHT:
 
-						data1 = *(((real *)pdata1) + offset_data);
-						data2 = *(((real *)pdata2) + offset_data);
-						data0 = *(((real *)pdata) + offset_data);
+						data1 = *(((f64 *)pdata1) + offset_data);
+						data2 = *(((f64 *)pdata2) + offset_data);
+						data0 = *(((f64 *)pdata) + offset_data);
 
-						vec1.y = zeroplane + (float)((data1 - data0)*(real)yscale);
-						vec2.y = zeroplane + (float)((data2 - data0)*(real)yscale);
-						// does putting in brackets get rid of FP overflow? Adding (real)?
+						vec1.y = zeroplane + (float)((data1 - data0)*(f64)yscale);
+						vec2.y = zeroplane + (float)((data2 - data0)*(f64)yscale);
+						// does putting in brackets get rid of FP overflow? Adding (f64)?
 						// Think the issue here is converting e+61 (undefined double) to float.
 						break;
 					case FLAG_VELOCITY_HEIGHT:
-						ptr = (real *)pdata1 + offset_data;
+						ptr = (f64 *)pdata1 + offset_data;
 
 						doublevx = (*ptr);
 						++ptr;
@@ -7498,7 +7931,7 @@ void TriMesh::SetVerticesAndIndices(VertexPNT3 * vertices[],			// better to do i
 
 						one = zeroplane + v*yscale;
 
-						ptr = (real *)pdata2 + offset_data;
+						ptr = (f64 *)pdata2 + offset_data;
 						doublevx = (*ptr);
 						++ptr;
 						doublevy = (*ptr);
@@ -7512,7 +7945,7 @@ void TriMesh::SetVerticesAndIndices(VertexPNT3 * vertices[],			// better to do i
 
 					case FLAG_VEC3_HEIGHT:
 
-						ptr = (real *)pdata1 + offset_data;
+						ptr = (f64 *)pdata1 + offset_data;
 						doublevx = (float)(*ptr);
 						++ptr;
 						doublevy = (float)(*ptr);
@@ -7522,7 +7955,7 @@ void TriMesh::SetVerticesAndIndices(VertexPNT3 * vertices[],			// better to do i
 							sqrt(doublevx*doublevx + doublevy*doublevy + doublevz*doublevz))
 							*yscale;
 
-						ptr = (real *)pdata2 + offset_data;
+						ptr = (f64 *)pdata2 + offset_data;
 						doublevx = (float)(*ptr);
 						++ptr;
 						doublevy = (float)(*ptr);
@@ -7731,17 +8164,17 @@ void TriMesh::SetVerticesAndIndices(VertexPNT3 * vertices[],			// better to do i
 							switch (heightflag)
 							{
 							case FLAG_DATA_HEIGHT:
-								pPNT->pos.y = zeroplane + (float)(*(((real *)pdata)+offset_data))*yscale;
+								pPNT->pos.y = zeroplane + (float)(*(((f64 *)pdata)+offset_data))*yscale;
 								break;
 							case FLAG_VELOCITY_HEIGHT:
-								ptr = (real *)pdata + offset_data;
+								ptr = (f64 *)pdata + offset_data;
 								vx = (float)(*ptr);
 								++ptr;
 								vy = (float)(*ptr);
 								pPNT->pos.y = zeroplane + sqrt(vx*vx+vy*vy)*yscale;
 								break;
 							case FLAG_VEC3_HEIGHT:
-								ptr = (real *)pdata + offset_data;
+								ptr = (f64 *)pdata + offset_data;
 								vx = (float)(*ptr);
 								++ptr;
 								vy = (float)(*ptr);
@@ -7819,10 +8252,10 @@ void TriMesh::SetVerticesAndIndices(VertexPNT3 * vertices[],			// better to do i
 //	fclose(debugfile);
 }
 
-void QuickSort (long VertexIndexArray[], real radiusArray[],
+void QuickSort (long VertexIndexArray[], f64 radiusArray[],
 		long lo, long hi)
 {
-	real temp;
+	f64 temp;
 	long tempint,p;
 
 	if (lo < hi) {
@@ -7830,7 +8263,7 @@ void QuickSort (long VertexIndexArray[], real radiusArray[],
 		
 		long q = (lo+hi)/2;
 		// move it to a position p where it has partitioned the sublist.
-		real pivotValue = radiusArray[q];
+		f64 pivotValue = radiusArray[q];
 
 		// swap with element hi:
 		temp = radiusArray[hi];
@@ -7875,7 +8308,7 @@ void QuickSort (long VertexIndexArray[], real radiusArray[],
 //
 
 long TriMesh::GetVertsRightOfCutawayLine_Sorted(long * VertexIndexArray,
-										real * radiusArray, bool bUseInner) const
+										f64 * radiusArray, bool bUseInner) const
 {
 	const Vertex * pNeigh;
 	const Vertex * pVertex;
@@ -7970,26 +8403,26 @@ long TriMesh::GetVertsRightOfCutawayLine_Sorted(long * VertexIndexArray,
 
 
 
-real TriMesh::ReturnMaximumData(int offset)
+f64 TriMesh::ReturnMaximumData(int offset)
 {
 	Vertex *pVert;
 	pVert = X;
-	real maxA2z = 0.0;
+	f64 maxA2z = 0.0;
 	for (long iVert = 0; iVert < numVertices; iVert++)
 	{
-		if (*((real *)pVert + offset) > maxA2z) maxA2z = *((real *)pVert + offset);		
+		if (*((f64 *)pVert + offset) > maxA2z) maxA2z = *((f64 *)pVert + offset);		
 		++pVert;
 	};
 	if (maxA2z == 0.0) return 1.0; // do not return 0
 	return maxA2z;
 }
 
-void TriMesh::ReturnL5Data(int offset, real * pmax, real * pmin, bool bDisplayInner) const
+void TriMesh::ReturnL5Data(int offset, f64 * pmax, f64 * pmin, bool bDisplayInner) const
 {
 	const Vertex *pVert;
 	long numplus = 0, numminus = 0;
 	// if there are no negatives, min on graph is zero anyway.
-	real value, valuesq, value5;
+	f64 value, valuesq, value5;
 	long numUse;
 	const plasma_data * pdata;
 
@@ -8008,11 +8441,11 @@ void TriMesh::ReturnL5Data(int offset, real * pmax, real * pmin, bool bDisplayIn
 
 	// get +,- mean:
 
-	real negmean = 0.0, posmean = 0.0;
+	f64 negmean = 0.0, posmean = 0.0;
 	long negnum = 0, posnum = 0;
 	for (long iVert = 0; iVert < numUse; iVert++)
 	{
-		value = *((real *)pdata + offset);
+		value = *((f64 *)pdata + offset);
 	
 		if (value < 0.0) {
 			negmean+=value;
@@ -8026,9 +8459,9 @@ void TriMesh::ReturnL5Data(int offset, real * pmax, real * pmin, bool bDisplayIn
 		++pdata;
 	};
 	if (negnum > 0)
-		negmean /= (real)negnum;
+		negmean /= (f64)negnum;
 	if (posnum > 0)
-		posmean /= (real)posnum;
+		posmean /= (f64)posnum;
 	
 	// create cutoffs:
 	negmean *= 0.6;
@@ -8037,7 +8470,7 @@ void TriMesh::ReturnL5Data(int offset, real * pmax, real * pmin, bool bDisplayIn
 	// If cutoffs result in few observations selected (< 10?)
 	// then go again with less cutoff???
 	
-	real S5_plus = 0.0, S5_minus = 0.0; 
+	f64 S5_plus = 0.0, S5_minus = 0.0; 
 	pdata = pData + BEGINNING_OF_CENTRAL;
 	if (bDisplayInner) {
 		pVert = X;
@@ -8047,7 +8480,7 @@ void TriMesh::ReturnL5Data(int offset, real * pmax, real * pmin, bool bDisplayIn
 	};
 	for (long iVert = 0; iVert < numUse; iVert++)
 	{
-		value = *((real *)pdata + offset);
+		value = *((f64 *)pdata + offset);
 		valuesq = value*value;
 		value5 = valuesq*valuesq*value;
 
@@ -8068,13 +8501,13 @@ void TriMesh::ReturnL5Data(int offset, real * pmax, real * pmin, bool bDisplayIn
 
 	if (numplus > 10)
 	{
-		*pmax = pow(S5_plus/(real)numplus,1.0/5.0);
+		*pmax = pow(S5_plus/(f64)numplus,1.0/5.0);
 	} else {
 		if (numplus > 0) {
 			// this way failed: only a few above cutoff..
 			// Try again with L7, values above posmean excluded.
 			
-			real S7_plus = 0.0; 
+			f64 S7_plus = 0.0; 
 			numplus = 0;
 			pdata = pData;
 			if (bDisplayInner) {
@@ -8085,7 +8518,7 @@ void TriMesh::ReturnL5Data(int offset, real * pmax, real * pmin, bool bDisplayIn
 			};
 			for (long iVert = 0; iVert < numUse; iVert++)
 			{
-				value = *((real *)pdata + offset);
+				value = *((f64 *)pdata + offset);
 				valuesq = value*value;
 				value5 = valuesq*valuesq*valuesq*value;
 				
@@ -8098,7 +8531,7 @@ void TriMesh::ReturnL5Data(int offset, real * pmax, real * pmin, bool bDisplayIn
 			};
 			printf("| numplus %d S7 %1.5E",numplus,S7_plus);
 			if (numplus == 0) {*pmax = 0.0;} else {
-				*pmax = pow(S7_plus/(real)numplus,1.0/7.0);
+				*pmax = pow(S7_plus/(f64)numplus,1.0/7.0);
 			};
 		} else {
 			*pmax = 0.0;
@@ -8107,11 +8540,11 @@ void TriMesh::ReturnL5Data(int offset, real * pmax, real * pmin, bool bDisplayIn
 
 	if (numminus > 10)
 	{
-		*pmin = -pow(fabs(S5_minus)/(real)numminus,1.0/5.0);
+		*pmin = -pow(fabs(S5_minus)/(f64)numminus,1.0/5.0);
 	} else {
 		if (numminus > 0) {
 
-			real S7_minus = 0.0; 
+			f64 S7_minus = 0.0; 
 			numminus = 0;
 			pdata = pData;
 			if (bDisplayInner) {
@@ -8122,7 +8555,7 @@ void TriMesh::ReturnL5Data(int offset, real * pmax, real * pmin, bool bDisplayIn
 			};
 			for (long iVert = 0; iVert < numUse; iVert++)
 			{
-				value = *((real *)pdata + offset);
+				value = *((f64 *)pdata + offset);
 				valuesq = value*value;
 				value5 = valuesq*valuesq*valuesq*value;
 				
@@ -8135,7 +8568,7 @@ void TriMesh::ReturnL5Data(int offset, real * pmax, real * pmin, bool bDisplayIn
 			};
 			// Beware: numminus can still be 0
 			if (numminus == 0) {*pmin = 0.0;} else {
-				*pmin = -pow(-S7_minus/(real)numminus,1.0/7.0);
+				*pmin = -pow(-S7_minus/(f64)numminus,1.0/7.0);
 			};
 		} else {
 			*pmin = 0.0;
@@ -8148,14 +8581,14 @@ void TriMesh::ReturnL5Data(int offset, real * pmax, real * pmin, bool bDisplayIn
 	*pmax *= 1.11;
 	*pmin *= 1.11;
 
-//	printf("value at 11830: %1.8E \n",*((real *)(X+11830)+offset));
+//	printf("value at 11830: %1.8E \n",*((f64 *)(X+11830)+offset));
 }
 
-void TriMesh::ReturnMaxMinData(int offset, real * pmax, real * pmin, bool bDisplayInner) const
+void TriMesh::ReturnMaxMinData(int offset, f64 * pmax, f64 * pmin, bool bDisplayInner) const
 {
 	const plasma_data *pdata;
-	real maxA2z = -1.0e100;
-	real minA2z = 1.0e100;
+	f64 maxA2z = -1.0e100;
+	f64 minA2z = 1.0e100;
 
 	long iVertMax = 0;
 	long iVertMin = 0;
@@ -8165,14 +8598,14 @@ void TriMesh::ReturnMaxMinData(int offset, real * pmax, real * pmin, bool bDispl
 
 		for (long iVert = 0; iVert < numVertices; iVert++)
 		{
-			if (*((real *)pdata + offset) > maxA2z) 
+			if (*((f64 *)pdata + offset) > maxA2z) 
 			{
-				maxA2z = *((real *)pdata + offset);		
+				maxA2z = *((f64 *)pdata + offset);		
 				iVertMax = iVert;
 			};
-			if (*((real *)pdata + offset) < minA2z) 
+			if (*((f64 *)pdata + offset) < minA2z) 
 			{
-				minA2z = *((real *)pdata + offset);		
+				minA2z = *((f64 *)pdata + offset);		
 				iVertMin = iVert;
 			};
 			++pdata;
@@ -8185,14 +8618,14 @@ void TriMesh::ReturnMaxMinData(int offset, real * pmax, real * pmin, bool bDispl
 		pdata += Xdomain-X;
 		for (long iVert = 0; iVert < numDomainVertices; iVert++)
 		{
-			if (*((real *)pdata + offset) > maxA2z) 
+			if (*((f64 *)pdata + offset) > maxA2z) 
 			{
-				maxA2z = *((real *)pdata + offset);		
+				maxA2z = *((f64 *)pdata + offset);		
 				iVertMax = iVert+(Xdomain-X);
 			};
-			if (*((real *)pdata + offset) < minA2z) 
+			if (*((f64 *)pdata + offset) < minA2z) 
 			{
-				minA2z = *((real *)pdata + offset);		
+				minA2z = *((f64 *)pdata + offset);		
 				iVertMin = iVert+(Xdomain-X);
 			};
 			++pdata;
@@ -8203,14 +8636,14 @@ void TriMesh::ReturnMaxMinData(int offset, real * pmax, real * pmin, bool bDispl
 	*pmin = minA2z;
 	if (VERBOSEGRAPHICS) printf("Max %1.8E found at vertex %d \n",*pmax,iVertMax);
 	if (VERBOSEGRAPHICS) printf("Min %1.8E found at vertex %d \n",*pmin,iVertMin);
-//	printf("value at 11830: %1.8E \n",*((real *)(X+11830)+offset));
+//	printf("value at 11830: %1.8E \n",*((f64 *)(X+11830)+offset));
 }
 
-void TriMesh::Return3rdmaxData(int offset, real * pmax, real * pmin, bool bDisplayInner) const
+void TriMesh::Return3rdmaxData(int offset, f64 * pmax, f64 * pmin, bool bDisplayInner) const
 {
 	const plasma_data *pdata;
-	real maxA2z[3] = { -1.0e100,-1.0e100,-1.0e100 };
-	real minA2z[3] = { 1.0e100, 1.0e100, 1.0e100 };
+	f64 maxA2z[3] = { -1.0e100,-1.0e100,-1.0e100 };
+	f64 minA2z[3] = { 1.0e100, 1.0e100, 1.0e100 };
 	
 	long iVertMax = 0;
 	long iVertMin = 0;
@@ -8221,7 +8654,7 @@ void TriMesh::Return3rdmaxData(int offset, real * pmax, real * pmin, bool bDispl
 
 		for (long iVert = 0; iVert < numVertices; iVert++)
 		{
-			z = *((real *)pdata + offset);
+			z = *((f64 *)pdata + offset);
 			if (z > maxA2z[2])
 			{
 				if (z > maxA2z[1])
@@ -8265,7 +8698,7 @@ void TriMesh::Return3rdmaxData(int offset, real * pmax, real * pmin, bool bDispl
 		pdata += Xdomain - X;
 		for (long iVert = 0; iVert < numDomainVertices; iVert++)
 		{
-			z = *((real *)pdata + offset);
+			z = *((f64 *)pdata + offset);
 			if (z > maxA2z[2])
 			{
 				if (z > maxA2z[1])
@@ -8309,19 +8742,19 @@ void TriMesh::Return3rdmaxData(int offset, real * pmax, real * pmin, bool bDispl
 	*pmin = minA2z[2];
 	//printf("Max %1.8E found at vertex %d \n", *pmax, iVertMax);
 	//printf("Min %1.8E found at vertex %d \n", *pmin, iVertMin);
-	//	printf("value at 11830: %1.8E \n",*((real *)(X+11830)+offset));
+	//	printf("value at 11830: %1.8E \n",*((f64 *)(X+11830)+offset));
 }
 
 /*
-void TriMesh::ReturnMaxMinDataAux(int iLevel, int offset, real * pmax, real * pmin)
+void TriMesh::ReturnMaxMinDataAux(int iLevel, int offset, f64 * pmax, f64 * pmin)
 {
 	Vertex *pVert;
 	pVert = AuxX[iLevel];
-	real maxA2z = -1.0e100;
-	real minA2z = 1.0e100;
+	f64 maxA2z = -1.0e100;
+	f64 minA2z = 1.0e100;
 	for (long iVert = 0; iVert < numAuxVertices[iLevel]; iVert++)
 	{
-		if (*((real *)pVert + offset) > maxA2z) maxA2z = *((real *)pVert + offset);		if (*((real *)pVert + offset) < minA2z) minA2z = *((real *)pVert + offset);		
+		if (*((f64 *)pVert + offset) > maxA2z) maxA2z = *((f64 *)pVert + offset);		if (*((f64 *)pVert + offset) < minA2z) minA2z = *((f64 *)pVert + offset);		
 		++pVert;
 	};
 	if (maxA2z == 0.0) maxA2z = 1.0; // do not return 0
@@ -8331,46 +8764,46 @@ void TriMesh::ReturnMaxMinDataAux(int iLevel, int offset, real * pmax, real * pm
 }*/
 // Think carefully on this.
 /*
-void TriMesh::ReturnInnerMaxMinData(int offset, real * pmax, real * pmin)
+void TriMesh::ReturnInnerMaxMinData(int offset, f64 * pmax, f64 * pmin)
 {
 	AuxVertex *pVert;
 	pVert = InnerX;
-	real maxA2z = -1.0e100;
-	real minA2z = 1.0e100;
+	f64 maxA2z = -1.0e100;
+	f64 minA2z = 1.0e100;
 	for (long iVert = 0; iVert < numInnerVertices; iVert++)
 	{
-		if (*((real *)pVert + offset) > maxA2z) maxA2z = *((real *)pVert + offset);		
-		if (*((real *)pVert + offset) < minA2z) minA2z = *((real *)pVert + offset);		
+		if (*((f64 *)pVert + offset) > maxA2z) maxA2z = *((f64 *)pVert + offset);		
+		if (*((f64 *)pVert + offset) < minA2z) minA2z = *((f64 *)pVert + offset);		
 		++pVert;
 	};
 	*pmax = maxA2z;
 	*pmin = minA2z;
 }*/
 /*
-real TriMesh::ReturnMaximumDataAux(int iLevel, int offset)
+f64 TriMesh::ReturnMaximumDataAux(int iLevel, int offset)
 {
 	Vertex *pVert;
 	pVert = AuxX[iLevel];
-	real maxA2z = 0.0;
+	f64 maxA2z = 0.0;
 	for (long iVert = 0; iVert < numAuxVertices[iLevel]; iVert++)
 	{
-		if (*((real *)pVert + offset) > maxA2z) maxA2z = *((real *)pVert + offset);		
+		if (*((f64 *)pVert + offset) > maxA2z) maxA2z = *((f64 *)pVert + offset);		
 		++pVert;
 	};
 	if (maxA2z == 0.0) return 1.0; // do not return 0
 	return maxA2z;
 }*/
 /*
-real TriMesh::ReturnMaximumVelocityAux(int iLevel, int offset)
+f64 TriMesh::ReturnMaximumVelocityAux(int iLevel, int offset)
 {
 	Vertex *pVert;
-	real * ptr;
-	real maxvsq, vx, vy, vsq;
+	f64 * ptr;
+	f64 maxvsq, vx, vy, vsq;
 	pVert = AuxX[iLevel];
 	maxvsq = 0.0;
 	for (long iVert = 0; iVert < numAuxVertices[iLevel]; iVert++)
 	{
-		ptr = ((real *)pVert) + offset;
+		ptr = ((f64 *)pVert) + offset;
 		vx = *ptr;
 		++ptr;
 		vy = *ptr;
@@ -8382,14 +8815,14 @@ real TriMesh::ReturnMaximumVelocityAux(int iLevel, int offset)
 	if (maxvsq == 0.0) return 1.0; // do not return 0
 	return sqrt(maxvsq);
 }*/
-real TriMesh::ReturnL4_Velocity(int offset_v, bool bDisplayInner) const
+f64 TriMesh::ReturnL4_Velocity(int offset_v, bool bDisplayInner) const
 {
-	real * ptr;
+	f64 * ptr;
 	const plasma_data *pdata;
-	real vx,vy;
+	f64 vx,vy;
 	pdata = pData + BEGINNING_OF_CENTRAL;
-	real vsq;
-	real L2sum = 0.0;
+	f64 vsq;
+	f64 L2sum = 0.0;
 	long num = 0;
 	long nmax = numVertices;
 	if (bDisplayInner == 0) {
@@ -8400,7 +8833,7 @@ real TriMesh::ReturnL4_Velocity(int offset_v, bool bDisplayInner) const
 	// a. Take L2 and create cutoff for counting data
 	for (long iVert = 0; iVert < nmax; iVert++)
 	{
-		ptr = ((real *)pdata) + offset_v;
+		ptr = ((f64 *)pdata) + offset_v;
 		vx = *ptr;
 		++ptr;
 		vy = *ptr;
@@ -8412,12 +8845,12 @@ real TriMesh::ReturnL4_Velocity(int offset_v, bool bDisplayInner) const
 		++pdata;
 	};
 	if (num == 0) return 0.0;
-	real L2sq = L2sum/(real)num;
+	f64 L2sq = L2sum/(f64)num;
 	L2sq *= 0.25; // create cutoff
 
 	// b. Take L6 to get _near_ the maximum.
 
-	real L6sum = 0.0;
+	f64 L6sum = 0.0;
 	num = 0;
 	pdata = pData + BEGINNING_OF_CENTRAL;
 	if (bDisplayInner == 0) {
@@ -8425,7 +8858,7 @@ real TriMesh::ReturnL4_Velocity(int offset_v, bool bDisplayInner) const
 	}
 	for (long iVert = 0; iVert < nmax; iVert++)
 	{
-		ptr = ((real *)pdata) + offset_v;
+		ptr = ((f64 *)pdata) + offset_v;
 		vx = *ptr;
 		++ptr;
 		vy = *ptr;
@@ -8438,15 +8871,15 @@ real TriMesh::ReturnL4_Velocity(int offset_v, bool bDisplayInner) const
 	};
 	if (L6sum == 0.0) return 1.0; // do not return 0
 
-	return 1.1*pow(L6sum/(real)num,1.0/6.0);
+	return 1.1*pow(L6sum/(f64)num,1.0/6.0);
 }
-real TriMesh::ReturnMaximumVelocity(int offset_v, bool bDisplayInner) const
+f64 TriMesh::ReturnMaximumVelocity(int offset_v, bool bDisplayInner) const
 {
-	real * ptr;
+	f64 * ptr;
 	const plasma_data *pdata;
-	real vx,vy;
-	real vsq;
-	real maxvsq = 0.0;
+	f64 vx,vy;
+	f64 vsq;
+	f64 maxvsq = 0.0;
 
 	pdata = pData + BEGINNING_OF_CENTRAL;
 
@@ -8458,7 +8891,7 @@ real TriMesh::ReturnMaximumVelocity(int offset_v, bool bDisplayInner) const
 	long iMax = -1;
 	for (long iVert = 0; iVert < nmax; iVert++)
 	{
-		ptr = ((real *)pdata) + offset_v;
+		ptr = ((f64 *)pdata) + offset_v;
 		vx = *ptr;
 		++ptr;
 		vy = *ptr;
@@ -8475,20 +8908,24 @@ real TriMesh::ReturnMaximumVelocity(int offset_v, bool bDisplayInner) const
 	if (maxvsq == 0.0) return 1.0; // do not return 0
 
 	if (bDisplayInner == 0) iMax += (Xdomain - X);
-
-	printf("Max|v| %1.8E found at vertex %d \n", sqrt(maxvsq), iMax);
+	
+	printf("Max|v| %1.8E found at vertex %d vy %1.9E\n", sqrt(maxvsq), iMax,
+		*((f64 *)(&(pData[BEGINNING_OF_CENTRAL + iMax])) + offset_v + 1)
+	); 
 	return sqrt(maxvsq);
 }
-real TriMesh::ReturnMaximum3DMagnitude(int offset_v,bool bDisplayInner) const
+
+
+f64 TriMesh::ReturnMaximum3DMagnitude(int offset_v,bool bDisplayInner) const
 {
 	return 1.0;
 	/*
-	real * ptr;
+	f64 * ptr;
 	Vertex *pVert;
-	real vx,vy,vz;
+	f64 vx,vy,vz;
 	pVert = X;
-	real maxvsq = 0.0;
-	real vsq;
+	f64 maxvsq = 0.0;
+	f64 vsq;
 	long nmax = numVertices;
 	if (bDisplayInner == 0) {
 		pVert = Xdomain;
@@ -8496,7 +8933,7 @@ real TriMesh::ReturnMaximum3DMagnitude(int offset_v,bool bDisplayInner) const
 	}
 	for (long iVert = 0; iVert < nmax; iVert++)
 	{
-		ptr = ((real *)pVert) + offset_v;
+		ptr = ((f64 *)pVert) + offset_v;
 		vx = *ptr;
 		++ptr;
 		vy = *ptr;
@@ -8514,14 +8951,14 @@ real TriMesh::ReturnMaximum3DMagnitude(int offset_v,bool bDisplayInner) const
 	return sqrt(maxvsq);*/
 
 }
-real TriMesh::ReturnL4_3DMagnitude(int offset_v,bool bDisplayInner) const
+f64 TriMesh::ReturnL4_3DMagnitude(int offset_v,bool bDisplayInner) const
 {
-	real * ptr;
+	f64 * ptr;
 	const Vertex *pVert;
-	real vx,vy,vz;
+	f64 vx,vy,vz;
 	pVert = X;
-	real vsq;
-	real L2sum = 0.0;
+	f64 vsq;
+	f64 L2sum = 0.0;
 	long nmax = numVertices;
 	long num = 0;
 
@@ -8533,7 +8970,7 @@ real TriMesh::ReturnL4_3DMagnitude(int offset_v,bool bDisplayInner) const
 	// a. Take L2 and create cutoff for counting data
 	for (long iVert = 0; iVert < nmax; iVert++)
 	{
-		ptr = ((real *)pVert) + offset_v;
+		ptr = ((f64 *)pVert) + offset_v;
 		vx = *ptr;
 		++ptr;
 		vy = *ptr;
@@ -8547,7 +8984,7 @@ real TriMesh::ReturnL4_3DMagnitude(int offset_v,bool bDisplayInner) const
 		++pVert;
 	};	
 	if (num == 0) return 0.0;
-	real L2sq = L2sum/(real)num;
+	f64 L2sq = L2sum/(f64)num;
 
 	L2sq *= 0.25; // create cutoff
 
@@ -8555,11 +8992,11 @@ real TriMesh::ReturnL4_3DMagnitude(int offset_v,bool bDisplayInner) const
 	if (bDisplayInner == 0) {
 		pVert = Xdomain;
 	}
-	real L6sum = 0.0;
+	f64 L6sum = 0.0;
 	num = 0;
 	for (long iVert = 0; iVert < nmax; iVert++)
 	{
-		ptr = ((real *)pVert) + offset_v;
+		ptr = ((f64 *)pVert) + offset_v;
 		vx = *ptr;
 		++ptr;
 		vy = *ptr;
@@ -8574,9 +9011,9 @@ real TriMesh::ReturnL4_3DMagnitude(int offset_v,bool bDisplayInner) const
 	};
 	if (L6sum == 0.0) return 1.0; // do not return 0
 
-	return 1.1*pow(L6sum/(real)num,1.0/6.0);
+	return 1.1*pow(L6sum/(f64)num,1.0/6.0);
 }
-void TriMesh::ResetTriangleNeighbours(Triangle * pTri)
+int TriMesh::ResetTriangleNeighbours(Triangle * pTri)
 {
 	// Same caveat as before: we have not updated what vertex is at the outer edge...
 	// Probably need whole different code for disconnecting outer vertex - is that enough? maybe not
@@ -8607,10 +9044,33 @@ void TriMesh::ResetTriangleNeighbours(Triangle * pTri)
 	//	return;
 	//};
 
+
+	// Note : on failure, RPTOST returns the 'not' triangle.
 	pTri->neighbours[2] = ReturnPointerToOtherSharedTriangle(pTri->cornerptr[0],pTri->cornerptr[1],pTri);
+	if (pTri->neighbours[2] == pTri) {
+		printf("\nFailure to find neighbours[2]\n"); return 1;
+	};
+
 	pTri->neighbours[0] = ReturnPointerToOtherSharedTriangle(pTri->cornerptr[1],pTri->cornerptr[2],pTri);
+	if (pTri->neighbours[0] == pTri) {
+		printf("\nFailure to find neighbours[0]\n"); 
+		long izTri[MAXNEIGH];
+		short tri_len = pTri->cornerptr[1]->GetTriIndexArray(izTri);
+		for (int j = 0; j < tri_len; j++)
+			printf("cornerptr[1] %d tri %d = %d\n", pTri->cornerptr[1]-X, j, izTri[j]);
+		tri_len = pTri->cornerptr[2]->GetTriIndexArray(izTri);
+		for (int j = 0; j < tri_len; j++)
+			printf("cornerptr[2] %d tri %d = %d\n", pTri->cornerptr[2] - X, j, izTri[j]);
+		
+		return 1;
+	};
 	pTri->neighbours[1] = ReturnPointerToOtherSharedTriangle(pTri->cornerptr[0],pTri->cornerptr[2],pTri);
+	if (pTri->neighbours[1] == pTri) {
+		printf("\nFailure to find neighbours[1]\n"); return 1;
+	};
+	return 0;
 }
+
 			
 /*void TriMesh::SetEz()
 {
@@ -8647,8 +9107,8 @@ int Vertex::Save(FILE * fp)
 	if (fwrite(&Neut,sizeof(macroscopic),1,fp) != 1) return 100;
 	if (fwrite(&Ion,sizeof(macroscopic),1,fp) != 1) return 100;
 	if (fwrite(&Elec,sizeof(macroscopic),1,fp) != 1) return 100;
-	if (fwrite(&phi,sizeof(real),1,fp) != 1) return 110;
-	if (fwrite(&phidot,sizeof(real),1,fp) != 1) return 110;
+	if (fwrite(&phi,sizeof(f64),1,fp) != 1) return 110;
+	if (fwrite(&phidot,sizeof(f64),1,fp) != 1) return 110;
 	if (fwrite(&A,sizeof(Vector3),1,fp) != 1) return 111;
 	if (fwrite(&B,sizeof(Vector3),1,fp) != 1) return 112;
 	if (fwrite(&E,sizeof(Vector3),1,fp) != 1) return 113;
@@ -8674,8 +9134,8 @@ int Vertex::Load(FILE * fp)
 		if (fread(&Neut,sizeof(macroscopic),1,fp) != 1) return 1;
 		if (fread(&Ion,sizeof(macroscopic),1,fp) != 1) return 1;
 		if (fread(&Elec,sizeof(macroscopic),1,fp) != 1) return 1;
-		if (fread(&phi,sizeof(real),1,fp) != 1) return 1;
-		if (fread(&phidot,sizeof(real),1,fp) != 1) return 1;
+		if (fread(&phi,sizeof(f64),1,fp) != 1) return 1;
+		if (fread(&phidot,sizeof(f64),1,fp) != 1) return 1;
 		if (fread(&A,sizeof(Vector3),1,fp) != 1) return 1;
 		if (fread(&B,sizeof(Vector3),1,fp) != 1) return 1;
 		if (fread(&E,sizeof(Vector3),1,fp) != 1) return 1;
@@ -8761,7 +9221,7 @@ int TriMesh::Save(const char * filename)
 	fwrite(&version,sizeof(long),1,fp);
 
 	fwrite(&GlobalStepsCounter,sizeof(long),1,fp);
-	fwrite(&evaltime,sizeof(real),1,fp);
+	fwrite(&evaltime,sizeof(f64),1,fp);
 
 	fwrite(&numVertices,sizeof(long),1,fp);
 	fwrite(&numDomainVertices,sizeof(long),1,fp);
@@ -8828,7 +9288,7 @@ int TriMesh::Load(const char * filename)
 
 	read = fread(&GlobalStepsCounter,sizeof(long),1,fp);
 	if (read != 1) {printf("3rror 0\n"); return 1;};
-	read = fread(&evaltime,sizeof(real),1,fp);
+	read = fread(&evaltime,sizeof(f64),1,fp);
 	if (read != 1) {printf("3rror 1\n"); return 11;};
 
 	read = fread(&file_numVertices,sizeof(long),1,fp);
@@ -8915,7 +9375,7 @@ int TriMesh::Load(const char * filename)
 
 	// Now leap into setting up recalc'd data:
 
-	real rdum;
+	f64 rdum;
 	pTri = T;
 	for (int iTri = 0; iTri < numTriangles; iTri++)
 	{
@@ -9034,7 +9494,7 @@ void TriMesh::CreateTilingAndResequence(TriMesh * pDestMesh) {
 	// Given same # of connections to more points, use earliest point of tile.
 	// Or -- using earliest point, choose those with greatest number of connections -- to this tile or to all?
 
-	//int spacing = (int)(sqrt((real)threadsPerTileMajor));
+	//int spacing = (int)(sqrt((f64)threadsPerTileMajor));
 	// If anything, LESS wide than it wants to be.
 	//int numTilesOnGo = this->numInnermostRow/spacing;
 
@@ -9380,7 +9840,7 @@ void TriMesh::CreateTilingAndResequence(TriMesh * pDestMesh) {
 
 	   // Sort points.
 	long thetaindex[2048];
-	real thetaarray[2048];
+	f64 thetaarray[2048];
 	pVertex = X;
 	i = 0;
 	for (iVertex = 0; iVertex < numVertices; iVertex++)
@@ -10345,9 +10805,9 @@ void TriMesh::CreateTilingAndResequence2(TriMesh * pDestMesh) {
 
 
 	long * thetaindex = new long[NUMVERTICES];
-	real * thetaarray = new real[NUMVERTICES];
+	f64 * thetaarray = new f64[NUMVERTICES];
 	long * rindex = new long[NUMVERTICES];
-	real * rarray = new real[NUMVERTICES];
+	f64 * rarray = new f64[NUMVERTICES];
 	long iVertex, i , iTranche;
 	Vertex * pVertex = X;
 	for (iVertex = 0; iVertex < NUMVERTICES; iVertex++)
@@ -10393,6 +10853,9 @@ void TriMesh::CreateTilingAndResequence2(TriMesh * pDestMesh) {
 	delete[] rarray;
 	delete[] thetaindex;
 	delete[] thetaarray;
+
+	// We have set up a mapping so that each vertex in the source mesh carries a tile index and
+	// index of where it falls in the new sequence.
 
 
 	int numTilesOnGo = 12;
@@ -10731,7 +11194,6 @@ void TriMesh::CreateTilingAndResequence2(TriMesh * pDestMesh) {
 
 	// Now count how many are at -2 and need to be allocated to whatever tiles are below count.
 	
-
 	pTri = T;
 	iTile = 0;
 	int iLoose = 0;
@@ -10749,10 +11211,7 @@ void TriMesh::CreateTilingAndResequence2(TriMesh * pDestMesh) {
 		++pTri;
 	};
 	printf("\niLoose %d\n", iLoose);
-	getch();
 
-
-	printf("got to here 3\n");
 	// Now since we did within each row, it should be done...
 	
 	// Now turn 'volley' information into a sequence.
@@ -10800,10 +11259,6 @@ void TriMesh::CreateTilingAndResequence2(TriMesh * pDestMesh) {
 		{
 			pVertdest->AddNeighbourIndex((X + izNeigh[i])->iIndicator);
 
-			if (pVertex->iIndicator == 13070) {
-				printf("13070: neigh %d || mapped from %d : %d \n", (X + izNeigh[i])->iIndicator,
-					iVertex, izNeigh[i]);
-			};
 		};
 
 		pVertdest->ClearTris();
@@ -10842,8 +11297,6 @@ void TriMesh::CreateTilingAndResequence2(TriMesh * pDestMesh) {
 		pTriDest->cornerptr[1] = pDestMesh->X + pTri->cornerptr[1]->iIndicator;
 		pTriDest->cornerptr[2] = pDestMesh->X + pTri->cornerptr[2]->iIndicator;
 		
-	//	if (pTri->indicator == 32719) printf("32719 mapped from %d\n", iTri);
-
 		++pTri;
 	}
 	
@@ -10875,5 +11328,656 @@ void TriMesh::CreateTilingAndResequence2(TriMesh * pDestMesh) {
 	//      vertex and triangle, it will be easier to avoid making mistakes if we did for System as well.)
 } 
 // This is something needed for sure.
+void TriMesh::CreateTilingAndResequence_with_data(TriMesh * pDestMesh) {
+
+
+	long * thetaindex = new long[NUMVERTICES];
+	f64 * thetaarray = new f64[NUMVERTICES];
+	long * rindex = new long[NUMVERTICES];
+	f64 * rarray = new f64[NUMVERTICES];
+	long iVertex, i, iTranche;
+	Vertex * pVertex = X;
+	for (iVertex = 0; iVertex < NUMVERTICES; iVertex++)
+	{
+		thetaindex[iVertex] = iVertex;
+		thetaarray[iVertex] = pVertex->pos.x / pVertex->pos.y;
+		pVertex++;
+	}
+	QuickSort(thetaindex, thetaarray, 0, NUMVERTICES - 1);
+
+	// Now take each NUMVERTICES/12
+
+	long const Ntranche = NUMVERTICES / 12;
+	if (Ntranche * 12 != NUMVERTICES) {
+		printf("(Ntranche * 12 != NUMVERTICES)\n");
+		while (1) getch();
+	};
+
+	long iCaret = 0;
+	int iTile = 0;
+	long iDestVert = 0;
+	for (iTranche = 0; iTranche < 12; iTranche++)
+	{
+		for (i = 0; i < Ntranche; i++)
+		{
+			rindex[i] = thetaindex[iCaret]; // which vertex
+			rarray[i] = (X + rindex[i])->pos.modulus();
+			++iCaret;
+		};
+
+		QuickSort(rindex, rarray, 0, Ntranche - 1);
+
+		for (i = 0; i < Ntranche; i++)
+		{
+			(X + rindex[i])->iVolley = iTile;
+			(X + rindex[i])->iIndicator = iDestVert;
+			if ((i + 1) % threadsPerTileMajor == 0) iTile++;
+			iDestVert++;
+		};
+	}
+
+	delete[] rindex;
+	delete[] rarray;
+	delete[] thetaindex;
+	delete[] thetaarray;
+
+	// We have set up a mapping so that each vertex in the source mesh carries a tile index and
+	// index of where it falls in the new sequence.
+	
+	int numTilesOnGo = 12;
+	int spacing = numInnermostRow / numTilesOnGo;
+
+	// Distribute remainder through tiles! :
+	//	int Tileskips_between_remainder_points = numTilesOnGo/(numInnermostRow % spacing);
+
+	printf("Reseq : vertex mapping done.\n"); // All we have done is set indicator though
+
+											  // This WORKED. iVolley and iIndicator are populated, we got some halfway sensible values in there. Now what?:
+
+											  // ===============================================================================	
+											  // -------------------------------------------------------------------------------
+
+											  // Now comes the next: assign triangles into blocks also. :-(
+											  // More fiddlinesse :
+
+											  // First preference if triangle has 2 points within a vertex tile then assign it there.
+											  // We then try assigning 3-separate triangles to the tile that has the least assigned.
+											  // Do we end up with an unassignable triangle? In that case we have to see what?
+											  // Keep a record of how many 'negotiables' were attributed to each tile.
+											  // Set the unassignable to the one with the most negotiables.
+											  // Find one of the others and reassign it to a different tile.
+											  // If they all had 0 other negotiables, we fail.
+
+	long tris_assigned[numTriTiles];
+	long negotiables[numTriTiles];
+	memset(tris_assigned, 0, sizeof(long)*numTriTiles);
+	memset(negotiables, 0, sizeof(long)*numTriTiles);
+	long iTri, iVolley0, iVolley1, iVolley2;
+	Triangle * pTri = T;
+	for (iTri = 0; iTri < numTriangles; iTri++)
+	{
+		iVolley0 = pTri->cornerptr[0]->iVolley;
+		iVolley1 = pTri->cornerptr[1]->iVolley;
+		iVolley2 = pTri->cornerptr[2]->iVolley;
+
+		if ((iVolley0 == iVolley1) || (iVolley0 == iVolley2)) {
+			pTri->indicator = iVolley0; // only 1 int available in triangle
+			tris_assigned[iVolley0]++;
+			if (tris_assigned[iVolley0] > threadsPerTileMinor) {
+				printf("oh no - too many tris allocated on 1st pass to tri tile %d\n",
+					iVolley0);
+				getch();
+			};
+		}
+		else {
+			if (iVolley1 == iVolley2)
+			{
+				pTri->indicator = iVolley1;
+				tris_assigned[iVolley1]++;
+				if (tris_assigned[iVolley1] > threadsPerTileMinor) {
+					printf("oh no - too many tris allocated on 1st pass to tri tile %d\n",
+						iVolley1);
+					getch();
+				};
+			}
+			else {
+				pTri->indicator = -1;
+				negotiables[iVolley0]++;
+				negotiables[iVolley1]++;
+				negotiables[iVolley2]++;
+			};
+		};
+		++pTri;
+	}
+	bool bThirdPassNeeded = false;
+	long num0, num1, num2, nego0, nego1, nego2;
+
+	// If tris_assigned + negotiables == threadsPerTileMinor then we
+	// should start by assigning those...
+	// If 1 more, we can go along assigning those, and so on.
+	// Okay, that didn't work.
+
+	// TRY:
+	// Each negotiable triangle, if there is one tile with fewer allocated, assign it to that tile.
+	// No --- base tiles have fewer negotiable.
+
+	// OR: Work up each tranche, set the tris on the left hand side to get the full complement in each tile.?
+
+	// Overall iterative to get contiguous could be nontrivial; for now just let some be loose tris.
+
+	// Simple way: 
+	// i. assign each negotiable to the tile that has the least total, iteratively. 
+	// Until we get stuck ...
+	// because there might be some that could still go any direction.
+	// ii. For those ones always pick the lowest corner or rightmost.
+	// iii. We may well be left over with a few loose ones that now belong to a tile far away --- too bad. Notify how many.
+
+	int i1, i2, j1, j2;
+	pTri = T;
+	for (iTri = 0; iTri < numTriangles; iTri++)
+	{
+		iVolley0 = pTri->cornerptr[0]->iVolley;
+		iVolley1 = pTri->cornerptr[1]->iVolley;
+		iVolley2 = pTri->cornerptr[2]->iVolley;
+
+		if (pTri->indicator == -1)
+		{
+			// . Only choose between those which do not yet have a full complement
+			// . Choose the one with the least total
+			// . Failing that, choose amongst those, the one with y below centroid, or if there are 2, the rightmost of those.
+			bool bFell_out_2way = false;
+			bool bFell_out_3way = false;
+
+			if (tris_assigned[iVolley0] == threadsPerTileMinor) {
+				// choosing only between iVolley1 and iVolley2
+				if (tris_assigned[iVolley1] == threadsPerTileMinor) {
+					if (tris_assigned[iVolley2] == threadsPerTileMinor) {
+						// triangle not assignable any more -- it's a loose one
+						pTri->indicator = -2;
+					}
+					else {
+						pTri->indicator = iVolley2;
+						tris_assigned[iVolley2]++;
+					};
+				}
+				else {
+					// 0 was maxed out, 1 was not
+					if (tris_assigned[iVolley2] == threadsPerTileMinor) {
+						pTri->indicator = iVolley1;
+						tris_assigned[iVolley1]++;
+					}
+					else {
+						// between 1 & 2
+
+						bFell_out_2way = true;
+						i1 = iVolley1; i2 = iVolley2;
+						j1 = 1; j2 = 2;
+					};
+				};
+			}
+			else {
+				if (tris_assigned[iVolley1] == threadsPerTileMinor) {
+					if (tris_assigned[iVolley2] == threadsPerTileMinor) {
+						pTri->indicator = iVolley0;
+						tris_assigned[iVolley0]++;
+					}
+					else {
+						// between 0 and 2
+						bFell_out_2way = true;
+						i1 = iVolley0; i2 = iVolley2;
+						j1 = 0; j2 = 2;
+					};
+				}
+				else {
+					if (tris_assigned[iVolley2] == threadsPerTileMinor) {
+						// between 0 and 1
+						bFell_out_2way = true;
+						i1 = iVolley0; i2 = iVolley1;
+						j1 = 0; j2 = 1;
+					}
+					else {
+						// 3-way choice
+
+						bFell_out_3way = true;
+					};
+				};
+			};
+
+			f64_vec2 u[3], centroid;
+			if ((bFell_out_2way) || (bFell_out_3way))
+			{
+				pTri->MapLeftIfNecessary(u[0], u[1], u[2]);
+				centroid = THIRD*(u[0] + u[1] + u[2]);
+			}
+
+			if (bFell_out_3way) {
+				// If one is lower total than the other 2, it's that one;
+				// if a pair is lower, go to bFell_out_2way = true
+				// IF all 3 are the same total, do a geometrical allocation to bottommost point or rightmost if 2 below centroid.
+
+				long total0 = tris_assigned[0] + negotiables[0];
+				long total1 = tris_assigned[1] + negotiables[1];
+				long total2 = tris_assigned[2] + negotiables[2];
+
+				if (total0 < total1) {
+					if (total2 < total0) {
+						// total2 is lowest
+						pTri->indicator = iVolley2;
+						tris_assigned[iVolley2]++;
+					}
+					else {
+						if (total2 == total0) {
+							bFell_out_2way = true;
+							i1 = iVolley0; i2 = iVolley2;
+							j1 = 0; j2 = 2;
+						}
+						else {
+							// total0 is lowest
+							pTri->indicator = iVolley0;
+							tris_assigned[iVolley0]++;
+						};
+					};
+				}
+				else {
+					if (total1 < total0) {
+						if (total2 < total1) {
+							// total2 is lowest
+							pTri->indicator = iVolley2;
+							tris_assigned[iVolley2]++;
+						}
+						else {
+							if (total2 == total1) {
+								bFell_out_2way = true;
+								i1 = iVolley1; i2 = iVolley2;
+								j1 = 1; j2 = 2;
+							}
+							else {
+								// total1 is lowest
+								pTri->indicator = iVolley1;
+								tris_assigned[iVolley1]++;
+							};
+						};
+					}
+					else {
+						// total1 == total0
+						if (total2 < total0) {
+							pTri->indicator = iVolley2;
+							tris_assigned[iVolley2]++;
+						}
+						else {
+							if (total2 > total0) {
+								bFell_out_2way = true;
+								i1 = iVolley0; i2 = iVolley1;
+								j1 = 0; j2 = 1;
+							}
+							else {
+								// ALL EQUAL TOTAL
+
+								// How many are below centroid?
+
+								int below = ((u[0].y < centroid.y) ? 1 : 0) +
+									((u[1].y < centroid.y) ? 1 : 0) +
+									((u[2].y < centroid.y) ? 1 : 0);
+								if (below == 1) {
+									// detect which one:
+
+									if (u[0].y < centroid.y) {
+										pTri->indicator = iVolley0;
+										tris_assigned[iVolley0]++;
+									};
+									if (u[1].y < centroid.y) {
+										pTri->indicator = iVolley1;
+										tris_assigned[iVolley1]++;
+									};
+									if (u[2].y < centroid.y) {
+										pTri->indicator = iVolley2;
+										tris_assigned[iVolley2]++;
+									};
+								}
+								else {
+									if (below != 2) { printf("3RROR : iTri %d below != 2", iTri); getch(); };
+
+									// 2 below so pick rightmost point.
+									if (u[0].x > u[1].x) {
+										if (u[0].x > u[2].x) {
+											pTri->indicator = iVolley0;
+											tris_assigned[iVolley0]++;
+										}
+										else {
+											pTri->indicator = iVolley2;
+											tris_assigned[iVolley2]++;
+										};
+									}
+									else {
+										if (u[1].x > u[2].x) {
+											pTri->indicator = iVolley1;
+											tris_assigned[iVolley1]++;
+										}
+										else {
+											pTri->indicator = iVolley2;
+											tris_assigned[iVolley2]++;
+										};
+									};
+								};
+							};
+						};
+					};
+				};
+			};
+
+			if (bFell_out_2way) {
+				if (tris_assigned[i1] + negotiables[i1] > tris_assigned[i2] + negotiables[i2])
+				{
+					pTri->indicator = i2; // attribute to the one with less going for it
+					tris_assigned[i2]++;
+				}
+				else {
+					if (tris_assigned[i1] + negotiables[i1] < tris_assigned[i2] + negotiables[i2])
+					{
+						pTri->indicator = i1;
+						tris_assigned[i1]++;
+					}
+					else {
+						// decide based if only one of them is below centroid:
+						if ((u[j1].y > centroid.y) && (u[j2].y < centroid.y))
+						{
+							pTri->indicator = i2;
+							tris_assigned[i2]++;
+						}
+						else {
+							if ((u[j1].y < centroid.y) && (u[j2].y > centroid.y))
+							{
+								pTri->indicator = i1;
+								tris_assigned[i1]++;
+							}
+							else {
+
+								// else decide to allocate to rightmost one:
+
+								if (u[j1].x > u[j2].x) {
+									pTri->indicator = i1;
+									tris_assigned[i1]++;
+								}
+								else {
+									pTri->indicator = i2;
+									tris_assigned[i2]++;
+								};
+							};
+						};
+					};
+				};
+			};
+
+			// No matter what, triangle is no longer negotiable:
+			negotiables[iVolley0]--;
+			negotiables[iVolley1]--;
+			negotiables[iVolley2]--;
+		}
+		++pTri;
+	}
+
+	// Now count how many are at -2 and need to be allocated to whatever tiles are below count.
+
+	pTri = T;
+	iTile = 0;
+	int iLoose = 0;
+	for (iTri = 0; iTri < numTriangles; iTri++)
+	{
+		if (pTri->indicator == -2)
+		{
+			while (tris_assigned[iTile] == threadsPerTileMinor) iTile++;
+
+			pTri->indicator = iTile;
+			tris_assigned[iTile]++;
+			printf("Loose tri: %d assigned to tile %d \n", iTri, iTile);
+			iLoose++;
+		};
+		++pTri;
+	};
+	printf("\niLoose %d\n", iLoose);
+
+	// Now since we did within each row, it should be done...
+
+	// Now turn 'volley' information into a sequence.
+	// WE CHANGE WHAT indicator MEANS :
+
+	memset(tris_assigned, 0, sizeof(long)*numTriTiles);
+	pTri = T;
+	for (iTri = 0; iTri < numTriangles; iTri++)
+	{
+		int iWhich = pTri->indicator;
+		pTri->indicator = iWhich*threadsPerTileMinor + tris_assigned[iWhich]; // new index for triangle
+		tris_assigned[iWhich]++;
+		++pTri;
+	};
+
+	for (iTile = 0; iTile < numTriTiles; iTile++) {
+		printf("%d : %d  ||", iTile, tris_assigned[iTile]);
+		if (iTile % 4 == 0) printf("\n");
+	}
+
+	printf("Tri resequence done...\n");
+
+	long izNeigh[128], izTri[128];
+
+	// We then can set the new sequence and try to resequence the triangles, and affect the
+	// triangle index lists.
+	//  - Create 2nd system:
+
+	pVertex = X;
+	Vertex * pVertdest;
+	for (iVertex = 0; iVertex < numVertices; iVertex++)
+	{
+		pVertdest = pDestMesh->X + pVertex->iIndicator;
+
+		//pVertdest->CopyDataFrom(pVertex);
+
+		// This will sort flags etc:
+		//memcpy(pVertdest, pVertex, sizeof(Vertex));
+		pVertdest->pos = pVertex->pos;
+		pVertdest->flags = pVertex->flags;
+
+	//	This overwrite should militate against getting '4 4 4' as the flags of vertices.
+
+
+		pVertdest->has_periodic = pVertex->has_periodic;
+		pVertdest->AreaCell = pVertex->AreaCell;
+		pVertdest->iVolley = pVertex->iVolley;
+		pVertdest->iScratch = pVertex->iScratch;
+		pVertdest->iIndicator = pVertex->iIndicator;
+		
+		// Only neighbour list is relevant so far...
+		pVertdest->ClearNeighs();
+		int neigh_len = pVertex->GetNeighIndexArray(izNeigh);
+		for (i = 0; i < neigh_len; i++)
+		{
+			pVertdest->AddNeighbourIndex((X + izNeigh[i])->iIndicator);
+		};
+
+		pVertdest->ClearTris();
+		// Only neighbour list is relevant so far...
+		int tri_len = pVertex->GetTriIndexArray(izTri);
+		for (i = 0; i < tri_len; i++)
+		{
+			pVertdest->AddTriIndex((T + izTri[i])->indicator);
+		};
+
+		// if iVertex == 26511, what index does this map into in pDestMesh?
+		if (iVertex == 26511) printf("26511 maps to %d . n = %1.9E \n",
+			pVertex->iIndicator, pData[iVertex + BEGINNING_OF_CENTRAL].n
+		);
+		if (pVertex->iIndicator == 26191) printf("%d |-> 26191 \n", iVertex);
+		if (pVertex->iIndicator == 26194) printf("%d |-> 26194 \n", iVertex);
+		if (pVertex->iIndicator == 26195) printf("%d |-> 26195 \n", iVertex);
+
+		memcpy(&(pDestMesh->pData[pVertex->iIndicator+BEGINNING_OF_CENTRAL]), &(pData[iVertex + BEGINNING_OF_CENTRAL]), sizeof(plasma_data));
+
+		// Careful about other stuff.
+		++pVertex;
+	}
+	// How to fill in lists? Need to remap: if old list said 25, new list says i[25]
+	// For neighbours.
+
+	Triangle * pTriDest;
+	pTri = T;
+	for (iTri = 0; iTri < numTriangles; iTri++)
+	{
+		pTriDest = pDestMesh->T + pTri->indicator;
+		// 
+		pTriDest->u8domain_flag = pTri->u8domain_flag;
+		pTriDest->area = pTri->area;
+		pTriDest->cent = pTri->cent;
+		pTriDest->periodic = pTri->periodic;
+		memcpy(pTriDest->edge_normal, pTri->edge_normal, sizeof(Vector2) * 3);
+		
+		// Neighbour list, cornerptr list, what else to rewrite?
+
+		pTriDest->neighbours[0] = pDestMesh->T + pTri->neighbours[0]->indicator;
+		pTriDest->neighbours[1] = pDestMesh->T + pTri->neighbours[1]->indicator;
+		pTriDest->neighbours[2] = pDestMesh->T + pTri->neighbours[2]->indicator;
+
+		pTriDest->cornerptr[0] = pDestMesh->X + pTri->cornerptr[0]->iIndicator;
+		pTriDest->cornerptr[1] = pDestMesh->X + pTri->cornerptr[1]->iIndicator;
+		pTriDest->cornerptr[2] = pDestMesh->X + pTri->cornerptr[2]->iIndicator;
+
+		memcpy(&(pDestMesh->pData[pTri->indicator]), &(pData[iTri]), sizeof(plasma_data));
+
+		++pTri;
+	}
+
+	printf("Tiling & resequencing done.\n");
+
+	// Also copy across any other stuff from source to dest:
+
+	//	pDestMesh->EzTuning = this->EzTuning;
+	pDestMesh->Innermost_r_achieved = this->Innermost_r_achieved;
+	pDestMesh->Outermost_r_achieved = this->Outermost_r_achieved;
+	pDestMesh->InnermostFrillCentroidRadius = this->InnermostFrillCentroidRadius;
+	pDestMesh->OutermostFrillCentroidRadius = this->OutermostFrillCentroidRadius;
+	pDestMesh->Iz_prescribed = this->Iz_prescribed;
+	pDestMesh->numReverseJzTris = this->numReverseJzTris;
+	pDestMesh->numTriangles = this->numTriangles;
+	pDestMesh->numVertices = this->numVertices;
+
+	// >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+
+	//  - Create Systdata to match it
+	//  - When we come back from GPU: 
+	//    -- we want to refresh this post-Delaunay flips.
+	//    -- can a flip trigger a local swap of indices to move smth between blocks?
+
+	//    -- We want that to operate on Systdata not just System, because System does
+	//       not have data on triangles.
+
+	//   -- (On the other hand there is an argument that since System has objects for
+	//      vertex and triangle, it will be easier to avoid making mistakes if we did for System as well.)
+}
+
+
+void TriMesh::CopyMesh(TriMesh * pDestMesh)
+{
+	Vertex * pVertex = X;
+	Vertex * pVertdest;
+	long iVertex, iTri, i;
+	long izNeigh[MAXNEIGH];
+	long izTri[MAXNEIGH];
+
+	for (iVertex = 0; iVertex < numVertices; iVertex++)
+	{
+		pVertdest = pDestMesh->X + iVertex;
+
+		//pVertdest->CopyDataFrom(pVertex);
+
+		// This will sort flags etc:
+		//memcpy(pVertdest, pVertex, sizeof(Vertex));
+		pVertdest->pos = pVertex->pos;
+		pVertdest->flags = pVertex->flags;
+		pVertdest->has_periodic = pVertex->has_periodic;
+		pVertdest->AreaCell = pVertex->AreaCell;
+		pVertdest->iVolley = pVertex->iVolley;
+		pVertdest->iScratch = pVertex->iScratch;
+		pVertdest->iIndicator = pVertex->iIndicator;
+
+		// Only neighbour list is relevant so far...
+		pVertdest->ClearNeighs();
+		int neigh_len = pVertex->GetNeighIndexArray(izNeigh);
+		for (i = 0; i < neigh_len; i++)
+		{
+			pVertdest->AddNeighbourIndex(izNeigh[i]);
+		};
+
+		pVertdest->ClearTris();
+		// Only neighbour list is relevant so far...
+		int tri_len = pVertex->GetTriIndexArray(izTri);
+		for (i = 0; i < tri_len; i++)
+		{
+			//pVertdest->AddTriIndex((T + izTri[i])->indicator);
+			pVertdest->AddTriIndex(izTri[i]);
+		};
+		++pVertex;
+
+		memcpy(&(pDestMesh->pData[iVertex + BEGINNING_OF_CENTRAL]), &(pData[iVertex + BEGINNING_OF_CENTRAL]), sizeof(plasma_data));
+
+		// Careful about other stuff.
+	}
+	// How to fill in lists? Need to remap: if old list said 25, new list says i[25]
+	// For neighbours.
+
+	Triangle * pTriDest;
+	Triangle * pTri = T;
+	for (iTri = 0; iTri < numTriangles; iTri++)
+	{
+		pTriDest = pDestMesh->T + iTri;
+		// 
+		pTriDest->u8domain_flag = pTri->u8domain_flag;
+		pTriDest->area = pTri->area;
+		pTriDest->cent = pTri->cent;
+		pTriDest->periodic = pTri->periodic;
+		memcpy(pTriDest->edge_normal, pTri->edge_normal, sizeof(Vector2) * 3);
+
+		// Neighbour list, cornerptr list, what else to rewrite?
+
+		pTriDest->neighbours[0] = pDestMesh->T + (pTri->neighbours[0]-T);
+		pTriDest->neighbours[1] = pDestMesh->T + (pTri->neighbours[1]-T);
+		pTriDest->neighbours[2] = pDestMesh->T + (pTri->neighbours[2] - T);
+		//pTriDest->neighbours[1] = pDestMesh->T + pTri->neighbours[1]->indicator;
+
+		pTriDest->cornerptr[0] = pDestMesh->X + (pTri->cornerptr[0]-X);
+		pTriDest->cornerptr[1] = pDestMesh->X + (pTri->cornerptr[1]-X);
+		pTriDest->cornerptr[2] = pDestMesh->X + (pTri->cornerptr[2]-X);
+
+		memcpy(&(pDestMesh->pData[iTri]), &(pData[iTri]), sizeof(plasma_data));
+
+		++pTri;
+	}
+
+	// Also copy across any other stuff from source to dest:
+
+	//	pDestMesh->EzTuning = this->EzTuning;
+	pDestMesh->Innermost_r_achieved = this->Innermost_r_achieved;
+	pDestMesh->Outermost_r_achieved = this->Outermost_r_achieved;
+	pDestMesh->InnermostFrillCentroidRadius = this->InnermostFrillCentroidRadius;
+	pDestMesh->OutermostFrillCentroidRadius = this->OutermostFrillCentroidRadius;
+	pDestMesh->Iz_prescribed = this->Iz_prescribed;
+	pDestMesh->numReverseJzTris = this->numReverseJzTris;
+	pDestMesh->numTriangles = this->numTriangles;
+	pDestMesh->numVertices = this->numVertices;
+
+	printf("Copy mesh done. But it doesn't seem very comprehensive.\n");
+
+	// >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+
+	//  - Create Systdata to match it
+	//  - When we come back from GPU: 
+	//    -- we want to refresh this post-Delaunay flips.
+	//    -- can a flip trigger a local swap of indices to move smth between blocks?
+
+	//    -- We want that to operate on Systdata not just System, because System does
+	//       not have data on triangles.
+
+	//   -- (On the other hand there is an argument that since System has objects for
+	//      vertex and triangle, it will be easier to avoid making mistakes if we did for System as well.)
+}
+
 
 #endif

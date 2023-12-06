@@ -187,9 +187,12 @@ copy "$(CudaToolkitBinDir)\cudart*.dll" "$(OutDir)"</Command>
     </CudaCompile>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <CudaCompile Include="basics.cu" />
     <CudaCompile Include="cudahost.cu" />
     <CudaCompile Include="cusyst.cu" />
-    <CudaCompile Include="noJxycu.cu" />
+    <CudaCompile Include="meshutil.cu" />
+    <CudaCompile Include="nojxyff.cu" />
+    <CudaCompile Include="simulation.cu" />
     <CudaCompile Include="surfacegraph_tri.cu" />
   </ItemGroup>
   <ItemGroup>

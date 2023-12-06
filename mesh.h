@@ -27,6 +27,7 @@
 #define FLAG_CODE_RIGHTTOP 5
 #define FLAG_CODE_RIGHTBOT 6
 
+#define f64 double
 
 #define HOSTDEVICE __host__ __device__
 #define QUALS __host__ __device__ inline
@@ -35,7 +36,7 @@
 
 // 12*32768*5 = 2MB .. just to keep things in perspective.
 // We should keep the number down just to reduce fetch size.
-// Let's keep it real. nvT is best for our fetches and therefore is best.
+// Let's keep it f64. nvT is best for our fetches and therefore is best.
 //
 //long const numTriTiles = 288; // note that there are also centrals
 //long const numTilesMajor = 288;
@@ -59,7 +60,7 @@ class smartreal
 public:
 	static const int ALLOC = 8;
 
-	real * ptr;
+	f64 * ptr;
 	short len, alloclen;
 
 	smartreal();
@@ -68,7 +69,7 @@ public:
 	
 	int ReDim(int length);
 
-	void add(real x);
+	void add(f64 x);
 
 	~smartreal();
 };
@@ -153,7 +154,7 @@ public:
 		numCoords = 0;
 	}
 
-	void HOSTDEVICE add(real x,real y)
+	void HOSTDEVICE add(f64 x,f64 y)
 	{
 		numCoords++;
 		coord[numCoords-1].x = x;
@@ -170,34 +171,34 @@ public:
 
 	int ClipAgainstHalfplane(const Vector2 & r1, const Vector2 & r2, const Vector2 & r3);
 	void HOSTDEVICE CopyFrom(ConvexPolygon & cp);
-	real HOSTDEVICE FindTriangleIntersectionArea(Vector2 & r1, Vector2 & r2, Vector2 & r3);
-	real HOSTDEVICE FindQuadrilateralIntersectionArea(Vector2 & r1, Vector2 & r2, Vector2 & r3, Vector2 & r4);
-	real HOSTDEVICE GetArea();
+	f64 HOSTDEVICE FindTriangleIntersectionArea(Vector2 & r1, Vector2 & r2, Vector2 & r3);
+	f64 HOSTDEVICE FindQuadrilateralIntersectionArea(Vector2 & r1, Vector2 & r2, Vector2 & r3, Vector2 & r4);
+	f64 HOSTDEVICE GetArea();
 	void HOSTDEVICE GetCentre(Vector2 & centre);
 	bool GetIntersectionWithTriangle(ConvexPolygon * pPoly,Vector2 & r1, Vector2 & r2, Vector2 & r3);
 	bool GetIntersectionWithPolygon(ConvexPolygon * pPoly, ConvexPolygon * pClip);
 	
 	void HOSTDEVICE Integrate_Planes(Vector2 & r1, Vector2 & r2, Vector2 & r3,
-										real yvals1[],
-										real yvals2[],
-										real yvals3[],	
-										real results[],
+										f64 yvals1[],
+										f64 yvals2[],
+										f64 yvals3[],	
+										f64 results[],
 										long N_planes);
 	void HOSTDEVICE IntegrateMass(Vector2 & r1, Vector2 & r2, Vector2 & r3,
-									real yvals1, real yvals2, real yvals3, real * pResult);
-	//real GetSideLength(int side);
-	real HOSTDEVICE GetPrecedingSideLength(int side);
-	real HOSTDEVICE GetSucceedingSideLength(int side);
+									f64 yvals1, f64 yvals2, f64 yvals3, f64 * pResult);
+	//f64 GetSideLength(int side);
+	f64 HOSTDEVICE GetPrecedingSideLength(int side);
+	f64 HOSTDEVICE GetSucceedingSideLength(int side);
 	
 	Vector3 HOSTDEVICE Get_curl2D_from_anticlockwise_array(Vector3 A[]);
-	Vector2 HOSTDEVICE Get_grad_from_anticlockwise_array(real Te[]);
-	Vector2 HOSTDEVICE Get_Integral_grad_from_anticlockwise_array(real Te[]);
+	Vector2 HOSTDEVICE Get_grad_from_anticlockwise_array(f64 Te[]);
+	Vector2 HOSTDEVICE Get_Integral_grad_from_anticlockwise_array(f64 Te[]);
 
-	void HOSTDEVICE Get_Bxy_From_Az(real Az_array[], real * pBx,real * pBy);
+	void HOSTDEVICE Get_Bxy_From_Az(f64 Az_array[], f64 * pBx,f64 * pBy);
 	
 	Vector2 HOSTDEVICE CalculateBarycenter();
-	real HOSTDEVICE minmod(real n[], // output array
-					  real ndesire[], real N, 
+	f64 HOSTDEVICE minmod(f64 n[], // output array
+					  f64 ndesire[], f64 N, 
 					  Vector2 central );
 };
 
@@ -208,7 +209,7 @@ public:
 class fluidnvT
 {
 public:
-	real n,T;
+	f64 n,T;
 	Vector3 v;
 
 	void Interpolate ( fluidnvT * pvv1,  fluidnvT * pvv2,
@@ -220,10 +221,10 @@ public:
 class macroscopic
 {
 public:
-	real mass, heat;
+	f64 mass, heat;
 	Vector3 mom;   
 	// store macroscopic conserved quantities for doing triangle collisions
-	friend macroscopic operator* (const real hh,const macroscopic &vars);
+	friend macroscopic operator* (const f64 hh,const macroscopic &vars);
 };
 
 
@@ -231,14 +232,14 @@ public:
 /*class AuxVertex // for inner mesh and coarser levels
 {
 public:
-/*	real x,y;
+/*	f64 x,y;
 
 	Vector3 Temp; // always 0 except for Jz where the reverse current flows
 	// ?
 	
-	real epsilon[NUMCELLEQNS]; // store epsilon for 7 eqns
+	f64 epsilon[NUMCELLEQNS]; // store epsilon for 7 eqns
 	
-	real phi;
+	f64 phi;
 	Vector3 A, v_e; // for phi solver.
 
 
@@ -249,7 +250,7 @@ public:
 		// No, that is triangles I'd think.
 	long iTriangles[MAXNEIGH];
 	long iCoarseTriangle;	 // index into the coarser mesh above for doing multimesh; also use as scratch if need be.
-	real weight[3];
+	f64 weight[3];
 
 	long iVolley; 
 
@@ -258,21 +259,21 @@ public:
 	short tri_len, neigh_len;
 	short flags; 
 
-	//real coefficients[8][7][MAXNEIGH]; 
+	//f64 coefficients[8][7][MAXNEIGH]; 
 	
 	Coefficientry co;
-	real coeff_self[NUMCELLEQNSPLUS1][NUMCELLEQNSPLUS2];
+	f64 coeff_self[NUMCELLEQNSPLUS1][NUMCELLEQNSPLUS2];
 
 
 	//Coefficientry co2, co3, co4;
-	//real coeff_self2[NUMCELLEQNSPLUS1][NUMCELLEQNSPLUS2];
-	//real coeff_self4[NUMCELLEQNSPLUS1][NUMCELLEQNSPLUS2];
+	//f64 coeff_self2[NUMCELLEQNSPLUS1][NUMCELLEQNSPLUS2];
+	//f64 coeff_self4[NUMCELLEQNSPLUS1][NUMCELLEQNSPLUS2];
 
 
-	real regressor[NUMREGRESS][NUMCELLEQNS];    // add to phi, A, v_e
+	f64 regressor[NUMREGRESS][NUMCELLEQNS];    // add to phi, A, v_e
 	Vector3 extra_regressor; // add to chEz
 
-	real contrib_to_Az_avg, contrib_to_phi_avg;
+	f64 contrib_to_Az_avg, contrib_to_phi_avg;
 
 	// eqn 8 is IZ and represents effect on Iz eqn rather than its own epsilon
 //	smartreal coeff_extra;
@@ -281,15 +282,15 @@ public:
 	// We now store all coefficient information in a 
 	// Coefficientry object. Except coeff_self.
 
-	real sum_eps_beta[NUMCELLEQNS];
-	real sum_beta_sq[NUMCELLEQNS]; // one for phi,Ax,Ay,Az
+	f64 sum_eps_beta[NUMCELLEQNS];
+	f64 sum_beta_sq[NUMCELLEQNS]; // one for phi,Ax,Ay,Az
 
 
 	// Probably not used:
 	unsigned char has_periodic_interval;   // does its interval for joining domain mesh, cross PB?
 	unsigned char  has_periodic;	  // whether connects periodically to any vertices - inner or domain
 	unsigned char  look_out_for_periodic; // if yes, then if x < 0 we rotate anticlockwise if cont is to right of 2pi/32 clockwise from this point; if x< 0, vice versa.
-	real gradient;
+	f64 gradient;
 
 	// Remember there are relatively few of the coarse vertices.
 	// If this prevents parallelisation, it's small comfort however.
@@ -311,8 +312,8 @@ public:
 	// and those that have to be rotated. index_extra signals
 	// the rotation of the contribution.
 	
-	real scratch;
-	real SSweights;
+	f64 scratch;
+	f64 SSweights;
 
 	// need some storage for coefficients applying to domain vertices:
 	// 
@@ -356,7 +357,7 @@ public:
 	// note that BYTE == unsigned char and creates problems with testing for decrement below zero
 	BYTE flags; 
 	Vector2 cc;
-	real area; 
+	f64 area; 
 	Vector2 edge_normal[3];
 
 	void SetTriangleVertex(int which, AuxVertex * pInner);
@@ -367,13 +368,13 @@ public:
 	void AuxTriangle::Reset(AuxVertex * p1, AuxVertex * p2, AuxVertex * p3, long iTri);
 
 	void AuxTriangle::GuessPeriodic(void);
-	void AuxTriangle::CalculateCircumcenter(Vector2 & cc, real * pdistsq);
+	void AuxTriangle::CalculateCircumcenter(Vector2 & cc, f64 * pdistsq);
 
 	bool inline AuxTriangle::has_vertex(AuxVertex * pVertex);
 	void AuxTriangle::MapLeft(Vector2 & u0, Vector2 & u1, Vector2 & u2);
 
-	bool AuxTriangle::ContainsPoint(real x, real y);
-	int AuxTriangle::TestAgainstEdge(real x,real y, 
+	bool AuxTriangle::ContainsPoint(f64 x, f64 y);
+	int AuxTriangle::TestAgainstEdge(f64 x,f64 y, 
 							int c1, // the "start" of the relevant edge
 							  int other, // the point opposite the relevant edge
 							  AuxTriangle ** ppNeigh);
@@ -398,20 +399,20 @@ public:
 
 struct fluid_NvT
 {
-	real N[3];
+	f64 N[3];
 	Vector3 Nv[3];
-	real NT[3]; 
+	f64 NT[3]; 
 };
 
 struct fluid_nvT
 {
-	real n[3];
+	f64 n[3];
 	Vector3 nv[3];
-	real nT[3]; 
+	f64 nT[3]; 
 	// heat density -> nT/n is temp density
 	// but heat density is better since we want
 	// usually to integrate and contribute NT.
-	void inline Interpolate(real beta[3],
+	void inline Interpolate(f64 beta[3],
 							fluid_nvT Z[3])
 							// 3 corners
 	{
@@ -477,7 +478,7 @@ int const NUM_AFFECTORS_2 = 6; // + UNITY, chEzExt
 
 struct Coeff_array
 {
-	real co[NUM_EQNS_1][NUM_AFFECTORS_1]; 
+	f64 co[NUM_EQNS_1][NUM_AFFECTORS_1]; 
 	// Think we will have to switch to dynamic allocation.	
 };
 
@@ -544,7 +545,7 @@ public:
 	//macroscopic Ion,Elec,Neut; // mass, heat, mom
 	//Vector3 A, E, B, Adot; // It's important to have a stored estimate of Adot.
 	// This is either the estimate at the same timeslice or at half a timeslice before (empirically)
-	//real phi, phidot; 
+	//f64 phi, phidot; 
 
 	// Let's think about this - do we need a special A_k storage in order to create that information? Economise.
 
@@ -556,11 +557,11 @@ public:
 
 	// To recalculate:
 
-	real AreaCell; // Area of Voronoi, or QV, or whatever used.
+	f64 AreaCell; // Area of Voronoi, or QV, or whatever used.
 //	Vector2 GradTe;
 
 	// scratch data:
-//	real n,T;
+//	f64 n,T;
 //	Vector3 v, Temp; 
 //	Vector2 temp2, centroid;
 
@@ -593,9 +594,9 @@ public:
 	// ODE solving:
 	// _____________
 	/*
-	real epsilon[NUM_EQNS_2];
-	real coeff_self[NUM_EQNS_2][NUM_AFFECTORS_2];
-	//real coeff[MAXNEIGH][NUM_EQNS_1][NUM_AFFECTORS_1]; // we can collate effects on Iz via neighs...
+	f64 epsilon[NUM_EQNS_2];
+	f64 coeff_self[NUM_EQNS_2][NUM_AFFECTORS_2];
+	//f64 coeff[MAXNEIGH][NUM_EQNS_1][NUM_AFFECTORS_1]; // we can collate effects on Iz via neighs...
 
 	// 16 x 4 x 4 = 256 doubles -> 2048 kB
 	Coeff_array coeff[MAXNEIGH];
@@ -604,24 +605,24 @@ public:
 	// or, use struct with [NUM_EQNS_1][NUM_AFFECTORS_1].
 	// Neither of these allows us to access just as pVertex->coeff[1][0][0].
 	
-	real regressor[2][4]; 
-	real circuit_regressor;
+	f64 regressor[2][4]; 
+	f64 circuit_regressor;
 	// Here, another 5 + 30 + 8 = 43 doubles.
 
 	// the following look to be unused (JRLSX only?):
-	//real sum_eps_beta[4];
-	//real sum_beta_sq[4]; // one for phi,Ax,Ay,Az   // ???
+	//f64 sum_eps_beta[4];
+	//f64 sum_beta_sq[4]; // one for phi,Ax,Ay,Az   // ???
 	
 	// Multimesh:
-	//real weight[3]; // 3 corners of supertriangle for which this vertex has a weight.
+	//f64 weight[3]; // 3 corners of supertriangle for which this vertex has a weight.
 	//long iCoarseTriangle; // need to know which coarse vertex is nearest, ie which Voronoi cell inhabited
 	
 	long iCoarseIndex[MAXCOARSE]; // usually should be 1,2,3 coarse_len in ratio 1:4:1.
 
-	real weight[3];
+	f64 weight[3];
 #ifdef FUNKYWEIGHTS
-	real wt_var[MAXCOARSE][4]; // maybe one day need matrix; get vector for now.
-	real wt_eps[MAXCOARSE][4][4]; // recruit to eps_eqn0 from all eqns.
+	f64 wt_var[MAXCOARSE][4]; // maybe one day need matrix; get vector for now.
+	f64 wt_eps[MAXCOARSE][4][4]; // recruit to eps_eqn0 from all eqns.
 #endif
 
 	char PBC_uplink[MAXCOARSE]; // status of coarser point relative to our point
@@ -632,7 +633,7 @@ public:
 	
 	char iLevel; // what level is this vertex on?
 	
-	real contrib_to_phi_avg; // so that phi level can be changed on higher levels.
+	f64 contrib_to_phi_avg; // so that phi level can be changed on higher levels.
 	// Is this needed?
 	// Each phi += [lc with total 1]*phi
 	// So if we change every coarse phi equally we are changing phi's level.
@@ -643,12 +644,12 @@ public:
 	// phi_avg probably best put only in beginning row --
 	// so it's moot.
 	
-	real Ez_coeff_on_phi, Ez_coeff_on_phi_anode;
+	f64 Ez_coeff_on_phi, Ez_coeff_on_phi_anode;
 	
 	// temp:
-	real ddphidzdz_coeff_on_phi,ddphidzdz_coeff_on_phi_anode;
+	f64 ddphidzdz_coeff_on_phi,ddphidzdz_coeff_on_phi_anode;
 	// DEBUG:
-	real predict_eps[NUM_EQNS_1]; 
+	f64 predict_eps[NUM_EQNS_1]; 
 	
 	
 	// I think we may need to now rethink coeff[MAXNEIGH] given that we are doing coefficients for
@@ -743,13 +744,13 @@ public:
 		neigh_len = len;
 	} // never called?
 	/*
-	void inline GetCoefficients(real * coefflocal, int iNeigh) // ?
+	void inline GetCoefficients(f64 * coefflocal, int iNeigh) // ?
 	{
 		if (iNeigh >= neigh_len) {
 			printf("error iNeigh >= len GetCoefficients\n");
 			return;
 		}
-		memcpy(coefflocal, &(coeff[iNeigh].co[0][0]), sizeof(real)*NUM_AFFECTORS_1*NUM_EQNS_1);
+		memcpy(coefflocal, &(coeff[iNeigh].co[0][0]), sizeof(f64)*NUM_AFFECTORS_1*NUM_EQNS_1);
 	}*/
 
 	long inline GetTriIndexArray(long * arr) const
@@ -785,10 +786,10 @@ public:
 
 	void inline ZeroCoefficients()
 	{
-		memset(coeff_self,0,NUM_EQNS_2*NUM_AFFECTORS_2*sizeof(real));
+		memset(coeff_self,0,NUM_EQNS_2*NUM_AFFECTORS_2*sizeof(f64));
 		for (int i = 0; i < MAXNEIGH; i++)
 		{
-			memset(&(coeff[i].co[0][0]),0,sizeof(real)*NUM_EQNS_1*NUM_AFFECTORS_1);
+			memset(&(coeff[i].co[0][0]),0,sizeof(f64)*NUM_EQNS_1*NUM_AFFECTORS_1);
 		}
 	}
 	void inline ClearCoarseIndexList()
@@ -817,14 +818,14 @@ public:
 		memmove(iCoarseIndex+i,iCoarseIndex+i+1,sizeof(long)*(coarse_len-i));
 		return true;
 	}
-	void inline AddToCoefficients(int iNeigh,real coeff_addition[4][4])
+	void inline AddToCoefficients(int iNeigh,f64 coeff_addition[4][4])
 	{
 		int const maxi = NUM_EQNS_1*NUM_AFFECTORS_1;
-		real *pf64 = &(coeff_addition[0][0]);
+		f64 *pf64 = &(coeff_addition[0][0]);
 		
 		if (iNeigh == -1) {
 			// add to coeff_self
-			real *ptr;
+			f64 *ptr;
 			for (int iEqn = 0; iEqn < NUM_EQNS_1; iEqn++)
 			{
 				ptr = &(coeff_self[iEqn][0]);
@@ -836,8 +837,8 @@ public:
 				};
 			};
 		} else {
-			real *ptr = &(coeff[iNeigh].co[0][0]);
-			real *pf64 = &(coeff_addition[0][0]);
+			f64 *ptr = &(coeff[iNeigh].co[0][0]);
+			f64 *pf64 = &(coeff_addition[0][0]);
 			for (int i = 0; i < maxi; i++)
 			{
 				*ptr += *pf64;
@@ -910,7 +911,7 @@ public:
 			izNeigh[neigh_len] = index;
 
 			// need this on some occasion:
-//			memset(&(coeff[neigh_len].co[0][0]),0,sizeof(real)*NUM_EQNS_1*NUM_AFFECTORS_1);
+//			memset(&(coeff[neigh_len].co[0][0]),0,sizeof(f64)*NUM_EQNS_1*NUM_AFFECTORS_1);
 
 			neigh_len++;			
 		}  else {
@@ -927,7 +928,7 @@ public:
 			izNeigh[neigh_len] = index;
 
 			// need this on some occasion:
-			//			memset(&(coeff[neigh_len].co[0][0]),0,sizeof(real)*NUM_EQNS_1*NUM_AFFECTORS_1);
+			//			memset(&(coeff[neigh_len].co[0][0]),0,sizeof(f64)*NUM_EQNS_1*NUM_AFFECTORS_1);
 
 			neigh_len++;
 		}
@@ -993,7 +994,7 @@ public:
 	// Best plan will be to put A on edges and triangle centroids to get B_vertex.
 	// We can also create B_edge by taking a quadrilateral of A.
 	
-	real temp_f64, area, nT, ROC_nT; // Maybe we need NT for doing pressures.
+	f64 temp_f64, area, nT, ROC_nT; // Maybe we need NT for doing pressures.
 
 	Triangle()	;	
 	
@@ -1032,8 +1033,8 @@ public:
 	};
 
 	void MapLeftIfNecessary(Vector2 & u0, Vector2 & u1, Vector2 & u2) const;
-	real GetDomainIntersectionArea(bool bUseOwnCoords, Vector2 u[3]) const;
-	real GetDomainIntersectionAreaROC(Vector2 u[3],int iWhichMove,Vector2 ROC);
+	f64 GetDomainIntersectionArea(bool bUseOwnCoords, Vector2 u[3]) const;
+	f64 GetDomainIntersectionAreaROC(Vector2 u[3],int iWhichMove,Vector2 ROC);
 
 	void CreateCoordinates_rel_to_vertex(Vertex * pVertex,Vector2 & u1, Vector2 & u2, Vector2 & u3);
 	bool inline has_vertex(Vertex * pVertex)
@@ -1043,11 +1044,11 @@ public:
 
 	int GetCentreOfIntersectionWithInsulator(Vector2 & result);
 
-	void CalculateCircumcenter(Vector2 & cc, real * pdistsq);
+	void CalculateCircumcenter(Vector2 & cc, f64 * pdistsq);
 	Vector2 RecalculateCentroid();
-	Vector2 RecalculateCentroid(real InnermostFrillCentroidRadius,real OutermostFrillCentroidRadius);
+	Vector2 RecalculateCentroid(f64 InnermostFrillCentroidRadius,f64 OutermostFrillCentroidRadius);
 	Vector2 GetContiguousCent_AssumingCentroidsSet(Vertex * pVertex);
-	real ReturnAngle(Vertex * pVertex);
+	f64 ReturnAngle(Vertex * pVertex);
 
 	Vector3 GetAAvg() const;
 	//void GenerateContiguousCentroid(Vector2 * pCentre, Triangle * pContig);
@@ -1086,23 +1087,23 @@ public:
 	int FindNeighbour(Triangle * pTri);
 
 	void RecalculateEdgeNormalVectors(bool normalise);
-	real ReturnNormalDist(Vertex * pOppVert);
-	void GetEdgeLengths(real edge_length[]);
+	f64 ReturnNormalDist(Vertex * pOppVert);
+	void GetEdgeLengths(f64 edge_length[]);
 
-	real GetWeight(Vertex * pVertex); // ?
+	f64 GetWeight(Vertex * pVertex); // ?
 
-	void Return_grad_Area(Vertex *pVertex, real * p_dA_by_dx, real * p_dA_by_dy);
+	void Return_grad_Area(Vertex *pVertex, f64 * p_dA_by_dx, f64 * p_dA_by_dy);
 
 	int Save(FILE * fp,Vertex * pVertArray, Triangle *pTriArray);
 	int Load(FILE * fp, Vertex * pVertArray, Triangle * pTriArray);
 	// saving and loading needed or not??
 
-	real GetArea(void) const
+	f64 GetArea(void) const
 	{
 		Vector2 u[3];
 		MapLeftIfNecessary(u[0],u[1],u[2]);
 		// Use shoelace formula not Heron:
-		real area =  0.5*fabs(
+		f64 area =  0.5*fabs(
 					  u[0].x*u[1].y - u[1].x*u[0].y
 					+ u[1].x*u[2].y - u[2].x*u[1].y
 					+ u[2].x*u[0].y - u[0].x*u[2].y );
@@ -1111,11 +1112,11 @@ public:
 		//		d1 = distance(u0.x,u0.y,u1.x,u1.y);
 		//		d2 = distance(u1.x,u1.y,u2.x,u2.y);
 		//		d3 = distance(u0.x,u0.y,u2.x,u2.y);
-		//	real Z = (d1+d2+d3)*0.5;
-		//	real Heron = sqrt(Z*(Z-d1)*(Z-d2)*(Z-d3));
+		//	f64 Z = (d1+d2+d3)*0.5;
+		//	f64 Heron = sqrt(Z*(Z-d1)*(Z-d2)*(Z-d3));
 	}
 	
-	bool ContainsPoint(real x, real y); // requires transverse vectors to be set
+	bool ContainsPoint(f64 x, f64 y); // requires transverse vectors to be set
 	bool ContainsPointInterior (Vertex * pVert); // calls the above function after checking for equality with cornerptr
 	
 	// We are going to want to see if points lie within what? A vertex-centred cell?
@@ -1130,14 +1131,14 @@ public:
 		
 	//void SetTriangleVertex(int which, Vertex * pVert);
 		
-	int TestAgainstEdge(real x, real y, 
+	int TestAgainstEdge(f64 x, f64 y, 
 							int c1, // the "start" of the relevant edge
 							int other, // the point opposite the relevant edge
 							Triangle ** ppNeigh);
 
-	real GetPossiblyPeriodicDistCentres(Triangle * pTri, int * prela);
+	f64 GetPossiblyPeriodicDistCentres(Triangle * pTri, int * prela);
 
-	bool TestAgainstEdges(real x,real y, Triangle ** ppNeigh);
+	bool TestAgainstEdges(f64 x,f64 y, Triangle ** ppNeigh);
 	bool TestAgainstEdges(float x,float y, Triangle ** ppNeigh);
 	
 	void ReturnPositionOtherSharedVertex_conts_tranche(Triangle * pTri, Vertex * pVert, Vector2 * pResult);
@@ -1159,7 +1160,7 @@ class ROCArray
 {
 public:
 	Vector3 * dv_ion_bydt, * dv_neut_bydt;
-	real * heatrate_neut, * heatrate_ion; // for viscous heating
+	f64 * heatrate_neut, * heatrate_ion; // for viscous heating
 
 	long numTris;
 	bool bInvoked;
@@ -1175,20 +1176,20 @@ public:
 	
 	void Extrapolate( // populates values in self
 			ROCArray * pROCflux0, ROCArray * pROCflux1, 
-			real h_used, 
-			ROCArray * pROCbase, real h_extrap);
+			f64 h_used, 
+			ROCArray * pROCbase, f64 h_extrap);
 	
-	void InterpolateBack(ROCArray * pROCbase, real const h_attempt, real const h_old);
+	void InterpolateBack(ROCArray * pROCbase, f64 const h_attempt, f64 const h_old);
 
-	real ROCArray::Estimate_d2dt2_and_get_timestep_for_constraint
-			(ROCArray * pROC1, ROCArray * pROC2, real hstep, 
-			real error_ppn_max // maximum ppnl error in approx of function
+	f64 ROCArray::Estimate_d2dt2_and_get_timestep_for_constraint
+			(ROCArray * pROC1, ROCArray * pROC2, f64 hstep, 
+			f64 error_ppn_max // maximum ppnl error in approx of function
 			);
 	
-	void ROCArray::SetLinear(ROCArray * pROCflux0, real hstep, ROCArray * dfdt, real h2, ROCArray * d2);
-	void ROCArray::SetLinear(ROCArray * pROCflux0, real hstep, ROCArray * dfdt);
-	void ROCArray::Get_dfdt(ROCArray * pROCflux0, ROCArray * pROCflux1, real hstep);
-	void ROCArray::GetAvgSq(real * pneut, real * pion);
+	void ROCArray::SetLinear(ROCArray * pROCflux0, f64 hstep, ROCArray * dfdt, f64 h2, ROCArray * d2);
+	void ROCArray::SetLinear(ROCArray * pROCflux0, f64 hstep, ROCArray * dfdt);
+	void ROCArray::Get_dfdt(ROCArray * pROCflux0, ROCArray * pROCflux1, f64 hstep);
+	void ROCArray::GetAvgSq(f64 * pneut, f64 * pion);
 	
 	void ROCArray::lambdablend(Speciesvector *plambda, ROCArray * pROCflux0, ROCArray * pROCflux1);
 
@@ -1201,9 +1202,9 @@ public:
 class ROCHeat 
 {
 public:
-	real d_NiTi_bydt[cellslength];
-	real d_NnTn_bydt[cellslength];
-	real d_NeTe_bydt[cellslength];
+	f64 d_NiTi_bydt[cellslength];
+	f64 d_NnTn_bydt[cellslength];
+	f64 d_NeTe_bydt[cellslength];
 
 	long numTris;
 
@@ -1215,13 +1216,13 @@ public:
 	
 	void Extrapolate( // populates values in self
 			ROCHeat * pROCflux0, ROCHeat * pROCflux1, 
-			real h_used, 
-			ROCHeat * pROCbase, real h_extrap);
+			f64 h_used, 
+			ROCHeat * pROCbase, f64 h_extrap);
 	
-	void ROCHeat::SetLinear(ROCHeat * pROCflux0, real hstep, ROCHeat * dfdt, real h2, ROCHeat * d2);
-	void ROCHeat::SetLinear(ROCHeat * pROCflux0, real hstep, ROCHeat * dfdt);
-	void ROCHeat::Get_dfdt(ROCHeat * pROCflux0, ROCHeat * pROCflux1, real hstep);
-	void ROCHeat::GetAvgSq(real * pneut, real * pion, real * pelec);
+	void ROCHeat::SetLinear(ROCHeat * pROCflux0, f64 hstep, ROCHeat * dfdt, f64 h2, ROCHeat * d2);
+	void ROCHeat::SetLinear(ROCHeat * pROCflux0, f64 hstep, ROCHeat * dfdt);
+	void ROCHeat::Get_dfdt(ROCHeat * pROCflux0, ROCHeat * pROCflux1, f64 hstep);
+	void ROCHeat::GetAvgSq(f64 * pneut, f64 * pion, f64 * pelec);
 	
 	void ROCHeat::lambdablend(Speciesvector *plambda, ROCHeat * pROCflux0, ROCHeat * pROCflux1);
 
@@ -1229,7 +1230,7 @@ public:
 class dTarray
 {
 public:
-	real dTe_by_dt[cellslength];
+	f64 dTe_by_dt[cellslength];
 
 	long numTris;
 
@@ -1242,8 +1243,8 @@ public:
 // prefer array of struct.
 */
 
-real CalculateAngle(real x, real y);
-real GetPossiblyPeriodicDistSq(Vector2 & vec1, Vector2 & vec2);
+f64 CalculateAngle(f64 x, f64 y);
+f64 GetPossiblyPeriodicDistSq(Vector2 & vec1, Vector2 & vec2);
 
 class TriMesh
 {
@@ -1276,11 +1277,11 @@ public:
 	// Let tri cells cross the insulator;
 	// vertex cells are bounded at the edge by moving centroids to the centre of the intersection between cell and insulator.
 	
-	real Outermost_r_achieved; // outermost on finest level
-	real Innermost_r_achieved; // innermost on finest level
-	real InnermostFrillCentroidRadius, OutermostFrillCentroidRadius;
+	f64 Outermost_r_achieved; // outermost on finest level
+	f64 Innermost_r_achieved; // innermost on finest level
+	f64 InnermostFrillCentroidRadius, OutermostFrillCentroidRadius;
 	
-	real sum_of_coefficients;
+	f64 sum_of_coefficients;
 	// The following used for the Iz equation in ODE solve:
 		
 	long numStartZCurrentRow, numEndZCurrentRow; // for verts
@@ -1290,7 +1291,7 @@ public:
 	long StartAvgRow;
 //	Matrix Coarsest;
 //	Matrix LUphi;
-	real scratchval;
+	f64 scratchval;
 	
 //	dd_real EzTuning; // ?!
 	
@@ -1303,7 +1304,7 @@ public:
 	long numRowsAux[NUM_COARSE_LEVELS];
 	long numInnermostRowAux[NUM_COARSE_LEVELS];
 	
-	real Iz_prescribed, Epsilon_Iz, Epsilon_Iz_aux[NUM_COARSE_LEVELS];
+	f64 Iz_prescribed, Epsilon_Iz, Epsilon_Iz_aux[NUM_COARSE_LEVELS];
 	// hmm, why not dd_real?
 	
 //	qd_or_d Epsilon_Iz_coeff_On_PhiAnode;
@@ -1336,8 +1337,8 @@ public:
 	long numVolleys[NUM_COARSE_LEVELS+1];
 
 	// screw pinch only:
-	real OuterRadiusAttained;
-	real OuterRadius[NUM_COARSE_LEVELS];
+	f64 OuterRadiusAttained;
+	f64 OuterRadius[NUM_COARSE_LEVELS];
 
 	TriMesh();
 	~TriMesh();
@@ -1391,7 +1392,7 @@ public:
 	int Initialise(int token);                             
 	// the token allows us to identify the object in giving error messages.
 
-	real SolveConsistentTemperature(real n, real n_n);
+	f64 SolveConsistentTemperature(f64 n, f64 n_n);
 	void InitialPopulate(void);  // call this once initial positions are obtained.
 	void InitialisePeriodic(void);			  
 	// *******************************************************************
@@ -1457,10 +1458,10 @@ public:
 
 	Triangle * ReturnPointerToTriangleContainingPoint(
 				Triangle * pTri,              // seed for beginning triangle search
-				real x, real y	); 
+				f64 x, f64 y	); 
 
 	void SearchIntersectionsForPolygon(ConvexPolygon & cp,Triangle * pTri, 
-							real coefficient, macroscopic * pVars, int varcode, real area);
+							f64 coefficient, macroscopic * pVars, int varcode, f64 area);
 	
 	Triangle * ReturnPointerToOtherSharedTriangle(
 		Vertex * pVert,
@@ -1471,8 +1472,8 @@ public:
 	//						   AuxVertex * pAux2,
 	//						   int iLevel);
 
-	//long SearchForAuxTriangleContainingPoint(real x, real y, int iLevel); // version for equilateral aux mesh
-	//long SearchForAuxTriangleContainingPoint(real x, real y, 
+	//long SearchForAuxTriangleContainingPoint(f64 x, f64 y, int iLevel); // version for equilateral aux mesh
+	//long SearchForAuxTriangleContainingPoint(f64 x, f64 y, 
 	//											  int iLevel,
 	//									AuxTriangle * pTriSeed);
 
@@ -1504,11 +1505,11 @@ public:
 
 	bool DebugDetectDuplicateNeighbourInList(Vertex * pVertex);
 
-	real SwimVertices(TriMesh * pSrcMesh, real coefficient, real * pAcceptance);
+	f64 SwimVertices(TriMesh * pSrcMesh, f64 coefficient, f64 * pAcceptance);
 	void SwimMesh(TriMesh * pSrcMesh);
 	
 	void CopyMesh(TriMesh * pDestMesh);
-	void SurveyCellMassStats(real * pAvgMass, real * pMassSD, real * pMinMass, real * pMaxMass, int * piMin);
+	void SurveyCellMassStats(f64 * pAvgMass, f64 * pMassSD, f64 * pMinMass, f64 * pMaxMass, int * piMin);
 	
 
 	void Create4Volleys();
@@ -1540,7 +1541,7 @@ public:
 	void Create_A_from_advance(f64 hstep, f64 ROCAzduetoAdvection[], f64 Az_array[]);
 	void FinalStepAz(f64 hstep, f64 ROCAzduetoAdvection[], TriMesh * pDestMesh, f64 Az_array[]);
 	void AdvanceAz(f64 hstep, f64 ROCAzduetoAdvection[], f64 Az_array[]);
-	void GetLap(real Az_array[], real LapAz_array[]);
+	void GetLap(f64 Az_array[], f64 LapAz_array[]);
 	void InterpolateVarsAndPositions(TriMesh * pTargetMesh, TriMesh * pEndMesh, f64 ppn);
 
 	//void AccumulateAdvectiveMomRate(f64_vec2 p_overall_v[NMINOR], ShardModel n_shards_n[NUMVERTICES], ShardModel n_shards[NUMVERTICES], three_vec3 AdditionRateNv[NMINOR]);
@@ -1589,10 +1590,10 @@ public:
 	void GetCurlBcOver4Pi();
 
 	//void SearchIntersectionsOfTriangle(Triangle * pTri, Vector2 & x0, Vector2 & x1, Vector2 & x2,
-	//				real mass, real heat, Vector3 & mom, int species, real area, bool src_periodic_flag);
+	//				f64 mass, f64 heat, Vector3 & mom, int species, f64 area, bool src_periodic_flag);
 	
 	void CollectFunctionals();
-	real Report_Min_nTotal_Tri();
+	f64 Report_Min_nTotal_Tri();
 	void ReportTextOutput1DData(TriMesh * pDestMesh);
 		
 	void ZeroCellData();
@@ -1635,20 +1636,20 @@ public:
 	*/
 
 #ifdef CPU
-	void ViscosityAndAcceleration(real hsub);
+	void ViscosityAndAcceleration(f64 hsub);
 	void ComputeMomFlux(ROCArray * pOutput);
-	void InternalAcceleration(real hsub, ROCArray * pROCinitial, ROCArray * pROCfinal,
+	void InternalAcceleration(f64 hsub, ROCArray * pROCinitial, ROCArray * pROCfinal,
 		Heat_storage * pHeat_storage);
-	void IonisationAndHeat(real hsub, ROCHeat * pdTinitial, ROCHeat * pdTfinal,
+	void IonisationAndHeat(f64 hsub, ROCHeat * pdTinitial, ROCHeat * pdTfinal,
 		Momentum_storage * pMomentum_storage,
-		real h_full);
-	void HeatRoutine(real hsub);
+		f64 h_full);
+	void HeatRoutine(f64 hsub);
 	void ComputeHeatFlux(ROCHeat * pROC);
 #endif
 
 	void GetGradTe(Vertex * pVertex);
 
-	real GetOutwardHeatFlux ( Triangle * pTri, Triangle * pTriDest, int iEdge, int species );
+	f64 GetOutwardHeatFlux ( Triangle * pTri, Triangle * pTriDest, int iEdge, int species );
 
 	//void AccelerateIons_or_ComputeOhmsLawForRelativeVelocity(Triangle * pTri, int code);
 
@@ -1670,11 +1671,11 @@ public:
 	void AverageVertexPositionsAndInterpolate(TriMesh * pSrcMesh, bool bInterpolatePositions);
 	
 	void SendMacroscopicPolygon(ConvexPolygon & cp,Triangle * pTriSeed, bool src_periodic,
-									 real coefficient,macroscopic * pVars, int varcode);
+									 f64 coefficient,macroscopic * pVars, int varcode);
 
 	void ApplyVertexMoves(int which_species,TriMesh * pDestMesh);
 
-	real SendAllMacroscopicPlanarTriangle(ConvexPolygon & cp,Triangle * pTriSeed, int src_periodic,
+	f64 SendAllMacroscopicPlanarTriangle(ConvexPolygon & cp,Triangle * pTriSeed, int src_periodic,
 									 fluidnvT * pvertvars0, fluidnvT * pvertvars1, fluidnvT * pvertvars2,
 									 int species, int code);
 
@@ -1685,7 +1686,7 @@ public:
 	
 	void ExtractData_PerformJRLS();
 
-	real inline GetIzPrescribed(real const t);
+	f64 inline GetIzPrescribed(f64 const t);
 
 	void ComputeOhmsLaw();
 	
@@ -1701,18 +1702,18 @@ public:
 	void IterationsJRLS_Az(int iLevel, int iterations);
 	void RunLU_Az(int const iLevel, bool bRefreshCoeff);
 	void CalculateEpsilons();
-	void CalculateEpsilonsAbsolute(real RSS_Absolute_array[4]);
+	void CalculateEpsilonsAbsolute(f64 RSS_Absolute_array[4]);
 	void CalculateEpsilonAux4(int iLevel);
 
 	void CalculateEpsilonsAz();
-	void CalculateEpsilonsAbsoluteAz(real RSS_Absolute_array[4]);
+	void CalculateEpsilonsAbsoluteAz(f64 RSS_Absolute_array[4]);
 	void CalculateEpsilonAuxAz(int iLevel);
 
 	//void CreateSeed(TriMesh * pMesh_with_A_k); // ?
 
-	void Solve_A_phi(bool const bInitial, real const time_back_for_Adot_if_initial = 0.0);
+	void Solve_A_phi(bool const bInitial, f64 const time_back_for_Adot_if_initial = 0.0);
 
-	void Solve_Az( real const time_back_for_Adot_if_initial );
+	void Solve_Az( f64 const time_back_for_Adot_if_initial );
 
 	//void Calculate_Epsilons_Gauss_Ampere(void);
 	//void RunIterations(int iLevel, long iterations);	
@@ -1733,15 +1734,15 @@ public:
 			Vertex * pAffected, //pAffector, 
 					//pVertex->iCoarseIndex[iAffectedIndex],
 			int iNeigh,//pVertex->iCoarseIndex[iAffectorIndex],
-			real wtsrc, real wtdest, real coeff[4][4],
+			f64 wtsrc, f64 wtdest, f64 coeff[4][4],
 			char rotatesrc,char rotatedest,
 			
 			// for debug:
 			long iFinePhi, long iIntermediate);
 	void Accumulate_coeffself_unary(
 		Vertex * pAffected, //long iAffected,
-		real,
-		real coeff_self[NUM_EQNS_2][NUM_AFFECTORS_2], 
+		f64,
+		f64 coeff_self[NUM_EQNS_2][NUM_AFFECTORS_2], 
 		char rotatedest);
 
 	// void CreateMultimeshCoefficients(bool bConstruct_iCoarseTriangle);
@@ -1763,26 +1764,26 @@ public:
 									long numTrianglesMax,
 									int colourflag,
 									int heightflag,
-									int offset_data,			// how far data is from start of Vertex, for real*
+									int offset_data,			// how far data is from start of Vertex, for f64*
 									int offset_vcolour,
 									float zeroplane, float yscale,
 									int NTris = 0)		;
 	//void Setup_DivE_rho_phi_eps_Graphing();	
 
 	//void SetupJ_A2_rho_Graphing();
-	real ReturnMaximumData(int offset);
-	void ReturnMaxMinData(int offset, real * pmax, real * pmin, bool bDisplayInner) const;
-	void ReturnL5Data(int offset, real * pmax, real * pmin, bool bDisplayInner) const;
-	void ReturnMaxMinDataAux(int iLevel, int offset, real * pmax, real * pmin);
-	void Return3rdmaxData(int offset, real * pmax, real * pmin, bool bDisplayInner) const;
+	f64 ReturnMaximumData(int offset);
+	void ReturnMaxMinData(int offset, f64 * pmax, f64 * pmin, bool bDisplayInner) const;
+	void ReturnL5Data(int offset, f64 * pmax, f64 * pmin, bool bDisplayInner) const;
+	void ReturnMaxMinDataAux(int iLevel, int offset, f64 * pmax, f64 * pmin);
+	void Return3rdmaxData(int offset, f64 * pmax, f64 * pmin, bool bDisplayInner) const;
 
 	void Setup_J() ;
 	void Reset_vertex_nvT(int species) ;
 
 	long GetVertsRightOfCutawayLine_Sorted(long VertexIndexArray[],
-										real radiusArray[], bool bUseInner) const;
+										f64 radiusArray[], bool bUseInner) const;
 
-	real ReturnMaximumDataAux(int iLevel, int offset);
+	f64 ReturnMaximumDataAux(int iLevel, int offset);
 
 	void SetupAccelGraphs();
 	//void SetupJBEGraphing();
@@ -1791,11 +1792,11 @@ public:
 	//void SetupAizJzGraphing();
 	void CalculateTotalGraphingData();
 
-	real ReturnMaximumVelocity(int offset_v, bool bDisplayInner) const;
-	real ReturnL4_Velocity(int offset_v, bool bDisplayInner) const;
-	real ReturnMaximum3DMagnitude(int offset_v, bool bDisplayInner) const;
-	real ReturnL4_3DMagnitude(int offset_v, bool bDisplayInner) const;
-	real ReturnMaximumVelocityAux(int iLevel, int offset);
+	f64 ReturnMaximumVelocity(int offset_v, bool bDisplayInner) const;
+	f64 ReturnL4_Velocity(int offset_v, bool bDisplayInner) const;
+	f64 ReturnMaximum3DMagnitude(int offset_v, bool bDisplayInner) const;
+	f64 ReturnL4_3DMagnitude(int offset_v, bool bDisplayInner) const;
+	f64 ReturnMaximumVelocityAux(int iLevel, int offset);
 	//void SetupJGraphing();			// set A2 to J at vertex
 
 	//void SetupJ_E_rho_Graphing();
@@ -1806,7 +1807,7 @@ public:
 
 	long GetNumKeyVerticesGraphics(long * pnumTrianglesKey) const;
 
-	void SetVerticesKeyButton(VertexPNT3 * vertices, DWORD * indices, real maximum_v, int colourflag) const;
+	void SetVerticesKeyButton(VertexPNT3 * vertices, DWORD * indices, f64 maximum_v, int colourflag) const;
 
 	void SetVerticesAndIndices(VertexPNT3 * vertices[],        // better to do in the other class...
 							        DWORD * indices[], // let's hope this means an array of pointers
@@ -1817,13 +1818,13 @@ public:
 							bool boolDisplayInnerMesh) const;	
 };
 
-bool PerformCUDA_JRLS (real * pBeta, real * pBetaIz, 
+bool PerformCUDA_JRLS (f64 * pBeta, f64 * pBetaIz, 
 					   long * pIndex, 
 					   long nbetamax, long Ncells,
-					   real * pAz,real chEzExt,
-					   real Epsilon_Iz_constant,
-						real Epsilon_Iz_coeff_On_chEz_ext,
-						real * return_chEzExt,
+					   f64 * pAz,f64 chEzExt,
+					   f64 Epsilon_Iz_constant,
+						f64 Epsilon_Iz_coeff_On_chEz_ext,
+						f64 * return_chEzExt,
 						long StartAvgRowTri,
 						long iterations);
 	
@@ -1843,7 +1844,7 @@ bool PerformCUDA_JRLS (real * pBeta, real * pBetaIz,
 //
 //	void Writeback(TriMesh * pX);
 //	
-//	real Findmaxtimestep_given_dv(Store_v_array * pStore_v_1, long numTris, real hstep, real PPNMAX);
+//	f64 Findmaxtimestep_given_dv(Store_v_array * pStore_v_1, long numTris, f64 hstep, f64 PPNMAX);
 //};
 //
 //

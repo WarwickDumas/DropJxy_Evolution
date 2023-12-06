@@ -3,11 +3,24 @@
 #ifndef FFXTUBES_h
 #define FFXTUBES_h
 
+// This is the file with NMINOR defined.
+
 // Should have thought of better name.
 // Lagrangian deterministic 2D plasma filament simulation;
 // vertex-based version.
 
-#define real double
+
+
+// Changes made :
+// Changed timestep back to 2.5e-12
+// Changed directory for output and filename in project properties
+// Changed OSCILLATE_IZ obviously
+// Changed back to vxy graphs
+
+// 270 ns -- change timestep to 1e-12
+
+
+#define f64 double
 
 #include "constant.h"
 #include "resource.h"
@@ -17,37 +30,62 @@ bool const bScrewPinch = false;
 
 #define DIRICHLET false
 #define RADIALDECLINE true
+#define RADIAL2    true    // actually go as 1/r^2
+
+// Model parameters:
+//===============================
+
+#define EULERIAN       1
+// change to #define LAGRANGIAN
+
+#define OSCILLATE_IZ   0
 
 //#define FLATAZBC
- 
-#define FOLDER L"C:/outputs/"
-#define FOLDER2 "C:/outputs/"
-#define INITIALAVI "scrap.avi"		
-#define INITIALMP4 L"scrap.mp4"
+
+//int const NUMAVI = 10;
+#define INITIALAVI "Init2.avi"		
+#define INITIALMP4 L"Init2.mp4"
 #define STORYFILE "temp.txt"
 #define STORYFILE2 "temp2.txt"
-  
-#define FUNCTIONALFILE_START FOLDER2 "functionals"
+
+#if OSCILLATE_IZ
+#define FOLDER L"C:/outputs/"
+#define FOLDER2 "C:/outputs/"
+#define FUNCTIONALFILE_START FOLDER2 "o_functionals"
+#define DATAFILENAME FOLDER2 "oData_"
+#define AUTOSAVE_FILENAME FOLDER2 "o_autosave.dat"
+#define RUNTIME_FILENAME FOLDER2 "o_runtime.dat"
+#define AUTOSAVENAME "o_testauto"
+#define VERTAUTOSAVENAME "o_testgraph"
+#else
+#define FOLDER L"C:/outputs/2023/"
+#define FOLDER2 "C:/outputs/2023/"
+#define FUNCTIONALFILE_START FOLDER2 "funct"
 #define DATAFILENAME FOLDER2 "Data_"
 #define AUTOSAVE_FILENAME FOLDER2 "autosave.dat"
 #define RUNTIME_FILENAME FOLDER2 "runtime.dat"
+#define AUTOSAVENAME "H_auto"
+#define VERTAUTOSAVENAME "graph"
+ 
+#endif
+
+// the struggle is going to be, to store graphing data
 
 #define DELAY_MILLISECS      100 // pause
 
 // steps per frame
 #define GRAPHICS_FREQUENCY				1 // 2e-11
 #define REDELAUN_FREQUENCY				10 
-
-#define STEPS_PER_LOOP               1    // soon change to 500
+#define STEPS_PER_LOOP                  1    // soon change to 500
 // frames between file pinch-offs:
-#define AVI_FILE_PINCHOFF_FREQUENCY     200
+#define AVI_FILE_PINCHOFF_FREQUENCY     50 // 50 = 1 ns
 
 // 1 frame = 0.01 so 100 frames == 1 ns
 
 // milliseconds between frames:
-#define AVIFRAMEPERIOD         15  // milliseconds; 20 ms => 50 fps.
-
-#define DATA_SAVE_FREQUENCY					 5
+#define AVIFRAMEPERIOD                     25  // milliseconds; 20 ms => 50 fps.
+#define VERTDATA_SAVE_FREQUENCY            5
+#define DATA_SAVE_FREQUENCY					20
 // For debug. For production change it to 25
 
 // Program Mechanics:
@@ -57,14 +95,16 @@ bool const bScrewPinch = false;
 
 // 12*32768*5 = 2MB .. just to keep things in perspective.
 // We should keep the number down just to reduce fetch size.
-// Let's keep it real. nvT is best for our fetches and therefore is best.
+// Let's keep it f64. nvT is best for our fetches and therefore is best.
 #define SWITCH_TO_CENTRE_OF_INTERSECTION_WITH_INSULATOR_FOR_TRI_CENTROID_CPU 0
 
-long const numTriTiles = 336; // note that there are also centrals
-long const numTilesMajor = 336;
-long const numTilesMinor = 504; // 576 = 384 + 192
-								// 456*256 = 304*256 + 304*128
+// Note: NUMVERTICES must be divisble by 12
 
+long const numTriTiles = 384; // 336   note that there are also centrals
+long const numTilesMajor = 384;  // 336
+long const numTilesMinor = 576; // 504 = 336 +  // 576 = 384 + 192
+								// 456*256 = 304*256 + 304*128
+// Set NUMVERTICES_WITHIN below
 								// numTriTiles == numTilesMajor because the two sets are bijective.
 								// Then we also have to assign central minors to tiles, twice the size of the major tiles...
 
@@ -72,10 +112,11 @@ long const threadsPerTileMinor = 256; // PopOhmsLaw ASSUMES THIS IS A POWER OF 2
 long const threadsPerTileMajor = 128; // see about it - usually we take info from minor.
 
 long const threadsPerTileMajorClever = 256;
-long const numTilesMajorClever = 168;
+long const numTilesMajorClever = 192;
 
 long const SIZE_OF_MAJOR_PER_TRI_TILE = 128;
 long const SIZE_OF_TRI_TILE_FOR_MAJOR = 256;
+
 long const BEGINNING_OF_CENTRAL = threadsPerTileMinor*numTriTiles;
  
 long const NUMVERTICES = numTilesMajor*threadsPerTileMajor;//36864; //36000; // particularly applies for polar?
@@ -92,20 +133,18 @@ double const RELTHRESH_AZ =  1.0e-9;
 // Note that getting it wrong should mean that subsequently we will correct for the error.
  
 
-// Model parameters:
-//===============================
 
  // radii in cm from anode centre : 
 #define DOMAIN_OUTER_RADIUS  10.0   // Assume cold neutrals looking out from this point.
-#define START_SPREADING_OUT_RADIUS 4.3
-#define NUMVERTICES_WITHIN 36864  // Used for initialization - focus on the area of interest
+#define START_SPREADING_OUT_RADIUS 4.24
+#define NUMVERTICES_WITHIN 43008 // 55296 // using NUMVERTICES - 6144 = 61440-6144
+ // 36864  // Used for initialization - focus on the area of interest
 // === 288*128, vs 336*128 for whole lot.
-#define VISCOSITY_MAX_RADIUS  4.5
+#define VISCOSITY_MAX_RADIUS  4.3
 #define MESHMOVE_MAX_RADIUS   6.0
 
 // Think it's time we made radial values going out to 10cm.
 #define CHAMBER_OUTER_RADIUS  10.0
-
 #define GRAPH1D_MAXR  4.6
 
 #define KILL_NEUTRAL_V_OUTSIDE_TEMP  8.0 // No idea why problem occurring - just killing it for now
@@ -115,7 +154,7 @@ double const RELTHRESH_AZ =  1.0e-9;
 #define CATHODE_ROD_RADIUS       0.47625
 // Let's say some vertcells will be within it and we acknowledge that asap.
 
-real const DEVICE_RADIUS_INITIAL_FILAMENT_CENTRE = 3.61;   
+f64 const DEVICE_RADIUS_INITIAL_FILAMENT_CENTRE = 3.61;   
 #define  DEVICE_RADIUS_INSULATOR_OUTER  3.44
 #define  REVERSE_ZCURRENT_RADIUS   2.8
 
@@ -133,8 +172,8 @@ real const DEVICE_RADIUS_INITIAL_FILAMENT_CENTRE = 3.61;
 
 // Tooth is height 0.63
 int const NUM_PLANES = 8;
-real const PLANE_INTERCEPT_LINEAR[8] = {0.68,1.1,1.6,2., 2.72, 2.725, 2.73, 2.74}; // 0.5+2.9=3.4
-real const PLANE_DZBYDR[8] = {0.0, 0.0, 0.0, 0.0, 0.414213562, 1.0, 2.414213562,-1.0 // vertical
+f64 const PLANE_INTERCEPT_LINEAR[8] = {0.68,1.1,1.6,2., 2.72, 2.725, 2.73, 2.74}; // 0.5+2.9=3.4
+f64 const PLANE_DZBYDR[8] = {0.0, 0.0, 0.0, 0.0, 0.414213562, 1.0, 2.414213562,-1.0 // vertical
 								};
 // We probably also need to solve for A near cathode, no?
 // But that means leaving points inside tooth - more work.
@@ -144,7 +183,7 @@ real const PLANE_DZBYDR[8] = {0.0, 0.0, 0.0, 0.0, 0.414213562, 1.0, 2.414213562,
 
 // 22.5 deg, 45 deg, 67.5 deg.
 
-//// real const PLANE_INITIAL_STRETCHFROM = 3.8; // below r = 3.8, use radius in plane as
+//// f64 const PLANE_INITIAL_STRETCHFROM = 3.8; // below r = 3.8, use radius in plane as
 // DO NOT bother: we can assume instead that tubes do emerge from cathode rod.
 // The simulated volume is a cylinder with a dome.
 
@@ -163,7 +202,7 @@ real const PLANE_DZBYDR[8] = {0.0, 0.0, 0.0, 0.0, 0.414213562, 1.0, 2.414213562,
 // 2.747477419 <-- sin/cos 70 degrees
 // 70 chosen as 2/3 point between 30 and 90, so that top cell extends equal amount each way.
 
-//real const PLANE_ACTUAL_INTERCEPT[8] = {0.68, 0.82, 1.6, 2.7, 2.74, 2.75, 2.76, 2.77};
+//f64 const PLANE_ACTUAL_INTERCEPT[8] = {0.68, 0.82, 1.6, 2.7, 2.74, 2.75, 2.76, 2.77};
 // NOTE: FOR THE ONES THAT ARE RAISED, THESE SHOULD BE WELL BELOW WHERE PLANE INTERCEPTS INSULATOR.
 
 // Problem with flat planes: planes intersect. ? 
@@ -176,8 +215,8 @@ real const PLANE_DZBYDR[8] = {0.0, 0.0, 0.0, 0.0, 0.414213562, 1.0, 2.414213562,
 // HAVE 2 EXTRA (inner + outer) vertical sets of A,A-dot values WITHIN ANODE north of insulator.
 // THE POSITIONS ARE CHOSEN TO MAKE EVERY TUBE PERPENDICULAR TO THE ANODE.
 // THEY SUBTEND THE PLANES THAT BECOME FLAT. 
-real const ANODE_VERTICAL_R2 = 2.79;
-real const ANODE_VERTICAL_R1 = 2.75; // on the inner side, the cell assumes Az constant and Axy ~ r.
+f64 const ANODE_VERTICAL_R2 = 2.79;
+f64 const ANODE_VERTICAL_R1 = 2.75; // on the inner side, the cell assumes Az constant and Axy ~ r.
 // The positions are projected along tubes from the highest plane.
 
 // Note that the corresponding values must be loaded as "above" the top plane.
@@ -194,7 +233,7 @@ long const POINTS_PER_PLANE = 36864; // To have just under is OK
 
 
 // 2D :
-real const ZTOP = 2.9; // OLD
+f64 const ZTOP = 2.9; // OLD
 #define EFFECTIVE_PLATEAU_HEIGHT       0.5
 // assume near tooth phi=0 at this level.
 #define EFFECTIVE_LOGIT_CENTRE         3.84
@@ -203,23 +242,24 @@ real const ZTOP = 2.9; // OLD
 // assume phi=0 slopes down to 0 height at this radius.
 
 
-real const PLANE_Z = 1.0;
+f64 const PLANE_Z = 1.0;
 
 // change to logistic: maybe for values too.
 
 
-//real const INSULATOR_RADIUS_SQ = DEVICE_RADIUS_INSULATOR_OUTER*DEVICE_RADIUS_INSULATOR_OUTER;
+//f64 const INSULATOR_RADIUS_SQ = DEVICE_RADIUS_INSULATOR_OUTER*DEVICE_RADIUS_INSULATOR_OUTER;
 #define PPN_CIRCLE   (1.0/16.0) 
 // the proportion of a circle for this simulation
 
-//real const HALFANGLE = PI*PPN_CIRCLE; // half the base angle of the slice
+//f64 const HALFANGLE = PI*PPN_CIRCLE; // half the base angle of the slice
 #define HALFANGLE 0.196349541
 
-//real const GRADIENT_X_PER_Y = tan(HALFANGLE); 
+//f64 const GRADIENT_X_PER_Y = tan(HALFANGLE); 
 #define GRADIENT_X_PER_Y    0.198912367
 
-real const GRADIENT_Y_PER_X = 1.0/GRADIENT_X_PER_Y;
-real const CUTAWAYANGLE = -0.005;
+f64 const GRADIENT_Y_PER_X = 1.0/GRADIENT_X_PER_Y;
+f64 const CUTAWAYANGLE = -0.005;
+
 //-GRADIENT_X_PER_Y * 0.5;
 
 // putted -0.005   --- it fails at -0.001 and we don't know why
@@ -229,15 +269,19 @@ real const CUTAWAYANGLE = -0.005;
 // **Clearly need dimensioned index array to achieve some overlap.**
 // **Fix problem by going to look for numTrianglesTotal[ **
 
-real const n_INITIAL_SD = 0.08; // 800 micron
-real const INITIALnSD = n_INITIAL_SD; 
-real const INITIALTSD = 0.08; // if n is Gaussian then T is a cone. So make n more spread out than T (?)
+f64 const n_INITIAL_SD = 0.08; // 800 micron
+f64 const INITIALnSD = n_INITIAL_SD; 
+f64 const INITIALTSD = 0.08; // if n is Gaussian then T is a cone. So make n more spread out than T (?)
  
-real const FILAMENT_OWN_PEAK_n = 1.0e15;
-real const UNIFORM_n = 1.0e8;  // ionisation fraction at room temp would be tiny;
+f64 const FILAMENT_OWN_PEAK_n = 1.0e14;
+f64 const UNIFORM_n = 1.0e8;  // ionisation fraction at room temp would be tiny;
 							// this is here to help avoid density = zero which causes division issues
-real const FILAMENT_OWN_PEAK_T = 4.8e-12;
-real const UNIFORM_T = 4.0e-14; // 300K
+f64 const FILAMENT_OWN_PEAK_T = 0.2e-12; // 4.8e-12;
+f64 const UNIFORM_T = 4.0e-14; // 300K
+
+f64 const WALL_SD_RADIAL = 0.01; // 100 micron
+int const NUMBER_OF_OSCILLATIONS = 14;
+
 
 #define INITIAL_BACKGROUND_ION_DENSITY 1.0e8
 #define INITIAL_TOTAL_DENSITY 1.0e18
@@ -245,55 +289,66 @@ real const UNIFORM_T = 4.0e-14; // 300K
 #define BZ_CONSTANT     2.7  
 							   // Constant Bz before any plasma Bz:
 					   // 0.3 G from Earth and 2.4 G from coil
-real const RELATIVEINITIALJZUNIFORM = 0.0; 
+f64 const RELATIVEINITIALJZUNIFORM = 0.0; 
 // note it is not wise to have uniform current w/o uniform ion density - can revisit this
 
-real const  ZCURRENTBASETIME = 0.0;      //18.0e-9; // start from 0 -- 16/10/17
-real const  PEAKCURRENT_AMP = 88000.0;   // 88000 Amp - 2 filaments
+f64 const  ZCURRENTBASETIME = 0.0;      //18.0e-9; // start from 0 -- 16/10/17
+f64 const  PEAKCURRENT_AMP = 88000.0;   // 88000 Amp - 2 filaments
+
 // Note that the current is negative from this.
-real const  PEAKCURRENT_STATCOULOMB = PEAKCURRENT_AMP * sC_;
-real const  PEAKTIME  = 18.0e-7;
-real const  PIOVERPEAKTIME = PI/PEAKTIME;
+f64 const  PEAKCURRENT_STATCOULOMB = PEAKCURRENT_AMP * sC_; // This is statamp
+f64 const  PEAKTIME  = 18.0e-7;
+f64 const  PIOVERPEAKTIME = PI/PEAKTIME;
 // should have mapped peak to pi/2
 
-real const SimArea = PI*(DOMAIN_OUTER_RADIUS*DOMAIN_OUTER_RADIUS-DEVICE_RADIUS_INSULATOR_OUTER*DEVICE_RADIUS_INSULATOR_OUTER)/16.0; // pi r^2 -- note to self pls do not keep adding a 2.
-real const FULLANGLE = 2.0*PI/16.0;
+f64 const SimArea = PI*(DOMAIN_OUTER_RADIUS*DOMAIN_OUTER_RADIUS-DEVICE_RADIUS_INSULATOR_OUTER*DEVICE_RADIUS_INSULATOR_OUTER)/16.0; // pi r^2 -- note to self pls do not keep adding a 2.
+f64 const FULLANGLE = 2.0*PI/16.0;
 
 // " integral Jz = I_peak sin (pi (t + tBASE) / tPEAK ) " - rough_model_with_layer_methods_33a.lyx
 
 // Simulation parameters:
 //==================================
 //
-//real const h_INNER_INIT = 0.5e-14; // initial value
-//real const h_RECALCULATE = 1.0e-12;
+//f64 const h_INNER_INIT = 0.5e-14; // initial value
+//f64 const h_RECALCULATE = 1.0e-12;
 //long const INNERMOST_STEPS = 200;
-//real const h_MOTION = 1.0e-12; // could make it longer. 1e-12+6 = 1e-6 cm = 0.01 micron.
+//f64 const h_MOTION = 1.0e-12; // could make it longer. 1e-12+6 = 1e-6 cm = 0.01 micron.
 // Need to be careful in case of thermal pressure messing up mesh.
 // Let's assume we do recalculation of parameters as often as we do recalculation of pressure.
 
-real const TIMESTEP = 1.0e-12;// 7.8125e-14; 
-real const SUBSTEP = 1.0e-13; // 7.8125e-14;
-int const SUBCYCLES = 10; 
-int const GPU_STEPS = 20; // 2e-11
-int const ADVECT_FREQUENCY = 10; // 5e-12; 1e-11 = 1e-4/1e7 // 64
-int const ADVECT_STEPS_PER_GPU_VISIT = 2;
+
+// To 280 ns I used:
+f64 const TIMESTEP = 1.0e-12;// 7.8125e-14; 
+f64 const SUBSTEP = 1.0e-13; // 7.8125e-14;
+int const SUBCYCLES = 25; // SUBSTEP/TIMESTEP 
+int const GPU_STEPS = 25; // 2.5e-11             NOTEZ BENE NOT 2.5e-11
+int const ADVECT_FREQUENCY = 25; // 5e-12; 1e-11 = 1e-4/1e7 // 64
+int const ADVECT_STEPS_PER_GPU_VISIT = 1;
+
+// Past 280 ns I used:
+//f64 const TIMESTEP = 1.0e-12;// 7.8125e-14; 
+//f64 const SUBSTEP = 1.0e-13; // 7.8125e-14;
+//int const SUBCYCLES = 10; // SUBSTEP/TIMESTEP 
+//int const GPU_STEPS = 25; // 2.5e-11             NOTEZ BENE NOT 2.5e-11
+//int const ADVECT_FREQUENCY = 25; // 5e-12; 1e-11 = 1e-4/1e7 // 64
+//int const ADVECT_STEPS_PER_GPU_VISIT = 1;
 
 
 //long const NUM_VERTICES_PER_CM_SQ = 10000; // 60000; //12000; // use 262144 = 2^18. 2^9 = 512
 //long const NUM_VERTICES_PER_CM_SQ_INSIDE_INS = 9000; // 24000; // 8000;
 // Make life easier: both same.
 
-int const NUM_SUBSTEPS_IN_h_over_2 = 3; // Visc+Accel, Ionisation+Heating
+//int const NUM_SUBSTEPS_IN_h_over_2 = 3; // Visc+Accel, Ionisation+Heating
 
 int const VERTICES_PER_ARRAY = 65536; // for graphics. Just sends warning at the moment.
 
 // We are still going to need to sometimes do multimesh, for a reset maybe, or at least initially.
-real const ODE_ABSTHRESHOLD[4] = {1.0e-9,1.0e-9,1.0e-9,1.0e-9};
+f64 const ODE_ABSTHRESHOLD[4] = {1.0e-9,1.0e-9,1.0e-9,1.0e-9};
 									// threshold for sqrt(avg squared residual)
 
 // 1.0e-6 --> easily visible errors circa 100ns. 1.0e-8 calms somewhat.
-real const ODE_FPRATIO = 1.0e-14; // smth seemed to be giving a too large threshold for Gauss ?!
-real const ODE_IZRELTOL = 1.0e-10; // said 1e-10 previously
+f64 const ODE_FPRATIO = 1.0e-14; // smth seemed to be giving a too large threshold for Gauss ?!
+f64 const ODE_IZRELTOL = 1.0e-10; // said 1e-10 previously
 // We are going to have to chase the current by inputting a fixed amount of electrons.
 
 long const NUM_COARSE_LEVELS = 3; 
@@ -311,9 +366,9 @@ bool const QUADWEIGHTS = false;
 int const SWIM_FREQUENCY = 20; // how many turns between swims
 int const SWIM_COUNT = 2; // max # of swims to do
 
-real const hLARGE = 1.0e-9; // choose a large time for flows
+f64 const hLARGE = 1.0e-9; // choose a large time for flows
 // to be used initially.
-real const maximum_spacing = 0.025;  // cm: do not make cell widths larger than this
+f64 const maximum_spacing = 0.025;  // cm: do not make cell widths larger than this
 
 // Graphics related
 // ================
@@ -343,21 +398,21 @@ long const NUMGRAPHS = 6;
 float const GRAPHIC_MIN_Y = 0.0;
 float const GRAPHIC_MAX_Y = 4.5;
 
-real const GRAPH_SCALE_GEOMETRIC_INCREMENT = 1.333521452; // 10^(1/8)
+f64 const GRAPH_SCALE_GEOMETRIC_INCREMENT = 1.333521452; // 10^(1/8)
 
 
 // SCREW PINCH / Z PINCH
 // =====================
 
-real const IZ_SCREW_PINCH = 44000.0*sC_; // 44000 Amp in statCoulomb
+f64 const IZ_SCREW_PINCH = 44000.0*sC_; // 44000 Amp in statCoulomb
 
-real const N0_centre_SP = 1.0e18; // central n initially
-real const n_UNIFORM_SP = 1.0e15;
-real const a_nSD = 0.05;	// cm		// n = N0 exp(-r^2/ a_nSD^2)  -- so it's not really the SD
-real const OUTER_RADIUS = 0.6;		 // cm
-real const REVERSE_CURRENT_RADIUS_SP = 0.58; // cm
-real const SCREWPINCH_INITIAL_T = 15.0*1.6e-12; // about 15eV in erg
-real const SP_CENTRE_Y = 3.61;			// translate origin
+f64 const N0_centre_SP = 1.0e18; // central n initially
+f64 const n_UNIFORM_SP = 1.0e15;
+f64 const a_nSD = 0.05;	// cm		// n = N0 exp(-r^2/ a_nSD^2)  -- so it's not really the SD
+f64 const OUTER_RADIUS = 0.6;		 // cm
+f64 const REVERSE_CURRENT_RADIUS_SP = 0.58; // cm
+f64 const SCREWPINCH_INITIAL_T = 15.0*1.6e-12; // about 15eV in erg
+f64 const SP_CENTRE_Y = 3.61;			// translate origin
 
 long const NUM_AUX_VERTS[3] = {6000, 720, 100}; // total verts ?
 

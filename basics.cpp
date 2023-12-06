@@ -10,8 +10,8 @@
 
 smartlong GlobalVertexScratchList;
 
-//real const minimum_pressure_SD_at_1e18_sq = minimum_pressure_SD_at_1e18*minimum_pressure_SD_at_1e18;
-//real const min_variance_heat = min_SD_heat*min_SD_heat;
+//f64 const minimum_pressure_SD_at_1e18_sq = minimum_pressure_SD_at_1e18*minimum_pressure_SD_at_1e18;
+//f64 const min_variance_heat = min_SD_heat*min_SD_heat;
 
 Tensor2 const Anticlockwise(cos(FULLANGLE),-sin(FULLANGLE),sin(FULLANGLE),cos(FULLANGLE));
 Tensor2 const Clockwise(cos(FULLANGLE),sin(FULLANGLE),-sin(FULLANGLE),cos(FULLANGLE));
@@ -24,7 +24,7 @@ Tensor3 const Clockwise3 (cos(FULLANGLE),sin(FULLANGLE), 0.0,
 Tensor2 const HalfAnticlockwise (cos(HALFANGLE),-sin(HALFANGLE),sin(HALFANGLE),cos(HALFANGLE));
 Tensor2 const HalfClockwise(cos(HALFANGLE),sin(HALFANGLE),-sin(HALFANGLE),cos(HALFANGLE));
 
-real modelled_n;
+f64 modelled_n;
 void ConvexPolygon::CreateClockwiseImage(const ConvexPolygon & cpSrc) 
 {
 	numCoords = cpSrc.numCoords;
@@ -41,8 +41,8 @@ void ConvexPolygon::CreateAnticlockwiseImage(const ConvexPolygon & cpSrc)
 fluid_nvT fluid_nvT::Clockwise() const
 	{
 		fluid_nvT result;
-		memcpy(&(result.n),&(n),sizeof(real)*3);
-		memcpy(&(result.nT),&(nT),sizeof(real)*3);
+		memcpy(&(result.n),&(n),sizeof(f64)*3);
+		memcpy(&(result.nT),&(nT),sizeof(f64)*3);
 		result.nv[0] = Clockwise3*nv[0];
 		result.nv[1] = Clockwise3*nv[1];
 		result.nv[2] = Clockwise3*nv[2];
@@ -51,8 +51,8 @@ fluid_nvT fluid_nvT::Clockwise() const
 fluid_nvT fluid_nvT::Anticlockwise() const
 	{
 		fluid_nvT result;
-		memcpy(&(result.n),&(n),sizeof(real)*3);
-		memcpy(&(result.nT),&(nT),sizeof(real)*3);
+		memcpy(&(result.n),&(n),sizeof(f64)*3);
+		memcpy(&(result.nT),&(nT),sizeof(f64)*3);
 		result.nv[0] = Anticlockwise3*nv[0];
 		result.nv[1] = Anticlockwise3*nv[1];
 		result.nv[2] = Anticlockwise3*nv[2];
@@ -63,22 +63,22 @@ void fluidnvT::Interpolate ( fluidnvT* pvv1, fluidnvT * pvv2,
 	{
 		// want to take dist1/(dist1 + dist2)
 		//  (dist1/(dist1+dist2)) = dist1/dist2 / (1 + dist1/dist2)
-//		real ratio = sqrt( 
+//		f64 ratio = sqrt( 
 //			((pos1.x-ourpos.x)*(pos1.x-ourpos.x)+(pos1.y-ourpos.y)*(pos1.y-ourpos.y))/
 //			((pos2.x-ourpos.x)*(pos2.x-ourpos.x)+(pos2.y-ourpos.y)*(pos2.y-ourpos.y)));
 		// this is too dangerous - maybe ourpos == pos2
 	
-		real dist1 = sqrt((pos1.x-ourpos.x)*(pos1.x-ourpos.x)+(pos1.y-ourpos.y)*(pos1.y-ourpos.y));
-		real dist2 = sqrt((pos2.x-ourpos.x)*(pos2.x-ourpos.x)+(pos2.y-ourpos.y)*(pos2.y-ourpos.y));
-		real ppn = dist1/(dist1+dist2); 
-		real minus = 1.0-ppn;
+		f64 dist1 = sqrt((pos1.x-ourpos.x)*(pos1.x-ourpos.x)+(pos1.y-ourpos.y)*(pos1.y-ourpos.y));
+		f64 dist2 = sqrt((pos2.x-ourpos.x)*(pos2.x-ourpos.x)+(pos2.y-ourpos.y)*(pos2.y-ourpos.y));
+		f64 ppn = dist1/(dist1+dist2); 
+		f64 minus = 1.0-ppn;
 		n = ppn*pvv2->n + minus*pvv1->n;
 		T = ppn*pvv2->T + minus*pvv1->T;
 		v = ppn*pvv2->v + minus*pvv1->v;
 	}
 
-void GetInterpolationCoefficients( real beta[3],
-							real x, real y,
+void GetInterpolationCoefficients( f64 beta[3],
+							f64 x, f64 y,
 							Vector2 pos0, Vector2 pos1, Vector2 pos2)
 {
 	// idea is to form a plane that passes through z0,z1,z2.
@@ -96,10 +96,10 @@ void GetInterpolationCoefficients( real beta[3],
 	//pos2along01 = (pos2 - pos0).dot(pos1-pos0)/(pos1-pos0).modulus();
 	//pos2away = (pos2-pos0).dot(perp)/perp.modulus();
 
-	//real z_ = z0 + pos2along01*(z1-z0)/(pos1-pos0).modulus();
+	//f64 z_ = z0 + pos2along01*(z1-z0)/(pos1-pos0).modulus();
 	//gradient_away = (z2-z_)/pos2away;
 
-	//real z = z0 + along01*((z1-z0)/(pos1-pos0).modulus()) + away*gradient_away;
+	//f64 z = z0 + along01*((z1-z0)/(pos1-pos0).modulus()) + away*gradient_away;
 	//*pResult = z;
 
 
@@ -107,17 +107,17 @@ void GetInterpolationCoefficients( real beta[3],
 
 	Vector2 pos(x,y);
 	Vector2 perp;
-	real ratio;//, coeff_on_z0, coeff_on_z1, coeff_on_z2;
+	f64 ratio;//, coeff_on_z0, coeff_on_z1, coeff_on_z2;
 	Vector2 relative = pos-pos0;
 	Vector2 rel1 = pos1-pos0;
 	Vector2 rel2 = pos2-pos0;
-	real mod01sq = rel1.dot(rel1);
-	real along01_over_mod01 = relative.dot(rel1)/mod01sq;
-	real pos2along01_over_mod01 = rel2.dot(rel1)/mod01sq;
-	//real z_expect = z0 + pos2along01_over_mod01*(z1-z0);
+	f64 mod01sq = rel1.dot(rel1);
+	f64 along01_over_mod01 = relative.dot(rel1)/mod01sq;
+	f64 pos2along01_over_mod01 = rel2.dot(rel1)/mod01sq;
+	//f64 z_expect = z0 + pos2along01_over_mod01*(z1-z0);
 	//gradient_away = (z2-z_expect)*(perp.modulus()/((pos2-pos0).dot(perp)));
 	//away_times_gradient_away = (z2-z_expect)*relative.dot(perp)/((pos2-pos0).dot(perp));
-	//real z = z0 + along01_over_mod01*((z1-z0)) + away_times_gradient_away;
+	//f64 z = z0 + along01_over_mod01*((z1-z0)) + away_times_gradient_away;
 
 	// can we work out coefficients actually on z0,z1,z2 because then can do faster in 2D,3D. :
 	
@@ -198,7 +198,7 @@ Vector3 Triangle::GetAAvg() const
 	// In the insulator crossing case the used position is shifted from
 	// the centroid down to the insulator.
 	
-	real beta[3];
+	f64 beta[3];
 	GetInterpolationCoefficients(beta, cent.x, cent.y,
 						cornerptr[0]->pos,
 						cornerptr[1]->pos,
@@ -230,7 +230,7 @@ Vector3 Triangle::GetAAvg() const
 }
 
 
-/*macroscopic macroscopic::operator* (const real hh,const macroscopic &vars)
+/*macroscopic macroscopic::operator* (const f64 hh,const macroscopic &vars)
 	{
 		macroscopic cv;
 		cv.mass = hh*vars.mass;
@@ -307,7 +307,7 @@ AuxVertex::AuxVertex() {
 		return 1;
 	};
 
-	//void coeff_add(long iVertex, real beta)
+	//void coeff_add(long iVertex, f64 beta)
 	//{
 	//	coeff_extra.add(beta);
 	//	coeff_self -= beta;
@@ -584,16 +584,16 @@ void GetIntercept(const Vector2 & a1,const Vector2 & b1, const Vector2 & a2, con
 {
 	// where does (a1 -> b1) cross (a2 -> b2) ?
 
-	real t1 = ((a1.x-a2.x)*(b2.y-a2.y)-(b2.x-a2.x)*(a1.y-a2.y))/
+	f64 t1 = ((a1.x-a2.x)*(b2.y-a2.y)-(b2.x-a2.x)*(a1.y-a2.y))/
 			((a1.x-b1.x)*(b2.y-a2.y)-(b2.x-a2.x)*(a1.y-b1.y));
 
 	pIntercept->x = a1.x + t1*(b1.x-a1.x);
 	pIntercept->y = a1.y + t1*(b1.y-a1.y);
 }
 
-/*real GetPossiblyPeriodicDist(Vertex * pVert1, Vertex * pVert2)
+/*f64 GetPossiblyPeriodicDist(Vertex * pVert1, Vertex * pVert2)
 {
-	real dist1sq,dist2sq,dist3sq,mindistsq;
+	f64 dist1sq,dist2sq,dist3sq,mindistsq;
 	Vector2 uL,uR;
 	
 	uL = Anticlockwise*pVert1->pos;
@@ -607,10 +607,10 @@ void GetIntercept(const Vector2 & a1,const Vector2 & b1, const Vector2 & a2, con
 	return sqrt(mindistsq);
 }*/ // use GetPossiblyPeriodicDist(pVert1->pos,pVert2->pos);
 
-real CalculateAngle(real x, real y)
+f64 CalculateAngle(f64 x, f64 y)
 {
-	static const real TWOPI = 2.0*PI;
-	real angle = atan2(y,x);
+	static const f64 TWOPI = 2.0*PI;
+	f64 angle = atan2(y,x);
 	if (angle < 0.0) angle += TWOPI;
 
 #ifdef DEBUG
@@ -634,9 +634,9 @@ real CalculateAngle(real x, real y)
 	return angle;
 }
 
-real GetPossiblyPeriodicDist(Vector2 & vec1, Vector2 & vec2)
+f64 GetPossiblyPeriodicDist(Vector2 & vec1, Vector2 & vec2)
 {
-	real dist1sq,dist2sq,dist3sq,mindistsq;
+	f64 dist1sq,dist2sq,dist3sq,mindistsq;
 	Vector2 uL,uR;
 	uL = Anticlockwise*vec1;
 	uR = Clockwise*vec1;
@@ -648,9 +648,9 @@ real GetPossiblyPeriodicDist(Vector2 & vec1, Vector2 & vec2)
 	return sqrt(mindistsq);
 }
 
-real GetPossiblyPeriodicDistSq(Vector2 & vec1, Vector2 & vec2)
+f64 GetPossiblyPeriodicDistSq(Vector2 & vec1, Vector2 & vec2)
 {
-	real dist1sq,dist2sq,dist3sq,mindistsq;
+	f64 dist1sq,dist2sq,dist3sq,mindistsq;
 	Vector2 uL,uR;
 	uL = Anticlockwise*vec1;
 	uR = Clockwise*vec1;
@@ -661,9 +661,9 @@ real GetPossiblyPeriodicDistSq(Vector2 & vec1, Vector2 & vec2)
 	mindistsq = min(dist1sq,min(dist2sq,dist3sq));
 	return (mindistsq);
 }
-/*real GetPossiblyPeriodicDistSq(Vertex * pVert1, Vector2 & u)
+/*f64 GetPossiblyPeriodicDistSq(Vertex * pVert1, Vector2 & u)
 {
-	real dist1sq,dist2sq,dist3sq,mindistsq;
+	f64 dist1sq,dist2sq,dist3sq,mindistsq;
 	Vector2 uL,uR;
 
 	pVert1->periodic_image(uL,0,1);
@@ -676,9 +676,9 @@ real GetPossiblyPeriodicDistSq(Vector2 & vec1, Vector2 & vec2)
 	return mindistsq;
 }
 
-real GetPossiblyPeriodicDistSq(real x1, real y1, real x2, real y2)
+f64 GetPossiblyPeriodicDistSq(f64 x1, f64 y1, f64 x2, f64 y2)
 {
-	real dist1sq,dist2sq,dist3sq,mindistsq;
+	f64 dist1sq,dist2sq,dist3sq,mindistsq;
 	Vector2 uL,uR;
 
 	Vector2 u1(x1,y1), u2(x2,y2);
@@ -692,10 +692,10 @@ real GetPossiblyPeriodicDistSq(real x1, real y1, real x2, real y2)
 	return mindistsq;
 }
 
-real GetPossiblyPeriodicDistAcrossTriangle(Triangle * pTri,int which)
+f64 GetPossiblyPeriodicDistAcrossTriangle(Triangle * pTri,int which)
 {
 	int i1,i2;
-	real linex,liney,modulus,dist1x,dist1y;
+	f64 linex,liney,modulus,dist1x,dist1y;
 		// to avoid periodic woes, if it's periodic then we map to left(?) and then
 		// call again for our temporary triangle
 		// (Make sure any pointers internal to Triangle are reset before it goes out of scope!)
@@ -800,10 +800,10 @@ real GetPossiblyPeriodicDistAcrossTriangle(Triangle * pTri,int which)
 }
 
 
-real GetSqDistance_SetGlobalFlagNeedPeriodicImage(Vertex * pVertSrc, Vertex * pVert2)
+f64 GetSqDistance_SetGlobalFlagNeedPeriodicImage(Vertex * pVertSrc, Vertex * pVert2)
 {
-	real distx = pVertSrc->x-pVert2->pos.x;
-	real disty = pVertSrc->y-pVert2->pos.y;
+	f64 distx = pVertSrc->x-pVert2->pos.x;
+	f64 disty = pVertSrc->y-pVert2->pos.y;
 	if (GlobalPeriodicSearch)
 	{
 		// in this case we check for Clockwise and anti-Clockwise rotations
@@ -813,15 +813,15 @@ real GetSqDistance_SetGlobalFlagNeedPeriodicImage(Vertex * pVertSrc, Vertex * pV
 		pVertSrc->periodic_image(u_anti,0,1); // Anticlockwise
 		pVertSrc->periodic_image(u_clock,1,1);
 	
-		real distx_anti,disty_anti,distx_clock,disty_clock;
+		f64 distx_anti,disty_anti,distx_clock,disty_clock;
 		distx_anti = u_anti.x-pVert2->pos.x;
 		disty_anti = u_anti.y-pVert2->pos.y;
 		distx_clock = u_clock.x-pVert2->pos.x;
 		disty_clock = u_clock.y-pVert2->pos.y;
 
-		real distsqanti = distx_anti*distx_anti+disty_anti*disty_anti;
-		real distsq0 = distx*distx+disty*disty;
-		real distsqclock = distx_clock*distx_clock+disty_clock*disty_clock;
+		f64 distsqanti = distx_anti*distx_anti+disty_anti*disty_anti;
+		f64 distsq0 = distx*distx+disty*disty;
+		f64 distsqclock = distx_clock*distx_clock+disty_clock*disty_clock;
 		
 		// If we find that Clockwise is nearest, set a flag on VertSrc
 		// If we find that Anticlockwise is nearest, set a flag on VertSrc
@@ -850,10 +850,10 @@ real GetSqDistance_SetGlobalFlagNeedPeriodicImage(Vertex * pVertSrc, Vertex * pV
 	return distx*distx+disty*disty;
 }
 
-/*real GetSqDistance_SetPerInfluenceFlagOnVertex_Full(Vertex * pVertSrc, Vertex * pVert2, real * pRetDistx, real * pRetDisty)
+/*f64 GetSqDistance_SetPerInfluenceFlagOnVertex_Full(Vertex * pVertSrc, Vertex * pVert2, f64 * pRetDistx, f64 * pRetDisty)
 {
-	real distx = pVertSrc->x-pVert2->pos.x;
-	real disty = pVertSrc->y-pVert2->pos.y;
+	f64 distx = pVertSrc->x-pVert2->pos.x;
+	f64 disty = pVertSrc->y-pVert2->pos.y;
 	if (GlobalPeriodicSearch)
 	{
 		// in this case we check for Clockwise and anti-Clockwise rotations
@@ -863,15 +863,15 @@ real GetSqDistance_SetGlobalFlagNeedPeriodicImage(Vertex * pVertSrc, Vertex * pV
 		pVertSrc->periodic_image(u_anti,0,1); // Anticlockwise
 		pVertSrc->periodic_image(u_clock,1,1);
 	
-		real distx_anti,disty_anti,distx_clock,disty_clock;
+		f64 distx_anti,disty_anti,distx_clock,disty_clock;
 		distx_anti = u_anti.x-pVert2->pos.x;
 		disty_anti = u_anti.y-pVert2->pos.y;
 		distx_clock = u_clock.x-pVert2->pos.x;
 		disty_clock = u_clock.y-pVert2->pos.y;
 
-		real distsqanti = distx_anti*distx_anti+disty_anti*disty_anti;
-		real distsq0 = distx*distx+disty*disty;
-		real distsqclock = distx_clock*distx_clock+disty_clock*disty_clock;
+		f64 distsqanti = distx_anti*distx_anti+disty_anti*disty_anti;
+		f64 distsq0 = distx*distx+disty*disty;
+		f64 distsqclock = distx_clock*distx_clock+disty_clock*disty_clock;
 		
 		// If we find that Clockwise is nearest, set a flag on VertSrc
 		// If we find that Anticlockwise is nearest, set a flag on VertSrc
@@ -908,7 +908,7 @@ real GetSqDistance_SetGlobalFlagNeedPeriodicImage(Vertex * pVertSrc, Vertex * pV
 }
 */
 
-int sgn(real x)
+int sgn(f64 x)
 {
 	if (x > 0.0) return 1;
 	return -1;
@@ -929,11 +929,11 @@ int GetNumberSharedVertices(Triangle & tri1, Triangle & tri2)
 	return matches;
 }
 
-real Triangle::ReturnAngle(Vertex * pVertex)
+f64 Triangle::ReturnAngle(Vertex * pVertex)
 {
 	Vector2 v1,v2,u[3];
-	real dotproduct_over_moduli,weight;
-	static const real TWOPI = 2.0*PI;
+	f64 dotproduct_over_moduli,weight;
+	static const f64 TWOPI = 2.0*PI;
 
 	MapLeftIfNecessary(u[0],u[1],u[2]);
 
@@ -985,7 +985,7 @@ Vector2 Triangle::RecalculateCentroid()
 	return cent;
 }
 
-Vector2 Triangle::RecalculateCentroid(real InnermostFrillCentroidRadius,real OutermostFrillCentroidRadius)
+Vector2 Triangle::RecalculateCentroid(f64 InnermostFrillCentroidRadius,f64 OutermostFrillCentroidRadius)
 {
 	Vector2 u[3];
 	MapLeftIfNecessary(u[0],u[1],u[2]);
@@ -1153,7 +1153,7 @@ void Triangle::MapLeftIfNecessary(Vector2 & u0, Vector2 & u1, Vector2 & u2) cons
 	};
 }
 
-real Triangle::GetDomainIntersectionAreaROC(Vector2 u[3],int iWhichMove,Vector2 ROC)
+f64 Triangle::GetDomainIntersectionAreaROC(Vector2 u[3],int iWhichMove,Vector2 ROC)
 {
 	// Call once for each moving corner to get total ROC area.
 	// ROC is the rate of change of position u[iWhichMove] which is in the domain.
@@ -1161,7 +1161,7 @@ real Triangle::GetDomainIntersectionAreaROC(Vector2 u[3],int iWhichMove,Vector2 
 	int iDomain, iWhich, iWhich1, iWhich2;
 	Vector2 intercept1, intercept2, ROCintercept1, ROCintercept2,
 		dArea_by_d_top, dArea_by_d1,dArea_by_d2;
-	real shoelace;
+	f64 shoelace;
 
 	bDomain[0] = (cornerptr[0]->flags == DOMAIN_VERTEX)?1:0;
 	bDomain[1] = (cornerptr[1]->flags == DOMAIN_VERTEX)?1:0;
@@ -1198,7 +1198,7 @@ real Triangle::GetDomainIntersectionAreaROC(Vector2 u[3],int iWhichMove,Vector2 
 		shoelace = u[iWhich].x*u[iWhich2].y - u[iWhich2].x*u[iWhich].y
 					  + u[iWhich2].x*u[iWhich1].y - u[iWhich1].x*u[iWhich2].y
 					  + u[iWhich1].x*u[iWhich].y - u[iWhich].x*u[iWhich1].y;
-		real sign = 1.0;
+		f64 sign = 1.0;
 		if (shoelace < 0.0) sign = -1.0;
 		// area = 0.5*sign* that shoelace.
 		
@@ -1209,7 +1209,7 @@ real Triangle::GetDomainIntersectionAreaROC(Vector2 u[3],int iWhichMove,Vector2 
 		dArea_by_d2.x = 0.5*sign*(u[iWhich1].y-u[iWhich].y);
 		dArea_by_d2.y = 0.5*sign*(u[iWhich].x-u[iWhich1].x);
 
-		real answer = dArea_by_d1.dot(ROCintercept1) + dArea_by_d2.dot(ROCintercept2)
+		f64 answer = dArea_by_d1.dot(ROCintercept1) + dArea_by_d2.dot(ROCintercept2)
 						+ dArea_by_d_top.dot(ROC);
 		return answer;
 	};
@@ -1231,7 +1231,7 @@ real Triangle::GetDomainIntersectionAreaROC(Vector2 u[3],int iWhichMove,Vector2 
 			     + intercept1.x*intercept2.y - intercept2.x*intercept1.y
 				 + intercept2.x*u[iWhich2].y - u[iWhich2].x*intercept2.y
 				 + u[iWhich2].x*u[iWhich1].y - u[iWhich1].x*u[iWhich2].y;
-		real sign = 1.0;
+		f64 sign = 1.0;
 		if (shoelace < 0.0) sign = -1.0;
 
 		dArea_by_d_top.x = 0.5*sign*(intercept1.y - u[iWhich2].y);
@@ -1239,7 +1239,7 @@ real Triangle::GetDomainIntersectionAreaROC(Vector2 u[3],int iWhichMove,Vector2 
 		dArea_by_d1.x = 0.5*sign*(intercept2.y - u[iWhich1].x);
 		dArea_by_d1.y = 0.5*sign*(u[iWhich1].y - intercept2.y);
 
-		real answer = dArea_by_d_top.dot(ROC) + dArea_by_d1.dot(ROCintercept1);
+		f64 answer = dArea_by_d_top.dot(ROC) + dArea_by_d1.dot(ROCintercept1);
 		return answer;
 	} else {
 
@@ -1249,7 +1249,7 @@ real Triangle::GetDomainIntersectionAreaROC(Vector2 u[3],int iWhichMove,Vector2 
 			     + intercept1.x*intercept2.y - intercept2.x*intercept1.y
 				 + intercept2.x*u[iWhich2].y - u[iWhich2].x*intercept2.y
 				 + u[iWhich2].x*u[iWhich1].y - u[iWhich1].x*u[iWhich2].y;
-		real sign = 1.0;
+		f64 sign = 1.0;
 		if (shoelace < 0.0) sign = -1.0;
 
 		dArea_by_d_top.x = 0.5*sign*(u[iWhich1].y - intercept2.y);
@@ -1257,11 +1257,11 @@ real Triangle::GetDomainIntersectionAreaROC(Vector2 u[3],int iWhichMove,Vector2 
 		dArea_by_d2.x = 0.5*sign*(u[iWhich2].y - intercept1.y);
 		dArea_by_d2.y = 0.5*sign*(intercept1.x - u[iWhich2].x);
 		
-		real answer = dArea_by_d_top.dot(ROC) + dArea_by_d2.dot(ROCintercept2);
+		f64 answer = dArea_by_d_top.dot(ROC) + dArea_by_d2.dot(ROCintercept2);
 		return answer;
 	};
 }
-real Triangle::GetDomainIntersectionArea(bool bUseOwnCoords, Vector2 u[3]) const
+f64 Triangle::GetDomainIntersectionArea(bool bUseOwnCoords, Vector2 u[3]) const
 {
 	ConvexPolygon cp;
 	int iDomain, iWhich, iWhich1, iWhich2;
@@ -1318,7 +1318,7 @@ real Triangle::GetDomainIntersectionArea(bool bUseOwnCoords, Vector2 u[3]) const
 
 void Triangle::GuessPeriodic(void)
 {
-	real ratio0,ratio1,ratio2,gradient;
+	f64 ratio0,ratio1,ratio2,gradient;
 	
 	ratio0 = cornerptr[0]->pos.x/cornerptr[0]->pos.y;
 	ratio1 = cornerptr[1]->pos.x/cornerptr[1]->pos.y;
@@ -1383,7 +1383,7 @@ void Triangle::RecalculateEdgeNormalVectors(bool normalise)
 // OR, AuxTriangles just are Triangles. Why not?
 /*void AuxTriangle::GuessPeriodic(void)
 {
-	real ratio0,ratio1,ratio2,gradient;
+	f64 ratio0,ratio1,ratio2,gradient;
 		
 	ratio0 = cornerptr[0]->pos.x/cornerptr[0]->pos.y;
 	ratio1 = cornerptr[1]->pos.x/cornerptr[1]->pos.y;
@@ -1493,11 +1493,11 @@ void AuxTriangle::RecalculateEdgeNormalVectors(bool normalise)
 }
 
 */
-/*real Triangle::GetShortArea()
+/*f64 Triangle::GetShortArea()
 {
 	Vector2 u0,u1,u2;
 	Vector2 u0dash, u1dash;
-	real u0mod, u1mod;
+	f64 u0mod, u1mod;
 
 	if (flags != 2)
 	{
@@ -1530,14 +1530,14 @@ void AuxTriangle::RecalculateEdgeNormalVectors(bool normalise)
 							 + u1.x*u0.y - u0.x*u1.y);
 };*/
 
-/*real Triangle::GetNormalDistance(int opp)
+/*f64 Triangle::GetNormalDistance(int opp)
 {
 /*	// Requires that transvec be already set correctly.
-	real diffx,diffy;
+	f64 diffx,diffy;
 	// This is only for the non-periodic case -- we need to allow for periodic
-	real transmod = sqrt(transvecx[opp]*transvecx[opp]+transvecy[opp]*transvecy[opp]);
-	real transhatx = transvecx[opp]/transmod;
-	real transhaty = transvecy[opp]/transmod;
+	f64 transmod = sqrt(transvecx[opp]*transvecx[opp]+transvecy[opp]*transvecy[opp]);
+	f64 transhatx = transvecx[opp]/transmod;
+	f64 transhaty = transvecy[opp]/transmod;
 
 
 	// But how to know if transhat faces in or out??
@@ -1741,17 +1741,17 @@ void AuxTriangle::RecalculateEdgeNormalVectors(bool normalise)
 	};
 
 	
-	real dist1sq = (u1.x-uO.x)*(u1.x-uO.x)+(u1.y-uO.y)*(u1.y-uO.y);
-	real dist2sq = (u2.x-uO.x)*(u2.x-uO.x)+(u2.y-uO.y)*(u2.y-uO.y);
-	real distasq = (u1.x-u2.x)*(u1.x-u2.x)+(u1.y-u2.y)*(u1.y-u2.y);;
+	f64 dist1sq = (u1.x-uO.x)*(u1.x-uO.x)+(u1.y-uO.y)*(u1.y-uO.y);
+	f64 dist2sq = (u2.x-uO.x)*(u2.x-uO.x)+(u2.y-uO.y)*(u2.y-uO.y);
+	f64 distasq = (u1.x-u2.x)*(u1.x-u2.x)+(u1.y-u2.y)*(u1.y-u2.y);;
 		
-	real x = (dist2sq - dist1sq - distasq)/(-2.0*sqrt(distasq));
-	real y = sqrt(dist1sq - x*x);
+	f64 x = (dist2sq - dist1sq - distasq)/(-2.0*sqrt(distasq));
+	f64 y = sqrt(dist1sq - x*x);
 	return y;
 	
 }*/
 	
-/*real Vertex::CalculateVoronoiArea()
+/*f64 Vertex::CalculateVoronoiArea()
 {
 	// Voronoi area is found assuming that ... circumcenters were already calculated.
 	// (!)
@@ -1759,9 +1759,9 @@ void AuxTriangle::RecalculateEdgeNormalVectors(bool normalise)
 	Triangle * pTri;
 	ConvexPolygon cp;
 	Vector2 circumcenter, cc;
-	real theta;
+	f64 theta;
 	int i,j,k;
-	real angle[100];
+	f64 angle[100];
 	int index[100];
 	Proto * tempptr[100];
 	
@@ -2051,7 +2051,7 @@ int Triangle::TestAgainstEdge(float x,float y,
 //	Vector2 edge;
 	Vector2 transverse;
 	//long Tindex;
-	real x_dot_transverse;//,other_dot_transverse;
+	f64 x_dot_transverse;//,other_dot_transverse;
 	
 	if (periodic == 0)
 	{
@@ -2092,7 +2092,7 @@ int Triangle::TestAgainstEdge(float x,float y,
 }
 	*/
 
-int Triangle::TestAgainstEdge(real x,real y, 
+int Triangle::TestAgainstEdge(f64 x,f64 y, 
 							int c1, // the "start" of the relevant edge
 							  int other, // the point opposite the relevant edge
 							  Triangle ** ppNeigh)
@@ -2102,7 +2102,7 @@ int Triangle::TestAgainstEdge(real x,real y,
 	Vector2 u1;//, u2, uO;
 	bool outside;
 	Vector2 transverse;
-	real x_dot_transverse;
+	f64 x_dot_transverse;
 	
 	u1 = cornerptr[c1]->pos;
 	if (periodic == 0)
@@ -2138,7 +2138,7 @@ int Triangle::TestAgainstEdge(real x,real y,
 	return 0;
 }
 /*
-int Triangle::TestAgainstEdge(real x,real y, 
+int Triangle::TestAgainstEdge(f64 x,f64 y, 
 							int c1, // the "start" of the relevant edge
 							  int other, // the point opposite the relevant edge
 							  Triangle ** ppNeigh)
@@ -2150,7 +2150,7 @@ int Triangle::TestAgainstEdge(real x,real y,
 //	Vector2 edge;
 	Vector2 transverse;
 //	long Tindex;
-	real x_dot_transverse;//,other_dot_transverse;
+	f64 x_dot_transverse;//,other_dot_transverse;
 	
 	if (periodic == 0)
 	{
@@ -2207,7 +2207,7 @@ int Triangle::TestAgainstEdge(float x,float y,
 //	Vector2 edge;
 	Vector2 transverse;
 	long Tindex;
-	real x_dot_transverse,other_dot_transverse;
+	f64 x_dot_transverse,other_dot_transverse;
 	
 	
 	if (periodic == 0)
@@ -2308,7 +2308,7 @@ int Triangle::TestAgainstEdge(float x,float y,
 	};
 }
 
-int Triangle::TestAgainstEdge(real x,real y, 
+int Triangle::TestAgainstEdge(f64 x,f64 y, 
 							int c1, // the "start" of the relevant edge
 							  int other, // the point opposite the relevant edge
 							  Triangle ** ppNeigh)
@@ -2320,7 +2320,7 @@ int Triangle::TestAgainstEdge(real x,real y,
 //	Vector2 edge;
 	Vector2 transverse;
 	long Tindex;
-	real x_dot_transverse,other_dot_transverse;
+	f64 x_dot_transverse,other_dot_transverse;
 
 	if (periodic == 0)
 	{
@@ -2544,7 +2544,7 @@ AuxTriangle * TriMesh::ReturnPointerToOtherSharedTriangleAux(
 }
 
 
-int AuxTriangle::TestAgainstEdge(real x,real y, 
+int AuxTriangle::TestAgainstEdge(f64 x,f64 y, 
 							int c1, // the "start" of the relevant edge
 							  int other, // the point opposite the relevant edge
 							  AuxTriangle ** ppNeigh)
@@ -2554,7 +2554,7 @@ int AuxTriangle::TestAgainstEdge(real x,real y,
 	Vector2 u1;//, u2, uO;
 	bool outside;
 	Vector2 transverse;
-	real x_dot_transverse;
+	f64 x_dot_transverse;
 	
 	if (periodic == 0)
 	{
@@ -2594,7 +2594,7 @@ int AuxTriangle::TestAgainstEdge(real x,real y,
 	return 0;
 }
 
-bool AuxTriangle::ContainsPoint(real x, real y)
+bool AuxTriangle::ContainsPoint(f64 x, f64 y)
 {
 	// Note that this is returning true in the case that it is 
 	// only outside on the side where neighbours[i] == this.
@@ -2626,7 +2626,7 @@ bool AuxTriangle::ContainsPoint(real x, real y)
 	
 	// if periodic > 0, we want to also test RH
 	int out2 = 0;
-	real destx,desty;
+	f64 destx,desty;
 	// map point Anticlockwise to represent mapping triangle Clockwise:
 	destx = Anticlockwise.xx*x + Anticlockwise.xy*y;
 	desty = Anticlockwise.yx*x + Anticlockwise.yy*y;
@@ -2648,7 +2648,7 @@ bool AuxTriangle::ContainsPoint(real x, real y)
 
 */
 
-bool Triangle::ContainsPoint(real x, real y)
+bool Triangle::ContainsPoint(f64 x, f64 y)
 {
 	Triangle * pNeigh;
 
@@ -2676,7 +2676,7 @@ bool Triangle::ContainsPoint(real x, real y)
 
 	// if periodic > 0, we want to also test RH
 	int out2 = 0;
-	real destx,desty;
+	f64 destx,desty;
 	// map point Anticlockwise to represent mapping triangle Clockwise:
 	destx = Anticlockwise.xx*x + Anticlockwise.xy*y;
 	desty = Anticlockwise.yx*x + Anticlockwise.yy*y;
@@ -2697,10 +2697,10 @@ bool Triangle::ContainsPoint(real x, real y)
 }
 
 // same as above function basically but now periodic lives only on left
-bool Triangle::TestAgainstEdges(real x,real y, Triangle ** ppNeigh)
+bool Triangle::TestAgainstEdges(f64 x,f64 y, Triangle ** ppNeigh)
 {
 	// If an edge triangle, we require it give preference to a neighbour other than itself. 
-//	static real const FP_FUZZY_THRESH_LARGE = 1.0e-8;
+//	static f64 const FP_FUZZY_THRESH_LARGE = 1.0e-8;
 	// ^^  more sophistication called for. !
 
 
@@ -2717,8 +2717,8 @@ bool Triangle::TestAgainstEdges(real x,real y, Triangle ** ppNeigh)
 
 	if ((periodic != 0) && (x > 0.0)) // in this case test anticlock image of x, which had to be within domain tranche to begin with.
 	{
-		real newx = Anticlockwise.xx*x+Anticlockwise.xy*y;
-		real newy = Anticlockwise.yx*x+Anticlockwise.yy*y;
+		f64 newx = Anticlockwise.xx*x+Anticlockwise.xy*y;
+		f64 newy = Anticlockwise.yx*x+Anticlockwise.yy*y;
 		x = newx; y = newy;
 
 		// Prioritize looking left.
@@ -2835,8 +2835,8 @@ bool Triangle::TestAgainstEdges(real x,real y, Triangle ** ppNeigh)
 	//		if (periodic) {
 	//			if (x > 0.0) { MapRight(u[0],u[1],u[2]); } else {MapLeft(u[0],u[1],u[2]); };
 	//		};
-	//		real grad1 = u[c1].x/u[c1].y; real grad2 = u[c2].x/u[c2].y;
-	//		real grad = x/y;
+	//		f64 grad1 = u[c1].x/u[c1].y; f64 grad2 = u[c2].x/u[c2].y;
+	//		f64 grad = x/y;
 
 	//		// realise we can afford to be quite liberal here
 	//		// It failed to test as outside either of the other two sides
@@ -2891,9 +2891,9 @@ bool Triangle::TestAgainstEdges(real x,real y, Triangle ** ppNeigh)
 #define DYDX   0
 #define DXDY   1
 
-void GetIntersection(Vector2 * result,const Vector2 & x0,real gradient,int flagdydx, Vector2 & a, Vector2 & b)
+void GetIntersection(Vector2 * result,const Vector2 & x0,f64 gradient,int flagdydx, Vector2 & a, Vector2 & b)
 {
-	real x,y;
+	f64 x,y;
 	// where is line a->b cut by the line that starts at start and has gradient gradient,
 
 	// DEBUG:
@@ -2953,7 +2953,7 @@ void GetIntersection(Vector2 * result,const Vector2 & x0,real gradient,int flagd
 	result->y = y;
 }
 
-void Triangle::CalculateCircumcenter(Vector2 & cc, real * pdistsq)
+void Triangle::CalculateCircumcenter(Vector2 & cc, f64 * pdistsq)
 {
 	Vector2 Bb,C,b,c,a;
 	
@@ -2961,9 +2961,9 @@ void Triangle::CalculateCircumcenter(Vector2 & cc, real * pdistsq)
 	
 	Bb = b-a;
 	C = c-a;		
-	real D = 2.0*(Bb.x*C.y-Bb.y*C.x);
-	real modB = Bb.x*Bb.x+Bb.y*Bb.y;
-	real modC = C.x*C.x+C.y*C.y;
+	f64 D = 2.0*(Bb.x*C.y-Bb.y*C.x);
+	f64 modB = Bb.x*Bb.x+Bb.y*Bb.y;
+	f64 modC = C.x*C.x+C.y*C.y;
 	cc.x = (C.y*modB-Bb.y*modC)/D + a.x;
 	cc.y = (Bb.x*modC-C.x*modB)/D + a.y;
 
@@ -2992,16 +2992,16 @@ void GetInsulatorIntercept(Vector2 *result, const Vector2 & x1, const Vector2 & 
 	//    + x1.x^2 + x1.y^2 = c^2
 	// t^2 + 2t ( -- ) / (-- ) = (c^2 - x1.x^2 - x1.y^2)/ (-- )
 	
-	real den = (x2.x-x1.x)*(x2.x-x1.x) + (x2.y - x1.y)*(x2.y - x1.y) ;
-	real a = (x1.x * (x2.x-x1.x) + x1.y * (x2.y-x1.y) ) / den;
+	f64 den = (x2.x-x1.x)*(x2.x-x1.x) + (x2.y - x1.y)*(x2.y - x1.y) ;
+	f64 a = (x1.x * (x2.x-x1.x) + x1.y * (x2.y-x1.y) ) / den;
 
 	// (t + a)^2 - a^2 = (  c^2 - x1.x^2 - x1.y^2  )/den
 	
-	real root = sqrt( (DEVICE_RADIUS_INSULATOR_OUTER*DEVICE_RADIUS_INSULATOR_OUTER
+	f64 root = sqrt( (DEVICE_RADIUS_INSULATOR_OUTER*DEVICE_RADIUS_INSULATOR_OUTER
 							- x1.x*x1.x - x1.y*x1.y)/den + a*a ) ;
 	
-	real t1 = root - a;
-	real t2 = -root - a;
+	f64 t1 = root - a;
+	f64 t2 = -root - a;
 	
 	// since this is a sufficient condition to satisfy the circle, this probably means that
 	// the other solution is on the other side of the circle.
@@ -3014,8 +3014,8 @@ void GetInsulatorIntercept(Vector2 *result, const Vector2 & x1, const Vector2 & 
 		{	
 			// This usually means one of the points actually is on the curve.
 
-			real dist1 = min(fabs(t1-1.0),fabs(t1));
-			real dist2 = min(fabs(t2-1.0),fabs(t2));
+			f64 dist1 = min(fabs(t1-1.0),fabs(t1));
+			f64 dist2 = min(fabs(t2-1.0),fabs(t2));
 
 			if (dist1 < dist2)
 			{
@@ -3084,9 +3084,9 @@ void Get_ROC_InsulatorIntercept(Vector2 * pROCintercept1,
 	// Do empirically:
 	Vector2 interceptplus, interceptminus;
 
-	real length = (moving-lower).modulus();
-	real ROClength = ROC.modulus();
-	real ROCfactor = length*0.0001/ROClength;
+	f64 length = (moving-lower).modulus();
+	f64 ROClength = ROC.modulus();
+	f64 ROCfactor = length*0.0001/ROClength;
 	Vector2 ROCmove = ROC*ROCfactor;
 	Vector2 plus = moving + ROCmove;
 	Vector2 minus = moving - ROCmove;
@@ -3107,10 +3107,10 @@ int Triangle::GetCentreOfIntersectionWithInsulator(Vector2 & cc)
 	// 3 lines; should give 2 intercepts of 3.44
 	// If not, failed.
 
-	real azimuth01,azimuth12,azimuth02;
-	real r0sq, r1sq, r2sq, Rsq;
+	f64 azimuth01,azimuth12,azimuth02;
+	f64 r0sq, r1sq, r2sq, Rsq;
 	int number_of_intercepts;
-	real angle;
+	f64 angle;
 	Vector2 u[3];
 	Vector2 intercept;
 
@@ -3180,7 +3180,7 @@ int Triangle::GetCentreOfIntersectionWithInsulator(Vector2 & cc)
 	return 0;
 }
 
-/*void AuxTriangle::CalculateCircumcenter(Vector2 & cc, real * pdistsq)
+/*void AuxTriangle::CalculateCircumcenter(Vector2 & cc, f64 * pdistsq)
 {
 	Vector2 Bb,C,b,c,a;
 	Vector2 basea,baseb;
@@ -3194,9 +3194,9 @@ int Triangle::GetCentreOfIntersectionWithInsulator(Vector2 & cc)
 	};
 	Bb = b-a;
 	C = c-a;		
-	real D = 2.0*(Bb.x*C.y-Bb.y*C.x);
-	real modB = Bb.x*Bb.x+Bb.y*Bb.y;
-	real modC = C.x*C.x+C.y*C.y;
+	f64 D = 2.0*(Bb.x*C.y-Bb.y*C.x);
+	f64 modB = Bb.x*Bb.x+Bb.y*Bb.y;
+	f64 modC = C.x*C.x+C.y*C.y;
 	cc.x = (C.y*modB-Bb.y*modC)/D + a.x;
 	cc.y = (Bb.x*modC-C.x*modB)/D + a.y;
 
@@ -3227,13 +3227,13 @@ int Triangle::GetCentreOfIntersectionWithInsulator(Vector2 & cc)
 		numCoords = 0;
 	}
 
-	void ConvexPolygon::Get_Bxy_From_Az(real Az_array[], real * pBx,real * pBy)
+	void ConvexPolygon::Get_Bxy_From_Az(f64 Az_array[], f64 * pBx,f64 * pBy)
 	{
 		// Assume we have coords that are sorted anticlockwise
 
 		int i, inext;
-		real Bx = 0, By = 0;
-		real Integral_x, Integral_y;
+		f64 Bx = 0, By = 0;
+		f64 Integral_x, Integral_y;
 		for (i = 0; i < numCoords; i++)
 		{
 			inext = i+1; if (inext == numCoords) inext = 0;
@@ -3245,7 +3245,7 @@ int Triangle::GetCentreOfIntersectionWithInsulator(Vector2 & cc)
 			By += Integral_y;
 		}
 		
-		real area = this->GetArea();
+		f64 area = this->GetArea();
 		*pBx = 0.5*Bx/area;
 		*pBy = 0.5*By/area;
 	}
@@ -3258,7 +3258,7 @@ int Triangle::GetCentreOfIntersectionWithInsulator(Vector2 & cc)
 		Vector3 B;
 		memset(&B,0,sizeof(Vector3));
 		
-		real Integral_x, Integral_y, Integral_z;
+		f64 Integral_x, Integral_y, Integral_z;
 		for (i = 0; i < numCoords; i++)
 		{
 			inext = i+1; if (inext == numCoords) inext = 0;
@@ -3277,19 +3277,19 @@ int Triangle::GetCentreOfIntersectionWithInsulator(Vector2 & cc)
 			B.z += Integral_z;
 		}
 		
-		real area = this->GetArea();
+		f64 area = this->GetArea();
 		B *= 0.5/area;
 		B.z += BZ_CONSTANT;
 		
 		return B;
 	}
-	Vector2 ConvexPolygon::Get_Integral_grad_from_anticlockwise_array(real Te[])
+	Vector2 ConvexPolygon::Get_Integral_grad_from_anticlockwise_array(f64 Te[])
 	{
 		Vector2 grad;
 		int i, inext;
 		memset(&grad,0,sizeof(Vector2));
 
-		real Integral_x, Integral_y;
+		f64 Integral_x, Integral_y;
 		for (i = 0; i < numCoords; i++)
 		{
 			inext = i+1; if (inext == numCoords) inext = 0;
@@ -3304,11 +3304,11 @@ int Triangle::GetCentreOfIntersectionWithInsulator(Vector2 & cc)
 
 		return grad;
 	}
-	Vector2 ConvexPolygon::Get_grad_from_anticlockwise_array(real Te[])
+	Vector2 ConvexPolygon::Get_grad_from_anticlockwise_array(f64 Te[])
 	{
 		Vector2 grad;
 		grad = Get_Integral_grad_from_anticlockwise_array(Te);
-		real area = this->GetArea();
+		f64 area = this->GetArea();
 		grad /= area;
 		return grad;
 	}
@@ -3317,11 +3317,11 @@ int Triangle::GetCentreOfIntersectionWithInsulator(Vector2 & cc)
 		// Assume we have coords that are sorted anticlockwise or clockwise
 		Vector2 u;
 		int i, inext;
-		real Integral_x, Integral_y, shoelace;
+		f64 Integral_x, Integral_y, shoelace;
 		Integral_x = 0.0;
 		Integral_y = 0.0;
 		shoelace = 0.0;
-		real lace;
+		f64 lace;
 		for (i = 0; i < numCoords; i++)
 		{
 			inext = i+1; if (inext == numCoords) inext = 0;
@@ -3378,14 +3378,14 @@ int Triangle::GetCentreOfIntersectionWithInsulator(Vector2 & cc)
 
 		bool intersect;
 		bool above_is_inside;
-		real compare;
+		f64 compare;
 		int first, last;
 		bool setfirst;
-		real gradient ;
+		f64 gradient ;
 		int flag, pullback, i, post_last, pre_first;
 		Vector2 cross1, cross2;
 		
-		static const real EPS = 5.0e-14;
+		static const f64 EPS = 5.0e-14;
 
 		// Now we have to be able to deal with degenerate cases.
 		// =====================================
@@ -3643,7 +3643,7 @@ int Triangle::GetCentreOfIntersectionWithInsulator(Vector2 & cc)
 	}
 */
 
-	real ConvexPolygon::GetSucceedingSideLength(int side)
+	f64 ConvexPolygon::GetSucceedingSideLength(int side)
 	{
 		int next = side+1;
 		if (next == numCoords) next = 0;
@@ -3652,7 +3652,7 @@ int Triangle::GetCentreOfIntersectionWithInsulator(Vector2 & cc)
 			(coord[next].y-coord[side].y)*(coord[next].y-coord[side].y));
 	}
 
-	real ConvexPolygon::GetPrecedingSideLength(int side)
+	f64 ConvexPolygon::GetPrecedingSideLength(int side)
 	{
 		int prev = side-1;
 		if (prev == -1) prev = numCoords-1;
@@ -3669,14 +3669,14 @@ int Triangle::GetCentreOfIntersectionWithInsulator(Vector2 & cc)
 
 		bool intersect;
 		bool above_is_inside;
-		real compare;
+		f64 compare;
 		int first, last;
 		bool setfirst;
-		real gradient ;
+		f64 gradient ;
 		int flag, pullback, i, post_last, pre_first;
 		Vector2 cross1, cross2;
 		
-		static const real EPS = 5.0e-14;
+		static const f64 EPS = 5.0e-14;
 
 		// Now we have to be able to deal with degenerate cases.
 		// =====================================
@@ -3988,11 +3988,11 @@ int Triangle::GetCentreOfIntersectionWithInsulator(Vector2 & cc)
 			centre.x += coord[i].x;
 			centre.y += coord[i].y;
 		}
-		centre.x /= (real)numCoords;
-		centre.y /= (real)numCoords;
+		centre.x /= (f64)numCoords;
+		centre.y /= (f64)numCoords;
 	}
 
-	real ConvexPolygon::FindTriangleIntersectionArea(Vector2 & r1, Vector2 & r2, Vector2 & r3)
+	f64 ConvexPolygon::FindTriangleIntersectionArea(Vector2 & r1, Vector2 & r2, Vector2 & r3)
 	{
 		ConvexPolygon cp;
 		cp.CopyFrom(*this);
@@ -4033,21 +4033,21 @@ int Triangle::GetCentreOfIntersectionWithInsulator(Vector2 & cc)
 		return true;
 	}
 /*
-	real ConvexPolygon::IntegratePlane(Vector2 & r1, Vector2 & r2, Vector2 & r3,
-																	real y1, real y2, real y3)
+	f64 ConvexPolygon::IntegratePlane(Vector2 & r1, Vector2 & r2, Vector2 & r3,
+																	f64 y1, f64 y2, f64 y3)
 	{
 		// Procedure: 
 		// evaluate planar variable at all corners
 		// chop up this into triangles
 		// assume average attained by plane on each triangle
 		// take sum of multiplying average by area of triangle
-		real y[CP_MAX];
+		f64 y[CP_MAX];
 
 
 		// make tri-aligned coordinates:
 
 		Vector2 x12 = r2 - r1;
-		real dist12 = x12.modulus();
+		f64 dist12 = x12.modulus();
 		x12.x /= dist12;
 		x12.y /= dist12;
 		Vector2 x12perp;
@@ -4056,11 +4056,11 @@ int Triangle::GetCentreOfIntersectionWithInsulator(Vector2 & cc)
 		
 		dbyd12 = (y2-y1)/dist12;
 		Vector2 x13 = r3-r1;
-		real x13_12 = x13.x*x12.x + x13.y*x12.y;
-		real x13_perp = x13.x*x12perp.x + x13.y*x12perp.y;
+		f64 x13_12 = x13.x*x12.x + x13.y*x12.y;
+		f64 x13_perp = x13.x*x12perp.x + x13.y*x12perp.y;
 		//Vector2 position = r1 + x13_12*x12;
-		real ypos = y1 + dbyd12*x13_12;
-		real dbydperp = (y3-ypos)/x13_perp;
+		f64 ypos = y1 + dbyd12*x13_12;
+		f64 dbydperp = (y3-ypos)/x13_perp;
 		Vector2 relpos;
 		// Now plane is
 		// y1 + dbyd12*((x-r1) dot x12) + dbydperp*((x-r1) dot x12perp)
@@ -4078,9 +4078,9 @@ int Triangle::GetCentreOfIntersectionWithInsulator(Vector2 & cc)
 
 		// pick point 0 and make tris
 		// we know the points should always be ordered
-		real average;
+		f64 average;
 		ConvexPolygon cpTri;
-		real sum = 0.0;
+		f64 sum = 0.0;
 		for (int i = 2; i < numCoords; i++)
 		{
 			average = (y[0] + y[i-1] + y[i])*THIRD;
@@ -4097,14 +4097,14 @@ int Triangle::GetCentreOfIntersectionWithInsulator(Vector2 & cc)
 		return sum;
 	}*/
 	void ConvexPolygon::IntegrateMass(Vector2 & r1, Vector2 & r2, Vector2 & r3,
-									real yvals1, real yvals2, real yvals3, real * pResult)
+									f64 yvals1, f64 yvals2, f64 yvals3, f64 * pResult)
 	{
-		real y[CP_MAX];
+		f64 y[CP_MAX];
 
 		Vector2 relpos;
 		Vector2 x12perp,x12;
-		real dist12;
-		real ypos, dbyd12, dbydperp;
+		f64 dist12;
+		f64 ypos, dbyd12, dbydperp;
 		
 		// make tri-aligned coordinates:
 		x12 = r2 - r1;
@@ -4116,8 +4116,8 @@ int Triangle::GetCentreOfIntersectionWithInsulator(Vector2 & cc)
 		
 		Vector2 x13 = r3-r1;
 		// dot products to give lengths:
-		real x13_12 = x13.x*x12.x + x13.y*x12.y;
-		real x13_perp = x13.x*x12perp.x + x13.y*x12perp.y;
+		f64 x13_12 = x13.x*x12.x + x13.y*x12.y;
+		f64 x13_perp = x13.x*x12perp.x + x13.y*x12perp.y;
 		
 		dbyd12 = (yvals2-yvals1)/dist12;
 		ypos = yvals1 + dbyd12*x13_12;
@@ -4132,7 +4132,7 @@ int Triangle::GetCentreOfIntersectionWithInsulator(Vector2 & cc)
 		*pResult = 0.0;
 		// pick point 0 and make tris
 		// we know the points should always be ordered
-		real average,area;
+		f64 average,area;
 		ConvexPolygon cpTri;
 		for (int i = 2; i < numCoords; i++)
 		{
@@ -4147,10 +4147,10 @@ int Triangle::GetCentreOfIntersectionWithInsulator(Vector2 & cc)
 	}
 						
 	void ConvexPolygon::Integrate_Planes(Vector2 & r1, Vector2 & r2, Vector2 & r3,
-										real yvals1[],
-										real yvals2[],
-										real yvals3[],	
-										real results[],
+										f64 yvals1[],
+										f64 yvals2[],
+										f64 yvals3[],	
+										f64 results[],
 										long N_planes)
 	{
 		// Procedure: 
@@ -4163,11 +4163,11 @@ int Triangle::GetCentreOfIntersectionWithInsulator(Vector2 & cc)
 		// So what are we assuming here? That the polygon to integrate over is
 		// a subset of the triangle??
 
-		real y[CP_MAX][15]; // max 15 planes
+		f64 y[CP_MAX][15]; // max 15 planes
 		Vector2 relpos;
 		Vector2 x12perp,x12;
-		real dist12;
-		real ypos, dbyd12[15], dbydperp[15];
+		f64 dist12;
+		f64 ypos, dbyd12[15], dbydperp[15];
 		
 		// make tri-aligned coordinates:
 		x12 = r2 - r1;
@@ -4182,8 +4182,8 @@ int Triangle::GetCentreOfIntersectionWithInsulator(Vector2 & cc)
 
 		Vector2 x13 = r3-r1;
 		// dot products to give lengths:
-		real x13_12 = x13.x*x12.x + x13.y*x12.y;
-		real x13_perp = x13.x*x12perp.x + x13.y*x12perp.y;
+		f64 x13_12 = x13.x*x12.x + x13.y*x12.y;
+		f64 x13_perp = x13.x*x12perp.x + x13.y*x12perp.y;
 		
 		// So x13_12 is projection of x13 in direction 12
 
@@ -4212,7 +4212,7 @@ int Triangle::GetCentreOfIntersectionWithInsulator(Vector2 & cc)
 			results[j] = 0.0;
 		// pick point 0 and make tris
 		// we know the points should always be ordered
-		real average,area;
+		f64 average,area;
 		ConvexPolygon cpTri;
 		for (int i = 2; i < numCoords; i++)
 		{
@@ -4234,7 +4234,7 @@ int Triangle::GetCentreOfIntersectionWithInsulator(Vector2 & cc)
 
 
 
-	real ConvexPolygon::FindQuadrilateralIntersectionArea(Vector2 & r1, Vector2 & r2, Vector2 & r3, Vector2 & r4)
+	f64 ConvexPolygon::FindQuadrilateralIntersectionArea(Vector2 & r1, Vector2 & r2, Vector2 & r3, Vector2 & r4)
 	{
 		ConvexPolygon cp;
 		cp.CopyFrom(*this);
@@ -4245,11 +4245,11 @@ int Triangle::GetCentreOfIntersectionWithInsulator(Vector2 & cc)
 		if (!cp.ClipAgainstHalfplane(r1,r4,r2)) return 0.0;
 		return cp.GetArea();
 	}
-	real ConvexPolygon::GetArea()
+	f64 ConvexPolygon::GetArea()
 	{
 		// shoelace formula as we should use elsewhere also.
 		if (numCoords == 0) return 0.0;
-		real area = 0.0;
+		f64 area = 0.0;
 		int i;
 		for (i = 0; i < numCoords-1; i++)
 		{
@@ -4261,7 +4261,7 @@ int Triangle::GetCentreOfIntersectionWithInsulator(Vector2 & cc)
 		return area*0.5;
 	}
 
-real CalculateTriangleIntersectionArea(Vector2 & x1, Vector2 & x2, Vector2 & x3,
+f64 CalculateTriangleIntersectionArea(Vector2 & x1, Vector2 & x2, Vector2 & x3,
 													          Vector2 & r1, Vector2 & r2, Vector2 & r3)
 {
 	// Get stack overflow and it appears here ?!!
@@ -4302,10 +4302,10 @@ int Triangle::GetCornerIndex(Vertex * pVertex)
 
 
 
-real Triangle::ReturnNormalDist(Vertex * pOppVert)
+f64 Triangle::ReturnNormalDist(Vertex * pOppVert)
 {
 	Vector2 u[3];
-	real dist;
+	f64 dist;
 	MapLeftIfNecessary(u[0],u[1],u[2]);
 	
 	if (pOppVert == cornerptr[0])
@@ -4322,9 +4322,9 @@ real Triangle::ReturnNormalDist(Vertex * pOppVert)
 	return dist;
 }
 
-Vector2 CreateOutwardNormal(real x1, real y1,
-					real x2, real y2,
-					real x, real y)
+Vector2 CreateOutwardNormal(f64 x1, f64 y1,
+					f64 x2, f64 y2,
+					f64 x, f64 y)
 {
 	// (x,y) is on the "inside"
 	Vector2 normal;
@@ -4457,9 +4457,9 @@ void AuxTriangle::Set(AuxVertex * p1, AuxVertex * p2, AuxVertex * p3, long iTri)
 	};
 	Bb = b-a;
 	C = c-a;		
-	real D = 2.0*(Bb.x*C.y-Bb.y*C.x);
-	real modB = Bb.x*Bb.x+Bb.y*Bb.y;
-	real modC = C.x*C.x+C.y*C.y;
+	f64 D = 2.0*(Bb.x*C.y-Bb.y*C.x);
+	f64 modB = Bb.x*Bb.x+Bb.y*Bb.y;
+	f64 modC = C.x*C.x+C.y*C.y;
 	cc.x = (C.y*modB-Bb.y*modC)/D + a.x;
 	cc.y = (Bb.x*modC-C.x*modB)/D + a.y;
 
@@ -4500,8 +4500,8 @@ AuxTriangle * TriMesh::GetAuxTriangleContaining(AuxVertex * pAux1,
 
 bool AuxTriangle::TestDelaunay(AuxVertex * pAux)
 {
-	real qdistsq = (pAux->x-cc.x)*(pAux->x-cc.x)+(pAux->y-cc.y)*(pAux->y-cc.y);
-	real pdistsq = (cornerptr[0]->pos.x-cc.x)*(cornerptr[0]->pos.x-cc.x)
+	f64 qdistsq = (pAux->x-cc.x)*(pAux->x-cc.x)+(pAux->y-cc.y)*(pAux->y-cc.y);
+	f64 pdistsq = (cornerptr[0]->pos.x-cc.x)*(cornerptr[0]->pos.x-cc.x)
 				+ (cornerptr[0]->pos.y-cc.y)*(cornerptr[0]->pos.y-cc.y);
 	return (qdistsq < pdistsq);
 	// return 1 if q is within circumcircle
@@ -4509,7 +4509,7 @@ bool AuxTriangle::TestDelaunay(AuxVertex * pAux)
 
 
 /*
-real Triangle::CalculateIntersectionArea(Vector2 & x1, Vector2 & x2, Vector2 & x3,
+f64 Triangle::CalculateIntersectionArea(Vector2 & x1, Vector2 & x2, Vector2 & x3,
 										                          Vector2 & r1, Vector2 & r2, Vector2 & r3)
 {
 	// Note that this routine works strictly on the actual given coordinates
@@ -4586,7 +4586,7 @@ real Triangle::CalculateIntersectionArea(Vector2 & x1, Vector2 & x2, Vector2 & x
 
 	// Write this out in a longwinded way unless and until we think of a clever way.
 
-	real area, gradient_r12, gradient_r23, gradient_x12, gradient_x23;
+	f64 area, gradient_r12, gradient_r23, gradient_x12, gradient_x23;
 
 	area = 0.0;
 
@@ -4798,24 +4798,24 @@ real Triangle::CalculateIntersectionArea(Vector2 & x1, Vector2 & x2, Vector2 & x
 	return area;
 }
 
-real ColumnIntersection( real x1, real x2,
-						real y_a_1_left,
-						real y_a_2_left,
-						real y_a_1_right,
-						real y_a_2_right,
+f64 ColumnIntersection( f64 x1, f64 x2,
+						f64 y_a_1_left,
+						f64 y_a_2_left,
+						f64 y_a_1_right,
+						f64 y_a_2_right,
 
-						real y_b_1_left,
-						real y_b_2_left,
-						real y_b_1_right,
-						real y_b_2_right)
+						f64 y_b_1_left,
+						f64 y_b_2_left,
+						f64 y_b_1_right,
+						f64 y_b_2_right)
 {
 	// Is it possible for x1->x2->x3 and x1->x3 to cross in this region?
 	
 	// take average to determine which of 1,2 is higher for a
-	real b_bvg,a_avg, y_a_top_left,y_a_top_right,y_a_bot_left,y_a_bot_right,
+	f64 b_bvg,a_avg, y_a_top_left,y_a_top_right,y_a_bot_left,y_a_bot_right,
 		y_b_top_left,y_b_top_right,y_b_bot_left,y_b_bot_right;
 
-	real width = x2-x1;
+	f64 width = x2-x1;
 	a_avg1 = y_a_1_left + y_a_1_right;
 	a_avg2 = y_a_2_left + y_a_2_right;		// can avoid this by keeping global flag for whether gradient12 > gradient13 for first triangle
 	if (a_avg2 > a_avg1)

@@ -8,11 +8,54 @@
 //	nvals * __restrict__ p_n_major,
 //	f64_vec2 * __restrict__ p_v_overall_major);
 
+__global__ void kernelCollect_Up_3x_HeatIntoVerts(
+	structural * __restrict__ p_info,
+	long * __restrict__ p_izTri,
+	LONG3 * __restrict__ p_tri_corner_index, // to see which corner we are.
+
+	NTrates * __restrict__ NT_addition_rates,
+	NTrates * __restrict__ NT_addition_tri1,
+	NTrates * __restrict__ NT_addition_tri2,
+	NTrates * __restrict__ NT_addition_tri3
+);
+
+__global__ void kernelSubtractNiTiCheckNeg
+(NTrates * __restrict__ NTrates_init, NTrates * __restrict__ NTrates_final, 
+	f64 * __restrict__ p_diff, nvals * __restrict__ p_n, f64 * __restrict__ p_AreaMajor);
+
+
+__global__ void kernelFindNegative_dTi
+(
+	NTrates * NTrate,
+	NTrates * NTtri,
+	long * pl);
+
+
+__global__ void kernelSimpleAverage
+(f64 * __restrict__ p_update,
+	f64 * __restrict__ p_avg);
+
+__global__ void kernelPutative_v_from_matrix(
+	f64 * __restrict__ p_ita, // if 0 can avoid loading regrs
+	v4 * __restrict__ p_vie_2,
+	v4 * __restrict__ p_vie_,
+	f64_vec2 * __restrict__ p_regr2,
+	f64 * __restrict__ p_regr_iz,
+	f64 * __restrict__ p_regr_ez);
+
+__global__ void DivideNiTiDifference_by_N(
+	NTrates * __restrict__ NT_addition_rates_initial,
+	NTrates * __restrict__ NT_addition_rates_final,
+	f64 * __restrict__ p_AreaMajor,
+	nvals * __restrict__ p_n_major,
+	f64 * __restrict__ p_dTbydt);
+
 __global__ void kernelSetPressureFlag(
 	structural * __restrict__ p_info_minor,
 	long * __restrict__ p_izTri,
 	bool * __restrict__ bz_pressureflag
 );
+__global__ void kernelAddNT(NTrates * __restrict__ p_update, NTrates * __restrict__ p_addition);
 
 __global__ void kernelAccumulateSummands_4x4(
 	f64 * __restrict__ p_epsilon,
@@ -235,6 +278,116 @@ __global__ void kernelCalc_Matrices_for_Jacobi_Viscosity(
 	f64_tens3 * __restrict__ p_matrix_e
 );
 
+__global__ void kernelDivide(
+	f64 * __restrict__ p_regress,
+	f64 * __restrict__ p_epsilon,
+	f64 * __restrict__ p_effectself
+);
+
+__global__ void
+kernelAddSolution(
+	v4 * __restrict__ p_v,
+	bool * __restrict__ p_bSelected,
+	short * __restrict__ p_eqn_index,
+	f64 * __restrict__ p_solution);
+
+__global__ void
+kernelZeroWithinRings(
+	f64 * __restrict__ p_operand,
+	bool * __restrict__ p_not
+);
+
+__global__ void
+kernelZeroWithinRings2(
+	f64_vec2 * __restrict__ p_operand,
+	bool * __restrict__ p_not
+);
+
+__global__ void
+kernelPopulateRegressors_from_iRing_RHS
+(f64_vec2 * __restrict__ p_regr2,
+	f64 * __restrict__ p_regr_iz,
+	f64 * __restrict__ p_regr_ez,
+	f64_vec2 * __restrict__ p_regr_2_1,
+	f64 * __restrict__ p_regr_iz_1,
+	f64 * __restrict__ p_regr_ez_1,
+	f64_vec2 * __restrict__ p_regr_2_2,
+	f64 * __restrict__ p_regr_iz_2,
+	f64 * __restrict__ p_regr_ez_2,
+	bool * __restrict__ p_selected,
+	short * __restrict__ p_eqn_index,
+	int * __restrict__ p_Ring,
+	f64 * __restrict__ p_solution,
+	int const whicRing,
+	long const numEqnsUsed);
+
+
+__global__ void kernelCreateEquations(
+	f64 const hsub,
+	structural * __restrict__ p_info_minor,
+	f64 * __restrict__ p_ionmomflux,
+	f64 * __restrict__ p_elecmomflux,
+
+	nvals * __restrict__ p_n_minor,
+	f64 * __restrict__ p_AreaMinor,
+	f64 * __restrict__ p_ROC_i,
+	f64 * __restrict__ p_ROC_e,
+
+	long * __restrict__ p_Indexneigh_tri,
+	long * __restrict__ p_izTri_vert,
+	short * __restrict__ p_eqn_index, // each one assigned an equation index
+	bool * __restrict__ p_bSelectFlag,
+	f64 * __restrict__ eqns,
+	f64_vec2 * __restrict__ p_eps_xy,
+	f64 * __restrict__ p_eps_iz,
+	f64 * __restrict__ p_eps_ez,
+	f64 * __restrict__ pRHS
+);
+
+__global__ void
+// __launch_bounds__(128) -- manual says that if max is less than 1 block, kernel launch will fail. Too bad huh.
+kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species_effect_of_neighs_on_flux(
+
+	structural * __restrict__ p_info_minor,
+	v4 * __restrict__ p_vie_minor,
+	f64_vec3 * __restrict__ p_v_n,
+
+	// we want to now have an array to store the effect of each selected on each selected residual
+
+	f64 * __restrict__ eqns, // say it is 256*3*256*3. Actually pretty big then. Try 128*128*3*3.
+	bool * __restrict__ p_selectflag, // whether it's in the smoosh to smash
+	short * __restrict__ p_mapping_to_array,
+
+	//We're going to need to store impact of each v on the gradient ..
+	//then what ? Have to trace it through ?
+	//Know ROC of each W wrt each one...
+	//Know Pi(W)->ROC of each Pi wrt each.
+	//And then e.g. for prev and next we have them again as opp ..
+
+	// Best go through W Pi code multiple times -- loop -- to do for each vz value given ROCgrad.
+
+	// Global access is the only way I think -- don't try to store an additional array of "how my
+	// neighbours affect me" 
+	// Just add to the value in the big matrix IF your neighbour is selected.
+	// Only your own thread is adding to it so that's okay.
+
+	//f64 * __restrict__ p__x, // regressor vz
+
+	long * __restrict__ p_izTri,
+	char * __restrict__ p_szPBC,
+	long * __restrict__ p_izNeighMinor,
+	char * __restrict__ p_szPBCtriminor,
+
+	f64 * __restrict__ p_ita_parallel_minor,   // nT / nu ready to look up
+	f64 * __restrict__ p_nu_minor,   // nT / nu ready to look up
+	f64_vec3 * __restrict__ p_B_minor,
+
+	//f64_vec3 * __restrict__ p_ROCMAR,
+	int const iSpecies,
+	f64 const m_s,
+	f64 const over_m_s
+);
+
 __global__ void kernelCalculate_deps_WRT_beta_Visc(
 	f64 const hsub,
 	structural * __restrict__ p_info_minor,
@@ -265,15 +418,20 @@ __global__ void kernelCreateEpsilon_Visc(
 	structural * __restrict__ p_info_minor,
 	v4 * __restrict__ p_vie,
 	v4 * __restrict__ p_vie_k,
-	f64_vec3 * __restrict__ p_MAR_ion2,
-	f64_vec3 * __restrict__ p_MAR_elec2,
+	f64_vec3 * __restrict__ p_v_n_k,
+	f64_vec3 * __restrict__ p_MAR_ion__,
+	f64_vec3 * __restrict__ p_MAR_elec__,
 	nvals * __restrict__ p_n_minor,
 	f64 * __restrict__ p_AreaMinor,
+	f64 * __restrict__ p_ROC_i,
+	f64 * __restrict__ p_ROC_e,
 
 	f64_vec2 * __restrict__ p_epsilon_xy,
 	f64 * __restrict__ p_epsilon_iz,
 	f64 * __restrict__ p_epsilon_ez,
-	bool * __restrict__ p_bFailedTest);
+	bool * __restrict__ p_bFailedTest,
+	int * __restrict__ p_Select
+);
 
 __global__ void kernelCalculateOverallVelocitiesVertices(
 	structural * __restrict__ p_info_minor,
@@ -512,6 +670,493 @@ __global__ void kernelSety(f64_vec3 * __restrict__ p_v1,
 __global__ void kernelSetz(f64_vec3 * __restrict__ p_v1,
 	f64_vec3 * __restrict__ p_src);
 
+__global__ void GetMax(
+	f64 * __restrict__ p_comp1,
+	long * __restrict__ p_iWhich,
+	f64 * __restrict__ p_max
+);
+
+__global__ void kernelCreateJacobiRegressorxy
+(f64_vec2 * __restrict__ p_regr,
+	f64_vec2 * __restrict__ p_factoreps,
+	f64_tens2 * __restrict__ p_factor2);
+
+
+__global__ void SplitVector4(
+	f64_vec2 * __restrict__ p_xy,
+	f64 * __restrict__ p_z1,
+	f64 * __restrict__ p_z2,
+	v4 * __restrict__ p_v4,
+	int * __restrict__ p_Select
+);
+
+
+__global__ void kernelExpandSelectFlagIta(
+	structural * __restrict__ p_info_minor,
+	long * __restrict__ p_izTri,
+	long * __restrict__ p_izNeighMinor,
+	int * __restrict__ p_iSelectFlag,
+	int * __restrict__ p_iSelectflagNeut,
+	int const number
+);
+
+
+__global__ void kernelAccumulateSummandsProduct(
+	f64_vec2 * __restrict__ p_eps_xy, // 
+	f64 * __restrict__ p_eps_iz,
+	f64 * __restrict__ p_eps_ez,
+	f64_vec2 * __restrict__ p_d_epsxy_by_d_beta, // f64_vec2
+	f64 * __restrict__ p_d_eps_iz_by_d_beta,
+	f64 * __restrict__ p_d_eps_ez_by_d_beta,
+	// outputs:
+	f64 * __restrict__ p_sum_eps_deps_
+);
+
+__global__ void kernelCreateJacobiRegressorz
+(f64 * __restrict__ p_regr,
+	f64 * __restrict__ p_factor1,
+	f64 * __restrict__ p_factor2);
+
+__global__ void kernelCreateJacobiRegressorz_failonly
+(f64 * __restrict__ p_regr,
+	f64 * __restrict__ p_factor1,
+	f64 * __restrict__ p_factor2,
+	bool * __restrict__ p_bInclude);
+
+__global__ void kernelCreateJacobiRegressorxy_failonly
+(f64_vec2 * __restrict__ p_regr,
+	f64_vec2 * __restrict__ p_factoreps,
+	f64_tens2 * __restrict__ p_factor2,
+	bool * __restrict__ p_bInclude);
+
+__global__ void kernelCreateJacobiRegressor_x
+(f64_vec2 * __restrict__ p_regr,
+	f64_vec2 * __restrict__ p_eps,
+	f64 * __restrict__ p_factor2);
+
+__global__ void CreateLC4(
+	f64_vec2 * __restrict__ p_regrlc2_,
+	f64 * __restrict__ p_regrlc_iz_,
+	f64 * __restrict__ p_regrlc_ez_,
+	f64_vec2 * __restrict__ p_regr2,
+	f64 * __restrict__ p_regr_iz,
+	f64 * __restrict__ p_regr_ez);
+
+__global__ void kernelCreate_v4
+(
+	v4 * __restrict__ p_vie_,
+	v4 * __restrict__ p_vie_save_,
+	f64 const lambda_,
+	f64_vec2 * __restrict__ p_regrlc2_,
+	f64 * __restrict__ p_regrlc_iz_,
+	f64 * __restrict__ p_regrlc_ez_);
+
+__global__ void kernelCreateJacobiRegressor_y
+(f64_vec2 * __restrict__ p_regr,
+	f64_vec2 * __restrict__ p_eps,
+	f64 * __restrict__ p_factor2);
+
+__global__ void CalculateCoeffself(
+	structural * __restrict__ p_info_minor,
+	v4 * __restrict__ p_vie_minor,
+	// For neutral it needs a different pointer.
+	f64_vec3 * __restrict__ p_v_n,
+
+	long * __restrict__ p_izTri,
+	char * __restrict__ p_szPBC,
+	long * __restrict__ p_izNeighMinor,
+	char * __restrict__ p_szPBCtriminor,
+
+	f64 * __restrict__ p_ita_parallel_minor,   // nT / nu ready to look up
+	f64 * __restrict__ p_nu_minor,   // nT / nu ready to look up
+	f64_vec3 * __restrict__ p_B_minor,
+
+	Tensor2 * __restrict__ p__coeffself_xy, // matrix ... 
+	f64 * __restrict__ p__coeffself_z,
+	double4 * __restrict__ p__billabong, // xz, yz, zx, zy
+
+										 // Note that we then need to add matrices and invert somehow, for xy.
+										 // For z we just take 1/x .
+	int const iSpecies,
+	f64 const m_s,
+	f64 const over_m_s
+);
+
+
+__global__ void Test_Asinh();
+__global__ void
+// __launch_bounds__(128) -- manual says that if max is less than 1 block, kernel launch will fail. Too bad huh.
+kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species(
+
+	structural * __restrict__ p_info_minor,
+	v4 * __restrict__ p_vie_minor,
+	// For neutral it needs a different pointer.
+	f64_vec3 * __restrict__ p_v_n,
+
+	long * __restrict__ p_izTri,
+	char * __restrict__ p_szPBC,
+	long * __restrict__ p_izNeighMinor,
+	char * __restrict__ p_szPBCtriminor,
+
+	f64 * __restrict__ p_ita_parallel_minor,   // nT / nu ready to look up
+	f64 * __restrict__ p_nu_minor,   // nT / nu ready to look up
+	f64_vec3 * __restrict__ p_B_minor,
+
+	f64_vec3 * __restrict__ p_MAR,
+	NTrates * __restrict__ p_NT_addition_rate,
+	NTrates * __restrict__ p_NT_addition_tri,
+	int const iSpecies,
+	f64 const m_s,
+	f64 const over_m_s,
+	int * __restrict__ p_Select);
+
+__global__ void kernelCreateTargetForAmpere (
+	nvals * __restrict__ p_n,
+	// populated? Check
+	v4 * __restrict__ p_v,
+	f64 * __restrict__ p_targ // 4pi/c Jz
+	);
+
+__global__ void Set(int * __restrict__ operand);
+__global__ void kernelAccumulateMatrix_Ampere(
+	structural * __restrict__ p_info,
+	f64 * __restrict__ p_epsilon,
+	f64 * __restrict__ p_regressor1,
+	f64 * __restrict__ p_regressor2,
+	f64 * __restrict__ p_regressor3,
+	f64 * __restrict__ p_LapReg1,
+	f64 * __restrict__ p_LapReg2,
+	f64 * __restrict__ p_LapReg3,
+	f64 * __restrict__ p_deps_matrix,
+	f64_vec3 * __restrict__ p_eps_against_deps);
+
+__global__ void kernelCreateAmpereEpsilonAndJacobi(
+	structural * p_info,
+	f64 * __restrict__ p_target,
+	f64 * __restrict__ p_coeffself,
+	f64 * __restrict__ p_Lap,
+	f64 * __restrict__ p_eps,
+	f64 * __restrict__ p_Jacobi,
+	bool * __restrict__ p_bFail
+);
+
+__global__ void
+// __launch_bounds__(128) -- manual says that if max is less than 1 block, kernel launch will fail. Too bad huh.
+kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species_dbydbeta_xy(
+
+	structural * __restrict__ p_info_minor,
+	v4 * __restrict__ p_vie_minor,
+	f64_vec3 * __restrict__ p_v_n,
+	f64_vec2 * __restrict__ p__x, // regressor
+
+	long * __restrict__ p_izTri,
+	char * __restrict__ p_szPBC,
+	long * __restrict__ p_izNeighMinor,
+	char * __restrict__ p_szPBCtriminor,
+
+	f64 * __restrict__ p_ita_parallel_minor,   // nT / nu ready to look up
+	f64 * __restrict__ p_nu_minor,   // nT / nu ready to look up
+	f64_vec3 * __restrict__ p_B_minor,
+
+	f64_vec3 * __restrict__ p_ROCMAR,
+	int const iSpecies,
+	f64 const m_s,
+	f64 const over_m_s,
+	int * __restrict__ p_Select);
+
+__global__ void
+// __launch_bounds__(128) -- manual says that if max is less than 1 block, kernel launch will fail. Too bad huh.
+kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species_dbydbeta_z(
+
+	structural * __restrict__ p_info_minor,
+	v4 * __restrict__ p_vie_minor,
+	f64_vec3 * __restrict__ p_v_n,
+	f64 * __restrict__ p__x, // regressor vz
+
+	long * __restrict__ p_izTri,
+	char * __restrict__ p_szPBC,
+	long * __restrict__ p_izNeighMinor,
+	char * __restrict__ p_szPBCtriminor,
+
+	f64 * __restrict__ p_ita_parallel_minor,   // nT / nu ready to look up
+	f64 * __restrict__ p_nu_minor,   // nT / nu ready to look up
+	f64_vec3 * __restrict__ p_B_minor,
+
+	f64_vec3 * __restrict__ p_ROCMAR,
+	int const iSpecies,
+	f64 const m_s,
+	f64 const over_m_s,
+	int * __restrict__ p_Select);
+
+__global__ void kernelCreateNeutralInverseCoeffself(
+	f64 const hsub,
+	structural * __restrict__ p_info_minor,
+	nvals * __restrict__ p_n_minor,
+	f64 * __restrict__ p_AreaMinor,
+
+	f64 * __restrict__ p__coeffself_input,
+	f64 * __restrict__ p__invcoeffself_output
+);
+
+__global__ void AddLCtoVector3
+(f64_vec3 * __restrict__ p_operand,
+	f64_vec2 * __restrict__ p_regr2,
+	f64 * __restrict__ p_regr_z,
+	f64_vec2 * __restrict__ p_storemove_xy,
+	f64 * __restrict__ p_storemove_z);
+
+__global__ void AssembleVector2(
+	f64_vec2 * __restrict__ p_vec2,
+	f64 * __restrict__ p__x,
+	f64 * __restrict__ p__y);
+
+__global__ void AddLCtoVector4
+(v4 * __restrict__ p_operand,
+	f64_vec2 * __restrict__ p_regr2,
+	f64 * __restrict__ p_regr_iz,
+	f64 * __restrict__ p_regr_ez,
+	v4 * __restrict__ p_storemove);
+
+__global__ void kernelCreateJacobiRegressorNeutralxy
+(f64_vec2 * __restrict__ p_out,
+	f64_vec2 * __restrict__ p_in,
+	f64 * __restrict__ p_invcoeffself);
+
+__global__ void AddLittleBitORegressors(
+	f64 const coeff,
+	v4 * __restrict__ p_operand,
+	f64_vec2 * __restrict__ p__regrxy,
+	f64 * __restrict__ p__regriz,
+	f64 * __restrict__ p__regrez);
+
+__global__ void kernelCreate_neutral_viscous_contrib_to_MAR_and_NT_Geometric(
+	structural * __restrict__ p_info_minor,
+	f64_vec3 * __restrict__ p_v_n_minor,
+
+	long * __restrict__ p_izTri,
+	char * __restrict__ p_szPBC,
+	long * __restrict__ p_izNeighMinor,
+	char * __restrict__ p_szPBCtriminor,
+
+	f64 * __restrict__ p_ita_neut_minor,   //
+	f64 * __restrict__ p_nu_neut_minor,   // 
+
+	f64_vec3 * __restrict__ p_MAR_neut,
+	NTrates * __restrict__ p_NT_addition_rate,
+	NTrates * __restrict__ p_NT_addition_tri,
+	int * __restrict__ p_Select);
+
+__global__ void kernelAssign_d_eps_by_dMAR(
+	f64 const hsub,
+	structural * __restrict__ p_info_minor,
+	nvals * __restrict__ p_n_minor,
+	f64 * __restrict__ p_AreaMinor,
+	f64 * __restrict__ p_nu_in_MT_minor,
+	f64 * __restrict__ p_nu_en_MT_minor,
+	f64 * __restrict__ p_ROC_i,
+	f64 * __restrict__ p_ROC_e,
+	int * __restrict__ p_Select
+);
+
+__global__ void Multiply_components_xy // c=b-a
+(f64_vec2 * __restrict__ p_result,
+	f64_vec2 * __restrict__ p_multiplicand_1,
+	f64_vec2 * __restrict__ p_multiplicand_2);
+
+__global__ void kernelComputeCombinedDEpsByDBeta(
+	f64 const hsub,
+	structural * __restrict__ p_info_minor,
+	f64_vec2 * __restrict__ p_regr_xy,
+	f64 * __restrict__ p_regr_iz,
+	f64 * __restrict__ p_regr_ez,
+	f64_vec3 * __restrict__ p_MAR_ion2,
+	f64_vec3 * __restrict__ p_MAR_elec2,
+	nvals * __restrict__ p_n_minor,
+	f64 * __restrict__ p_AreaMinor,
+	f64 * __restrict__ p_ROC_i,
+	f64 * __restrict__ p_ROC_e,
+	f64_vec2 * __restrict__ p_Depsilon_xy,
+	f64 * __restrict__ p_Depsilon_iz,
+	f64 * __restrict__ p_Depsilon_ez
+);
+
+__global__ void kernelCreateDByDBetaCoeffmatrix(
+	f64 const hsub,
+	structural * __restrict__ p_info_minor,
+
+	Tensor2 * __restrict__ p_matrix_xy_i,
+	Tensor2 * __restrict__ p_matrix_xy_e,
+	f64 * __restrict__ p_coeffself_iz,
+	f64 * __restrict__ p_coeffself_ez,
+
+	double4 * __restrict__ p_xzyzzxzy__i,
+	double4 * __restrict__ p_xzyzzxzy__e,
+
+	nvals * __restrict__ p_n_minor,
+	f64 * __restrict__ p_AreaMinor,
+	f64 * __restrict__ p_ROC_i,
+	f64 * __restrict__ p_ROC_e,
+
+	f64_vec2 * __restrict__ p_epsxy,
+	f64 * __restrict__ p_epsiz,
+	f64 * __restrict__ p_epsez,
+	f64_vec2 * __restrict__ p_Jacxy,
+	f64 * __restrict__ p_Jaciz,
+	f64 * __restrict__ p_Jacez,
+	
+	f64_tens2 * __restrict__ p_invmatrix,
+	f64 * __restrict__ p_invcoeffselfviz,
+	f64 * __restrict__ p_invcoeffselfvez,
+	f64 * __restrict__ p_invcoeffselfx,
+	f64 * __restrict__ p_invcoeffselfy
+);
+
+__global__ void kernelCreatePredictionsDebug(
+	f64 const hsub,
+	structural * __restrict__ p_info_minor,
+	f64_vec2 * __restrict__ p_epsxyold,
+	f64 * __restrict__ p_epsizold,
+	f64 * __restrict__ p_epsezold,
+	f64_vec2 * __restrict__ p_d_epsxy_by_d,
+	f64 * __restrict__ p_d_epsiz_by_d,
+	f64 * __restrict__ p_d_epsez_by_d,
+	f64_vec2 * __restrict__ p_predictxy,
+	f64 * __restrict__ p_predictiz,
+	f64 * __restrict__ p_predictez
+);
+
+__global__ void kernelCreate_neutral_viscous_contrib_to_MAR_and_NT_SYMM(
+	structural * __restrict__ p_info_minor,
+	f64_vec3 * __restrict__ p_v_n_minor,
+
+	long * __restrict__ p_izTri,
+	char * __restrict__ p_szPBC,
+	long * __restrict__ p_izNeighMinor,
+	char * __restrict__ p_szPBCtriminor,
+
+	f64 * __restrict__ p_ita_neut_minor,   //
+	f64 * __restrict__ p_nu_neut_minor,   // 
+
+	f64_vec3 * __restrict__ p_MAR_neut,
+	NTrates * __restrict__ p_NT_addition_rate,
+	NTrates * __restrict__ p_NT_addition_tri);
+
+__global__ void kernelAdd3(f64_vec3 * __restrict__ p_update, f64_vec3 * __restrict__ p_addition);
+
+__global__ void kernelTransmit_3x_HeatToVerts(
+	structural * __restrict__ p_info,
+	long * __restrict__ p_izTri,
+	nvals * __restrict__ p_n_minor,
+	f64 * __restrict__ p_AreaMajor, // populated?
+	f64 * __restrict__ p_Nsum,
+	f64 * __restrict__ p_Nsum_n,
+	NTrates * __restrict__ NT_addition_rates,
+	NTrates * __restrict__ NT_addition_tri1,
+	NTrates * __restrict__ NT_addition_tri2,
+	NTrates * __restrict__ NT_addition_tri3
+);
+
+__global__ void kernelCalc_Matrices_for_Jacobi_NeutralViscosity_SYMM(
+	f64 const hsub,
+	structural * __restrict__ p_info_minor,
+	f64_vec3 * __restrict__ p_v_n_minor,
+
+	long * __restrict__ p_izTri,
+	char * __restrict__ p_szPBC,
+	long * __restrict__ p_izNeighMinor,
+	char * __restrict__ p_szPBCtriminor,
+
+	f64 * __restrict__ p_ita_minor,   // nT / nu ready to look up
+	f64 * __restrict__ p_nu_minor,   // nT / nu ready to look up
+
+	nvals * __restrict__ p_n_minor,
+	f64 * __restrict__ p_AreaMinor,
+
+	f64_tens3 * __restrict__ p_matrix_n
+);
+
+__global__ void Vector3Breakdown(
+	f64_vec3 * __restrict__ p_input,
+	f64_vec2 * __restrict__ p_outxy,
+	f64 * __restrict__ p_outz,
+	int * __restrict__ p_Select
+);
+
+__global__ void kernelCreateJacobiRegressorNeutralxy2 
+(f64_vec2 * __restrict__ p_regr,
+	f64 * __restrict__ p_factorepsx, f64 * __restrict__ p_factorepsy,
+	f64 * __restrict__ p_factor2);
+
+__global__ void Subtract(
+	f64 * __restrict__ p_c,
+	f64 * __restrict__ p_b,
+	f64 * __restrict__ p_a
+);
+
+__global__ void Subtract_xy(
+	f64_vec2 * __restrict__ p_c,
+	f64_vec2 * __restrict__ p_b,
+	f64_vec2 * __restrict__ p_a
+);
+
+__global__ void kernelSquare2
+(f64_vec2 * __restrict__ p__x);
+
+__global__ void kernelSquare
+(f64 * __restrict__ p__x);
+
+__global__ void kernelComputeNeutralDEpsByDBeta 
+(
+	f64 const hsub,
+	structural * __restrict__ p_info_minor,
+	f64_vec2 * __restrict__ p_regr_xy,
+	f64 * __restrict__ p_regr_z,
+	f64_vec3 * __restrict__ p_ROCMAR,
+	nvals * __restrict__ p_n_minor,
+	f64 * __restrict__ p_AreaMinor,
+	f64_vec2 * __restrict__ p_eps_xy,
+	f64 * __restrict__ p_eps_z,
+	int * __restrict__ p_Select
+	);
+
+
+__global__ void kernelCompare(
+	f64_vec2 * __restrict__ p_epsxy,
+	f64 * __restrict__ p_epsiz,
+	f64 * __restrict__ p_epsez,
+	f64_vec2 * __restrict__ p_epsxyp,
+	f64 * __restrict__ p_epsizp,
+	f64 * __restrict__ p_epsezp,
+	f64 * __restrict__ p_distance);
+
+__global__ void SetProduct3(
+	f64_vec3 * __restrict__p_result,
+	f64_vec3 * __restrict__ p_mult1,
+	f64_vec3 * __restrict__ p_mult2);
+
+
+__global__ void kernelAddLC_3vec3
+(f64_vec3 * __restrict__ p_vec,
+	f64_vec3 coeffs_x, f64_vec3 coeffs_y, f64_vec3 coeffs_z,
+	f64_vec3 * __restrict__ p_addition1,
+	f64_vec3 * __restrict__ p_addition2,
+	f64_vec3 * __restrict__ p_addition3
+);
+
+__global__ void ResettoGeomAverage(
+	f64_vec3 * __restrict__ p_result,
+	f64_vec3 * __restrict__ p_mult1);
+
+__global__ void AccumulateSummandsScalars3(
+	structural * __restrict__ p_info_minor,
+	f64 * __restrict__ p__eps,
+	f64 * __restrict__ p__deps_1,
+	f64 * __restrict__ p__deps_2,
+	f64 * __restrict__ p__deps_3,
+	f64_vec3 * __restrict__ p_sum_eps_deps_,
+	Symmetric3 * __restrict__ p_sum_product_matrix_,
+	f64 * __restrict__ p_sum_eps_sq
+);
 
 __global__ void kernelMultiply_Get_Jacobi_NeutralVisc(
 	structural * __restrict__ p_info,
@@ -534,6 +1179,7 @@ __global__ void kernelAddLC_vec3
 __global__ void kernelCalc_Matrices_for_Jacobi_NeutralViscosity(
 	f64 const hsub,
 	structural * __restrict__ p_info_minor,
+	f64_vec3 * __restrict__ p_v_n_minor,
 
 	long * __restrict__ p_izTri,
 	char * __restrict__ p_szPBC,
@@ -556,6 +1202,11 @@ __global__ void kernelAccumulateSumOfSquares3(
 	f64_vec3 * __restrict__ p_eps,
 	f64_vec3 * __restrict__ p_SS);
 
+__global__ void KillOutsideRegion(
+	f64_vec2 * __restrict__ targ2,
+	f64 * __restrict__ targ,
+	int * __restrict__ p_Select);
+
 __global__ void ScaleVector3(
 	f64_vec3 * __restrict__ p_eps,
 	f64 const factorx, f64 const factory, f64 const factorz);
@@ -569,6 +1220,7 @@ __global__ void kernelAccumulateSummands2(
 	f64 * __restrict__ p_sum_eps_d,
 	f64 * __restrict__ p_sum_d_d,
 	f64 * __restrict__ p_sum_eps_eps);
+
 __global__ void kernelCreateEpsilon_NeutralVisc(
 	f64 const hsub,
 	structural * __restrict__ p_info_minor,
@@ -581,7 +1233,8 @@ __global__ void kernelCreateEpsilon_NeutralVisc(
 	f64 * __restrict__ p_eps_x,
 	f64 * __restrict__ p_eps_y,
 	f64 * __restrict__ p_eps_z,
-	bool * __restrict__ p_bFailedTest
+	bool * __restrict__ p_bFailedTest,
+	int * __restrict__ p_Select
 );
 
 __global__ void kernelAccumulateSummandsNeutVisc(
@@ -711,14 +1364,14 @@ __global__ void kernelAddStoredNTFlux(
 	NTrates * __restrict__ p_values_to_augment
 );
 
-__device__ void Augment_Jacobean(
-	f64_tens3 * pJ,
-	real Factor, //h_over (N m_i)
-	f64_vec2 edge_normal,
-	f64 ita_par, f64 nu, f64_vec3 omega,
-	f64 grad_vjdx_coeff_on_vj_self,
-	f64 grad_vjdy_coeff_on_vj_self
-);
+//__device__ void Augment_Jacobean(
+//	f64_tens3 * pJ,
+//	f64 Factor, //h_over (N m_i)
+//	f64_vec2 edge_normal,
+//	f64 ita_par, f64 nu, f64_vec3 omega,
+//	f64 grad_vjdx_coeff_on_vj_self,
+//	f64 grad_vjdy_coeff_on_vj_self
+//);
 __global__ void kernelAccumulateAdvectiveMassHeatRateNew(
 	f64 const h_use,
 	structural * __restrict__ p_info_minor,
@@ -768,14 +1421,14 @@ __global__ void kernelAccumulateNeutralAdvectiveMassHeatRateNew(
 	NTrates * __restrict__ p_store_flux
 );
 
-__device__ void Augment_JacobeanNeutral(
-	f64_tens3 * pJ,
-	real Factor, //h_over (N m_i)
-	f64_vec2 edge_normal,
-	f64 ita_par, f64 nu, f64_vec3 omega,
-	f64 grad_vjdx_coeff_on_vj_self,
-	f64 grad_vjdy_coeff_on_vj_self
-);
+//__device__ void Augment_JacobeanNeutral(
+//	f64_tens3 * pJ,
+//	f64 Factor, //h_over (N m_i)
+//	f64_vec2 edge_normal,
+//	f64 ita_par, f64 nu, f64_vec3 omega,
+//	f64 grad_vjdx_coeff_on_vj_self,
+//	f64 grad_vjdy_coeff_on_vj_self
+//);
 
 __global__ void kernelPrepareNuGraphs(
 	structural * __restrict__ p_info_minor,
@@ -941,6 +1594,21 @@ __global__ void AddFromMyNeighbours(
 	short * __restrict__ p_who_am_I_to_you
 );
 
+__global__ void kernelCreateShardModelOfDensities_And_SetMajorAreaDEBUG(
+	structural * __restrict__ p_info_minor,
+	nvals * __restrict__ p_n_major,
+	nvals * __restrict__ p_n_minor,
+	long * __restrict__ p_izTri_vert,
+	char * __restrict__ p_szPBCtri_vert,
+	f64_vec2 * __restrict__ p_cc,
+	ShardModel * __restrict__ p_n_shards,
+	ShardModel * __restrict__ p_n_n_shards,
+	//	long * __restrict__ Tri_n_lists,
+	//	long * __restrict__ Tri_n_n_lists	,
+	f64 * __restrict__ p_AreaMajor,
+	bool bUseCircumcenter
+)// sets n_shards_n, n_shards, Tri_n_n_lists, Tri_n_lists
+;
 
 __global__ void kernelCreateShardModelOfDensities_And_SetMajorArea(
 	structural * __restrict__ p_info_minor,
@@ -1082,6 +1750,54 @@ __global__ void kernelCreatePutativeTandsave(
 	bool * bMask3
 );
 
+__global__ void Richardson_Divide_by_sqrtsqrtN(
+	structural * __restrict__ p_info_minor,
+	f64_vec2 * __restrict__ p_regr2,
+	f64 * __restrict__ p_regr_iz,
+	f64 * __restrict__ p_regr_ez,
+	f64_vec2 * __restrict__ p_eps_xy,
+	f64 * __restrict__ p_eps_iz,
+	f64 * __restrict__ p_eps_ez,
+	nvals * __restrict__ p_n_minor,
+	f64 * __restrict__ p_AreaMinor
+);
+
+
+__global__ void kernelCreateDByDBetaCoeffmatrix2(
+	f64 const hsub,
+	structural * __restrict__ p_info_minor,
+
+	Tensor2 * __restrict__ p_matrix_xy_i,
+	Tensor2 * __restrict__ p_matrix_xy_e,
+	f64 * __restrict__ p_coeffself_iz,
+	f64 * __restrict__ p_coeffself_ez,
+
+	double4 * __restrict__ p_xzyzzxzy__i,
+	double4 * __restrict__ p_xzyzzxzy__e,
+
+	nvals * __restrict__ p_n_minor,
+	f64 * __restrict__ p_AreaMinor,
+
+	f64_vec2 * __restrict__ p_epsxy,
+	f64 * __restrict__ p_epsiz,
+	f64 * __restrict__ p_epsez,
+	f64_vec2 * __restrict__ p_Jacxy,
+	f64 * __restrict__ p_Jaciz,
+	f64 * __restrict__ p_Jacez
+);
+
+
+__global__ void Richardson_Divide_by_sqrtN(
+	structural * __restrict__ p_info_minor,
+	f64_vec2 * __restrict__ p_regr2,
+	f64 * __restrict__ p_regr_iz,
+	f64 * __restrict__ p_regr_ez,
+	f64_vec2 * __restrict__ p_eps_xy,
+	f64 * __restrict__ p_eps_iz,
+	f64 * __restrict__ p_eps_ez,
+	nvals * __restrict__ p_n_minor,
+	f64 * __restrict__ p_AreaMinor
+);
 
 __global__ void kernelKillNeutral_v_OutsideRadius(
 	structural * __restrict__ p_info_minor,
@@ -1204,7 +1920,6 @@ __global__ void kernelAccumulateDotProducts(
 	f64 * __restrict__ p_dot2,
 	f64 * __restrict__ p_dot3);
 
-
 __global__ void kernelCreateTfromNTbydividing(
 	f64 * __restrict__ p_T_n,
 	f64 * __restrict__ p_T_i,
@@ -1273,6 +1988,40 @@ __global__ void kernelAccumulateDiffusiveHeatRate_new_Full(
 	bool bUseMask
 );
 
+__global__ void Divide(f64 * __restrict__ p_outputz, f64 * __restrict__ p_denom, f64 * __restrict__ p_numer);
+
+__global__ void kernelAdd3things
+(f64_vec2 * __restrict__ p_output2,
+	f64_vec2 * __restrict__ p_summand1, f64_vec2 * __restrict__ p_summand2,
+	f64_vec2 * __restrict__ p_summand3,
+	f64 * __restrict__ p_outputz, f64 * __restrict__ p_summandz1,
+	f64 * __restrict__ p_summandz2, f64 * __restrict__ p_summandz3);
+
+
+__global__ void kernelDivideAdd3things(f64_vec2 * __restrict__ p_output2,
+	f64_vec2 * __restrict__ p_denom, f64_vec2 * __restrict__ p_summand1,
+	f64_vec2 * __restrict__ p_summand2, f64_vec2 * __restrict__ p_summand3,
+	f64 * __restrict__ p_outputz, f64 * __restrict__ p_denomz, f64 * __restrict__ p_summandz1,
+	f64 * __restrict__ p_summandz2, f64 * __restrict__ p_summandz3);
+
+
+__global__ void kernelCreateIta_over_nM(
+	f64 * __restrict__ p_kappa_i,
+	f64 * __restrict__ p_kappa_e,
+	f64 * __restrict__ p_kappa_n,
+	nvals * __restrict__ p_n_major,
+	f64 * __restrict__ p_Area,
+	f64 * __restrict__ result_i,
+	f64 * __restrict__ result_e,
+	f64 * __restrict__ result_n,
+	bool const DivideBy_m_s
+);
+
+__global__ void DivideVec2(f64_vec2 * __restrict__ p_update,
+	f64_vec2 * __restrict__ p_apply, f64_vec2 * __restrict__ p_numer);
+
+__global__ void SubtractVec2(f64_vec2 * __restrict__ p_update,
+	f64_vec2 * __restrict__ p_apply);
 
 __global__ void Augment_dNv_minor(
 	structural * __restrict__ p_info,
@@ -1637,6 +2386,177 @@ __global__ void kernelCalc_SelfCoefficient_for_HeatConduction
 	f64 * __restrict__ p_coeffself_e // outputs
 	);
 
+__global__ void kernelCreateEpsilon_NeutralVisc__Modified(
+	f64 const hsub,
+	structural * __restrict__ p_info_minor,
+	f64_vec3 * __restrict__ p_v_n,
+	f64_vec3 * __restrict__ p_v_n_k,
+	f64_vec3 * __restrict__ pMAR_neut,
+	nvals * __restrict__ p_n_minor,
+	f64 * __restrict__ p_AreaMinor,
+
+	f64 * __restrict__ p_eps_x,
+	f64 * __restrict__ p_eps_y,
+	f64 * __restrict__ p_eps_z,
+	int * __restrict__ p_iFailedTest
+);
+__global__ void kernelCreateEpsilon_Visc__Modified(
+	f64 const hsub,
+	structural * __restrict__ p_info_minor,
+	v4 * __restrict__ p_vie,
+	v4 * __restrict__ p_vie_k,
+	f64_vec3 * __restrict__ p_MAR_ion2,
+	f64_vec3 * __restrict__ p_MAR_elec2,
+	nvals * __restrict__ p_n_minor,
+	f64 * __restrict__ p_AreaMinor,
+
+	f64_vec2 * __restrict__ p_epsilon_xy,
+	f64 * __restrict__ p_epsilon_iz,
+	f64 * __restrict__ p_epsilon_ez,
+	int * __restrict__ p_iFailedTest
+);
+
+__global__ void kernelZeroSelected(
+	f64_vec3 * __restrict__ p_MAR_i,
+	f64_vec3 * __restrict__ p_MAR_e,
+	f64_vec3 * __restrict__ p_MAR_n,
+	NTrates * __restrict__ p_NTrates_vert,
+	NTrates * __restrict__ p_NTrates_tri,
+	int * __restrict__ p_Select,
+	int * __restrict__ p_SelectNeut
+);
+
+__global__ void kernelCreate_v_k_modified_with_fixed_flows(
+	f64 const hsub,
+	structural * __restrict__ p_info_minor,
+	v4 * __restrict__ p_vie_modify_k,
+	f64_vec3 * __restrict__ p_v_n_modify_k,
+	v4 * __restrict__ p_vie_k,
+	f64_vec3 * __restrict__ p_v_n_k,
+
+	v4 * __restrict__ p_v_updated,
+	f64_vec3 * __restrict__ p_v_n_updated,
+	int * __restrict__ p_Select,
+	int * __restrict__ p_SelectNeut,
+
+	f64_vec3 * __restrict__ p_MAR_ion_,
+	f64_vec3 * __restrict__ p_MAR_elec_,
+	f64_vec3 * __restrict__ p_MAR_neut_,
+	nvals * __restrict__ p_n_minor,
+	f64 * __restrict__ p_AreaMinor);
+
+
+__global__ void
+// __launch_bounds__(128) -- manual says that if max is less than 1 block, kernel launch will fail. Too bad huh.
+kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species___fixedflows_only(
+
+	structural * __restrict__ p_info_minor,
+	v4 * __restrict__ p_vie_minor,
+	// For neutral it needs a different pointer.
+	f64_vec3 * __restrict__ p_v_n, // UNUSED!
+
+	long * __restrict__ p_izTri,
+	char * __restrict__ p_szPBC,
+	long * __restrict__ p_izNeighMinor,
+	char * __restrict__ p_szPBCtriminor,
+
+	f64 * __restrict__ p_ita_parallel_minor,   // nT / nu ready to look up
+	f64 * __restrict__ p_nu_minor,   // nT / nu ready to look up
+	f64_vec3 * __restrict__ p_B_minor,
+
+	f64_vec3 * __restrict__ p_MAR,
+	NTrates * __restrict__ p_NT_addition_rate,
+	NTrates * __restrict__ p_NT_addition_tri,
+	int const iSpecies,
+	f64 const m_s,
+	f64 const over_m_s,
+	int * __restrict__ p_Select
+);
+
+__global__ void kernelCreate_neutral_viscous_contrib_to_MAR_and_NT_Geometric___fixedflows_only(
+	structural * __restrict__ p_info_minor,
+	f64_vec3 * __restrict__ p_v_n_minor,
+
+	long * __restrict__ p_izTri,
+	char * __restrict__ p_szPBC,
+	long * __restrict__ p_izNeighMinor,
+	char * __restrict__ p_szPBCtriminor,
+
+	f64 * __restrict__ p_ita_neut_minor,   //
+	f64 * __restrict__ p_nu_neut_minor,   // 
+
+	f64_vec3 * __restrict__ p_MAR_neut,
+	NTrates * __restrict__ p_NT_addition_rate,
+	NTrates * __restrict__ p_NT_addition_tri,
+	int * __restrict__ p_Select);
+
+
+__global__ void kernelTest_Derivatives(
+	f64 const hsub,
+	structural * __restrict__ p_info_minor,
+	f64_vec3 * __restrict__ p_MAR_ion__1,
+	f64_vec3 * __restrict__ p_MAR_elec__1,
+	f64_vec3 * __restrict__ p_MAR_neut__1,
+
+	f64_vec3 * __restrict__ p_MAR_ion__2,
+	f64_vec3 * __restrict__ p_MAR_elec__2,
+	f64_vec3 * __restrict__ p_MAR_neut__2,
+
+	v4 * __restrict__ p_vie,
+	f64_vec3 * __restrict__ p_v_n, // for use.
+	nvals * __restrict__ p_n,
+	f64 * __restrict__ p_AreaMinor,
+
+	int * __restrict__ p_iSelect,
+	int * __restrict__ p_iSelectNeut // this is the output
+);
+
+__global__ void kernelCountNumberMoreThanZero(
+	int * __restrict__ p_thing1,
+	int * __restrict__ p_thing2,
+	long * __restrict__ p_blocktot1,
+	long * __restrict__ p_blocktot2);
+
+__global__ void BreakDownT3(
+	f64 * __restrict__ p_Tn,
+	f64 * __restrict__ p_Ti,
+	f64 * __restrict__ p_Te,
+	T3 * __restrict__ p_Tmove);
+
+__global__ void kernelCombineEquations
+(
+	f64 * __restrict__ p_eqns_, 
+	f64 * __restrict__ p_RHS_,
+	f64 * __restrict__ p_eqns_big_, 
+	f64 * __restrict__ p_RHS_big_
+	);
+
+__global__ void ReportNaNs(v4 * __restrict__ p_v, bool * bAlert);
+__global__ void kernelDivideBySqrtN(
+	f64 * __restrict__ p_regr, 
+	nvals * __restrict__ p_n, 
+	f64 * __restrict__ p_Area, int const iSpecies);
+
+__global__ void kernelPutativeAccel(
+	f64 const hsub,
+	structural * __restrict__ p_info_minor,
+	v4 * __restrict__ p_vie_k,
+	f64_vec3 * __restrict__ p_v_n_k,
+	v4 * __restrict__ p_vie,
+	f64_vec3 * __restrict__ p_v_n,
+	nvals * __restrict__ p_n_minor,
+	f64 * __restrict__ p_AreaMinor,
+
+	f64_vec3 * __restrict__ p_MAR_ion_,
+	f64_vec3 * __restrict__ p_MAR_elec_,
+	f64_vec3 * __restrict__ p_MAR_neut_
+);
+
+__global__ void kernelSplit_vec2(
+	f64_vec2 * __restrict__ p_vec2,
+	f64 * __restrict__ p_a,
+	f64 * __restrict__ p_b);
+
 __global__ void kernelCreate_neutral_viscous_contrib_to_MAR_and_NT(
 
 	structural * __restrict__ p_info_minor,
@@ -1654,6 +2574,7 @@ __global__ void kernelCreate_neutral_viscous_contrib_to_MAR_and_NT(
 	NTrates * __restrict__ p_NT_addition_rate,
 	NTrates * __restrict__ p_NT_addition_tri);
 
+
 __global__ void kernelCalculate_ita_visc(
 	structural * __restrict__ p_info_minor,
 	nvals * __restrict__ p_n_minor,
@@ -1664,7 +2585,15 @@ __global__ void kernelCalculate_ita_visc(
 	f64 * __restrict__ p_nu_nn_visc,
 	f64 * __restrict__ p_ita_par_ion_minor,
 	f64 * __restrict__ p_ita_par_elec_minor,
-	f64 * __restrict__ p_ita_neutral_minor);
+	f64 * __restrict__ p_ita_neutral_minor,
+
+	f64 * __restrict__ p_nu_in_MT_minor,
+	f64 * __restrict__ p_nu_en_MT_minor, // 2 separate values? How to use?
+
+	int * __restrict__ p_iSelect,
+	int * __restrict__ p_iSelectNeut
+);
+
 
 __global__ void kernelTransmitHeatToVerts(
 	structural * __restrict__ p_info,
@@ -1795,11 +2724,11 @@ __global__ void kernelPopulateArrayAz(
 );
 __global__ void kernelPushAzInto_dest(
 	AAdot * __restrict__ p_AAdot,
-	f64 * __restrict__ p_Az
+	f64 * __restrict__ pAz
 );
 __global__ void kernelPullAzFromSyst(
 	AAdot * __restrict__ p_AAdot,
-	f64 * __restrict__ p_Az
+	f64 * __restrict__ pAz
 );
 __global__ void kernelAdd(
 	f64 * __restrict__ p_updated,

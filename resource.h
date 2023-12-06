@@ -39,10 +39,11 @@
 #define ID_DISPLAY_ACCELGRAPH           40030
 #define ID_DISPLAY_TENSOROHMS           40032
 #define ID_DISPLAY_ACCELRELZ            40033
+#define ID_DISPLAY_DENSITY              40035
 #define IDC_STATIC                      -1
 #define ID_RUN_CPUSTEP                  40021
 #define ID_FILE_LOADGPU                 40022
-
+#define ID_RUN_RESPRINKLE               40034
 // Next default values for new objects
 // 
 //#ifdef APSTUDIO_INVOKED

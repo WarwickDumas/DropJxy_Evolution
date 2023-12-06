@@ -425,7 +425,7 @@ int CompactMatrix::Invoke(int length, int bandsizetemp, int m1temp, int m2temp)
 
 		if (LUSIZE == newLUSIZE){
 			for (i = 0; i < newLUSIZE; i++)
-				memset(LU[i],0,sizeof(real)*newLUSIZE);
+				memset(LU[i],0,sizeof(f64)*newLUSIZE);
 			return 0;
 		}
 
@@ -440,14 +440,14 @@ int CompactMatrix::Invoke(int length, int bandsizetemp, int m1temp, int m2temp)
 			//printf("Note: Matrix::Invoke called twice.");
 		};
 
-		LU = new real * [newLUSIZE];
+		LU = new f64 * [newLUSIZE];
 		for (i = 0; i < newLUSIZE; i++)
 		{
-			LU[i] = new real[newLUSIZE];
-			memset(LU[i],0,sizeof(real)*newLUSIZE);
+			LU[i] = new f64[newLUSIZE];
+			memset(LU[i],0,sizeof(f64)*newLUSIZE);
 		}
 		indx = new long [newLUSIZE];
-		vv = new real [newLUSIZE];
+		vv = new f64 [newLUSIZE];
 		if (vv == NULL) return 2;
 		LUSIZE = newLUSIZE;
 
@@ -475,7 +475,7 @@ int CompactMatrix::Invoke(int length, int bandsizetemp, int m1temp, int m2temp)
 		LUSIZE = 0;
 	};
 
-	long Matrix_real::LUdecomp(/*real LU[LUSIZE][LUSIZE], long indx[]*/) 
+	long Matrix_real::LUdecomp(/*f64 LU[LUSIZE][LUSIZE], long indx[]*/) 
 	// LU must already be dimensioned as a matrix[LUSIZE][LUSIZE]
 	// index must already be dimensioned as an array[LUSIZE]
 	{
@@ -485,12 +485,12 @@ int CompactMatrix::Invoke(int length, int bandsizetemp, int m1temp, int m2temp)
 		// After this is run, the LU matrix is decomposed. It has to be assigned values beforehand.
 
 
-		static real const TINY = (real)1.0e-100;
+		static f64 const TINY = (f64)1.0e-100;
 
 		long i,imax,j,k;
-		real big,temp1;
-		//real vv[LUSIZE]; // stores implicit scaling of each row
-		real d;
+		f64 big,temp1;
+		//f64 vv[LUSIZE]; // stores implicit scaling of each row
+		f64 d;
 		
 		d = unity;		// no row interchanges yet
 
@@ -564,12 +564,12 @@ int CompactMatrix::Invoke(int length, int bandsizetemp, int m1temp, int m2temp)
 		return 0; // successful?
 	}
 
-	long Matrix_real::LUSolve (real b[], real x[])
+	long Matrix_real::LUSolve (f64 b[], f64 x[])
 
 		// Make x solve A x = b, where A was the matrix originally defined by assignments before decomposition
 	{
 		long i, ii, ip, j;
-		real sum;
+		f64 sum;
 		ii = 0;
 		
 		for (i = 0; i < LUSIZE; i++)
@@ -608,11 +608,11 @@ int CompactMatrix::Invoke(int length, int bandsizetemp, int m1temp, int m2temp)
 		return 0;
 	}
 
-	long Matrix_real::LUSolveII (real b[], real x[],int iWhich, real value)
+	long Matrix_real::LUSolveII (f64 b[], f64 x[],int iWhich, f64 value)
 		// Make x solve A x = b, where A was the matrix originally defined by assignments before decomposition
 	{
 		long i, ii, ip, j;
-		real sum;
+		f64 sum;
 		ii = 0;
 		
 		for (i = 0; i < LUSIZE; i++)
