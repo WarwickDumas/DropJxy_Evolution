@@ -1563,6 +1563,8 @@
 #define ID_INITIALISE_ZAPTHEBACK        40031
 #define ID_DISPLAY_TENSOROHMS           40032
 #define ID_DISPLAY_ACCELRELZ            40033
+#define ID_RUN_RESPRINKLE               40034
+#define ID_DISPLAY_DENSITY              40035
 #define ID_DISPLAY_NEUT                 50000
 #define ID_DISPLAY_ION                  50001
 #define ID_DISPLAY_ELECTRON             50002
@@ -1604,7 +1606,7 @@
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NEXT_RESOURCE_VALUE        102
-#define _APS_NEXT_COMMAND_VALUE         40034
+#define _APS_NEXT_COMMAND_VALUE         40036
 #define _APS_NEXT_CONTROL_VALUE         1001
 #define _APS_NEXT_SYMED_VALUE           101
 #endif

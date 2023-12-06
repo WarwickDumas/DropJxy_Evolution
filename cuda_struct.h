@@ -83,7 +83,7 @@ struct nvals {
 	}
 	__device__ __host__ nvals() {}
 };
-nvals __device__ inline operator* (const real hh, const nvals & nval) 
+nvals __device__ inline operator* (const f64 hh, const nvals & nval) 
 {
 	return nvals(hh*nval.n, hh*nval.n_n);
 }
@@ -107,7 +107,7 @@ struct T3 {
 		Te += T.Te;
 	}
 };
-T3 __device__ inline operator* (const real hh, const T3 &T) 
+T3 __device__ inline operator* (const f64 hh, const T3 &T) 
 {
 	return T3(hh*T.Tn, hh*T.Ti, hh*T.Te);
 };
@@ -195,8 +195,8 @@ struct Systdata {
 	int Systdata::SaveHost(const char str[]);
 	void Systdata::AsciiOutput (const char filename[]) const ;
 	void Systdata::AsciiOutputEdges (const char filename[]) const ;
-	void Systdata::AsciiOutput4Values (FILE * file, real eval) const ;
-	void Systdata::AsciiOutputSpecific (FILE * file,real eval) const ;
+	void Systdata::AsciiOutput4Values (FILE * file, f64 eval) const ;
+	void Systdata::AsciiOutputSpecific (FILE * file,f64 eval) const ;
 
 	~Systdata();
 };

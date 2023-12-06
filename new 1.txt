@@ -1,0 +1,52 @@
+
+Things that it needs to include:
+--------------------------------
+
+1. About finite volume.
+2. About backward necessity -- and why we still do RK2 because it can work for the rest and for conductivity.
+3. Explain fwd-bwd masking even though for heat we did not do it.
+Can add additional detail -- heat method vs SDE.
+4. About T hexagon -- where is this written out? -- how brilliant this has been. -- why necessary
+5. Visc equivalent is tricky so here's what we did.
+6. Solvers used; seeds; convergence criterion.
+Empirically Jacobi & Richardson together get through quite a bit.
+Look at ruminations about regressor sets.
+
+Within the class of solvers that rely on choosing least-squares-optimal coefficients on a set of regressors,
+we can describe them by the set of regressors used.
+
+4DJ: why needful 
+7. Nonlinear coping.
+8. SIMD implementation notes.
+
+. Summary notes about the INSULATOR : correct ways to handle.
+
+At least 1 picture per section.
+
+
+Writing all this out is not the work of 1 day.
+Give it the proper amount of time. -- Looks like can do within 2 days really.
+Imagine explaining to Jean or Ruslan.
+
+Writing the list is not enough == have to actually write these sections.
+
+
+
+
+Go over once then come back and go over some more.
+As full of an explanation as seems right.
+
+Devote time to it now.
+
+
+Let's do a good job -- today, it's first draft of what I CAN say. Then go and do the giant historical review, look over 9 years for more additions tomorrow.
+Today focus on what basically needs to be explained about how we have to do cond, and visc.
+
+
+
+Note to self : if speedup of visc is desired, block level masking could save a lot of loading data into memory ? Just create the block mask following the individual one.
+Be sure masking is on every routine.
+
+
+
+

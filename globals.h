@@ -2,7 +2,7 @@
 #define globals_h
 
 
-#define real double
+#define f64 double
 #define qd_or_d dd_real
 
 #include "surfacegraph_tri.h"
@@ -22,18 +22,18 @@ extern bool GlobalPeriodicSearch;
 extern float maximum_v;
 
 extern bool bCullNone,bGlobalsave;
-extern real evaltime, h;                             
+extern f64 evaltime, h;                             
 extern int GlobalSwitchBox, iGlobalScratch;
 
-extern real GlobalHeightScale;
+extern f64 GlobalHeightScale;
 extern int GlobalSpeciesToGraph;
 extern int GlobalWhichLabels;
 extern bool GlobalRenderLabels;
 extern int GlobalColoursPlanView;
 extern bool GlobalBothSystemsInUse;
-extern real GlobalRescaling;
+extern f64 GlobalRescaling;
 extern bool GlobalCutaway;
-extern real GlobalIzElasticity;
+extern f64 GlobalIzElasticity;
 
 // Global pointers to meshes:
 extern TriMesh * pX, * pXnew;
@@ -72,14 +72,14 @@ extern void RefreshGraphs(TriMesh & X, const int graphflag);
 extern void CreateSurfaceGraphs(TriMesh & X);
 extern void CreateSurfaceGraphsAux(TriMesh & X, int iLevel);
 
-extern void QuickSort (long VertexIndexArray[], real radiusArray[],
+extern void QuickSort (long VertexIndexArray[], f64 radiusArray[],
 		long lo, long hi); // in meshutil.cpp
 
-extern Vector2 CreateOutwardNormal(real x1, real y1,
-					real x2, real y2,
-					real x, real y); // in basics.cpp
-extern void GetInterpolationCoefficients( real beta[3],
-							real x, real y,
+extern Vector2 CreateOutwardNormal(f64 x1, f64 y1,
+					f64 x2, f64 y2,
+					f64 x, f64 y); // in basics.cpp
+extern void GetInterpolationCoefficients( f64 beta[3],
+							f64 x, f64 y,
 							Vector2 pos0, Vector2 pos1, Vector2 pos2); // basics.cpp
 
 extern void GetInsulatorIntercept(Vector2 *result, const Vector2 & x1, const Vector2 & x2);
@@ -87,10 +87,10 @@ extern void GetInsulatorIntercept(Vector2 *result, const Vector2 & x1, const Vec
 extern void Get_ROC_InsulatorIntercept(Vector2 * pROCintercept1,
 								Vector2 lower , Vector2 moving,Vector2 ROC);
 
-extern real GetCos(const Vector2 & u1, const Vector2 & centre, const Vector2 & u2);
-extern real GetCos(const Vector2 & v1, const Vector2 & v2);
+extern f64 GetCos(const Vector2 & u1, const Vector2 & centre, const Vector2 & u2);
+extern f64 GetCos(const Vector2 & v1, const Vector2 & v2);
 
-extern real CalculateTriangleIntersectionArea(Vector2 & x1, Vector2 & x2, Vector2 & x3,					          
+extern f64 CalculateTriangleIntersectionArea(Vector2 & x1, Vector2 & x2, Vector2 & x3,					          
 									   Vector2 & r1, Vector2 & r2, Vector2 & r3);
 
 #endif

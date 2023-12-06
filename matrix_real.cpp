@@ -33,7 +33,7 @@ using std::cout;
 
 		if (LUSIZE == newLUSIZE){
 			for (i = 0; i < newLUSIZE; i++)
-				memset(LU[i],0,sizeof(real)*newLUSIZE);
+				memset(LU[i],0,sizeof(f64)*newLUSIZE);
 			return 0;
 		}
 
@@ -48,14 +48,14 @@ using std::cout;
 			//printf("Note: Matrix::Invoke called twice.");
 		};
 
-		LU = new real * [newLUSIZE];
+		LU = new f64 * [newLUSIZE];
 		for (i = 0; i < newLUSIZE; i++)
 		{
-			LU[i] = new real[newLUSIZE];
-			memset(LU[i],0,sizeof(real)*newLUSIZE);
+			LU[i] = new f64[newLUSIZE];
+			memset(LU[i],0,sizeof(f64)*newLUSIZE);
 		}
 		indx = new long [newLUSIZE];
-		vv = new real [newLUSIZE];
+		vv = new f64 [newLUSIZE];
 		if (vv == NULL) return 2;
 		LUSIZE = newLUSIZE;
 
@@ -83,7 +83,7 @@ using std::cout;
 		LUSIZE = 0;
 	};
 
-	long Matrix_real::LUdecomp(/*real LU[LUSIZE][LUSIZE], long indx[]*/) 
+	long Matrix_real::LUdecomp(/*f64 LU[LUSIZE][LUSIZE], long indx[]*/) 
 	// LU must already be dimensioned as a matrix[LUSIZE][LUSIZE]
 	// index must already be dimensioned as an array[LUSIZE]
 	{
@@ -92,16 +92,24 @@ using std::cout;
 
 		// After this is run, the LU matrix is decomposed. It has to be assigned values beforehand.
 
+		int returnval = 0;
 
-		static real const TINY = (real)1.0e-80;
+		static f64 const TINY = (f64)1.0e-20;
+
+		FILE * fp;
 
 		long i,imax,j,k;
-		real big,temp1;
-		//real vv[LUSIZE]; // stores implicit scaling of each row
-		real d;
+		f64 big,temp1;
+		//f64 vv[LUSIZE]; // stores implicit scaling of each row
+		f64 d;
 		
 		d = unity;		// no row interchanges yet
 
+		static f64 cp[128*128]; // static saves it from being redimensioned.
+
+		for (i = 0; i < LUSIZE; i++)
+			memcpy(cp + LUSIZE*i, LU[i], sizeof(f64)*LUSIZE);
+		
 		for (i = 0; i < LUSIZE; i++) // loop over rows to get implicit scaling information
 		{
 			big = zero;
@@ -110,11 +118,12 @@ using std::cout;
 			if (big == zero) 
 				return 1; // no nonzero largest element
 			vv[i] = unity/big; // "save the scaling"
+	//		printf("vv[%d] %1.10E .. ", i, vv[i]);
 		};
+	//	printf("\n");
 
 		for (k = 0; k < LUSIZE; k++) // the outermost kij loop 
-		{
-		
+		{		
 			if (k < LUSIZE - 1) // if it == LUSIZE-1 then we don't need to run this, and it's dangerous too.
 			{
 				imax = -1;
@@ -122,13 +131,41 @@ using std::cout;
 				for (i = k; i < LUSIZE; i++)
 				{
 					temp1 = vv[i] * fabs(LU[i][k]); // row i > k, column k
-
 					if (temp1 > big) // is the figure of merit for the pivot better than the best so far?
 					{
 						big = temp1;
 						imax = i;
 					};
 				};
+
+				// I think the only explanation is that this does not always hit.
+				printf("imax %d \n", imax);
+				if (imax == -1) {
+					for (i = k; i < LUSIZE; i++)
+					{
+						temp1 = vv[i] * fabs(LU[i][k]); // row i > k, column k
+						printf("vv[%d] %1.6E LU[%d][%d] %1.6E \n",
+							i, vv[i], i, k, LU[i][k]);
+					};
+
+					fp = fopen("failedmatrix.txt", "w");
+
+					for (i = 0; i < LUSIZE; i++)
+					{
+						for (j = 0; j < LUSIZE; j++)
+						{
+							fprintf(fp, "%1.14E ", cp[j + LUSIZE*i]);
+							printf("%1.10E ", cp[j + LUSIZE*i]);
+							// Makes literally no sense what it outputs.
+						}
+						fprintf(fp, "\n");
+						printf("\n");
+					}
+					fclose(fp);
+					printf("outputted failedmatrix.txt\n");
+					return 2;
+				}
+
 				if (k != imax)	// do we need to interchange rows?
 				{
 					// Swap row imax with row k.
@@ -162,8 +199,9 @@ using std::cout;
 			}
 			
 			if (imax < 0) {
-				printf("problem -- imax not found.\n");
-				getch();
+				printf("problem -- imax not found.\n\a");
+			//	getch();
+				return 2;
 			} else {
 				indx[k] = imax;
 			};
@@ -171,6 +209,7 @@ using std::cout;
 			if (LU[k][k] == zero) {
 				LU[k][k] = TINY;
 				printf("singular matrix!\n");
+				returnval = 3;
 			};
 
 			// pivot element == zero, ie singular matrix
@@ -179,26 +218,62 @@ using std::cout;
 			// And making it appear that we are solving with some
 			// arbitrary influence of the unused value.
 
+		//	printf("Pivot element k %d ", k);
+		//	for (i = k + 1; i < LUSIZE; i++) 
+		//	printf(" %1.12E ", LU[k][k]);
+		//	printf("\n");
+
 			for (i = k+1; i < LUSIZE; i++)
 			{
+		//		printf("LU[%d][%d] %1.6E ", i, k, LU[i][k]);
 				temp1 = LU[i][k] /= LU[k][k]; // "divide by the pivot element"
-				for (j = k+1; j < LUSIZE; j++)  // innermost loop: reduce remaining submatrix
+		//		printf("%1.6E : ", LU[i][k]);
+				
+				for (j = k + 1; j < LUSIZE; j++)  // innermost loop: reduce remaining submatrix
+				{
+		//			printf("|| %1.7E |-> ", LU[i][j]);
 					LU[i][j] -= temp1*LU[k][j];
+		//			printf("%1.7E ", LU[i][j]);
+					//if (LU[i][j] == zero) return 1; // not enough l.i. rows; degenerate matrix.
+
+					// It could be it zeroes the row or it could be it only zeroes one element.
+					// Bottom line stop sending degenerate matrices, do a test.
+
+//
+//					Think about what behaviour we then want.
+//
+//					If it IS degenerate we had 
+//
+//						Ax = b
+//
+//					where two equations are either in contradiction or duplicated.
+//
+//					We could assume one is redundant.
+//
+//					So we need to do a check on this ...
+//						if we can be passed the b vector and see whether basically we can agree to set the 2nd coefficient to zero.
+//					Which will take some scrutiny.
+//
+//
+
+				}
+		//		printf("\n");
 			};
+		//	printf("\n");
 
 			// Here could launch each row or column as a block.
 			
 		};
 	//	printf("LUdecomp done\n");
 
-		return 0; // successful?
+		return returnval; // successful?
 	}
 
-	long Matrix_real::LUSolve (real b[], real x[])
+	long Matrix_real::LUSolve (f64 b[], f64 x[])
 		// Make x solve A x = b, where A was the matrix originally defined by assignments before decomposition
 	{
 		long i, ii, ip, j;
-		real sum;
+		f64 sum;
 		ii = 0;
 		
 		for (i = 0; i < LUSIZE; i++)
@@ -247,11 +322,11 @@ using std::cout;
 		return 0;
 	}
 
-	long Matrix_real::LUSolveII (real b[], real x[],int iWhich, real value)
+	long Matrix_real::LUSolveII (f64 b[], f64 x[],int iWhich, f64 value)
 		// Make x solve A x = b, where A was the matrix originally defined by assignments before decomposition
 	{
 		long i, ii, ip, j;
-		real sum;
+		f64 sum;
 		ii = 0;
 		
 		for (i = 0; i < LUSIZE; i++)

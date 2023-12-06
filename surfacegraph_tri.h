@@ -84,7 +84,7 @@ public:
 
 	float colourmax; // often wanted, and may be different from data max;
 	// we use this for the value to be passed to the shader via mhColourMax.
-	real store_max, store_min;
+	f64 store_max, store_min;
 	bool label_insist_max, label_insist_min;
 
 	// 4 bools to set before every graph:
@@ -93,7 +93,7 @@ public:
 		boolClearZBufferBeforeWireframe,
 		bDisplayTimestamp,
 		boolDisplayShadow;
-	real TickRescaling;
+	f64 TickRescaling;
 
 #define FLAG_MESH      0
 #define FLAG_SEGUE     1
@@ -161,9 +161,9 @@ public:
 	
 	void DrawSurface(const char szname[],
 				   const int heightflag,
-				   const real * var_ptr_0,
+				   const f64 * var_ptr_0,
 				   const int colourflag,
-				   const real * var_ptr_c,
+				   const f64 * var_ptr_c,
 				   const bool bDisplayInner,
 				   const int code, // graph code, to pass to called routines - sometimes useful
 				   const TriMesh * pX // for passing to SetDataWithColour and Render
@@ -172,7 +172,7 @@ public:
 
 	// helper function:
 	
-	void inline RenderLabel (char * text, float x, float y, float z, bool extrainfo = false, bool botleft = false);
+	void inline RenderLabel (char * text, float x, float y, float z, bool extrainfo = false, bool botleft = false, bool bColoured = false);
 	void inline RenderLabel2 (char * text, float x, float y, float z, int whichline, unsigned int color = 0xff000000, bool bLong = false);
 	void inline RenderText (const char * text,int lines_down);
 	void inline RenderLabel3(char * text, float x, float y, float z, int whichline, unsigned int color = 0xff000000);

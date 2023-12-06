@@ -1,7 +1,7 @@
 
 #ifndef MATREAL_H
 #define MATREAL_H
-#define real double
+#define f64 double
 
 // CompactMatrix class based on the Bandec class given on p.59 of 
 // Press, Teukolsky, Vetterling and Flannery 
@@ -21,9 +21,9 @@ class Matrix_real
 private:
 	
 public:
-	real ** LU; // the elements
+	f64 ** LU; // the elements
 	long LUSIZE;  // the size of the matrix
-	real * vv;
+	f64 * vv;
 	long * indx;   // the index array when decomposed
 
 	Matrix_real ();
@@ -36,8 +36,8 @@ public:
 
 	long LUdecomp() ;
 
-	long LUSolve (real b[], real x[]);
-	long LUSolveII (real b[], real x[],int iWhich, real value);
+	long LUSolve (f64 b[], f64 x[]);
+	long LUSolveII (f64 b[], f64 x[],int iWhich, f64 value);
 
 };
 

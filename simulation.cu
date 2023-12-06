@@ -29,15 +29,127 @@ f64 Jacobi_x[NMINOR];
 f64 epsilon[NMINOR];
 f64 Lap_Aznext[NMINOR];
 
-real GlobalIzElasticity;
+f64 GlobalIzElasticity;
 
 
 extern f64_vec2 RotateClosest(f64_vec2 pos, f64_vec2 prox);
 
-f64 inline GetEzShape__(f64 r) {
-	return 1.0 - 1.0 / (1.0 + exp(-24.0*(r - 4.48))); // At 4.0cm it is 96% as strong as at tooth. At 4.4 it is 4%.
-	// 4.48 -- used to say 4.32 before 377 ns
+f64 inline GetEzShape__(f64 x, f64 y) {
 
+
+	f64 rr = x*x + y*y;
+	f64 r = sqrt(rr);
+
+	f64 retval = 1.0 - 1.0 / (1.0 + exp(-24.0*(r - 4.4)));
+
+	// This is max 1. Now let's add 29% over each tooth.
+
+	// Let's assume that based on radius we linearly increase & decrease the % of full tooth.
+	
+	// It's 45 degrees we are told.
+
+	// And 0.04 x 0.08 plateau.
+
+	// Thus take 3.61-0.04 = 3.57, and we then only drop by 0.13 (to 0.5cm height) as we go back
+	// to the insulator.
+	// 3.61+0.04 = 3.65, and it takes us 0.63 cm to fall 0.63 cm. So 4.28 
+
+#define TOOTH_RADIUS_START  3.4925
+#define TOOTH_RADIUS_PEAK1   3.58
+#define TOOTH_RADIUS_PEAK2   3.64  // Doing 0.06 cm long plateau !
+#define TOOTH_RADIUS_OUTER  3.8989
+#define TOOTH_HEIGHT        0.63
+#define VALLEY_HEIGHT       0.30
+
+//#define VALLEY_YoverX       0.0
+//#define PEAK_YoverX         10.15317039
+
+	// where north = pi/2
+#define VALLEY_ANGLE        1.374446786
+#define VALLEY_ANGLE2       1.767145868
+
+#define PLATEAU_ANGLE_11    1.467070459
+//#define PEAK_ANGLE          1.472621556
+#define PLATEAU_ANGLE_12    1.478172459
+#define PLATEAU_ANGLE_21    1.66342
+//#define PEAK_ANGLE2         1.668971097
+#define PLATEAU_ANGLE_22    1.674522
+
+#define VALLEY_YoverX_2     5.02734
+
+	// Note that if we use division we don't save anything.
+	
+	f64 theta = atan2(y, x); // might want to check what it returns.
+
+	//printf("atan2(1,0) = %f", atan2(1.0, 0.0)); // = pi/2
+
+	f64 maxh, maxh2, height;
+
+	if ((r > TOOTH_RADIUS_START) && (r < TOOTH_RADIUS_OUTER))
+	{
+		if (r < TOOTH_RADIUS_PEAK1)
+		{
+			maxh = (r - TOOTH_RADIUS_START)*TOOTH_HEIGHT / (TOOTH_RADIUS_PEAK1 - TOOTH_RADIUS_START);
+			// That's for the plane facing up to the point radially.
+		} else {
+			if (r > TOOTH_RADIUS_PEAK2) {
+				maxh = (TOOTH_RADIUS_OUTER - r)*TOOTH_HEIGHT / (TOOTH_RADIUS_OUTER - TOOTH_RADIUS_PEAK2);
+			} else {
+				maxh = TOOTH_HEIGHT;
+			};
+		};
+
+		// Consider plane facing the other way : azimuthal :
+		if (theta < M_PI*0.5)
+		{
+			if (theta > PLATEAU_ANGLE_12)
+			{
+				maxh2 = VALLEY_HEIGHT +
+					(M_PI*0.5 - theta)*(TOOTH_HEIGHT - VALLEY_HEIGHT) /
+					(M_PI*0.5 - PLATEAU_ANGLE_12);
+			}
+			else {
+				if (theta > PLATEAU_ANGLE_11)
+				{
+					maxh2 = TOOTH_HEIGHT;
+				} else {
+					maxh2 = VALLEY_HEIGHT +
+						(theta - VALLEY_ANGLE)*(TOOTH_HEIGHT - VALLEY_HEIGHT) /
+						(PLATEAU_ANGLE_11 - VALLEY_ANGLE);
+				};
+			};
+		}
+		else {
+			if (theta < PLATEAU_ANGLE_21)
+			{
+				maxh2 = VALLEY_HEIGHT +
+					(theta - M_PI*0.5)*(TOOTH_HEIGHT - VALLEY_HEIGHT) /
+					(PLATEAU_ANGLE_21 - M_PI*0.5);
+			}
+			else {
+				if (theta < PLATEAU_ANGLE_22) {
+					maxh2 = TOOTH_HEIGHT;
+				} else {
+					maxh2 = VALLEY_HEIGHT +
+						(theta - VALLEY_ANGLE2)*(TOOTH_HEIGHT - VALLEY_HEIGHT) /
+						(PLATEAU_ANGLE_22 - VALLEY_ANGLE2);
+				};
+			};
+		};
+		height = min(maxh, maxh2); // cut one plane with the other.
+
+		// Uplift:
+
+		retval *= INSULATOR_HEIGHT / (INSULATOR_HEIGHT - height);
+		// 2.8/(2.8-0.63) = 1.29		
+	};
+	
+	//retval /= (1.0 - 0.1*exp((r - 3.61)*(r - 3.61)));
+	
+	return retval;
+	// 4.48: At 4.0cm it is 96% as strong as at tooth. At 4.4 it is 4%.
+	// 4.48 -- used to say 4.32 before 377 ns
+	
 }  
 
 //class nvT_data {
@@ -77,10 +189,10 @@ f64 Tri_n_lists[NMINOR][6];
 
 // footprint of static? (MAXNEIGH*2+5 = 33 say)*NVERT + (15*NMINOR) = say 2500000 doubles = 20 000 000 bytes
 
-real inline TriMesh::GetIzPrescribed(real const t)
+f64 inline TriMesh::GetIzPrescribed(f64 const t)
 {
 
-	real Iz = -PEAKCURRENT_STATCOULOMB * sin((t + ZCURRENTBASETIME) * 0.5*PIOVERPEAKTIME); // t/peaktime * pi/2
+	f64 Iz = -PEAKCURRENT_STATCOULOMB * sin((t + ZCURRENTBASETIME) * 0.5*PIOVERPEAKTIME); // t/peaktime * pi/2
 
 	printf("\nGetIzPrescribed called with t+ZCURRENTBASETIME = %1.5E : %1.5E\n", t + ZCURRENTBASETIME, Iz);
 	
@@ -91,7 +203,7 @@ real inline TriMesh::GetIzPrescribed(real const t)
 //if (bScrewPinch) {
 //		return IZ_SCREW_PINCH;
 //	} else {
-//		real Iz = -PEAKCURRENT_STATCOULOMB * sin ((t + ZCURRENTBASETIME) * PIOVERPEAKTIME );
+//		f64 Iz = -PEAKCURRENT_STATCOULOMB * sin ((t + ZCURRENTBASETIME) * PIOVERPEAKTIME );
 //		return Iz;
 //	};
 
@@ -102,7 +214,7 @@ void TriMesh::SwimMesh(TriMesh * pSrcMesh)
 
 	printf("SwimMesh in simulation.cu . \n");
 
-	real acceptance, mass_avg, mass_SD, mass_min, mass_max, move, coefficient;
+	f64 acceptance, mass_avg, mass_SD, mass_min, mass_max, move, coefficient;
 
 	FILE * swimfile = fopen("swim.txt", "a");
 
@@ -251,7 +363,7 @@ void TriMesh::SwimMesh(TriMesh * pSrcMesh)
 				Azdotsum += pData[iVertex + BEGINNING_OF_CENTRAL].Azdot;
 			}
 			
-			f64 over = 1.0 / (real)npts;
+			f64 over = 1.0 / (f64)npts;
 			vxy = vxysum*over;
 			v_n = vnsum*over;
 			vez = vezsum*over;
@@ -282,7 +394,7 @@ void TriMesh::SwimMesh(TriMesh * pSrcMesh)
 }
 
 
-real TriMesh::SwimVertices(TriMesh * pSrcMesh, real coefficient, real * pAcceptance)
+f64 TriMesh::SwimVertices(TriMesh * pSrcMesh, f64 coefficient, f64 * pAcceptance)
 {
 	// First let's try moving towards barycenters to sort out the messiness.
 	long izTri[MAXNEIGH];
@@ -366,8 +478,8 @@ real TriMesh::SwimVertices(TriMesh * pSrcMesh, real coefficient, real * pAccepta
 				printf("%d npts = 0 CROSSING_INS\n", iTri);
 			}
 			else {
-				pData[iTri].n = nsum / (real)npts;
-				pData[iTri].n_n = nnsum / (real)npts;
+				pData[iTri].n = nsum / (f64)npts;
+				pData[iTri].n_n = nnsum / (f64)npts;
 			};
 			break;
 		case CROSSING_CATH:
@@ -395,8 +507,8 @@ real TriMesh::SwimVertices(TriMesh * pSrcMesh, real coefficient, real * pAccepta
 				printf("%d npts = 0 CROSSING_CATH\n", iTri);
 			}
 			else {
-				pData[iTri].n = nsum / (real)npts;
-				pData[iTri].n_n = nnsum / (real)npts;
+				pData[iTri].n = nsum / (f64)npts;
+				pData[iTri].n_n = nnsum / (f64)npts;
 			};
 			break;
 		default:
@@ -686,7 +798,7 @@ real TriMesh::SwimVertices(TriMesh * pSrcMesh, real coefficient, real * pAccepta
 		++pVertex;
 	};
 	
-	f64 L2 = sqrt(SumSq / (real)NumSum);
+	f64 L2 = sqrt(SumSq / (f64)NumSum);
 	 
 	// Now recalculate triangle centroids.
 	
@@ -884,27 +996,27 @@ real TriMesh::SwimVertices(TriMesh * pSrcMesh, real coefficient, real * pAccepta
 	long * pIndex;
 	Vertex * pVertex;
 	long iVertex, iTri;
-	real length1, length2;
+	f64 length1, length2;
 	Vector2 average_pos, changevector;
 	int i;
 	Triangle * pTri;
 	int iVolley = 0;
 	bool found_vertices_this_volley;
-	real objective, weight, area, minlen, magnitude, mass;
+	f64 objective, weight, area, minlen, magnitude, mass;
 	Vector2 grad, putative;
-	real d_mass_by_dx, d_area_by_dx, d_mass_by_dy, d_area_by_dy;
+	f64 d_mass_by_dx, d_area_by_dx, d_mass_by_dy, d_area_by_dy;
 	Vector2 u0, u1, u2, uO;
-	real sum_mass_times_rate_of_change, sum_squared_rates_of_change, sum_squared_move_length,
+	f64 sum_mass_times_rate_of_change, sum_squared_rates_of_change, sum_squared_move_length,
 		d_mass_per_unit_grad, newx, newy;
 	int triangles_len;
 	bool crush_radial_move;
 	Triangle * pDummyTri;
 	int which, c1;
 
-	real xdist, ydist, dist, graddotnormal, max, original_dot, original_dist, new_position_dot;
+	f64 xdist, ydist, dist, graddotnormal, max, original_dot, original_dist, new_position_dot;
 	Vector2 edgenormal, rhat, mingrad, from_here, to1, to2, u;
 	Vertex * pNeigh1, *pNeigh2;
-	real d_minmass_by_dt, d_mass_by_dt, crossover, minmass,
+	f64 d_minmass_by_dt, d_mass_by_dt, crossover, minmass,
 		normaldistance, tmax;
 	int iMin;
 	long attempted, accepted;
@@ -1270,7 +1382,7 @@ real TriMesh::SwimVertices(TriMesh * pSrcMesh, real coefficient, real * pAccepta
 					//// We do not push out beyond the outermost radius: (hopefully unnecessary check)
 					//if (pVertex->pos.x*pVertex->pos.x + pVertex->pos.y*pVertex->pos.y > r_Outermost*r_Outermost)
 					//{
-					//	real factor = sqrt((pVertex->pos.x*pVertex->pos.x + pVertex->pos.y*pVertex->pos.y) / r_Outermost*r_Outermost);
+					//	f64 factor = sqrt((pVertex->pos.x*pVertex->pos.x + pVertex->pos.y*pVertex->pos.y) / r_Outermost*r_Outermost);
 					//	pVertex->pos.x /= factor;
 					//	pVertex->pos.y /= factor;
 					//};
@@ -1662,23 +1774,23 @@ real TriMesh::SwimVertices(TriMesh * pSrcMesh, real coefficient, real * pAccepta
 
 	// One round of SwimVertices will attempt to move every vertex once.
 
-	*pAcceptance = ((real)accepted) / ((real)attempted);
-	return sqrt(sum_squared_move_length / ((real)(numVertices)));
+	*pAcceptance = ((f64)accepted) / ((f64)attempted);
+	return sqrt(sum_squared_move_length / ((f64)(numVertices)));
 #endif
 */
 	return L2;
 }
 
 
-real inline Get_lnLambda(real n_e, real T_e)
+f64 inline Get_lnLambda(f64 n_e, f64 T_e)
 {
-	real lnLambda, factor, lnLambda_sq, lnLambda1, lnLambda2;
+	f64 lnLambda, factor, lnLambda_sq, lnLambda1, lnLambda2;
 
-	static real const one_over_kB = 1.0 / kB_;
+	static f64 const one_over_kB = 1.0 / kB_;
 
-	real Te_eV = T_e * one_over_kB;
-	real Te_eV2 = Te_eV * Te_eV;
-	real Te_eV3 = Te_eV * Te_eV2;
+	f64 Te_eV = T_e * one_over_kB;
+	f64 Te_eV2 = Te_eV * Te_eV;
+	f64 Te_eV3 = Te_eV * Te_eV2;
 
 	if (n_e*Te_eV3 > 0.0) {
 
@@ -1707,16 +1819,16 @@ real inline Get_lnLambda(real n_e, real T_e)
 }
 
 
-real inline Get_lnLambda_ion(real n_ion, real T_ion)
+f64 inline Get_lnLambda_ion(f64 n_ion, f64 T_ion)
 {
-	static real const one_over_kB = 1.0 / kB_; // multiply by this to convert to eV
-	static real const one_over_kB_cubed = 1.0 / (kB_*kB_*kB_); // multiply by this to convert to eV
+	static f64 const one_over_kB = 1.0 / kB_; // multiply by this to convert to eV
+	static f64 const one_over_kB_cubed = 1.0 / (kB_*kB_*kB_); // multiply by this to convert to eV
 
-	real factor, lnLambda_sq;
+	f64 factor, lnLambda_sq;
 
-	real Tion_eV3 = T_ion * T_ion*T_ion*one_over_kB_cubed;
+	f64 Tion_eV3 = T_ion * T_ion*T_ion*one_over_kB_cubed;
 
-	real lnLambda = 23.0 - 0.5*log(n_ion / Tion_eV3);
+	f64 lnLambda = 23.0 - 0.5*log(n_ion / Tion_eV3);
 
 	// floor at 2:
 	lnLambda_sq = lnLambda * lnLambda;
@@ -1725,20 +1837,20 @@ real inline Get_lnLambda_ion(real n_ion, real T_ion)
 
 	return lnLambda;
 }
-real Estimate_Neutral_Neutral_Viscosity_Cross_section(real T) // call with T in electronVolts
+f64 Estimate_Neutral_Neutral_Viscosity_Cross_section(f64 T) // call with T in electronVolts
 {
 	if (T > cross_T_vals[9]) return cross_s_vals_viscosity_nn[9];
 	if (T < cross_T_vals[0]) return cross_s_vals_viscosity_nn[0];
 	int i = 1;
 	while (T > cross_T_vals[i]) i++;
 	// T lies between i-1,i
-	real ppn = (T - cross_T_vals[i - 1]) / (cross_T_vals[i] - cross_T_vals[i - 1]);
+	f64 ppn = (T - cross_T_vals[i - 1]) / (cross_T_vals[i] - cross_T_vals[i - 1]);
 	return ppn * cross_s_vals_viscosity_nn[i] + (1.0 - ppn)*cross_s_vals_viscosity_nn[i - 1];
 }
 
-void Estimate_Ion_Neutral_Cross_sections(real T, // call with T in electronVolts
-	real * p_sigma_in_MT,
-	real * p_sigma_in_visc)
+void Estimate_Ion_Neutral_Cross_sections(f64 T, // call with T in electronVolts
+	f64 * p_sigma_in_MT,
+	f64 * p_sigma_in_visc)
 {
 	if (T > cross_T_vals[9]) {
 		*p_sigma_in_MT = cross_s_vals_momtrans_ni[9];
@@ -1753,21 +1865,21 @@ void Estimate_Ion_Neutral_Cross_sections(real T, // call with T in electronVolts
 	int i = 1;
 	while (T > cross_T_vals[i]) i++;
 	// T lies between i-1,i
-	real ppn = (T - cross_T_vals[i - 1]) / (cross_T_vals[i] - cross_T_vals[i - 1]);
+	f64 ppn = (T - cross_T_vals[i - 1]) / (cross_T_vals[i] - cross_T_vals[i - 1]);
 
 	*p_sigma_in_MT = ppn * cross_s_vals_momtrans_ni[i] + (1.0 - ppn)*cross_s_vals_momtrans_ni[i - 1];
 	*p_sigma_in_visc = ppn * cross_s_vals_viscosity_ni[i] + (1.0 - ppn)*cross_s_vals_viscosity_ni[i - 1];
 	return;
 }
 
-real Estimate_Ion_Neutral_MT_Cross_section(real T) // call with T in electronVolts
+f64 Estimate_Ion_Neutral_MT_Cross_section(f64 T) // call with T in electronVolts
 {
 	if (T > cross_T_vals[9]) return cross_s_vals_momtrans_ni[9];
 	if (T < cross_T_vals[0]) return cross_s_vals_momtrans_ni[0];
 	int i = 1;
 	while (T > cross_T_vals[i]) i++;
 	// T lies between i-1,i
-	real ppn = (T - cross_T_vals[i - 1]) / (cross_T_vals[i] - cross_T_vals[i - 1]);
+	f64 ppn = (T - cross_T_vals[i - 1]) / (cross_T_vals[i] - cross_T_vals[i - 1]);
 	return ppn * cross_s_vals_momtrans_ni[i] + (1.0 - ppn)*cross_s_vals_momtrans_ni[i - 1];
 }
 
@@ -2500,7 +2612,7 @@ void TriMesh::JLS_for_Az_bwdstep(int iterations, f64 h_use)
 			++pTri;
 		};
 		beta = -sum_eps_deps_by_dbeta / sum_depsbydbeta_sq;
-		L2eps = sqrt(sum_eps_eps / (real)NMINOR);
+		L2eps = sqrt(sum_eps_eps / (f64)NMINOR);
 		printf(" CPU[ beta %1.14E L2eps %1.14E ] ", beta, L2eps);
 
 		/*
@@ -2559,7 +2671,7 @@ void TriMesh::InterpolateVarsAndPositions(TriMesh * pTargetMesh, TriMesh * pEndM
 	pstartdata = pData;
 	penddata = pEndMesh->pData;
 	pdestdata = pTargetMesh->pData;
-	real oneminus = 1.0 - ppn;
+	f64 oneminus = 1.0 - ppn;
 	for (iMinor = 0; iMinor < NMINOR; iMinor++)
 	{
 		memcpy(&localstart, pstartdata, sizeof(plasma_data));
@@ -3065,10 +3177,10 @@ void TriMesh::AdvanceDensityAndTemperature(f64 h_use,
 	f64 Div_v, Div_v_n, factor, factor_neut, Div_v_overall_integrated;
 	Vertex * pVertex = X;
 	Vertex * pVertDest = pDestMesh->X;
-	static real const one_over_kB = 1.0 / kB_; // multiply by this to convert to eV
-	static real const one_over_kB_cubed = 1.0 / (kB_*kB_*kB_); // multiply by this to convert to eV
-	static real const kB_to_3halves = sqrt(kB_)*kB_;
-	static real const over_sqrt_m_e_ = 1.0 / sqrt(m_e_);
+	static f64 const one_over_kB = 1.0 / kB_; // multiply by this to convert to eV
+	static f64 const one_over_kB_cubed = 1.0 / (kB_*kB_*kB_); // multiply by this to convert to eV
+	static f64 const kB_to_3halves = sqrt(kB_)*kB_;
+	static f64 const over_sqrt_m_e_ = 1.0 / sqrt(m_e_);
 	f64 const M_en = m_e_ * m_n_ / ((m_e_ + m_n_)*(m_e_ + m_n_));
 	f64 const M_in = m_i_ * m_n_ / ((m_i_ + m_n_)*(m_i_ + m_n_));
 	f64 const M_ei = m_e_ * m_i_ / ((m_e_ + m_i_)*(m_e_ + m_i_));
@@ -3503,9 +3615,9 @@ void TriMesh::AccumulateDiffusiveHeatRateAndCalcIonisation(f64 h_use, NTrates NT
 
 	// It will make much more of a headache on GPU.
 	// The other option is to combine it with the advective mass & heat rates which already use minor info.
-	static real const kB_to_3halves = sqrt(kB_)*kB_;
-	static real const one_over_kB = 1.0 / kB_;
-	static real const over_sqrt_m_e_ = 1.0 / sqrt(m_e_);
+	static f64 const kB_to_3halves = sqrt(kB_)*kB_;
+	static f64 const one_over_kB = 1.0 / kB_;
+	static f64 const over_sqrt_m_e_ = 1.0 / sqrt(m_e_);
 
 	Vertex * pVertex = X;
 	long iVertex;
@@ -3528,7 +3640,7 @@ void TriMesh::AccumulateDiffusiveHeatRateAndCalcIonisation(f64 h_use, NTrates NT
 	f64_vec3 omega;
 	Tensor2 kappa;
 	int inext;
-	static real const SQRT2 = sqrt(2.0);
+	static f64 const SQRT2 = sqrt(2.0);
 
 	for (iVertex = 0; iVertex < NUMVERTICES; iVertex++)
 	{
@@ -3957,9 +4069,9 @@ void TriMesh::AccumulateDiffusiveHeatRateAndCalcIonisationOld(f64 h_use, NTrates
 
 	// It will make much more of a headache on GPU.
 	// The other option is to combine it with the advective mass & heat rates which already use minor info.
-	static real const kB_to_3halves = sqrt(kB_)*kB_;
-	static real const one_over_kB = 1.0 / kB_;
-	static real const over_sqrt_m_e_ = 1.0 / sqrt(m_e_);
+	static f64 const kB_to_3halves = sqrt(kB_)*kB_;
+	static f64 const one_over_kB = 1.0 / kB_;
+	static f64 const over_sqrt_m_e_ = 1.0 / sqrt(m_e_);
 
 	Vertex * pVertex = X;
 	long iVertex;
@@ -3982,7 +4094,7 @@ void TriMesh::AccumulateDiffusiveHeatRateAndCalcIonisationOld(f64 h_use, NTrates
 	f64_vec3 omega;
 	Tensor2 kappa;
 	int inext;
-	static real const SQRT2 = sqrt(2.0);
+	static f64 const SQRT2 = sqrt(2.0);
 
 	for (iVertex = 0; iVertex < NUMVERTICES; iVertex++)
 	{
@@ -5515,7 +5627,7 @@ void TriMesh::Create_momflux_integral_grad_nT_and_gradA_LapA_CurlA_on_minors(
 			LapAzArray[iMinor] = Our_integral_Lap_Az / AreaMinor;
 			GradTeArray[iMinor] = Our_integral_grad_Te / AreaMinor;
 			if (iMinor == CHOSEN) printf("Our_integral_grad_Te %1.14E AreaMinor %1.14E\n\n",
-				Our_integral_grad_Te, AreaMinor);
+				Our_integral_grad_Te.x, AreaMinor);
 
 			pData[iMinor].B = Make3(Our_integral_curl_Az/AreaMinor,BZ_CONSTANT);
 			AreaMinorArray[iMinor] = AreaMinor;
@@ -6207,7 +6319,7 @@ void TriMesh::Create_momflux_integral_grad_nT_and_gradA_LapA_CurlA_on_minors(
 				// As normal in triangles by outermost, outermost vertex no calc.
 				// No calc within insulator; crossing_tri has to think carefully:
 			// We can pretty much treat pressure as zero in a crossing tri without
-			// any real consequence, but might rather let it be just azimuthal.
+			// any f64 consequence, but might rather let it be just azimuthal.
 			// .. Only makes sense to collect nT on edges facing domain vertex or domain tri
 			// .. then set radial component to zero.
 
@@ -6251,7 +6363,7 @@ void TriMesh::Create_momflux_integral_grad_nT_and_gradA_LapA_CurlA_on_minors(
 
 }
 
-void TriMesh::GetLap(real Az_array[], real LapAz_array[])
+void TriMesh::GetLap(f64 Az_array[], f64 LapAz_array[])
 {
 
 	FILE * fp;
@@ -7018,10 +7130,10 @@ void TriMesh::Accelerate2018(f64 h_use, TriMesh * pUseMesh, TriMesh * pDestMesh,
 	// data_1.Azdot 
 	f64 viz0_coeff_on_Lap_Az, vez0_coeff_on_Lap_Az;
 
-	static real const one_over_kB = 1.0 / kB_; // multiply by this to convert to eV
-	static real const one_over_kB_cubed = 1.0 / (kB_*kB_*kB_); // multiply by this to convert to eV
-	static real const kB_to_3halves = sqrt(kB_)*kB_;
-	static real const over_sqrt_m_e_ = 1.0 / sqrt(m_e_);
+	static f64 const one_over_kB = 1.0 / kB_; // multiply by this to convert to eV
+	static f64 const one_over_kB_cubed = 1.0 / (kB_*kB_*kB_); // multiply by this to convert to eV
+	static f64 const kB_to_3halves = sqrt(kB_)*kB_;
+	static f64 const over_sqrt_m_e_ = 1.0 / sqrt(m_e_);
 
 	Vertex * pVertex = X;
 	Triangle * pTri = T;
@@ -7479,7 +7591,7 @@ void TriMesh::Accelerate2018(f64 h_use, TriMesh * pUseMesh, TriMesh * pDestMesh,
 
 				// sigma_e_zz and sigma_i_zz are change in vz for a change in Ez
 
-				f64 EzShape = GetEzShape__(data_use.pos.modulus());
+				f64 EzShape = GetEzShape__(data_use.pos.x, data_use.pos.y);
 				sigma_i_zz *= EzShape;
 				sigma_e_zz *= EzShape;
 				f64 sigma_zz;
@@ -7697,7 +7809,7 @@ void TriMesh::Accelerate2018(f64 h_use, TriMesh * pUseMesh, TriMesh * pDestMesh,
 								// Azdotdot = c^2 (Lap Az + 4pi/c Jz)
 
 								// ASSUME we are fed Iz_prescribed.
-								Jz = -Iz_prescribed / (real)(numEndZCurrentTriangles - numStartZCurrentTriangles);
+								Jz = -Iz_prescribed / (f64)(numEndZCurrentTriangles - numStartZCurrentTriangles);
 								Jz /= pUseMesh->AreaMinorArray[iMinor]; // Iz would come from multiplying back by area and adding.
 
 								/*
@@ -7967,7 +8079,7 @@ bool inline in_domain(Vector2 u)
 	// A values live on vertices so we just make planes with 3 of them.
 	long iVertex;
 	Vertex * pVertex, * pVertSrc;
-	real beta[3];
+	f64 beta[3];
 	Triangle * pTri;
 	Vector2 u[3];
 	long iWhich, iTri;
@@ -8163,7 +8275,7 @@ void TriMesh::GetGradTeOnVertices()
 {
 	long iTri;
 	Triangle * pTri;
-	real beta[3];
+	f64 beta[3];
 	// Assign T to triangles: what is best fit?
 	// To do it properly: 
 	// Do minmod then match up where they do not match.
@@ -8193,7 +8305,7 @@ void TriMesh::GetGradTeOnVertices()
 	ConvexPolygon cp;
 	long tri_len, i, iVertex;
 	long izTri[128];
-	real Te[128];	
+	f64 Te[128];	
 	Vertex * pVertex = X;
 	bool bDone = false;
 	for (iVertex= 0; iVertex < numVertices; iVertex++)
@@ -8250,12 +8362,12 @@ void TriMesh::GetGradTeOnVertices()
 //	Vector3 omega_ce, omega_ci;
 //	Tensor3 omega_ci_cross;
 //	
-//	real nu_eiBar, nu_eHeart, nu_ieBar, 
+//	f64 nu_eiBar, nu_eHeart, nu_ieBar, 
 //			nu_en_MT, nu_in_MT, 
 //			nu_ne_MT, nu_ni_MT,
 //			n_i, n_n, n_e;
 //			
-//	real heat_transfer_rate_in,heat_transfer_rate_ni,
+//	f64 heat_transfer_rate_in,heat_transfer_rate_ni,
 //		 heat_transfer_rate_en,heat_transfer_rate_ne,
 //		 heat_transfer_rate_ei,heat_transfer_rate_ie;
 //	
@@ -8269,9 +8381,9 @@ void TriMesh::GetGradTeOnVertices()
 //	Tensor3 Rie_friction_force_matrix;
 //	Tensor3 Ratio_times_Upsilon_eHeart;
 //	
-//	real fric_dTe_by_dt_ei;
+//	f64 fric_dTe_by_dt_ei;
 //		
-//	real StoredEz;
+//	f64 StoredEz;
 //
 //	bool bNeutrals;
 //
@@ -8279,7 +8391,7 @@ void TriMesh::GetGradTeOnVertices()
 //	// Let's just stick simple Ohm's Law v_e(v_i,v_n)
 //	// in CalculateCoefficients.
 //
-//	real SimpleOhms_vez0, SimpleOhms_beta_neutz, Ohms_vez0, Ohms_sigma;
+//	f64 SimpleOhms_vez0, SimpleOhms_beta_neutz, Ohms_vez0, Ohms_sigma;
 //	Vector3 SimpleOhms_beta_ion;
 //
 //	CalculateAccelsClass(){};
@@ -8289,24 +8401,24 @@ void TriMesh::GetGradTeOnVertices()
 //		// NOTE: Uses GradTe so it better exist.
 //		
 //		static Tensor3 const ID3x3 (1.0,0.0,0.0,0.0,1.0,0.0,0.0,0.0,1.0);
-//		static real const TWOTHIRDSqsq_= 2.0*q_*q/3.0;
-//		static real const one_over_kB = 1.0/kB; // multiply by this to convert to eV
-//		static real const one_over_kB_cubed = 1.0/(kB*kB*kB); // multiply by this to convert to eV
-//		static real const kB_to_3halves = sqrt(kB)*kB;
-//		static real const over_sqrt_m_ion = 1.0/sqrt(m_i_);
-//		static real const over_sqrt_m_e_ = 1.0/sqrt(m_e_);
-//		static real const qoverMc_ = q/(m_i_*c);
-//		static real const eovermc_ = q/(m_e_*c);
-//		static real const NU_EI_FACTOR = 1.0/(3.44e5);
-//		static real const nu_eiBarconst_ = //(4.0/3.0)*sqrt(2.0*PI/m_e_)*q_*q_*q_*q_;
+//		static f64 const TWOTHIRDSqsq_= 2.0*q_*q/3.0;
+//		static f64 const one_over_kB = 1.0/kB; // multiply by this to convert to eV
+//		static f64 const one_over_kB_cubed = 1.0/(kB*kB*kB); // multiply by this to convert to eV
+//		static f64 const kB_to_3halves = sqrt(kB)*kB;
+//		static f64 const over_sqrt_m_ion = 1.0/sqrt(m_i_);
+//		static f64 const over_sqrt_m_e_ = 1.0/sqrt(m_e_);
+//		static f64 const qoverMc_ = q/(m_i_*c);
+//		static f64 const eovermc_ = q/(m_e_*c);
+//		static f64 const NU_EI_FACTOR = 1.0/(3.44e5);
+//		static f64 const nu_eiBarconst_ = //(4.0/3.0)*sqrt(2.0*PI/m_e_)*q_*q_*q_*q_;
 //		// don't know in what units but it IS exactly what we already had - see Formulary
 //									1.0/(3.44e5);
 //
-//		real area, det;
-//		real T_ion, T_n, T_e, sqrt_Te, ionneut_thermal, electron_thermal,
+//		f64 area, det;
+//		f64 T_ion, T_n, T_e, sqrt_Te, ionneut_thermal, electron_thermal,
 //			lnLambda, s_in_MT, s_in_visc, s_en_MT,s_en_visc,
 //			nu_en_visc;
-//		//Vector3 const E, Vector3 const vrel_e, real * const scratch
+//		//Vector3 const E, Vector3 const vrel_e, f64 * const scratch
 //		// The first thing we need to do is collect
 //	
 //		// nu_eibar, nu_in, nu_en
@@ -8391,7 +8503,7 @@ void TriMesh::GetGradTeOnVertices()
 //		omega_ci_cross.MakeCross(omega_ci);
 //		
 //		// Populate Upsilon(nu_eHeart):
-//		real nu = nu_eHeart;
+//		f64 nu = nu_eHeart;
 //		Vector3 omega = omega_ce;
 //		det = nu*nu + omega.dot(omega);
 //
@@ -8475,7 +8587,7 @@ void TriMesh::GetGradTeOnVertices()
 ////
 ////		// Roll on the next version...
 ////
-////		real chi = (m_n_/(m_e_+m_n_))*this->nu_en_MT
+////		f64 chi = (m_n_/(m_e_+m_n_))*this->nu_en_MT
 ////			+ (1.0-0.9*this->Ratio_times_Upsilon_eHeart.zz)*this->nu_eiBar;
 ////
 ////		SimpleOhms_vez0 = (-qoverm_*StoredEz 
@@ -8499,12 +8611,12 @@ void TriMesh::GetGradTeOnVertices()
 //
 //	}
 //
-//	void inline Populate_Acceleration_Coefficients_no_pressure(real H[6][6], real a0[6]) 
+//	void inline Populate_Acceleration_Coefficients_no_pressure(f64 H[6][6], f64 a0[6]) 
 //	{
-//		real factor;
+//		f64 factor;
 //
-//		 ZeroMemory(H,sizeof(real)*6*6);
-//		 ZeroMemory(a0, sizeof(real)*6);
+//		 ZeroMemory(H,sizeof(f64)*6*6);
+//		 ZeroMemory(a0, sizeof(f64)*6);
 //
 //		 // Pressure not applied.
 //
@@ -8555,7 +8667,7 @@ void TriMesh::GetGradTeOnVertices()
 //			
 //			// i-n, e-n friction:
 //			
-//			real Combined =	(m_e_*m_n_/((m_e_+m_i_)*(m_e_+m_n_)))*nu_en_MT +
+//			f64 Combined =	(m_e_*m_n_/((m_e_+m_i_)*(m_e_+m_n_)))*nu_en_MT +
 //						(m_i_*m_n_/((m_e_+m_i_)*(m_i_+m_n_)))*nu_in_MT  ;
 //
 //			//a_ion.x += Combined*(v_neut.x - v_ion.x);
@@ -8600,12 +8712,12 @@ void TriMesh::GetGradTeOnVertices()
 //	} // almost exact same as above routine.
 //
 //
-//		void inline Populate_Acceleration_Coefficients_no_pressure(real H[6][6], real a0[6]) 
+//		void inline Populate_Acceleration_Coefficients_no_pressure(f64 H[6][6], f64 a0[6]) 
 //	{
-//		real factor;
+//		f64 factor;
 //
-//		 ZeroMemory(H,sizeof(real)*6*6);
-//		 ZeroMemory(a0, sizeof(real)*6);
+//		 ZeroMemory(H,sizeof(f64)*6*6);
+//		 ZeroMemory(a0, sizeof(f64)*6);
 //
 //		 // Pressure not applied.
 //
@@ -8656,7 +8768,7 @@ void TriMesh::GetGradTeOnVertices()
 //			
 //			// i-n, e-n friction:
 //			
-//			real Combined =	(m_e_*m_n_/((m_e_+m_i_)*(m_e_+m_n_)))*nu_en_MT +
+//			f64 Combined =	(m_e_*m_n_/((m_e_+m_i_)*(m_e_+m_n_)))*nu_en_MT +
 //						(m_i_*m_n_/((m_e_+m_i_)*(m_i_+m_n_)))*nu_in_MT  ;
 //
 //			//a_ion.x += Combined*(v_neut.x - v_ion.x);
@@ -8715,7 +8827,7 @@ void TriMesh::Set_nT_and_Get_Pressure(int species)
 	Triangle * pTri;
 	long iTri, iVertex;
 	Vertex * pVertex;
-	real beta[3];
+	f64 beta[3];
 
 	
 	// Input: AreaCell
@@ -8811,15 +8923,15 @@ void TriMesh::Set_nT_and_Get_Pressure(int species)
 	// ie, the edges of the houses.
 	int iDomain, iWhich1, iWhich2, iWhichInner;
 	Vertex* pVert1, *pVert2;
-	real TotalNT, RemainArea, TotalArea, RemainNT;
+	f64 TotalNT, RemainArea, TotalArea, RemainNT;
 	long tri_len, izTri[128], i, inext;
 	Triangle * pTri1, *pTri2, *pTriNext;
 	ConvexPolygon shard;
-	real avg_nT_shard,area_shard, sumcoeffs;
+	f64 avg_nT_shard,area_shard, sumcoeffs;
 	Vector2 cent1,cent2;
-	real avg_nT_desired, nT_top, NT_found, avg_nT, NT_left;
+	f64 avg_nT_desired, nT_top, NT_found, avg_nT, NT_left;
 	long index[128];
-	real coeffs[128];
+	f64 coeffs[128];
 	int nIns;
 
 	pTri = T;
@@ -9001,7 +9113,7 @@ void TriMesh::Set_nT_and_Get_Pressure(int species)
 				
 				// .Work out what we are getting from the known shards, 
 			
-				memset(coeffs,0,sizeof(real)*128);
+				memset(coeffs,0,sizeof(f64)*128);
 
 				NT_found = 0.0;
 				for (i = 0; i < tri_len; i++)
@@ -9097,8 +9209,8 @@ void TriMesh::Set_nT_and_Get_Pressure(int species)
 	// On GPU how to do : each tri collects info from 3 places, =>
 	// 3 x random access; use shared mem.
 
-	real nT[128];
-	real totalvertexmass_grams;
+	f64 nT[128];
+	f64 totalvertexmass_grams;
 
 	pVertex = X;
 	for (iVertex= 0; iVertex < numVertices; iVertex++)
@@ -9162,7 +9274,7 @@ void TriMesh::CreateMeshDisplacement_zero_future_pressure()
 	long iTri, iVertex;
 	Vertex * pVertex;
 	Vector3 JcrossB_contribution;
-	real totalvertexmass_grams;
+	f64 totalvertexmass_grams;
 
 	// Inputs: AreaCell. pVertex->B
 	
@@ -9237,7 +9349,7 @@ void TriMesh::CreateMeshDisplacement_zero_future_pressure()
 
 	//	// We will store 4 6-vectors that represent the effect of e.g. a_iTPx on v[0-5].
 	//	
-	//	real v_effect_a_iTPx[6], v_effect_a_iTPy[6], v_effect_a_nTPx[6], v_effect_a_nTPy[6];
+	//	f64 v_effect_a_iTPx[6], v_effect_a_iTPy[6], v_effect_a_nTPx[6], v_effect_a_nTPy[6];
 	//	memset(v_effect_a_iTPx,0,6*sizeof(f64));
 	//	memset(v_effect_a_iTPy,0,6*sizeof(f64));
 	//	memset(v_effect_a_nTPx,0,6*sizeof(f64));
@@ -9336,7 +9448,7 @@ void TriMesh::CreateMeshDisplacement_zero_future_pressure()
 	//											         	+ v_effect_a_nTPy[4]*n_n)/
 	//														(n_ion+n_n);
 	//		// Ready for next step:
-	//		memcpy(v,vnext,sizeof(real)*6);
+	//		memcpy(v,vnext,sizeof(f64)*6);
 	//	};
 
 	//	++pVertex;
@@ -9382,26 +9494,26 @@ void TriMesh::SolveForAdvectedPositions(TriMesh * pDestMesh)  // populate advect
 	// if something is going haywire or moving too near its surrounding polygon, we slow down the system trajectory timestep.
 	// We have to calculate both a(x) and for a second-order step, a-dot due to xdot. 
 	
-	real area_original;
-	real htraj = 0.5; 
-	static real const MAXhtraj = 0.5;
-	real guess_h, value_new, twoarea_new, twoarea, area_roc_over_area, factor;
+	f64 area_original;
+	f64 htraj = 0.5; 
+	static f64 const MAXhtraj = 0.5;
+	f64 guess_h, value_new, twoarea_new, twoarea, area_roc_over_area, factor;
 	Vector2 temp2, to_existing;
-	real compare;
+	f64 compare;
 	Vertex * pVertex, *pOther;
 	Vector2 acceleration, momrate;
 	Triangle * pTri1,* pTri2, *pTri;
 	int i, inext, numDomain, iWhich1, iWhich2;
 	Vector2 u[3], U[3], ROC[3];
 	Vector2 ROCcc1, cc1, ROCcc2, cc2, ROCmomrate, ROC_accel, ROCu_ins;
-	real area, ROCarea, ROCvalue, Average_nT, ROCAverage_nT, value;
+	f64 area, ROCarea, ROCvalue, Average_nT, ROCAverage_nT, value;
 	long iTri, iVertex;
 	Vector2 u_ins, rhat;
 	int iWhich;
 	bool broken, not_converged_enough;
 	long tri_len, izTri[128];
 
-	static real const FIVETHIRDS = THIRD*5.0;
+	static f64 const FIVETHIRDS = THIRD*5.0;
 	
 	long iIterationsConvergence = 0;
 
@@ -9468,7 +9580,7 @@ void TriMesh::SolveForAdvectedPositions(TriMesh * pDestMesh)  // populate advect
 			++pTri;			
 		};
 		
-		real RSS = 0.0;
+		f64 RSS = 0.0;
 		
 		pVertex = X;
 		for (iVertex = 0; iVertex < numVertices; iVertex++)
@@ -9521,7 +9633,7 @@ void TriMesh::SolveForAdvectedPositions(TriMesh * pDestMesh)  // populate advect
 			++pVertex;
 		};
 
-		real L2 = sqrt(RSS/(real)numVertices); 
+		f64 L2 = sqrt(RSS/(f64)numVertices); 
 		printf("\nL2 of residual: %1.12E \n",L2);
 		
 		// Now want to get xdotdot.
@@ -9752,7 +9864,7 @@ void TriMesh::SolveForAdvectedPositions(TriMesh * pDestMesh)  // populate advect
 		// Now test if that step failed: did something get too near to its surroundings too fast, for instance?
 		// _________________________________________________________________________________________
 		long iTriWorst, iType;
-		real shoelace, shoe_new,guesshere;
+		f64 shoelace, shoe_new,guesshere;
 		int broken_iterations = 0;
 		do 
 		{
@@ -9874,8 +9986,8 @@ htraj,guess_h);
 
 				//	pVertex->temp2 = pVertex->AdvectedPosition[species] + htraj*pVertex->xdot + htraj*htraj*0.5*pVertex->xdotdot;
 						
-				real maxxdot = 0.0;
-				real maxxdotdot = 0.0;
+				f64 maxxdot = 0.0;
+				f64 maxxdotdot = 0.0;
 				long imax1, imax2;
 				pVertex = X;
 				for (iVertex = 0; iVertex < numVertices; iVertex++)

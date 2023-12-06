@@ -4,7 +4,7 @@
 #ifndef CUSYSTCU
 #define CUSYSTCU
 
-extern real evaltime;
+extern f64 evaltime;
 extern long GlobalStepsCounter;
 extern bool GlobalSuppressSuccessVerbosity;
 extern f64 * p_graphdata1_host, *p_graphdata2_host, *p_graphdata3_host, *p_graphdata4_host, *p_graphdata5_host, *p_graphdata6_host;

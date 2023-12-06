@@ -52,7 +52,7 @@ HRESULT CloseAvi(HAVI avi);
 unsigned int FormatAviMessage(HRESULT code, char *buf,unsigned int len);
 // FormatAviMessage - given an error code, formats it as a string.
 // It returns the length of the error message. If buf/len points
-// to a real buffer, then it also writes as much as possible into there.
+// to a f64 buffer, then it also writes as much as possible into there.
 
 
 #endif

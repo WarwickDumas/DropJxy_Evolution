@@ -91,6 +91,7 @@ int const REAL = 2;
 #define SPECIES_ION          1
 #define SPECIES_ELECTRON     800
 #define SPECIES_ELEC         800
+#define PLAN_N               120000
 #define OVERALL              2
 #define JZAZBXYEZ                 3
 #define SIGMA_E_J                 900
@@ -98,7 +99,7 @@ int const REAL = 2;
 #define VIZVEZJZAZDOT             1000
 #define ONE_D                     5
 #define IONIZEGRAPH               6
-
+#define DENS1DGRAPH               5000000
 #define LAPAZ_AZ                  10000
 
 #define JXYAXYBZEXY               500
@@ -236,6 +237,8 @@ int const REAL = 2;
 #define GRAPH_VXBARELZ     216
 #define GRAPH_ARELZ        217
 #define GRAPH_ELECTROMOTIVE 218
+#define GRAPH_NV           219
+
 
 // Number of vars used to produce heights:
 int const FLAG_FLAT_MESH = 0;

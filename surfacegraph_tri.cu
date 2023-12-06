@@ -12,13 +12,13 @@
 
 #include "mesh.h"
 #include "mesh.cu"
-#include "meshutil.cu"
+//#include "meshutil.cu"
 
 #define VERBOSEGRAPHICS 0 // also in meshutil
 
 //extern FixedMesh Fixed;
 extern int GlobalWhichLabels;
-extern real GlobalRescaling;
+extern f64 GlobalRescaling;
 
 #define PI32bit  3.14159268f
 
@@ -976,7 +976,7 @@ HRESULT surfacegraph::SetDataWithColour(const TriMesh & X,
 	this->InitialiseBuffers(X);
 
 	int i,N;
-	real maximum, minimum, max2, min2;
+	f64 maximum, minimum, max2, min2;
 
 	if (heightflag != FLAG_FLAT_MESH)
 	{
@@ -1055,10 +1055,13 @@ HRESULT surfacegraph::SetDataWithColour(const TriMesh & X,
 		getch();
 	};	
 	
-	// Now decide on the actual max to use: 
+	if (code == GRAPH_NV) printf("GRAPH_NV : maximum %1.5E store_max %1.6E minimum %1.5E offset %d \n", maximum, store_max, minimum, offset_data);
+
+	
+	// Now decide on the actual max to use: set zeroplane, yscale.
 	int powermax, powermin;
 	if (maximum > 0.0) {
-		real logmaxbase_ours = log(maximum)/log(GRAPH_SCALE_GEOMETRIC_INCREMENT);
+		f64 logmaxbase_ours = log(maximum)/log(GRAPH_SCALE_GEOMETRIC_INCREMENT);
 		powermax = (int)logmaxbase_ours+1;
 
 		if ((boolGlobalHistory) && (powermax == Historic_powermax[code]-1))
@@ -1069,7 +1072,7 @@ HRESULT surfacegraph::SetDataWithColour(const TriMesh & X,
 		powermax = 0;
 	};
 	if (minimum < 0.0) {
-		real logminbase_ours = log(-minimum)/log(GRAPH_SCALE_GEOMETRIC_INCREMENT);
+		f64 logminbase_ours = log(-minimum)/log(GRAPH_SCALE_GEOMETRIC_INCREMENT);
 		powermin = (int)logminbase_ours+1;
 
 		if ((boolGlobalHistory) && (powermin == Historic_powermin[code]-1))
@@ -1106,6 +1109,9 @@ HRESULT surfacegraph::SetDataWithColour(const TriMesh & X,
 		zeroplane = 0.0f;
 		this->yscale = 1.0f;
 	};
+
+	
+
 	//printf("*****+++++++\ncode %d zeroplane %f yscale %f ymax %f ymin %f minimum %1.3E maximum %1.3E \n",
 	//	code, zeroplane, this->yscale, ymax, ymin, minimum, maximum);
 
@@ -1118,6 +1124,7 @@ HRESULT surfacegraph::SetDataWithColour(const TriMesh & X,
 		if (heightflag == FLAG_VELOCITY_HEIGHT) {
 			// make max for colours match max for height:
 				colourmax = maximum; 
+				printf("FLAG_VELOCITY_HEIGHT. colourmax = maximum %f\n", colourmax);
 			} else {
 				colourmax = X.ReturnL4_Velocity(offset_vcolour,this->boolDisplayInnerMesh); // == 0 initially
 			};
@@ -1231,7 +1238,7 @@ HRESULT surfacegraph::SetDataWithColourAux(TriMesh & X, int iLevel, int colourfl
 		
 	DWORD * indices[NUMBER_VERTEX_ARRAYS];
 	VertexPNT3 * vertices[NUMBER_VERTEX_ARRAYS];
-	real maximum, minimum;
+	f64 maximum, minimum;
 	int i,N;
 
 	if (heightflag != FLAG_FLAT_MESH)
@@ -1478,7 +1485,7 @@ VOID surfacegraph::Render(const char * szTitle, bool RenderTriLabels,
 
 	long tri_len, izTri[128];
 
-	static DWORD time = timeGetTime();
+	//static DWORD time = timeGetTime();
 	//DWORD oldtime;
 	//float timestep, temporary;
 	//int i;
@@ -1492,7 +1499,7 @@ VOID surfacegraph::Render(const char * szTitle, bool RenderTriLabels,
 		float x,y,z;
 		char buffer[256];
 		int i;
-	real tempval;
+	f64 tempval;
 	   
 	//float values[11];
 	//char buffer[2048];
@@ -1616,8 +1623,8 @@ VOID surfacegraph::Render(const char * szTitle, bool RenderTriLabels,
 			Direct3D.pd3dDevice->SetFVF(point_fvf);
 			Direct3D.pd3dDevice->DrawPrimitiveUP(D3DPT_LINESTRIP,1,linedata,sizeof(vertex1));
 			
-			real theta = -HALFANGLE;
-			real r = 3.44;
+			f64 theta = -HALFANGLE;
+			f64 r = 3.44;
 			for (int asdf = 0; asdf < 10000; asdf++)
 			{
 				theta += FULLANGLE/10000.0; 
@@ -1632,7 +1639,7 @@ VOID surfacegraph::Render(const char * szTitle, bool RenderTriLabels,
 						
 			// Now do 3.6, 3.75, 3.9, 4.05, 4.2
 			r = 3.45;
-			for (i = 0; i < 12; i++) {
+			for (i = 0; i < 14; i++) {
 				theta = -HALFANGLE*1.1;
 				for (int asdf = 0; asdf < 10000; asdf++)
 				{
@@ -1651,11 +1658,10 @@ VOID surfacegraph::Render(const char * szTitle, bool RenderTriLabels,
 				sprintf(buffer,"%1.2f",r);
 				RenderLabel(buffer, linedata[4100].x,zeroplane,linedata[4100].z,true);
 				if (i == 0) r = 3.45;
-				r += 0.09;
-				if (i >= 7) r += 0.11; // last 4
-				if (i >= 9) r = 5.52;
-				if (i >= 10) r = 6.5;
-				if (i > 10) r += 1.0*(double)(i - 10);
+				r += 0.08;
+				if (i >= 11) r += 0.11; 
+				if (i >= 12) r = 6.5;
+				if (i > 12) r += 1.0*(double)(i - 10);
 			};
 
 			// Vertical lines:
@@ -1692,12 +1698,12 @@ VOID surfacegraph::Render(const char * szTitle, bool RenderTriLabels,
 			// I think we need a separate "pass" AND CLEAR z buffer
 			// if we want stuff to appear on top.
 
-			real theta = 0.0;
-			real r = pX->OuterRadiusAttained;
+			f64 theta = 0.0;
+			f64 r = pX->OuterRadiusAttained;
 			for (int asdf = 0; asdf < 10000; asdf++)
 			{
 				theta += 2.0*PI/10000.0; 
-				linedata[asdf].x = -r*sin(theta)*xzscale;//(-TRAP_HALFWIDTH+DELTA_0*((real)asdf))*block::xzscale;
+				linedata[asdf].x = -r*sin(theta)*xzscale;//(-TRAP_HALFWIDTH+DELTA_0*((f64)asdf))*block::xzscale;
 				linedata[asdf].y = this->zeroplane;
 				linedata[asdf].z = (r*cos(theta)+SP_CENTRE_Y)*xzscale;
 				linedata[asdf].colour = 0;
@@ -1777,7 +1783,7 @@ VOID surfacegraph::Render(const char * szTitle, bool RenderTriLabels,
 		DXChk(mFX->SetBool(mhbTransparency, false)); // telling shader to give everything alpha = 1 until further notice.
 		
 		// Cycle the transparency every 2 ns:
-		real timeover = evaltime;
+		f64 timeover = evaltime;
 		while (timeover > 2.0e-9) timeover -= 2.0e-9;
 		timeover = fabs(timeover-1.0e-9)/1.0e-9; 		
 		DXChk(mFX->SetFloat(mhfTransparentAlpha, 0.2f));
@@ -1894,17 +1900,17 @@ VOID surfacegraph::Render(const char * szTitle, bool RenderTriLabels,
 				if (iSide == 1) x = -x;
 
 				// New way: 
-				real const lead[12] = {0.5,0.675,0.9,1.2,1.6,2.14,2.85,3.8,5.0,6.75,9.0,12.0 };
+				f64 const lead[12] = {0.5,0.675,0.9,1.2,1.6,2.14,2.85,3.8,5.0,6.75,9.0,12.0 };
 				int log_base_10, leadindex;
-				real useval, leadval, leadval2, leadvalneg, leadval2neg, temp, value[5];
+				f64 useval, leadval, leadval2, leadvalneg, leadval2neg, temp, value[5];
 
-				real scalemax, scalemin;
+				f64 scalemax, scalemin;
 				if (label_insist_max) {
 					scalemax = store_max;
 					scalemin = store_min;
 				} else {
-					scalemax = (real)ymax;
-					scalemin = (real)ymin;
+					scalemax = (f64)ymax;
+					scalemin = (f64)ymin;
 				}
 
 				if (scalemax > 0.0) {
@@ -1981,7 +1987,11 @@ VOID surfacegraph::Render(const char * szTitle, bool RenderTriLabels,
 			//	printf("buffer %s x %f y %f z %f\n",
 			//		buffer,x,zeroplane+yscale*value[i],z);
 				};
-				
+				if (scalemax*1.06 < store_max) {
+					sprintf(buffer, "%1.3E", store_max*this->TickRescaling);
+					RenderLabel(buffer, x, zeroplane + yscale*store_max, z, 0, 0, true);
+				};
+
 			};
 		};
 
@@ -2046,14 +2056,14 @@ VOID surfacegraph::Render(const char * szTitle, bool RenderTriLabels,
 
 				// Skip it for now, build up to it.
 
-				real * radiusArray8000;
+				f64 * radiusArray8000;
 				long * VertexIndexArray8000;
 			//	// Render some data height labels along the line of the cutaway.
 
 				VertexPNT3 * pPNT;
 				VertexPNT3 * vertices_buffer;
 				VertexIndexArray8000 = new long[8000];
-				radiusArray8000 = new real[8000];
+				radiusArray8000 = new f64[8000];
 
 				if (radiusArray8000 == 0) {
 					printf("\n\n?@#>@>#?\n\n");
@@ -2101,7 +2111,7 @@ VOID surfacegraph::Render(const char * szTitle, bool RenderTriLabels,
 								// 1.Get these vertex indices
 								// which tri contains a point which is further and a point less far?
 
-								real rr = pVertex->pos.x*pVertex->pos.x+pVertex->pos.y*pVertex->pos.y;
+								f64 rr = pVertex->pos.x*pVertex->pos.x+pVertex->pos.y*pVertex->pos.y;
 								iWhich = -1;
 								tri_len = pVertex->GetTriIndexArray(izTri);
 								for (i = 0; i < tri_len; i++)
@@ -2236,7 +2246,7 @@ VOID surfacegraph::Render(const char * szTitle, bool RenderTriLabels,
 					Direct3D.pd3dDevice->DrawPrimitiveUP(D3DPT_LINESTRIP,numVertsCutawayUse-1,linedata,sizeof(vertex1));
 
 					int asdf = 0;			
-					real r = 3.439999999;
+					f64 r = 3.439999999;
 					for (i = 0; i < 14; i++) {
 
 						while ((asdf < 8000) && (radiusArray8000[asdf] < r)) asdf++;	
@@ -2270,11 +2280,10 @@ VOID surfacegraph::Render(const char * szTitle, bool RenderTriLabels,
 							RenderLabel(buffer, CUTAWAYANGLE*pPNT->pos.z, zeroplane, pPNT->pos.z);
 						};
 						if (i == 0) r = 3.45;
-						r += 0.09;
-						if (i >= 7) r += 0.11; // last 4
-						if (i >= 9) r = 5.52;
-						if (i >= 10) r = 6.5;
-						if (i > 10) r += 1.0*(double)(i - 10);
+						r += 0.08;
+						if (i >= 11) r += 0.11;
+						if (i >= 12) r = 6.5;
+						if (i > 12) r += 1.0*(double)(i - 10);
 					}; 
 					// line underneath:
 					linedata[0].x = sin(CUTAWAYANGLE)*DEVICE_RADIUS_INSULATOR_OUTER*xzscale;
@@ -2476,7 +2485,7 @@ void inline surfacegraph::RenderText (const char * text, int lines_down)
 }
 
 void inline surfacegraph::RenderLabel (char * text, float x, float y, float z, 
-									   bool extrainfo, bool botleft)
+									   bool extrainfo, bool botleft, bool bColoured)
 	{
 		RECT rect;
 		D3DXVECTOR3 transformed;
@@ -2518,6 +2527,8 @@ void inline surfacegraph::RenderLabel (char * text, float x, float y, float z,
 		};
 
 		D3DCOLOR textcolor = 0xff000000;
+		if (bColoured) textcolor = 0xff2200bb;
+
 		if (extrainfo) {
 			format = DT_CENTER | DT_VCENTER; // also changing rect, below.
 			textcolor = 0xff700022;
